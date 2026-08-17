@@ -38,6 +38,8 @@ export class CaveClientError extends Error {
 }
 
 const CAVE_CLIENT_VERSION = '0.1.0' as const;
+const CAVE_API_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const SUPPORTED_CAVE_API_MAJOR = '1';
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -111,6 +113,23 @@ export class CaveClient {
               'health',
             ),
             compatibility,
+          );
+        }
+      }
+
+      if (response.apiVersion !== undefined) {
+        if (!CAVE_API_VERSION_PATTERN.test(response.apiVersion)) {
+          throw invalidHealthResponse();
+        }
+
+        if (response.apiVersion.split('.')[0] !== SUPPORTED_CAVE_API_MAJOR) {
+          throw new CaveClientError(
+            normalizeCaveError(
+              {
+                code: 'incompatible_version',
+              },
+              'health',
+            ),
           );
         }
       }

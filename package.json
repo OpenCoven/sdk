@@ -15,6 +15,7 @@
     "typecheck": "corepack pnpm@10.34.0 --recursive --filter './packages/*' typecheck && corepack pnpm@10.34.0 --recursive --filter './examples/*' typecheck && corepack pnpm@10.34.0 exec tsc --pretty false --noEmit -p tsconfig.json",
     "test": "vitest run",
     "lint": "pnpm exec eslint . --max-warnings=0",
+    "sync:contracts": "node ./scripts/import-contract-fixtures.mjs",
     "verify:contracts": "node ./scripts/verify-contracts.mjs",
     "verify:package": "node ./scripts/verify-package.mjs",
     "verify": "corepack pnpm@10.34.0 lint && corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 build && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package"

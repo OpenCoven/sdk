@@ -195,12 +195,51 @@ describe('health validation', () => {
     });
   });
 
+  test('accepts compatible additive Cave apiVersion updates on the same major version', async () => {
+    const client = new CaveClient({
+      transport: {
+        health: () => Promise.resolve({
+          apiVersion: '1.1',
+          minimumClientVersion: '0.1.0',
+          data: { status: 'ok' },
+        }),
+      },
+    });
+
+    await expect(client.health()).resolves.toEqual({ status: 'ok' });
+  });
+
+  test('rejects incompatible Cave apiVersion major versions', async () => {
+    const client = new CaveClient({
+      transport: {
+        health: () => Promise.resolve({
+          apiVersion: '2.0',
+          minimumClientVersion: '0.1.0',
+          data: { status: 'ok' },
+        }),
+      },
+    });
+
+    const response = client.health();
+
+    await expect(response).rejects.toBeInstanceOf(CaveClientError);
+    await expect(response).rejects.toMatchObject({
+      normalized: {
+        system: 'cave',
+        operation: 'health',
+        code: 'incompatible_version',
+        retryable: false,
+      },
+    });
+  });
+
   test.each([
     undefined,
     null,
     {},
     { data: {} },
     { data: { status: 'error' } },
+    { apiVersion: 'v1', data: { status: 'ok' } },
   ])('normalizes invalid Cave health responses: %j', async (invalidResponse) => {
     const client = new CaveClient({
       transport: {
@@ -253,7 +292,7 @@ describe('health validation', () => {
       ...VALID_COVEN_HEALTH_RESPONSE,
       capabilities: {
         ...VALID_COVEN_HEALTH_RESPONSE.capabilities,
-        eventCursor: 'offset',
+        structuredErrors: false,
       },
     },
     {
@@ -304,39 +343,61 @@ describe('health validation', () => {
     await expect(client.health()).resolves.toEqual({ status: 'ok' });
   });
 
-  test('accepts supported Coven eventCursor values from string-typed transports', async () => {
-    const eventCursor: string = 'sequence';
+  test('accepts finalized Coven health responses without eventCursor', async () => {
+    const { eventCursor: _eventCursor, ...capabilitiesWithoutEventCursor } =
+      VALID_COVEN_HEALTH_RESPONSE.capabilities;
     const client = new CovenClient({
       transport: {
-        health: () => Promise.resolve(createCovenHealthResponseWithEventCursor(eventCursor)),
+        health: () =>
+          Promise.resolve({
+            ...VALID_COVEN_HEALTH_RESPONSE,
+            capabilities: capabilitiesWithoutEventCursor,
+          }),
       },
     });
 
     await expect(client.health()).resolves.toEqual({ status: 'ok' });
   });
 
-  test.each(['offset', 'stream'])(
-    'rejects unsupported Coven eventCursor values at runtime: %s',
+  test.each(['sequence', 'offset', 'stream'])(
+    'accepts string-typed Coven eventCursor values from compatible transports: %s',
     async (eventCursor) => {
-      const unsupportedEventCursor: string = eventCursor;
+      const compatibleEventCursor: string = eventCursor;
       const client = new CovenClient({
         transport: {
           health: () =>
-            Promise.resolve(createCovenHealthResponseWithEventCursor(unsupportedEventCursor)),
+            Promise.resolve(createCovenHealthResponseWithEventCursor(compatibleEventCursor)),
         },
       });
 
-      const response = client.health();
-
-      await expect(response).rejects.toBeInstanceOf(CovenClientError);
-      await expect(response).rejects.toMatchObject({
-        normalized: {
-          system: 'coven',
-          operation: 'health',
-          code: 'invalid_response',
-          retryable: false,
-        },
-      });
+      await expect(client.health()).resolves.toEqual({ status: 'ok' });
     },
   );
+
+  test('rejects non-string Coven eventCursor values at runtime', async () => {
+    const client = new CovenClient({
+      transport: {
+        health: () =>
+          Promise.resolve({
+            ...VALID_COVEN_HEALTH_RESPONSE,
+            capabilities: {
+              ...VALID_COVEN_HEALTH_RESPONSE.capabilities,
+              eventCursor: 1,
+            },
+          } as never),
+      },
+    });
+
+    const response = client.health();
+
+    await expect(response).rejects.toBeInstanceOf(CovenClientError);
+    await expect(response).rejects.toMatchObject({
+      normalized: {
+        system: 'coven',
+        operation: 'health',
+        code: 'invalid_response',
+        retryable: false,
+      },
+    });
+  });
 });

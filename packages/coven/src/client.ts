@@ -1,20 +1,7 @@
 import { normalizeError, type NormalizedError } from '@opencoven/sdk-core';
 
-import {
-  COVEN_DAEMON_PROTOCOL,
-  type CovenHealth,
-  type CovenHealthResponse,
-} from './schemas.js';
+import { COVEN_DAEMON_PROTOCOL, type CovenHealth, type CovenHealthResponse } from './schemas.js';
 import type { CovenTransport } from './transport.js';
-
-type SupportedCovenCapabilities = Omit<CovenHealthResponse['capabilities'], 'eventCursor'> & {
-  eventCursor: 'sequence';
-};
-
-type SupportedCovenHealthResponse = Omit<CovenHealthResponse, 'apiVersion' | 'capabilities'> & {
-  apiVersion: string;
-  capabilities: SupportedCovenCapabilities;
-};
 
 export interface CovenClientOptions {
   transport: CovenTransport;
@@ -52,7 +39,7 @@ function invalidHealthResponse(): CovenClientError {
   );
 }
 
-function validateCapabilities(value: unknown): value is SupportedCovenCapabilities {
+function validateCapabilities(value: unknown): value is CovenHealthResponse['capabilities'] {
   if (!isObject(value)) {
     return false;
   }
@@ -60,12 +47,12 @@ function validateCapabilities(value: unknown): value is SupportedCovenCapabiliti
   return (
     typeof value.sessions === 'boolean' &&
     typeof value.events === 'boolean' &&
-    value.eventCursor === 'sequence' &&
-    typeof value.structuredErrors === 'boolean'
+    (value.eventCursor === undefined || typeof value.eventCursor === 'string') &&
+    value.structuredErrors === true
   );
 }
 
-function validateHealthResponse(response: unknown): response is SupportedCovenHealthResponse {
+function validateHealthResponse(response: unknown): response is CovenHealthResponse {
   if (!isObject(response)) {
     return false;
   }

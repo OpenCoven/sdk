@@ -15,7 +15,9 @@ daemon I/O at import time. Callers provide transports explicitly; Cave and
 Coven models, transports, and normalized errors remain distinct.
 
 Reviewed Cave and Coven fixture bytes are committed under their client
-packages and verified locally. No authority source tree is imported.
+packages and verified locally. Refresh them with
+`pnpm sync:contracts -- --cave-root <path> --coven-root <path>` before running
+the contract verifier. No authority source tree is imported at runtime.
 
 ## Validation
 

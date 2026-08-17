@@ -19,9 +19,32 @@ describe('reviewed authority fixtures', () => {
   test('copies the approved Cave fixture bytes and digest', () => {
     const fixture = resolve(root, 'packages/cave/fixtures/contract-fixture.json');
     const digestFile = resolve(root, 'packages/cave/fixtures/contract-fixture.sha256');
+    const parsed = JSON.parse(readFileSync(fixture, 'utf8')) as {
+      contract: {
+        identityKinds: string[];
+      };
+      examples: Record<string, unknown>;
+    };
 
-    expect(digest(fixture)).toBe('55a31888682b05068105a8e76cc675c85c35df4f5ad0d65c6ba9d2164f56bbf9');
-    expect(readFileSync(digestFile, 'utf8')).toBe('55a31888682b05068105a8e76cc675c85c35df4f5ad0d65c6ba9d2164f56bbf9\n');
+    expect(digest(fixture)).toBe('f3391374bdea6d0542054cd1f2d54ccb0d91e6d4e8c54325390a8cdf42e0fad4');
+    expect(readFileSync(digestFile, 'utf8')).toBe('f3391374bdea6d0542054cd1f2d54ccb0d91e6d4e8c54325390a8cdf42e0fad4\n');
+    expect(parsed.contract.identityKinds).toEqual([
+      'client',
+      'credential',
+      'familiar',
+      'project',
+      'conversation',
+      'message',
+      'event',
+    ]);
+    expect(Object.keys(parsed.examples)).toEqual([
+      'cursor',
+      'errorEnvelope',
+      'identity',
+      'revision',
+      'status',
+      'successEnvelope',
+    ]);
   });
 
   test('copies the approved Coven health fixture bytes', () => {

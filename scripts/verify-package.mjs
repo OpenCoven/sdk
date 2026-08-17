@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +13,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const artifactRoot = resolve(root, '.artifacts', 'verify-package');
 const tarballRoot = resolve(artifactRoot, 'tarballs');
 const fixtureRoot = resolve(artifactRoot, 'packed-consumer');
+const exampleRoot = resolve(artifactRoot, 'examples');
 
 function run(command, args, cwd) {
   execFileSync(command, args, {
@@ -25,6 +26,18 @@ function runPnpm(args, cwd) {
   run('corepack', ['pnpm@10.34.0', ...args], cwd);
 }
 
+function isolatedInstallArgs() {
+  return [
+    '--ignore-workspace',
+    '--config.inject-workspace-packages=false',
+    '--config.link-workspace-packages=false',
+    '--config.prefer-workspace-packages=false',
+    'install',
+    '--offline',
+    '--ignore-scripts',
+  ];
+}
+
 function findTarball(directory) {
   const tarballs = readdirSync(directory).filter((entry) => entry.endsWith('.tgz'));
 
@@ -35,7 +48,60 @@ function findTarball(directory) {
   return resolve(directory, tarballs[0]);
 }
 
+function tarballSpecifier(tarballs, workspaceDirectory) {
+  return `file:${tarballs[workspaceDirectory]}`;
+}
+
+function publicPackageOverrides(tarballs) {
+  return Object.fromEntries(
+    PUBLIC_PACKAGES.map(({ packageName, workspaceDirectory }) => [
+      packageName,
+      tarballSpecifier(tarballs, workspaceDirectory),
+    ]),
+  );
+}
+
+function createToolingDevDependencies(existing = {}) {
+  return {
+    ...existing,
+    '@types/node': '24.13.3',
+    typescript: '6.0.3',
+  };
+}
+
+function rewriteConsumerManifest(manifestPath, tarballs) {
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const overrides = publicPackageOverrides(tarballs);
+
+  for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
+    const section = manifest[field];
+
+    if (!section || typeof section !== 'object') {
+      continue;
+    }
+
+    for (const packageName of Object.keys(section)) {
+      if (packageName in overrides) {
+        section[packageName] = overrides[packageName];
+      }
+    }
+  }
+
+  manifest.devDependencies = createToolingDevDependencies(manifest.devDependencies);
+  manifest.pnpm = {
+    ...(manifest.pnpm ?? {}),
+    overrides: {
+      ...(manifest.pnpm?.overrides ?? {}),
+      ...overrides,
+    },
+  };
+
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
 function createFixture(tarballs) {
+  const overrides = publicPackageOverrides(tarballs);
+
   mkdirSync(resolve(fixtureRoot, 'src'), { recursive: true });
   writeFileSync(
     resolve(fixtureRoot, 'package.json'),
@@ -45,20 +111,17 @@ function createFixture(tarballs) {
         private: true,
         type: 'module',
         dependencies: {
-          '@opencoven/sdk-core': `file:${tarballs.core}`,
-          '@opencoven/cave-client': `file:${tarballs.cave}`,
-          '@opencoven/coven-client': `file:${tarballs.coven}`,
-          '@opencoven/sdk': `file:${tarballs.sdk}`,
-          '@opencoven/dev-cli': `file:${tarballs.cli}`,
+          '@opencoven/sdk-core': tarballSpecifier(tarballs, 'core'),
+          '@opencoven/cave-client': tarballSpecifier(tarballs, 'cave'),
+          '@opencoven/coven-client': tarballSpecifier(tarballs, 'coven'),
+          '@opencoven/sdk': tarballSpecifier(tarballs, 'sdk'),
+          '@opencoven/dev-cli': tarballSpecifier(tarballs, 'cli'),
         },
         pnpm: {
-          overrides: {
-            '@opencoven/sdk-core': `file:${tarballs.core}`,
-            '@opencoven/cave-client': `file:${tarballs.cave}`,
-            '@opencoven/coven-client': `file:${tarballs.coven}`,
-          },
+          overrides,
         },
         devDependencies: {
+          '@types/node': '24.13.3',
           typescript: '6.0.3',
         },
       },
@@ -143,6 +206,45 @@ try {
   );
 }
 
+function createPackedExamples(tarballs) {
+  mkdirSync(exampleRoot, { recursive: true });
+  writeFileSync(resolve(artifactRoot, 'tsconfig.base.json'), readFileSync(resolve(root, 'tsconfig.base.json')));
+
+  for (const workspaceDirectory of ['cave-health', 'coven-health', 'unified-health']) {
+    const sourceDirectory = resolve(root, 'examples', workspaceDirectory);
+    const destinationDirectory = resolve(exampleRoot, workspaceDirectory);
+
+    cpSync(sourceDirectory, destinationDirectory, { recursive: true });
+    rewriteConsumerManifest(resolve(destinationDirectory, 'package.json'), tarballs);
+  }
+}
+
+function assertPackedPackagesExcludeSources(installRoot) {
+  for (const { packageName, repositoryDirectory, workspaceDirectory } of PUBLIC_PACKAGES) {
+    const installedDirectory = resolve(
+      installRoot,
+      'node_modules',
+      '@opencoven',
+      packageName.split('/')[1],
+    );
+    const manifestPath = resolve(installedDirectory, 'package.json');
+
+    if (!existsSync(manifestPath)) {
+      continue;
+    }
+
+    assertCanonicalRepository(
+      JSON.parse(readFileSync(manifestPath, 'utf8')),
+      repositoryDirectory,
+      `${packageName} installed manifest`,
+    );
+
+    if (existsSync(resolve(installedDirectory, 'src'))) {
+      throw new Error(`Packed ${workspaceDirectory} package unexpectedly contains source files.`);
+    }
+  }
+}
+
 try {
   rmSync(artifactRoot, { force: true, recursive: true });
   mkdirSync(tarballRoot, { recursive: true });
@@ -163,26 +265,16 @@ try {
   }
 
   createFixture(tarballs);
-  runPnpm(['--ignore-workspace', 'install', '--offline', '--ignore-scripts'], fixtureRoot);
+  createPackedExamples(tarballs);
+  runPnpm(isolatedInstallArgs(), fixtureRoot);
   runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);
+  assertPackedPackagesExcludeSources(fixtureRoot);
 
-  for (const { packageName, repositoryDirectory, workspaceDirectory } of PUBLIC_PACKAGES) {
-    const installedDirectory = packageName.split('/')[1];
-    assertCanonicalRepository(
-      JSON.parse(
-        readFileSync(resolve(fixtureRoot, 'node_modules', '@opencoven', installedDirectory, 'package.json'), 'utf8'),
-      ),
-      repositoryDirectory,
-      `${packageName} installed manifest`,
-    );
-
-    if (workspaceDirectory === 'sdk') {
-      continue;
-    }
-
-    if (existsSync(resolve(fixtureRoot, 'node_modules', '@opencoven', installedDirectory, 'src'))) {
-      throw new Error(`Packed ${workspaceDirectory} package unexpectedly contains source files.`);
-    }
+  for (const workspaceDirectory of ['cave-health', 'coven-health', 'unified-health']) {
+    const destinationDirectory = resolve(exampleRoot, workspaceDirectory);
+    runPnpm(isolatedInstallArgs(), destinationDirectory);
+    runPnpm(['--ignore-workspace', 'run', 'build'], destinationDirectory);
+    assertPackedPackagesExcludeSources(destinationDirectory);
   }
 
   run(process.execPath, ['verify.mjs'], fixtureRoot);

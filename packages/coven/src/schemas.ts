@@ -7,7 +7,7 @@ export interface CovenHealthResponse {
   capabilities: {
     sessions: boolean;
     events: boolean;
-    eventCursor: string;
+    eventCursor?: string;
     structuredErrors: boolean;
   };
 }

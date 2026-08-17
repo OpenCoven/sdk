@@ -8,7 +8,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fixtureChecks = [
   {
     path: 'packages/cave/fixtures/contract-fixture.json',
-    digest: '55a31888682b05068105a8e76cc675c85c35df4f5ad0d65c6ba9d2164f56bbf9',
+    digest: 'f3391374bdea6d0542054cd1f2d54ccb0d91e6d4e8c54325390a8cdf42e0fad4',
   },
   {
     path: 'packages/coven/fixtures/health.json',
