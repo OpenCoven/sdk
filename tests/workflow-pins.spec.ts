@@ -21,4 +21,13 @@ describe('workflow action pins', () => {
     expect(workflow).toMatch(/pnpm\/action-setup@[0-9a-f]{40}\s+# v4\.4\.0/);
     expect(workflow).toMatch(/actions\/setup-node@[0-9a-f]{40}\s+# v4\.4\.0/);
   });
+
+  test('builds workspace packages before running typed lint checks', () => {
+    const buildStep = workflow.indexOf('- name: Build');
+    const lintStep = workflow.indexOf('- name: Lint');
+
+    expect(buildStep).toBeGreaterThanOrEqual(0);
+    expect(lintStep).toBeGreaterThanOrEqual(0);
+    expect(buildStep).toBeLessThan(lintStep);
+  });
 });
