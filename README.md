@@ -1,5 +1,10 @@
 # OpenCoven TypeScript SDK
 
+> [!WARNING]
+> **Experimental — not ready for public consumption.** This SDK is under active
+> development, has not been security audited, and may change without notice. Do
+> not use it for production workloads or with production credentials.
+
 This workspace provides the Phase 0 public SDK scaffold for OpenCoven.
 
 | Path | Package | Purpose |
@@ -36,6 +41,21 @@ pnpm lint
 consumers such as the Chat packed-package canary. It prints JSON containing a
 process-created temp `artifactRoot` plus the packed tarball paths for callers
 that intentionally keep those artifacts.
+
+## Local security checks
+
+Install the repository hooks once per checkout:
+
+```bash
+pre-commit install
+```
+
+The hook scans staged changes for likely credentials and private keys. Run the
+same checks across the full repository before sharing or publishing work:
+
+```bash
+pre-commit run --all-files
+```
 
 ## License
 
