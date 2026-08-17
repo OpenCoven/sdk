@@ -3,8 +3,18 @@ import { normalizeError, type NormalizedError } from '@opencoven/sdk-core';
 import {
   COVEN_DAEMON_PROTOCOL,
   type CovenHealth,
+  type CovenHealthResponse,
 } from './schemas.js';
 import type { CovenTransport } from './transport.js';
+
+type SupportedCovenCapabilities = Omit<CovenHealthResponse['capabilities'], 'eventCursor'> & {
+  eventCursor: 'sequence';
+};
+
+type SupportedCovenHealthResponse = Omit<CovenHealthResponse, 'apiVersion' | 'capabilities'> & {
+  apiVersion: string;
+  capabilities: SupportedCovenCapabilities;
+};
 
 export interface CovenClientOptions {
   transport: CovenTransport;
@@ -27,6 +37,50 @@ export class CovenClientError extends Error {
   }
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function invalidHealthResponse(): CovenClientError {
+  return new CovenClientError(
+    normalizeCovenError(
+      {
+        code: 'invalid_response',
+      },
+      'health',
+    ),
+  );
+}
+
+function validateCapabilities(value: unknown): value is SupportedCovenCapabilities {
+  if (!isObject(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.sessions === 'boolean' &&
+    typeof value.events === 'boolean' &&
+    value.eventCursor === 'sequence' &&
+    typeof value.structuredErrors === 'boolean'
+  );
+}
+
+function validateHealthResponse(response: unknown): response is SupportedCovenHealthResponse {
+  if (!isObject(response)) {
+    return false;
+  }
+
+  if (response.ok !== true) {
+    return false;
+  }
+
+  if (typeof response.apiVersion !== 'string' || typeof response.covenVersion !== 'string') {
+    return false;
+  }
+
+  return validateCapabilities(response.capabilities);
+}
+
 export class CovenClient {
   readonly #transport: CovenTransport;
 
@@ -38,8 +92,8 @@ export class CovenClient {
     try {
       const response = await this.#transport.health();
 
-      if (!response.ok || response.apiVersion !== COVEN_DAEMON_PROTOCOL) {
-        throw new Error('Invalid Coven health response.');
+      if (!validateHealthResponse(response) || response.apiVersion !== COVEN_DAEMON_PROTOCOL) {
+        throw invalidHealthResponse();
       }
 
       return { status: 'ok' };

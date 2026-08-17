@@ -1,6 +1,12 @@
-import { normalizeError, type NormalizedError } from '@opencoven/sdk-core';
+import {
+  assessCompatibility,
+  normalizeError,
+  type CompatibilityAssessment,
+  type NormalizedError,
+} from '@opencoven/sdk-core';
 
 import type { CaveHealth } from './schemas.js';
+import type { CaveHealthResponse } from './schemas.js';
 import type { CaveTransport } from './transport.js';
 
 export interface CaveClientOptions {
@@ -16,12 +22,60 @@ export function normalizeCaveError(error: unknown, operation: string): Normalize
 
 export class CaveClientError extends Error {
   readonly normalized: NormalizedError;
+  readonly compatibility: CompatibilityAssessment | undefined;
 
-  constructor(normalized: NormalizedError) {
-    super(`${normalized.system}.${normalized.operation}: ${normalized.code}`);
+  constructor(normalized: NormalizedError, compatibility?: CompatibilityAssessment) {
+    const suffix =
+      compatibility === undefined
+        ? ''
+        : ` (minimum ${compatibility.minimumClientVersion}, client ${compatibility.clientVersion})`;
+
+    super(`${normalized.system}.${normalized.operation}: ${normalized.code}${suffix}`);
     this.name = 'CaveClientError';
     this.normalized = normalized;
+    this.compatibility = compatibility;
   }
+}
+
+const CAVE_CLIENT_VERSION = '0.1.0' as const;
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function invalidHealthResponse(): CaveClientError {
+  return new CaveClientError(
+    normalizeCaveError(
+      {
+        code: 'invalid_response',
+      },
+      'health',
+    ),
+  );
+}
+
+function validateHealthResponse(response: unknown): response is CaveHealthResponse {
+  if (!isObject(response)) {
+    return false;
+  }
+
+  if (response.apiVersion !== undefined && typeof response.apiVersion !== 'string') {
+    return false;
+  }
+
+  if (response.minimumClientVersion !== undefined && typeof response.minimumClientVersion !== 'string') {
+    return false;
+  }
+
+  if (response.requestId !== undefined && typeof response.requestId !== 'string') {
+    return false;
+  }
+
+  if (!isObject(response.data)) {
+    return false;
+  }
+
+  return response.data.status === 'ok';
 }
 
 export class CaveClient {
@@ -35,8 +89,30 @@ export class CaveClient {
     try {
       const response = await this.#transport.health();
 
-      if (response.data.status !== 'ok') {
-        throw new Error('Invalid Cave health response.');
+      if (!validateHealthResponse(response)) {
+        throw invalidHealthResponse();
+      }
+
+      if (response.minimumClientVersion !== undefined) {
+        let compatibility: CompatibilityAssessment;
+
+        try {
+          compatibility = assessCompatibility(response.minimumClientVersion, CAVE_CLIENT_VERSION);
+        } catch {
+          throw invalidHealthResponse();
+        }
+
+        if (!compatibility.compatible) {
+          throw new CaveClientError(
+            normalizeCaveError(
+              {
+                code: 'incompatible_version',
+              },
+              'health',
+            ),
+            compatibility,
+          );
+        }
       }
 
       return response.data;

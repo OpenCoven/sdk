@@ -23,6 +23,7 @@ describe('public package entry points', () => {
   test('exports the supported public SDK surfaces', () => {
     expect(hasFunction(core, 'createMemorySecretStore')).toBe(true);
     expect(hasFunction(core, 'normalizeError')).toBe(true);
+    expect(hasFunction(core, 'assessCompatibility')).toBe(true);
     expect(hasFunction(cave, 'CaveClient')).toBe(true);
     expect(hasFunction(cave, 'normalizeCaveError')).toBe(true);
     expect(hasFunction(coven, 'CovenClient')).toBe(true);

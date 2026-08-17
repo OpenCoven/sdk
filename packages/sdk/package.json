@@ -25,6 +25,11 @@
   "engines": {
     "node": ">=24.18.0 <25"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenCoven/sdk.git",
+    "directory": "packages/sdk"
+  },
   "license": "AGPL-3.0-or-later OR MIT",
   "scripts": {
     "build": "tsup --config tsup.config.ts",

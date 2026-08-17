@@ -1,13 +1,18 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import {
+  PUBLIC_PACKAGES,
+  assertCanonicalRepository,
+  readPackedPackageManifest,
+} from './repository-metadata.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const artifactRoot = resolve(root, '.artifacts', 'verify-package');
 const tarballRoot = resolve(artifactRoot, 'tarballs');
 const fixtureRoot = resolve(artifactRoot, 'packed-consumer');
-const packageDirectories = ['core', 'cave', 'coven', 'sdk', 'cli'];
 
 function run(command, args, cwd) {
   execFileSync(command, args, {
@@ -87,6 +92,7 @@ import { formatCliOutput } from '@opencoven/dev-cli';
 import { createMemorySecretStore } from '@opencoven/sdk-core';
 import { createOpenCovenSdk } from '@opencoven/sdk';
 
+const eventCursor: string = 'sequence';
 const cave = new CaveClient({
   transport: {
     health: async () => ({ data: { status: 'ok' } }),
@@ -101,7 +107,7 @@ const coven = new CovenClient({
       capabilities: {
         sessions: true,
         events: true,
-        eventCursor: 'sequence',
+        eventCursor,
         structuredErrors: true,
       },
     }),
@@ -144,25 +150,38 @@ try {
   runPnpm(['--recursive', '--filter', './packages/*', 'build'], root);
 
   const tarballs = {};
-  for (const packageDirectory of packageDirectories) {
-    const destination = resolve(tarballRoot, packageDirectory);
+  for (const { packageName, repositoryDirectory, workspaceDirectory } of PUBLIC_PACKAGES) {
+    const destination = resolve(tarballRoot, workspaceDirectory);
     mkdirSync(destination, { recursive: true });
-    runPnpm(['pack', '--pack-destination', destination], resolve(root, 'packages', packageDirectory));
-    tarballs[packageDirectory] = findTarball(destination);
+    runPnpm(['pack', '--pack-destination', destination], resolve(root, 'packages', workspaceDirectory));
+    tarballs[workspaceDirectory] = findTarball(destination);
+    assertCanonicalRepository(
+      readPackedPackageManifest(tarballs[workspaceDirectory]),
+      repositoryDirectory,
+      `${packageName} packed manifest`,
+    );
   }
 
   createFixture(tarballs);
   runPnpm(['--ignore-workspace', 'install', '--offline', '--ignore-scripts'], fixtureRoot);
   runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);
 
-  for (const packageDirectory of packageDirectories) {
-    const packageName = packageDirectory === 'core' ? 'sdk-core' : packageDirectory === 'cli' ? 'dev-cli' : `${packageDirectory}-client`;
-    if (packageDirectory === 'sdk') {
+  for (const { packageName, repositoryDirectory, workspaceDirectory } of PUBLIC_PACKAGES) {
+    const installedDirectory = packageName.split('/')[1];
+    assertCanonicalRepository(
+      JSON.parse(
+        readFileSync(resolve(fixtureRoot, 'node_modules', '@opencoven', installedDirectory, 'package.json'), 'utf8'),
+      ),
+      repositoryDirectory,
+      `${packageName} installed manifest`,
+    );
+
+    if (workspaceDirectory === 'sdk') {
       continue;
     }
 
-    if (existsSync(resolve(fixtureRoot, 'node_modules', '@opencoven', packageName, 'src'))) {
-      throw new Error(`Packed ${packageDirectory} package unexpectedly contains source files.`);
+    if (existsSync(resolve(fixtureRoot, 'node_modules', '@opencoven', installedDirectory, 'src'))) {
+      throw new Error(`Packed ${workspaceDirectory} package unexpectedly contains source files.`);
     }
   }
 
