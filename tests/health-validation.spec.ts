@@ -344,8 +344,10 @@ describe('health validation', () => {
   });
 
   test('accepts finalized Coven health responses without eventCursor', async () => {
-    const { eventCursor: _eventCursor, ...capabilitiesWithoutEventCursor } =
-      VALID_COVEN_HEALTH_RESPONSE.capabilities;
+    const capabilitiesWithoutEventCursor = {
+      ...VALID_COVEN_HEALTH_RESPONSE.capabilities,
+    };
+    Reflect.deleteProperty(capabilitiesWithoutEventCursor, 'eventCursor');
     const client = new CovenClient({
       transport: {
         health: () =>
