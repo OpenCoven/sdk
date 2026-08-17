@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { randomBytes, createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -50,10 +50,31 @@ function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
 }
 
-function copyBinary(sourcePath, destinationPath) {
-  const bytes = requireFile(sourcePath);
-  mkdirSync(dirname(destinationPath), { recursive: true });
-  writeFileSync(destinationPath, bytes);
+function buildCopyPlan(caveRoot, covenRoot) {
+  const cave = verifyCaveAuthority(caveRoot);
+
+  return [
+    {
+      sourcePath: cave.fixturePath,
+      destinationPath: resolve(root, 'packages', 'cave', 'fixtures', 'contract-fixture.json'),
+      bytes: cave.fixture,
+    },
+    {
+      sourcePath: cave.digestPath,
+      destinationPath: resolve(root, 'packages', 'cave', 'fixtures', 'contract-fixture.sha256'),
+      bytes: cave.digest,
+    },
+    {
+      sourcePath: resolve(covenRoot, 'crates', 'coven-client', 'fixtures', 'health.json'),
+      destinationPath: resolve(root, 'packages', 'coven', 'fixtures', 'health.json'),
+      bytes: requireFile(resolve(covenRoot, 'crates', 'coven-client', 'fixtures', 'health.json')),
+    },
+    {
+      sourcePath: resolve(covenRoot, 'crates', 'coven-client', 'fixtures', 'error.json'),
+      destinationPath: resolve(root, 'packages', 'coven', 'fixtures', 'error.json'),
+      bytes: requireFile(resolve(covenRoot, 'crates', 'coven-client', 'fixtures', 'error.json')),
+    },
+  ];
 }
 
 function verifyCaveAuthority(caveRoot) {
@@ -75,42 +96,111 @@ function verifyCaveAuthority(caveRoot) {
   );
 
   const fixture = requireFile(fixturePath);
-  const digest = requireFile(digestPath).toString('utf8');
+  const digest = requireFile(digestPath);
   const expectedDigest = `${sha256(fixture)}\n`;
 
-  if (digest !== expectedDigest) {
+  if (digest.toString('utf8') !== expectedDigest) {
     throw new Error(
-      `Authority Cave fixture digest mismatch at ${digestPath}: expected ${expectedDigest.trim()}, received ${digest.trim()}.`,
+      `Authority Cave fixture digest mismatch at ${digestPath}: expected ${expectedDigest.trim()}, received ${digest.toString('utf8').trim()}.`,
     );
   }
 
   return {
     fixturePath,
     digestPath,
+    fixture,
+    digest,
   };
+}
+
+function prepareAtomicCopy(plan) {
+  const token = `${process.pid}-${Date.now()}-${randomBytes(6).toString('hex')}`;
+
+  return plan.map((entry, index) => ({
+    ...entry,
+    hadOriginal: existsSync(entry.destinationPath),
+    tempPath: `${entry.destinationPath}.importing-${token}-${index}.tmp`,
+    backupPath: `${entry.destinationPath}.importing-${token}-${index}.bak`,
+    staged: false,
+    backedUp: false,
+    installed: false,
+  }));
+}
+
+function rollbackAtomicCopy(plan, originalError) {
+  const rollbackErrors = [];
+
+  for (const entry of [...plan].reverse()) {
+    try {
+      if (entry.installed && existsSync(entry.destinationPath)) {
+        rmSync(entry.destinationPath, { force: true });
+      }
+
+      if (entry.backedUp && existsSync(entry.backupPath)) {
+        renameSync(entry.backupPath, entry.destinationPath);
+      }
+    } catch (error) {
+      rollbackErrors.push(
+        `Failed to restore ${entry.destinationPath}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    for (const cleanupPath of [entry.tempPath, entry.backupPath]) {
+      try {
+        rmSync(cleanupPath, { force: true });
+      } catch (error) {
+        rollbackErrors.push(
+          `Failed to clean up ${cleanupPath}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  if (rollbackErrors.length > 0) {
+    throw new Error(
+      `${originalError instanceof Error ? originalError.message : String(originalError)}\nRollback failed:\n${rollbackErrors.join('\n')}`,
+    );
+  }
+}
+
+function copyAllOrNothing(plan) {
+  const atomicPlan = prepareAtomicCopy(plan);
+
+  try {
+    for (const entry of atomicPlan) {
+      mkdirSync(dirname(entry.destinationPath), { recursive: true });
+      writeFileSync(entry.tempPath, entry.bytes, { flag: 'wx' });
+      entry.staged = true;
+    }
+
+    for (const entry of atomicPlan) {
+      if (!entry.hadOriginal) {
+        continue;
+      }
+
+      renameSync(entry.destinationPath, entry.backupPath);
+      entry.backedUp = true;
+    }
+
+    for (const entry of atomicPlan) {
+      renameSync(entry.tempPath, entry.destinationPath);
+      entry.installed = true;
+    }
+  } catch (error) {
+    rollbackAtomicCopy(atomicPlan, error);
+    throw error;
+  }
+
+  for (const entry of atomicPlan) {
+    rmSync(entry.backupPath, { force: true });
+  }
 }
 
 function main() {
   const { caveRoot, covenRoot } = parseArgs(process.argv.slice(2));
-  const cave = verifyCaveAuthority(caveRoot);
+  const plan = buildCopyPlan(caveRoot, covenRoot);
 
-  copyBinary(
-    cave.fixturePath,
-    resolve(root, 'packages', 'cave', 'fixtures', 'contract-fixture.json'),
-  );
-  copyBinary(
-    cave.digestPath,
-    resolve(root, 'packages', 'cave', 'fixtures', 'contract-fixture.sha256'),
-  );
-
-  copyBinary(
-    resolve(covenRoot, 'crates', 'coven-client', 'fixtures', 'health.json'),
-    resolve(root, 'packages', 'coven', 'fixtures', 'health.json'),
-  );
-  copyBinary(
-    resolve(covenRoot, 'crates', 'coven-client', 'fixtures', 'error.json'),
-    resolve(root, 'packages', 'coven', 'fixtures', 'error.json'),
-  );
+  copyAllOrNothing(plan);
 
   process.stdout.write('Authority fixtures synchronized.\n');
 }
