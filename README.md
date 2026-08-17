@@ -50,11 +50,12 @@ Install the repository hooks once per checkout:
 pre-commit install
 ```
 
-The hook scans staged changes for likely credentials and private keys. Run the
-same checks across the full repository before sharing or publishing work:
+The hook scans staged changes for likely credentials and private keys. To scan
+the current branch's full Git history before sharing or publishing work, install
+Gitleaks and run:
 
 ```bash
-pre-commit run --all-files
+gitleaks git .
 ```
 
 ## License
