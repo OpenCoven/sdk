@@ -28,7 +28,7 @@ describe('public package manifests', () => {
 
       expect(manifest.name).toBe(name);
       expect(Object.keys(manifest.exports)).toEqual(['.', './package.json']);
-      expect(manifest.license).toBe('AGPL-3.0-or-later OR MIT');
+      expect(manifest.license).toBe('AGPL-3.0-only OR MIT');
       expect(manifest.version).toBe('0.1.0');
       expect(manifest.engines?.node).toBe('>=24.18.0 <25');
     }

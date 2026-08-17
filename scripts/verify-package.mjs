@@ -51,7 +51,7 @@ function assertPackedLicense(tarball, packageDirectory) {
 
   if (
     manifest.name !== packageNames[packageDirectory] ||
-    manifest.license !== 'AGPL-3.0-or-later OR MIT' ||
+    manifest.license !== 'AGPL-3.0-only OR MIT' ||
     !selector.includes('OpenCoven SDK') ||
     selector.includes('coven-cave') ||
     !agpl.includes('GNU AFFERO GENERAL PUBLIC LICENSE') ||
