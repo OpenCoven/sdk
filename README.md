@@ -28,12 +28,13 @@ pnpm test
 pnpm --recursive build
 node scripts/verify-contracts.mjs
 node scripts/verify-package.mjs
-node scripts/pack-public-packages.mjs --output-dir .artifacts/public-tarballs
+node scripts/pack-public-packages.mjs --artifact-name public-tarballs
 pnpm lint
 ```
 
 `pack-public-packages.mjs` is the reusable tarball producer for cross-repository
-consumers such as the Chat packed-package canary.
+consumers such as the Chat packed-package canary. Packed tarballs are always
+written under `.artifacts/pack-public-packages/<artifact-name>`.
 
 ## License
 
