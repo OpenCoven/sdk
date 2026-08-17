@@ -1,147 +1,102 @@
 import {
-  existsSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, test } from 'vitest';
 
-import {
-  preparePackArtifactOutputDirectory,
-  removePackArtifactOutputDirectory,
-  resolvePackArtifactOutputDirectory,
-} from '../scripts/pack-public-packages.mjs';
+import { createPackArtifactOutputDirectory } from '../scripts/pack-public-packages.mjs';
+import { cleanupOwnedTempRoot, createOwnedTempDirectory } from '../scripts/owned-temp-directory.mjs';
 
-const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const scratchRoot = resolve(root, '.artifacts', 'pack-public-packages-safety-spec');
-
-function createRepository(name: string): string {
-  const repositoryRoot = resolve(scratchRoot, name, 'repo');
-  mkdirSync(repositoryRoot, { recursive: true });
-  return repositoryRoot;
-}
-
-function createExternalDirectory(name: string): string {
-  const externalRoot = resolve(scratchRoot, name, 'external');
-  mkdirSync(externalRoot, { recursive: true });
-  return externalRoot;
-}
+const createdTempDirectories: Array<ReturnType<typeof createOwnedTempDirectory>> = [];
+const scratchRoots: string[] = [];
 
 afterEach(() => {
-  rmSync(scratchRoot, { force: true, recursive: true });
+  while (createdTempDirectories.length > 0) {
+    const context = createdTempDirectories.pop();
+
+    if (context === undefined) {
+      continue;
+    }
+
+    try {
+      cleanupOwnedTempRoot(context);
+    } catch {
+      rmSync(context.rootPath, { force: true, recursive: true });
+    }
+  }
+
+  while (scratchRoots.length > 0) {
+    const scratchRoot = scratchRoots.pop();
+
+    if (scratchRoot !== undefined) {
+      rmSync(scratchRoot, { force: true, recursive: true });
+    }
+  }
 });
 
 describe('pack-public-packages artifact directory safety', () => {
-  test.each(['.', '..', '../escape', '/Users/buns', '/'])('rejects unsafe artifact name %s', (name) => {
-    expect(() => resolvePackArtifactOutputDirectory(name)).toThrow(/safe child name|must stay inside/);
+  test.each(['.', '..', '../escape', '/Users/buns', '/'])(
+    'rejects unsafe temp child path segment %s',
+    (name) => {
+      expect(() =>
+        createOwnedTempDirectory({
+          prefix: 'opencoven-sdk-pack-public-packages-test',
+          childSegments: [name],
+        }),
+      ).toThrow(/safe child name/);
+    },
+  );
+
+  test('creates mode-0700 temp directories under the real OS temp directory', () => {
+    const outputDirectory = createPackArtifactOutputDirectory();
+    createdTempDirectories.push(outputDirectory);
+
+    expect(realpathSync(outputDirectory.rootPath).startsWith(realpathSync(tmpdir()))).toBe(true);
+    expect(outputDirectory.path).toBe(resolve(outputDirectory.rootPath, 'tarballs'));
+    expect(lstatSync(outputDirectory.rootPath).mode & 0o777).toBe(0o700);
+    expect(lstatSync(outputDirectory.path).mode & 0o777).toBe(0o700);
   });
 
-  test('rejects a symlinked .artifacts base directory', () => {
-    const repositoryRoot = createRepository('symlinked-artifacts');
-    const externalRoot = createExternalDirectory('symlinked-artifacts');
+  test('rejects cleanup after the owned root identity changes', () => {
+    const outputDirectory = createPackArtifactOutputDirectory();
+    createdTempDirectories.push(outputDirectory);
 
-    symlinkSync(externalRoot, resolve(repositoryRoot, '.artifacts'));
+    rmSync(outputDirectory.rootPath, { force: true, recursive: true });
+    mkdirSync(outputDirectory.rootPath, { recursive: true, mode: 0o700 });
 
-    expect(() =>
-      resolvePackArtifactOutputDirectory('public-tarballs', { repositoryRoot }),
-    ).toThrow(/must not be a symlink/);
-  });
-
-  test('rejects a symlinked intermediate artifact directory', () => {
-    const repositoryRoot = createRepository('symlinked-intermediate');
-    const externalRoot = createExternalDirectory('symlinked-intermediate');
-
-    mkdirSync(resolve(repositoryRoot, '.artifacts'));
-    symlinkSync(externalRoot, resolve(repositoryRoot, '.artifacts', 'pack-public-packages'));
-
-    expect(() =>
-      resolvePackArtifactOutputDirectory('public-tarballs', { repositoryRoot }),
-    ).toThrow(/must not be a symlink/);
-  });
-
-  test('creates and accepts real artifact directories inside the repository root', () => {
-    const repositoryRoot = createRepository('real-directories');
-    const outputDirectory = preparePackArtifactOutputDirectory('public-tarballs', {
-      repositoryRoot,
-    });
-
-    expect(outputDirectory).toBe(
-      resolve(repositoryRoot, '.artifacts', 'pack-public-packages', 'public-tarballs'),
-    );
-    expect(lstatSync(resolve(repositoryRoot, '.artifacts')).isDirectory()).toBe(true);
-    expect(
-      lstatSync(resolve(repositoryRoot, '.artifacts', 'pack-public-packages')).isDirectory(),
-    ).toBe(true);
-    expect(lstatSync(outputDirectory).isDirectory()).toBe(true);
-  });
-
-  test('rejects cleanup paths that are the base directory, repository root, or an external path', () => {
-    const repositoryRoot = createRepository('cleanup-guards');
-    const outputDirectory = preparePackArtifactOutputDirectory('public-tarballs', {
-      repositoryRoot,
-    });
-    expect(outputDirectory).toContain('/public-tarballs');
-
-    expect(() =>
-      removePackArtifactOutputDirectory(resolve(repositoryRoot, '.artifacts', 'pack-public-packages'), {
-        repositoryRoot,
-      }),
-    ).toThrow(/must stay inside/);
-    expect(() => removePackArtifactOutputDirectory(repositoryRoot, { repositoryRoot })).toThrow(
-      /must stay inside/,
-    );
-    expect(() =>
-      removePackArtifactOutputDirectory(resolve(scratchRoot, 'outside'), { repositoryRoot }),
-    ).toThrow(/must stay inside/);
-  });
-
-  test('replaces a symlinked artifact leaf without deleting the symlink target', () => {
-    const repositoryRoot = createRepository('leaf-symlink-cleanup');
-    const externalRoot = createExternalDirectory('leaf-symlink-cleanup');
-    const outputDirectory = resolve(
-      repositoryRoot,
-      '.artifacts',
-      'pack-public-packages',
-      'public-tarballs',
-    );
-
-    mkdirSync(resolve(repositoryRoot, '.artifacts', 'pack-public-packages'), {
-      recursive: true,
-    });
-    writeFileSync(resolve(externalRoot, 'outside.txt'), 'outside\n');
-    symlinkSync(externalRoot, outputDirectory);
-
-    const preparedOutputDirectory = preparePackArtifactOutputDirectory('public-tarballs', {
-      repositoryRoot,
-    });
-
-    expect(preparedOutputDirectory).toBe(outputDirectory);
-    expect(lstatSync(preparedOutputDirectory).isDirectory()).toBe(true);
-    expect(existsSync(resolve(preparedOutputDirectory, 'outside.txt'))).toBe(false);
-    expect(readFileSync(resolve(externalRoot, 'outside.txt'), 'utf8')).toBe('outside\n');
+    expect(() => cleanupOwnedTempRoot(outputDirectory)).toThrow(/changed identity/);
   });
 
   test('removes nested symlinks without following them during cleanup', () => {
-    const repositoryRoot = createRepository('nested-symlink-cleanup');
-    const externalRoot = createExternalDirectory('nested-symlink-cleanup');
-    const outputDirectory = preparePackArtifactOutputDirectory('public-tarballs', {
-      repositoryRoot,
-    });
+    const outputDirectory = createPackArtifactOutputDirectory();
+    const scratchRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-sdk-pack-public-packages-safety-spec-'),
+    );
+    const externalRoot = resolve(scratchRoot, 'external');
 
-    mkdirSync(resolve(outputDirectory, 'nested'), { recursive: true });
-    writeFileSync(resolve(outputDirectory, 'nested', 'local.txt'), 'local\n');
+    createdTempDirectories.push(outputDirectory);
+    scratchRoots.push(scratchRoot);
+
+    mkdirSync(externalRoot, { recursive: true });
+    mkdirSync(resolve(outputDirectory.path, 'nested'), { recursive: true });
+    writeFileSync(resolve(outputDirectory.path, 'nested', 'local.txt'), 'local\n');
     writeFileSync(resolve(externalRoot, 'outside.txt'), 'outside\n');
-    symlinkSync(externalRoot, resolve(outputDirectory, 'nested', 'escape'));
+    symlinkSync(externalRoot, resolve(outputDirectory.path, 'nested', 'escape'));
 
-    removePackArtifactOutputDirectory(outputDirectory, { repositoryRoot });
+    cleanupOwnedTempRoot(outputDirectory);
+    createdTempDirectories.pop();
 
-    expect(existsSync(outputDirectory)).toBe(false);
+    expect(() => lstatSync(outputDirectory.rootPath)).toThrow();
+    expect(lstatSync(externalRoot).isDirectory()).toBe(true);
     expect(readFileSync(resolve(externalRoot, 'outside.txt'), 'utf8')).toBe('outside\n');
   });
 });

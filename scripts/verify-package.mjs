@@ -2,7 +2,7 @@ import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { prepareArtifactDirectory, removeArtifactPath, resolveArtifactDirectory } from './artifact-directory.mjs';
+import { cleanupOwnedTempRoot, createOwnedTempDirectory } from './owned-temp-directory.mjs';
 import {
   assertPackedPackagesExcludeSources,
   createPublicPackageOverrides,
@@ -14,15 +14,6 @@ import {
 } from './package-artifacts.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const artifactContext = resolveArtifactDirectory({
-  repositoryRoot: root,
-  artifactName: 'verify-package',
-  artifactNameLabel: 'Artifact directory',
-});
-const artifactRoot = artifactContext.artifactPath;
-const tarballRoot = resolve(artifactRoot, 'tarballs');
-const fixtureRoot = resolve(artifactRoot, 'packed-consumer');
-const exampleRoot = resolve(artifactRoot, 'examples');
 
 function createToolingDevDependencies(existing = {}) {
   return {
@@ -62,7 +53,7 @@ function rewriteConsumerManifest(manifestPath, tarballs) {
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-function createFixture(tarballs) {
+function createFixture(fixtureRoot, tarballs) {
   const overrides = createPublicPackageOverrides(tarballs);
 
   mkdirSync(resolve(fixtureRoot, 'src'), { recursive: true });
@@ -169,7 +160,7 @@ try {
   );
 }
 
-function createPackedExamples(tarballs) {
+function createPackedExamples({ artifactRoot, exampleRoot, tarballs }) {
   mkdirSync(exampleRoot, { recursive: true });
   writeFileSync(resolve(artifactRoot, 'tsconfig.base.json'), readFileSync(resolve(root, 'tsconfig.base.json')));
 
@@ -182,12 +173,17 @@ function createPackedExamples(tarballs) {
   }
 }
 
+let artifactContext;
+
 try {
-  prepareArtifactDirectory({
-    repositoryRoot: root,
-    artifactName: 'verify-package',
-    artifactNameLabel: 'Artifact directory',
+  artifactContext = createOwnedTempDirectory({
+    prefix: 'opencoven-sdk-verify-package',
   });
+
+  const artifactRoot = artifactContext.rootPath;
+  const tarballRoot = resolve(artifactRoot, 'tarballs');
+  const fixtureRoot = resolve(artifactRoot, 'packed-consumer');
+  const exampleRoot = resolve(artifactRoot, 'examples');
   mkdirSync(tarballRoot, { recursive: true });
 
   const tarballs = packPublicPackages({
@@ -195,8 +191,12 @@ try {
     destinationRoot: tarballRoot,
   });
 
-  createFixture(tarballs);
-  createPackedExamples(tarballs);
+  createFixture(fixtureRoot, tarballs);
+  createPackedExamples({
+    artifactRoot,
+    exampleRoot,
+    tarballs,
+  });
   runPnpm(isolatedInstallArgs(), fixtureRoot);
   runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);
   assertPackedPackagesExcludeSources(fixtureRoot);
@@ -212,5 +212,7 @@ try {
   run(resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven'), ['--json', '--help'], fixtureRoot);
   process.stdout.write('Packed package verification passed.\n');
 } finally {
-  removeArtifactPath(artifactRoot, artifactContext);
+  if (artifactContext !== undefined) {
+    cleanupOwnedTempRoot(artifactContext);
+  }
 }

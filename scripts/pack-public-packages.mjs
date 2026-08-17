@@ -2,71 +2,32 @@ import { writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-  prepareArtifactDirectory,
-  removeArtifactPath,
-  resolveArtifactDirectory,
-} from './artifact-directory.mjs';
+import { createOwnedTempDirectory } from './owned-temp-directory.mjs';
 import { packPublicPackages } from './package-artifacts.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const defaultArtifactName = 'default';
 
 function printUsage() {
   process.stdout.write(
     [
-      'usage: pack-public-packages.mjs [--artifact-name <safe-child-name>] [--skip-build]',
+      'usage: pack-public-packages.mjs [--skip-build] [--json-file <path>]',
       '',
       'Packs the reviewed public SDK packages into tarballs and prints a JSON map',
-      'from workspace package directory names to tarball paths.',
+      'and owning temp artifact root for callers that need packed tarballs.',
       '',
     ].join('\n'),
   );
 }
 
-function resolvePackArtifactContext(repositoryRoot = root, artifactName = defaultArtifactName) {
-  return resolveArtifactDirectory({
-    repositoryRoot,
-    parentSegments: ['pack-public-packages'],
-    parentLabel: 'Artifact directory',
-    artifactName,
+export function createPackArtifactOutputDirectory() {
+  return createOwnedTempDirectory({
+    prefix: 'opencoven-sdk-pack-public-packages',
+    childSegments: ['tarballs'],
   });
-}
-
-export function resolvePackArtifactOutputDirectory(
-  artifactName = defaultArtifactName,
-  options = {},
-) {
-  return resolvePackArtifactContext(options.repositoryRoot, artifactName).artifactPath;
-}
-
-export function preparePackArtifactOutputDirectory(
-  artifactName = defaultArtifactName,
-  options = {},
-) {
-  return prepareArtifactDirectory({
-    repositoryRoot: options.repositoryRoot ?? root,
-    parentSegments: ['pack-public-packages'],
-    parentLabel: 'Artifact directory',
-    artifactName,
-  }).artifactPath;
-}
-
-export function removePackArtifactOutputDirectory(outputDirectory, options = {}) {
-  const context = resolvePackArtifactContext(options.repositoryRoot ?? root, defaultArtifactName);
-
-  removeArtifactPath(
-    outputDirectory,
-    {
-      artifactBasePath: context.parentPath,
-      artifactBaseRealPath: context.parentRealPath,
-    },
-  );
 }
 
 export function parseArgs(argv) {
   const options = {
-    artifactName: process.env.OPENCOVEN_PACK_PUBLIC_ARTIFACT_NAME ?? defaultArtifactName,
     build: true,
     jsonFile: undefined,
   };
@@ -81,18 +42,6 @@ export function parseArgs(argv) {
 
     if (argument === '--skip-build') {
       options.build = false;
-      continue;
-    }
-
-    if (argument === '--artifact-name') {
-      const artifactName = argv[index + 1];
-
-      if (artifactName === undefined) {
-        throw new Error('Missing value for --artifact-name.');
-      }
-
-      options.artifactName = artifactName;
-      index += 1;
       continue;
     }
 
@@ -111,21 +60,21 @@ export function parseArgs(argv) {
     throw new Error(`Unknown argument: ${argument}`);
   }
 
-  options.outputDir = resolvePackArtifactOutputDirectory(options.artifactName);
   return options;
 }
 
 export function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
-
-  preparePackArtifactOutputDirectory(options.artifactName);
-
+  const artifactDirectory = createPackArtifactOutputDirectory();
   const json = `${JSON.stringify(
-    packPublicPackages({
-      root,
-      destinationRoot: options.outputDir,
-      build: options.build,
-    }),
+    {
+      artifactRoot: artifactDirectory.rootPath,
+      tarballs: packPublicPackages({
+        root,
+        destinationRoot: artifactDirectory.path,
+        build: options.build,
+      }),
+    },
     null,
     2,
   )}\n`;

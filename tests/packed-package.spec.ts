@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -14,8 +15,6 @@ import {
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const verifier = resolve(root, 'scripts/verify-package.mjs');
-const artifactRoot = resolve(root, '.artifacts', 'packed-package-spec');
-const tarballRoot = resolve(artifactRoot, 'tarballs');
 
 function runPnpm(args: string[], cwd: string) {
   return spawnSync('corepack', ['pnpm@10.34.0', ...args], {
@@ -39,7 +38,8 @@ function findTarball(directory: string): string {
 
 describe('packed public packages', () => {
   test('pack tarballs preserve canonical repository metadata', () => {
-    rmSync(artifactRoot, { force: true, recursive: true });
+    const artifactRoot = mkdtempSync(resolve(tmpdir(), 'opencoven-packed-package-spec-'));
+    const tarballRoot = resolve(artifactRoot, 'tarballs');
     mkdirSync(tarballRoot, { recursive: true });
 
     try {

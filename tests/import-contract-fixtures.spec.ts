@@ -4,19 +4,21 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, test } from 'vitest';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const artifactRoot = resolve(root, '.artifacts', 'import-contract-fixtures-spec');
 const testFaultEnv = 'OPENCOVEN_IMPORT_CONTRACT_FIXTURES_TEST_FAULT';
+const scratchRoots: string[] = [];
 
 const destinationFiles = [
   'packages/cave/fixtures/contract-fixture.json',
@@ -61,8 +63,9 @@ function findImportTemps(workspaceRoot: string): string[] {
 }
 
 function createWorkspace(): string {
+  const artifactRoot = mkdtempSync(resolve(tmpdir(), 'opencoven-import-contract-fixtures-spec-'));
+  scratchRoots.push(artifactRoot);
   const workspaceRoot = resolve(artifactRoot, 'workspace');
-  rmSync(workspaceRoot, { force: true, recursive: true });
   mkdirSync(resolve(workspaceRoot, 'scripts'), { recursive: true });
   cpSync(
     resolve(root, 'scripts', 'import-contract-fixtures.mjs'),
@@ -147,7 +150,13 @@ function runImporter(
 }
 
 afterEach(() => {
-  rmSync(artifactRoot, { force: true, recursive: true });
+  while (scratchRoots.length > 0) {
+    const scratchRoot = scratchRoots.pop();
+
+    if (scratchRoot !== undefined) {
+      rmSync(scratchRoot, { force: true, recursive: true });
+    }
+  }
 });
 
 describe('import contract fixtures script', () => {
