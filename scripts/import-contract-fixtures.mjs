@@ -4,6 +4,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const testFaultEnv = 'OPENCOVEN_IMPORT_CONTRACT_FIXTURES_TEST_FAULT';
+const testFault = parseTestFault(process.env[testFaultEnv]);
 
 const defaultCaveRoot = resolve(root, '..', 'coven-cave', '.worktrees', 'client-v1-contract');
 const defaultCovenRoot = resolve(root, '..', 'coven', '.worktrees', 'coven-client');
@@ -48,6 +50,37 @@ function requireFile(path) {
 
 function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
+}
+
+function parseTestFault(value) {
+  if (typeof value !== 'string' || value.length === 0) {
+    return null;
+  }
+
+  const [phase, indexText, ...unexpected] = value.split(':');
+  const validPhase =
+    phase === 'stage-write' || phase === 'backup-rename' || phase === 'commit-rename';
+
+  if (unexpected.length > 0 || !validPhase || !/^(0|[1-9]\d*)$/.test(indexText)) {
+    throw new Error(
+      `Invalid ${testFaultEnv} value "${value}". Expected <stage-write|backup-rename|commit-rename>:<index>.`,
+    );
+  }
+
+  return {
+    phase,
+    index: Number(indexText),
+  };
+}
+
+function maybeInjectTestFault(phase, index, path) {
+  if (testFault?.phase !== phase || testFault.index !== index) {
+    return;
+  }
+
+  throw new Error(
+    `[test-only] injected ${phase} failure for ${path} via ${testFaultEnv}.`,
+  );
 }
 
 function buildCopyPlan(caveRoot, covenRoot) {
@@ -118,6 +151,7 @@ function prepareAtomicCopy(plan) {
 
   return plan.map((entry, index) => ({
     ...entry,
+    planIndex: index,
     hadOriginal: existsSync(entry.destinationPath),
     tempPath: `${entry.destinationPath}.importing-${token}-${index}.tmp`,
     backupPath: `${entry.destinationPath}.importing-${token}-${index}.bak`,
@@ -169,6 +203,7 @@ function copyAllOrNothing(plan) {
   try {
     for (const entry of atomicPlan) {
       mkdirSync(dirname(entry.destinationPath), { recursive: true });
+      maybeInjectTestFault('stage-write', entry.planIndex, entry.tempPath);
       writeFileSync(entry.tempPath, entry.bytes, { flag: 'wx' });
       entry.staged = true;
     }
@@ -178,11 +213,13 @@ function copyAllOrNothing(plan) {
         continue;
       }
 
+      maybeInjectTestFault('backup-rename', entry.planIndex, entry.destinationPath);
       renameSync(entry.destinationPath, entry.backupPath);
       entry.backedUp = true;
     }
 
     for (const entry of atomicPlan) {
+      maybeInjectTestFault('commit-rename', entry.planIndex, entry.destinationPath);
       renameSync(entry.tempPath, entry.destinationPath);
       entry.installed = true;
     }

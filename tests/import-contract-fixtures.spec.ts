@@ -16,6 +16,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const artifactRoot = resolve(root, '.artifacts', 'import-contract-fixtures-spec');
+const testFaultEnv = 'OPENCOVEN_IMPORT_CONTRACT_FIXTURES_TEST_FAULT';
 
 const destinationFiles = [
   'packages/cave/fixtures/contract-fixture.json',
@@ -118,7 +119,12 @@ function stageCovenAuthority(covenRoot: string, fixtures: { health: Buffer; erro
   }
 }
 
-function runImporter(workspaceRoot: string, caveRoot: string, covenRoot: string) {
+function runImporter(
+  workspaceRoot: string,
+  caveRoot: string,
+  covenRoot: string,
+  env: Record<string, string> = {},
+) {
   return spawnSync(
     process.execPath,
     [
@@ -131,6 +137,11 @@ function runImporter(workspaceRoot: string, caveRoot: string, covenRoot: string)
     {
       cwd: workspaceRoot,
       encoding: 'utf8',
+      env: {
+        ...process.env,
+        [testFaultEnv]: '',
+        ...env,
+      },
     },
   );
 }
@@ -178,6 +189,78 @@ describe('import contract fixtures script', () => {
     });
     expect(findImportTemps(workspaceRoot)).toEqual([]);
   });
+
+  test('ignores lookalike environment variables unless the test-only fault variable is explicitly set', () => {
+    const workspaceRoot = createWorkspace();
+    const { caveRoot, covenRoot } = createAuthorityRoots(workspaceRoot);
+    const caveFixture = Buffer.from('{"contract":{"identityKinds":["stable"]}}\n', 'utf8');
+    const healthFixture = Buffer.from('{"ok":true,"source":"lookalike-health"}\n', 'utf8');
+    const errorFixture = Buffer.from('{"error":{"code":"lookalike-error"}}\n', 'utf8');
+
+    stageCaveAuthority(caveRoot, caveFixture);
+    stageCovenAuthority(covenRoot, {
+      health: healthFixture,
+      error: errorFixture,
+    });
+
+    const result = runImporter(workspaceRoot, caveRoot, covenRoot, {
+      OPENCOVEN_IMPORT_CONTRACT_FIXTURES_FAULT: 'commit-rename:2',
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toBe('Authority fixtures synchronized.\n');
+    expect(readWorkspaceFixtures(workspaceRoot)).toEqual({
+      'packages/cave/fixtures/contract-fixture.json': caveFixture,
+      'packages/cave/fixtures/contract-fixture.sha256': Buffer.from(`${sha256(caveFixture)}\n`, 'utf8'),
+      'packages/coven/fixtures/health.json': healthFixture,
+      'packages/coven/fixtures/error.json': errorFixture,
+    });
+    expect(findImportTemps(workspaceRoot)).toEqual([]);
+  });
+
+  test.each([
+    ['stage-write:2', 'stage-write'],
+    ['backup-rename:1', 'backup-rename'],
+    ['commit-rename:2', 'commit-rename'],
+  ])(
+    'restores every destination fixture after an injected %s failure',
+    (faultValue, faultPhase) => {
+      const workspaceRoot = createWorkspace();
+      const before = readWorkspaceFixtures(workspaceRoot);
+      const { caveRoot, covenRoot } = createAuthorityRoots(workspaceRoot);
+
+      stageCaveAuthority(
+        caveRoot,
+        Buffer.from(
+          JSON.stringify(
+            {
+              contract: {
+                identityKinds: ['rollback-coverage'],
+              },
+              examples: {
+                fault: faultValue,
+              },
+            },
+            null,
+            2,
+          ),
+        ),
+      );
+      stageCovenAuthority(covenRoot, {
+        health: Buffer.from(`{"ok":true,"source":"${faultPhase}-health"}\n`, 'utf8'),
+        error: Buffer.from(`{"error":{"code":"${faultPhase}-error"}}\n`, 'utf8'),
+      });
+
+      const result = runImporter(workspaceRoot, caveRoot, covenRoot, {
+        [testFaultEnv]: faultValue,
+      });
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(`[test-only] injected ${faultPhase} failure`);
+      expect(readWorkspaceFixtures(workspaceRoot)).toEqual(before);
+      expect(findImportTemps(workspaceRoot)).toEqual([]);
+    },
+  );
 
   test('leaves every destination fixture unchanged when a later Coven source is missing', () => {
     const workspaceRoot = createWorkspace();
