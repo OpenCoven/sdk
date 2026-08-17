@@ -27,4 +27,32 @@ describe('opencoven binary', () => {
       version: '0.1.0',
     });
   });
+
+  test('writes human command failures to stderr', () => {
+    const result = spawnSync(process.execPath, [binary, 'status'], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe('This command is reserved for a future operational task.\n');
+  });
+
+  test('keeps JSON command failures machine-readable on stdout', () => {
+    const result = spawnSync(process.execPath, [binary, '--json', 'status'], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      command: 'status',
+      error: {
+        code: 'not_implemented',
+      },
+      ok: false,
+    });
+  });
 });

@@ -15,6 +15,13 @@ const packageNames = {
   sdk: '@opencoven/sdk',
   cli: '@opencoven/dev-cli',
 };
+const installedPackageNames = {
+  core: 'sdk-core',
+  cave: 'cave-client',
+  coven: 'coven-client',
+  sdk: 'sdk',
+  cli: 'dev-cli',
+};
 
 function run(command, args, cwd) {
   execFileSync(command, args, {
@@ -189,10 +196,7 @@ try {
   runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);
 
   for (const packageDirectory of packageDirectories) {
-    const packageName = packageDirectory === 'core' ? 'sdk-core' : packageDirectory === 'cli' ? 'dev-cli' : `${packageDirectory}-client`;
-    if (packageDirectory === 'sdk') {
-      continue;
-    }
+    const packageName = installedPackageNames[packageDirectory];
 
     if (existsSync(resolve(fixtureRoot, 'node_modules', '@opencoven', packageName, 'src'))) {
       throw new Error(`Packed ${packageDirectory} package unexpectedly contains source files.`);

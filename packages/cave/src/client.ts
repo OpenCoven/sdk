@@ -1,6 +1,6 @@
 import { normalizeError, type NormalizedError } from '@opencoven/sdk-core';
 
-import type { CaveHealth } from './schemas.js';
+import type { CaveHealth, CaveHealthResponse } from './schemas.js';
 import type { CaveTransport } from './transport.js';
 
 export interface CaveClientOptions {
@@ -24,6 +24,20 @@ export class CaveClientError extends Error {
   }
 }
 
+function isCaveHealthResponse(response: unknown): response is CaveHealthResponse {
+  if (typeof response !== 'object' || response === null) {
+    return false;
+  }
+
+  const data = (response as { data?: unknown }).data;
+
+  return (
+    typeof data === 'object' &&
+    data !== null &&
+    (data as { status?: unknown }).status === 'ok'
+  );
+}
+
 export class CaveClient {
   readonly #transport: CaveTransport;
 
@@ -33,10 +47,10 @@ export class CaveClient {
 
   async health(): Promise<CaveHealth> {
     try {
-      const response = await this.#transport.health();
+      const response: unknown = await this.#transport.health();
 
-      if (response.data.status !== 'ok') {
-        throw new Error('Invalid Cave health response.');
+      if (!isCaveHealthResponse(response)) {
+        throw new CaveClientError(normalizeCaveError({ code: 'invalid_response' }, 'health'));
       }
 
       return response.data;

@@ -3,6 +3,7 @@ import { normalizeError, type NormalizedError } from '@opencoven/sdk-core';
 import {
   COVEN_DAEMON_PROTOCOL,
   type CovenHealth,
+  type CovenHealthResponse,
 } from './schemas.js';
 import type { CovenTransport } from './transport.js';
 
@@ -27,6 +28,25 @@ export class CovenClientError extends Error {
   }
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : undefined;
+}
+
+function isCovenHealthResponse(response: unknown): response is CovenHealthResponse {
+  const responseRecord = asRecord(response);
+  const capabilities = asRecord(responseRecord?.capabilities);
+
+  return (
+    responseRecord?.ok === true &&
+    responseRecord.apiVersion === COVEN_DAEMON_PROTOCOL &&
+    typeof responseRecord.covenVersion === 'string' &&
+    typeof capabilities?.sessions === 'boolean' &&
+    typeof capabilities.events === 'boolean' &&
+    typeof capabilities.eventCursor === 'string' &&
+    typeof capabilities.structuredErrors === 'boolean'
+  );
+}
+
 export class CovenClient {
   readonly #transport: CovenTransport;
 
@@ -36,10 +56,10 @@ export class CovenClient {
 
   async health(): Promise<CovenHealth> {
     try {
-      const response = await this.#transport.health();
+      const response: unknown = await this.#transport.health();
 
-      if (!response.ok || response.apiVersion !== COVEN_DAEMON_PROTOCOL) {
-        throw new Error('Invalid Coven health response.');
+      if (!isCovenHealthResponse(response)) {
+        throw new CovenClientError(normalizeCovenError({ code: 'invalid_response' }, 'health'));
       }
 
       return { status: 'ok' };
