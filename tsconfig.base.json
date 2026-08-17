@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": [
+      "ES2024"
+    ],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "useUnknownInCatchVariables": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "declaration": true,
+    "sourceMap": true,
+    "ignoreDeprecations": "6.0",
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@opencoven/sdk-core": [
+        "packages/core/src/index.ts"
+      ],
+      "@opencoven/cave-client": [
+        "packages/cave/src/index.ts"
+      ],
+      "@opencoven/coven-client": [
+        "packages/coven/src/index.ts"
+      ],
+      "@opencoven/sdk": [
+        "packages/sdk/src/index.ts"
+      ],
+      "@opencoven/dev-cli": [
+        "packages/cli/src/index.ts"
+      ]
+    }
+  }
+}

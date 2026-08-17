@@ -1,0 +1,42 @@
+{
+  "name": "@opencoven/sdk",
+  "version": "0.1.0",
+  "description": "Optional OpenCoven client coordinator",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "LICENSE-AGPL",
+    "LICENSE-MIT",
+    "package.json"
+  ],
+  "engines": {
+    "node": ">=24.18.0 <25"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenCoven/sdk.git",
+    "directory": "packages/sdk"
+  },
+  "license": "AGPL-3.0-or-later OR MIT",
+  "scripts": {
+    "build": "tsup --config tsup.config.ts",
+    "typecheck": "tsc --pretty false --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@opencoven/cave-client": "workspace:0.1.0",
+    "@opencoven/coven-client": "workspace:0.1.0"
+  }
+}

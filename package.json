@@ -1,0 +1,34 @@
+{
+  "name": "@opencoven/sdk-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "description": "OpenCoven public TypeScript SDK workspace",
+  "type": "module",
+  "packageManager": "pnpm@10.34.0",
+  "engines": {
+    "node": ">=24.18.0 <25",
+    "pnpm": "10.34.0"
+  },
+  "license": "AGPL-3.0-or-later OR MIT",
+  "scripts": {
+    "build": "corepack pnpm@10.34.0 --recursive --filter './packages/*' build && corepack pnpm@10.34.0 --recursive --filter './examples/*' build",
+    "typecheck": "corepack pnpm@10.34.0 --recursive --filter './packages/*' typecheck && corepack pnpm@10.34.0 --recursive --filter './examples/*' typecheck && corepack pnpm@10.34.0 exec tsc --pretty false --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "pnpm exec eslint . --max-warnings=0",
+    "sync:contracts": "node ./scripts/import-contract-fixtures.mjs",
+    "pack:public": "node ./scripts/pack-public-packages.mjs",
+    "verify:contracts": "node ./scripts/verify-contracts.mjs",
+    "verify:package": "node ./scripts/verify-package.mjs",
+    "verify": "corepack pnpm@10.34.0 lint && corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 build && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.3",
+    "eslint": "10.8.1",
+    "globals": "17.11.0",
+    "tsup": "8.5.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.67.0",
+    "vitest": "4.1.10"
+  }
+}
