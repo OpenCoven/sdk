@@ -15,8 +15,9 @@ describe('packed public packages', () => {
           cwd: root,
           encoding: 'utf8',
         })
-      : { status: 1, stderr: 'scripts/verify-package.mjs is missing' };
+      : { status: 1, stderr: 'scripts/verify-package.mjs is missing', stdout: '' };
 
     expect(result.status, result.stderr).toBe(0);
+    expect(String(result.stdout)).toContain('Packed license metadata verified.');
   }, 30_000);
 });

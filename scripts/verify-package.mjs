@@ -8,6 +8,13 @@ const artifactRoot = resolve(root, '.artifacts', 'verify-package');
 const tarballRoot = resolve(artifactRoot, 'tarballs');
 const fixtureRoot = resolve(artifactRoot, 'packed-consumer');
 const packageDirectories = ['core', 'cave', 'coven', 'sdk', 'cli'];
+const packageNames = {
+  core: '@opencoven/sdk-core',
+  cave: '@opencoven/cave-client',
+  coven: '@opencoven/coven-client',
+  sdk: '@opencoven/sdk',
+  cli: '@opencoven/dev-cli',
+};
 
 function run(command, args, cwd) {
   execFileSync(command, args, {
@@ -28,6 +35,30 @@ function findTarball(directory) {
   }
 
   return resolve(directory, tarballs[0]);
+}
+
+function readTarballFile(tarball, path) {
+  return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
+    encoding: 'utf8',
+  });
+}
+
+function assertPackedLicense(tarball, packageDirectory) {
+  const manifest = JSON.parse(readTarballFile(tarball, 'package.json'));
+  const selector = readTarballFile(tarball, 'LICENSE');
+  const agpl = readTarballFile(tarball, 'LICENSE-AGPL');
+  const mit = readTarballFile(tarball, 'LICENSE-MIT');
+
+  if (
+    manifest.name !== packageNames[packageDirectory] ||
+    manifest.license !== 'AGPL-3.0-or-later OR MIT' ||
+    !selector.includes('OpenCoven SDK') ||
+    selector.includes('coven-cave') ||
+    !agpl.includes('GNU AFFERO GENERAL PUBLIC LICENSE') ||
+    !mit.startsWith('MIT License\n')
+  ) {
+    throw new Error(`Packed ${packageDirectory} package has inaccurate license metadata or text.`);
+  }
 }
 
 function createFixture(tarballs) {
@@ -149,8 +180,10 @@ try {
     mkdirSync(destination, { recursive: true });
     runPnpm(['pack', '--pack-destination', destination], resolve(root, 'packages', packageDirectory));
     tarballs[packageDirectory] = findTarball(destination);
+    assertPackedLicense(tarballs[packageDirectory], packageDirectory);
   }
 
+  process.stdout.write('Packed license metadata verified.\n');
   createFixture(tarballs);
   runPnpm(['--ignore-workspace', 'install', '--offline', '--ignore-scripts'], fixtureRoot);
   runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);
