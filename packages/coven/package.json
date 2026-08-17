@@ -1,0 +1,37 @@
+{
+  "name": "@opencoven/coven-client",
+  "version": "0.1.0",
+  "description": "Transport-neutral constrained Coven client",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "fixtures",
+    "README.md",
+    "LICENSE",
+    "LICENSE-AGPL",
+    "LICENSE-MIT",
+    "package.json"
+  ],
+  "engines": {
+    "node": ">=24.18.0 <25"
+  },
+  "license": "AGPL-3.0-or-later OR MIT",
+  "scripts": {
+    "build": "tsup --config tsup.config.ts",
+    "typecheck": "tsc --pretty false --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@opencoven/sdk-core": "workspace:0.1.0"
+  }
+}
