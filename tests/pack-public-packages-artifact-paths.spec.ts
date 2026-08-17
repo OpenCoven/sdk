@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -70,7 +71,9 @@ describe('pack-public-packages artifact directory safety', () => {
     const outputDirectory = createPackArtifactOutputDirectory();
     createdTempDirectories.push(outputDirectory);
 
-    rmSync(outputDirectory.rootPath, { force: true, recursive: true });
+    const displacedRoot = `${outputDirectory.rootPath}.displaced`;
+    renameSync(outputDirectory.rootPath, displacedRoot);
+    scratchRoots.push(displacedRoot);
     mkdirSync(outputDirectory.rootPath, { recursive: true, mode: 0o700 });
 
     expect(() => cleanupOwnedTempRoot(outputDirectory)).toThrow(/changed identity/);

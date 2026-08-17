@@ -12,6 +12,7 @@ import {
   assertCanonicalRepository,
   readPackedPackageManifest,
 } from '../scripts/repository-metadata.mjs';
+import { isolatedInstallArgs } from '../scripts/package-artifacts.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const verifier = resolve(root, 'scripts/verify-package.mjs');
@@ -37,6 +38,11 @@ function findTarball(directory: string): string {
 }
 
 describe('packed public packages', () => {
+  test('allows fresh consumer installs to fetch declared dependencies', () => {
+    expect(isolatedInstallArgs()).not.toContain('--offline');
+    expect(isolatedInstallArgs({ offline: true })).toContain('--offline');
+  });
+
   test('pack tarballs preserve canonical repository metadata', () => {
     const artifactRoot = mkdtempSync(resolve(tmpdir(), 'opencoven-packed-package-spec-'));
     const tarballRoot = resolve(artifactRoot, 'tarballs');

@@ -20,7 +20,7 @@ export function runPnpm(args, cwd, options = {}) {
   return run('corepack', ['pnpm@10.34.0', ...args], cwd, options);
 }
 
-export function isolatedInstallArgs({ offline = true } = {}) {
+export function isolatedInstallArgs({ offline = false } = {}) {
   return [
     '--ignore-workspace',
     '--config.inject-workspace-packages=false',
