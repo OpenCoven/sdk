@@ -20,12 +20,17 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # Build first. The examples and packages import each other across the
+      # workspace, and their declaration files only exist once built. Linting
+      # or typechecking before that leaves every cross-package import an
+      # unresolved "error type", which the type-aware rules then report as
+      # dozens of no-unsafe-* violations in code that is perfectly fine.
+      - name: Build
+        run: pnpm --recursive build
       - name: Lint
         run: pnpm lint
       - name: Typecheck
         run: pnpm typecheck
-      - name: Build
-        run: pnpm --recursive build
       - name: Test
         run: pnpm test
       - name: Verify authority fixtures
