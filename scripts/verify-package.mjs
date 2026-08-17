@@ -1,7 +1,8 @@
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { prepareArtifactDirectory, removeArtifactPath, resolveArtifactDirectory } from './artifact-directory.mjs';
 import {
   assertPackedPackagesExcludeSources,
   createPublicPackageOverrides,
@@ -13,7 +14,12 @@ import {
 } from './package-artifacts.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const artifactRoot = resolve(root, '.artifacts', 'verify-package');
+const artifactContext = resolveArtifactDirectory({
+  repositoryRoot: root,
+  artifactName: 'verify-package',
+  artifactNameLabel: 'Artifact directory',
+});
+const artifactRoot = artifactContext.artifactPath;
 const tarballRoot = resolve(artifactRoot, 'tarballs');
 const fixtureRoot = resolve(artifactRoot, 'packed-consumer');
 const exampleRoot = resolve(artifactRoot, 'examples');
@@ -177,7 +183,11 @@ function createPackedExamples(tarballs) {
 }
 
 try {
-  rmSync(artifactRoot, { force: true, recursive: true });
+  prepareArtifactDirectory({
+    repositoryRoot: root,
+    artifactName: 'verify-package',
+    artifactNameLabel: 'Artifact directory',
+  });
   mkdirSync(tarballRoot, { recursive: true });
 
   const tarballs = packPublicPackages({
@@ -202,5 +212,5 @@ try {
   run(resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven'), ['--json', '--help'], fixtureRoot);
   process.stdout.write('Packed package verification passed.\n');
 } finally {
-  rmSync(artifactRoot, { force: true, recursive: true });
+  removeArtifactPath(artifactRoot, artifactContext);
 }

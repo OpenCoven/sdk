@@ -1,14 +1,16 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { dirname, relative, resolve, sep } from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  prepareArtifactDirectory,
+  removeArtifactPath,
+  resolveArtifactDirectory,
+} from './artifact-directory.mjs';
 import { packPublicPackages } from './package-artifacts.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const artifactBaseRoot = resolve(root, '.artifacts', 'pack-public-packages');
 const defaultArtifactName = 'default';
-const safeArtifactNamePattern = /^(?!\.{1,2}$)[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 function printUsage() {
   process.stdout.write(
@@ -22,39 +24,44 @@ function printUsage() {
   );
 }
 
-function assertConfinedArtifactRoot(targetPath) {
-  const normalizedArtifactBaseRoot = resolve(artifactBaseRoot);
-  const normalizedRepositoryRoot = resolve(root);
-  const normalizedTargetPath = resolve(targetPath);
-  const normalizedHomeDirectory = resolve(homedir());
-  const relativeToArtifactBase = relative(normalizedArtifactBaseRoot, normalizedTargetPath);
-
-  if (
-    normalizedTargetPath === resolve('/') ||
-    normalizedTargetPath === normalizedHomeDirectory ||
-    normalizedTargetPath === normalizedRepositoryRoot ||
-    normalizedTargetPath === resolve(normalizedRepositoryRoot, '..') ||
-    relativeToArtifactBase.length === 0 ||
-    relativeToArtifactBase === '..' ||
-    relativeToArtifactBase.startsWith(`..${sep}`) ||
-    relativeToArtifactBase.split(sep).includes('..')
-  ) {
-    throw new Error(
-      `Artifact cleanup path must stay inside a child of ${normalizedArtifactBaseRoot}.`,
-    );
-  }
+function resolvePackArtifactContext(repositoryRoot = root, artifactName = defaultArtifactName) {
+  return resolveArtifactDirectory({
+    repositoryRoot,
+    parentSegments: ['pack-public-packages'],
+    parentLabel: 'Artifact directory',
+    artifactName,
+  });
 }
 
-export function resolvePackArtifactOutputDirectory(artifactName = defaultArtifactName) {
-  if (!safeArtifactNamePattern.test(artifactName)) {
-    throw new Error(
-      `Artifact name "${artifactName}" must be a safe child name using only letters, digits, ".", "_" or "-".`,
-    );
-  }
+export function resolvePackArtifactOutputDirectory(
+  artifactName = defaultArtifactName,
+  options = {},
+) {
+  return resolvePackArtifactContext(options.repositoryRoot, artifactName).artifactPath;
+}
 
-  const outputDirectory = resolve(artifactBaseRoot, artifactName);
-  assertConfinedArtifactRoot(outputDirectory);
-  return outputDirectory;
+export function preparePackArtifactOutputDirectory(
+  artifactName = defaultArtifactName,
+  options = {},
+) {
+  return prepareArtifactDirectory({
+    repositoryRoot: options.repositoryRoot ?? root,
+    parentSegments: ['pack-public-packages'],
+    parentLabel: 'Artifact directory',
+    artifactName,
+  }).artifactPath;
+}
+
+export function removePackArtifactOutputDirectory(outputDirectory, options = {}) {
+  const context = resolvePackArtifactContext(options.repositoryRoot ?? root, defaultArtifactName);
+
+  removeArtifactPath(
+    outputDirectory,
+    {
+      artifactBasePath: context.parentPath,
+      artifactBaseRealPath: context.parentRealPath,
+    },
+  );
 }
 
 export function parseArgs(argv) {
@@ -111,8 +118,7 @@ export function parseArgs(argv) {
 export function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
 
-  rmSync(options.outputDir, { force: true, recursive: true });
-  mkdirSync(options.outputDir, { recursive: true });
+  preparePackArtifactOutputDirectory(options.artifactName);
 
   const json = `${JSON.stringify(
     packPublicPackages({
