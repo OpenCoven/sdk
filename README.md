@@ -28,8 +28,12 @@ pnpm test
 pnpm --recursive build
 node scripts/verify-contracts.mjs
 node scripts/verify-package.mjs
+node scripts/pack-public-packages.mjs --output-dir .artifacts/public-tarballs
 pnpm lint
 ```
+
+`pack-public-packages.mjs` is the reusable tarball producer for cross-repository
+consumers such as the Chat packed-package canary.
 
 ## License
 

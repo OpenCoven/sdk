@@ -1,0 +1,65 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import {
+  digestCaveContractFixture,
+  parseCaveContractFixture,
+  parseVerifiedCaveContractFixture,
+} from '@opencoven/cave-client';
+import { describe, expect, test } from 'vitest';
+
+const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const fixturePath = resolve(root, 'packages/cave/fixtures/contract-fixture.json');
+const digestPath = resolve(root, 'packages/cave/fixtures/contract-fixture.sha256');
+
+describe('Cave contract fixture parsing', () => {
+  test('parses the reviewed fixture through the public package entry point', () => {
+    const fixture = readFileSync(fixturePath, 'utf8');
+    const digest = readFileSync(digestPath, 'utf8');
+
+    expect(parseVerifiedCaveContractFixture(fixture, digest)).toMatchObject({
+      contract: {
+        apiVersion: '1.0',
+        minimumClientVersion: '0.1.0',
+      },
+      examples: {
+        status: {
+          status: 'ok',
+        },
+      },
+    });
+  });
+
+  test('rejects a required-field mutation when the digest is left stale', () => {
+    const fixture = readFileSync(fixturePath, 'utf8');
+    const digest = readFileSync(digestPath, 'utf8');
+    const mutatedFixture = parseCaveContractFixture(fixture) as unknown as {
+      contract: Record<string, unknown>;
+    };
+
+    delete mutatedFixture.contract.minimumClientVersion;
+
+    const staleFixtureBytes = `${JSON.stringify(mutatedFixture, null, 2)}\n`;
+
+    expect(() => parseVerifiedCaveContractFixture(staleFixtureBytes, digest)).toThrowError(
+      /Cave fixture digest mismatch/u,
+    );
+  });
+
+  test('rejects a required-field mutation even when the digest is recomputed', () => {
+    const fixture = readFileSync(fixturePath, 'utf8');
+    const mutatedFixture = parseCaveContractFixture(fixture) as unknown as {
+      contract: Record<string, unknown>;
+    };
+
+    delete mutatedFixture.contract.minimumClientVersion;
+
+    const mutatedFixtureBytes = `${JSON.stringify(mutatedFixture, null, 2)}\n`;
+    const mutatedDigest = digestCaveContractFixture(mutatedFixtureBytes);
+
+    expect(() =>
+      parseVerifiedCaveContractFixture(mutatedFixtureBytes, `${mutatedDigest}\n`),
+    ).toThrowError('fixture.contract.minimumClientVersion must be a string.');
+  });
+});

@@ -25,6 +25,9 @@ describe('public package entry points', () => {
     expect(hasFunction(core, 'normalizeError')).toBe(true);
     expect(hasFunction(core, 'assessCompatibility')).toBe(true);
     expect(hasFunction(cave, 'CaveClient')).toBe(true);
+    expect(hasFunction(cave, 'parseCaveContractFixture')).toBe(true);
+    expect(hasFunction(cave, 'parseVerifiedCaveContractFixture')).toBe(true);
+    expect(hasFunction(cave, 'verifyCaveContractFixtureDigest')).toBe(true);
     expect(hasFunction(cave, 'normalizeCaveError')).toBe(true);
     expect(hasFunction(coven, 'CovenClient')).toBe(true);
     expect(hasFunction(coven, 'normalizeCovenError')).toBe(true);

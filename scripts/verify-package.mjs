@@ -1,65 +1,22 @@
-import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  PUBLIC_PACKAGES,
-  assertCanonicalRepository,
-  readPackedPackageManifest,
-} from './repository-metadata.mjs';
+  assertPackedPackagesExcludeSources,
+  createPublicPackageOverrides,
+  isolatedInstallArgs,
+  packPublicPackages,
+  run,
+  runPnpm,
+  tarballSpecifier,
+} from './package-artifacts.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const artifactRoot = resolve(root, '.artifacts', 'verify-package');
 const tarballRoot = resolve(artifactRoot, 'tarballs');
 const fixtureRoot = resolve(artifactRoot, 'packed-consumer');
 const exampleRoot = resolve(artifactRoot, 'examples');
-
-function run(command, args, cwd) {
-  execFileSync(command, args, {
-    cwd,
-    stdio: 'inherit',
-  });
-}
-
-function runPnpm(args, cwd) {
-  run('corepack', ['pnpm@10.34.0', ...args], cwd);
-}
-
-function isolatedInstallArgs() {
-  return [
-    '--ignore-workspace',
-    '--config.inject-workspace-packages=false',
-    '--config.link-workspace-packages=false',
-    '--config.prefer-workspace-packages=false',
-    'install',
-    '--offline',
-    '--ignore-scripts',
-  ];
-}
-
-function findTarball(directory) {
-  const tarballs = readdirSync(directory).filter((entry) => entry.endsWith('.tgz'));
-
-  if (tarballs.length !== 1) {
-    throw new Error(`Expected one tarball in ${directory}, found ${tarballs.length}.`);
-  }
-
-  return resolve(directory, tarballs[0]);
-}
-
-function tarballSpecifier(tarballs, workspaceDirectory) {
-  return `file:${tarballs[workspaceDirectory]}`;
-}
-
-function publicPackageOverrides(tarballs) {
-  return Object.fromEntries(
-    PUBLIC_PACKAGES.map(({ packageName, workspaceDirectory }) => [
-      packageName,
-      tarballSpecifier(tarballs, workspaceDirectory),
-    ]),
-  );
-}
 
 function createToolingDevDependencies(existing = {}) {
   return {
@@ -71,7 +28,7 @@ function createToolingDevDependencies(existing = {}) {
 
 function rewriteConsumerManifest(manifestPath, tarballs) {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-  const overrides = publicPackageOverrides(tarballs);
+  const overrides = createPublicPackageOverrides(tarballs);
 
   for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
     const section = manifest[field];
@@ -100,7 +57,7 @@ function rewriteConsumerManifest(manifestPath, tarballs) {
 }
 
 function createFixture(tarballs) {
-  const overrides = publicPackageOverrides(tarballs);
+  const overrides = createPublicPackageOverrides(tarballs);
 
   mkdirSync(resolve(fixtureRoot, 'src'), { recursive: true });
   writeFileSync(
@@ -219,50 +176,14 @@ function createPackedExamples(tarballs) {
   }
 }
 
-function assertPackedPackagesExcludeSources(installRoot) {
-  for (const { packageName, repositoryDirectory, workspaceDirectory } of PUBLIC_PACKAGES) {
-    const installedDirectory = resolve(
-      installRoot,
-      'node_modules',
-      '@opencoven',
-      packageName.split('/')[1],
-    );
-    const manifestPath = resolve(installedDirectory, 'package.json');
-
-    if (!existsSync(manifestPath)) {
-      continue;
-    }
-
-    assertCanonicalRepository(
-      JSON.parse(readFileSync(manifestPath, 'utf8')),
-      repositoryDirectory,
-      `${packageName} installed manifest`,
-    );
-
-    if (existsSync(resolve(installedDirectory, 'src'))) {
-      throw new Error(`Packed ${workspaceDirectory} package unexpectedly contains source files.`);
-    }
-  }
-}
-
 try {
   rmSync(artifactRoot, { force: true, recursive: true });
   mkdirSync(tarballRoot, { recursive: true });
 
-  runPnpm(['--recursive', '--filter', './packages/*', 'build'], root);
-
-  const tarballs = {};
-  for (const { packageName, repositoryDirectory, workspaceDirectory } of PUBLIC_PACKAGES) {
-    const destination = resolve(tarballRoot, workspaceDirectory);
-    mkdirSync(destination, { recursive: true });
-    runPnpm(['pack', '--pack-destination', destination], resolve(root, 'packages', workspaceDirectory));
-    tarballs[workspaceDirectory] = findTarball(destination);
-    assertCanonicalRepository(
-      readPackedPackageManifest(tarballs[workspaceDirectory]),
-      repositoryDirectory,
-      `${packageName} packed manifest`,
-    );
-  }
+  const tarballs = packPublicPackages({
+    root,
+    destinationRoot: tarballRoot,
+  });
 
   createFixture(tarballs);
   createPackedExamples(tarballs);
