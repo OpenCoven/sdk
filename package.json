@@ -10,6 +10,11 @@
     "pnpm": "10.34.0"
   },
   "license": "AGPL-3.0-or-later OR MIT",
+  "pnpm": {
+    "overrides": {
+      "esbuild": "0.28.1"
+    }
+  },
   "scripts": {
     "build": "corepack pnpm@10.34.0 --recursive --filter './packages/*' build && corepack pnpm@10.34.0 --recursive --filter './examples/*' build",
     "typecheck": "corepack pnpm@10.34.0 --recursive --filter './packages/*' typecheck && corepack pnpm@10.34.0 --recursive --filter './examples/*' typecheck && corepack pnpm@10.34.0 exec tsc --pretty false --noEmit -p tsconfig.json",

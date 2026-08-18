@@ -1,6 +1,7 @@
 {
   "name": "@opencoven/coven-client",
   "version": "0.1.0",
+  "private": true,
   "description": "Transport-neutral constrained Coven client",
   "type": "module",
   "sideEffects": false,
@@ -34,6 +35,7 @@
   "license": "AGPL-3.0-or-later OR MIT",
   "scripts": {
     "build": "tsup --config tsup.config.ts",
+    "prepublishOnly": "node ../../scripts/require-release-authorization.mjs",
     "typecheck": "tsc --pretty false --noEmit -p tsconfig.json"
   },
   "dependencies": {
