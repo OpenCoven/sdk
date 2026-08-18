@@ -89,7 +89,7 @@ export class CaveClient {
 
   async health(): Promise<CaveHealth> {
     try {
-      const response = await this.#transport.health();
+      const response: unknown = await this.#transport.health();
 
       if (!validateHealthResponse(response)) {
         throw invalidHealthResponse();

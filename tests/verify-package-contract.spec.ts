@@ -34,4 +34,11 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain('assertConsumerDependencyIsolation(fixtureRoot);');
     expect(verifier).toContain('assertConsumerDependencyIsolation(destinationDirectory);');
   });
+
+  test('tracks every installed public package directory without a special SDK exclusion', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain("sdk: 'sdk'");
+    expect(verifier).not.toContain("packageDirectory === 'sdk'");
+  });
 });

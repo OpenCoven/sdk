@@ -77,7 +77,7 @@ export class CovenClient {
 
   async health(): Promise<CovenHealth> {
     try {
-      const response = await this.#transport.health();
+      const response: unknown = await this.#transport.health();
 
       if (!validateHealthResponse(response) || response.apiVersion !== COVEN_DAEMON_PROTOCOL) {
         throw invalidHealthResponse();

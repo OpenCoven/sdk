@@ -7,3 +7,7 @@ capabilities require boolean `sessions`, `events`, and `structuredErrors`
 fields. The public transport type keeps `eventCursor` as `string` for source
 compatibility, while runtime validation currently accepts only the supported
 `'sequence'` value.
+
+## License
+
+AGPL-3.0-only OR MIT. See [LICENSE](LICENSE).

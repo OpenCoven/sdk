@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +16,49 @@ import {
 import { PUBLIC_PACKAGES } from './repository-metadata.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const installedPackageNames = {
+  core: 'sdk-core',
+  cave: 'cave-client',
+  coven: 'coven-client',
+  sdk: 'sdk',
+  cli: 'dev-cli',
+};
+
+function readTarballFile(tarball, path) {
+  return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
+    encoding: 'utf8',
+  });
+}
+
+function assertPackedLicenses(tarballs) {
+  for (const { packageName, workspaceDirectory } of PUBLIC_PACKAGES) {
+    const manifest = JSON.parse(readTarballFile(tarballs[workspaceDirectory], 'package.json'));
+    const selector = readTarballFile(tarballs[workspaceDirectory], 'LICENSE');
+    const agpl = readTarballFile(tarballs[workspaceDirectory], 'LICENSE-AGPL');
+    const mit = readTarballFile(tarballs[workspaceDirectory], 'LICENSE-MIT');
+
+    if (
+      manifest.name !== packageName ||
+      manifest.license !== 'AGPL-3.0-only OR MIT' ||
+      !selector.includes('OpenCoven SDK') ||
+      selector.includes('coven-cave') ||
+      !agpl.includes('GNU AFFERO GENERAL PUBLIC LICENSE') ||
+      !mit.startsWith('MIT License\n')
+    ) {
+      throw new Error(
+        `Packed ${workspaceDirectory} package has inaccurate license metadata or text.`,
+      );
+    }
+  }
+}
+
+function assertInstalledPackageDirectoryMap() {
+  for (const { packageName, workspaceDirectory } of PUBLIC_PACKAGES) {
+    if (installedPackageNames[workspaceDirectory] !== packageName.split('/')[1]) {
+      throw new Error(`Installed package directory mapping is incomplete for ${packageName}.`);
+    }
+  }
+}
 
 function createToolingDevDependencies(existing = {}) {
   return {
@@ -238,6 +282,9 @@ try {
     root,
     destinationRoot: tarballRoot,
   });
+  assertInstalledPackageDirectoryMap();
+  assertPackedLicenses(tarballs);
+  process.stdout.write('Packed license metadata verified.\n');
 
   createFixture(fixtureRoot, tarballs);
   createPackedExamples({

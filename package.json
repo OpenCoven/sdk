@@ -9,7 +9,7 @@
     "node": ">=24.18.0 <25",
     "pnpm": "10.34.0"
   },
-  "license": "AGPL-3.0-or-later OR MIT",
+  "license": "AGPL-3.0-only OR MIT",
   "scripts": {
     "build": "corepack pnpm@10.34.0 --recursive --filter './packages/*' build && corepack pnpm@10.34.0 --recursive --filter './examples/*' build",
     "typecheck": "corepack pnpm@10.34.0 --recursive --filter './packages/*' typecheck && corepack pnpm@10.34.0 --recursive --filter './examples/*' typecheck && corepack pnpm@10.34.0 exec tsc --pretty false --noEmit -p tsconfig.json",
@@ -17,6 +17,8 @@
     "lint": "pnpm exec eslint . --max-warnings=0",
     "sync:contracts": "node ./scripts/import-contract-fixtures.mjs",
     "pack:public": "node ./scripts/pack-public-packages.mjs",
+    "verify-contracts": "node ./scripts/verify-contracts.mjs",
+    "verify-package": "node ./scripts/verify-package.mjs",
     "verify:contracts": "node ./scripts/verify-contracts.mjs",
     "verify:package": "node ./scripts/verify-package.mjs",
     "verify": "corepack pnpm@10.34.0 build && corepack pnpm@10.34.0 lint && corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package"
