@@ -4,7 +4,14 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '.artifacts/**', 'coverage/**', '**/tsup.config.ts'],
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '.artifacts/**',
+      'coverage/**',
+      '.worktrees/**',
+      '**/tsup.config.ts',
+    ],
   },
   js.configs.recommended,
   {
