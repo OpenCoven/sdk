@@ -1,1 +1,4 @@
-export function isolatedInstallArgs(options?: { offline?: boolean }): string[];
+export function isolatedInstallArgs(options?: {
+  offline?: boolean;
+  workspace?: boolean;
+}): string[];

@@ -46,6 +46,13 @@ describe('packed public packages', () => {
     expect(isolatedInstallArgs()).toContain('--offline');
   });
 
+  test('installs isolated consumer workspaces recursively', () => {
+    const workspaceArgs = isolatedInstallArgs({ workspace: true });
+
+    expect(workspaceArgs).toContain('--recursive');
+    expect(workspaceArgs).not.toContain('--ignore-workspace');
+  });
+
   test('pack tarballs preserve canonical repository metadata', () => {
     const artifactRoot = mkdtempSync(resolve(tmpdir(), 'opencoven-packed-package-spec-'));
     const tarballRoot = resolve(artifactRoot, 'tarballs');
@@ -84,5 +91,5 @@ describe('packed public packages', () => {
       : { status: 1, stderr: 'scripts/verify-package.mjs is missing' };
 
     expect(result.status, result.stderr).toBe(0);
-  }, 600_000);
+  }, 30_000);
 });

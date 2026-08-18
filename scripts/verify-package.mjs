@@ -42,20 +42,11 @@ function rewriteConsumerManifest(manifestPath, tarballs) {
   }
 
   manifest.devDependencies = createToolingDevDependencies(manifest.devDependencies);
-  manifest.pnpm = {
-    ...(manifest.pnpm ?? {}),
-    overrides: {
-      ...(manifest.pnpm?.overrides ?? {}),
-      ...overrides,
-    },
-  };
 
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 function createFixture(fixtureRoot, tarballs) {
-  const overrides = createPublicPackageOverrides(tarballs);
-
   mkdirSync(resolve(fixtureRoot, 'src'), { recursive: true });
   writeFileSync(
     resolve(fixtureRoot, 'package.json'),
@@ -70,9 +61,6 @@ function createFixture(fixtureRoot, tarballs) {
           '@opencoven/coven-client': tarballSpecifier(tarballs, 'coven'),
           '@opencoven/sdk': tarballSpecifier(tarballs, 'sdk'),
           '@opencoven/dev-cli': tarballSpecifier(tarballs, 'cli'),
-        },
-        pnpm: {
-          overrides,
         },
         devDependencies: {
           '@types/node': '24.13.3',
@@ -168,9 +156,38 @@ function createPackedExamples({ artifactRoot, exampleRoot, tarballs }) {
     const sourceDirectory = resolve(root, 'examples', workspaceDirectory);
     const destinationDirectory = resolve(exampleRoot, workspaceDirectory);
 
-    cpSync(sourceDirectory, destinationDirectory, { recursive: true });
+    mkdirSync(destinationDirectory, { recursive: true });
+    cpSync(resolve(sourceDirectory, 'package.json'), resolve(destinationDirectory, 'package.json'));
+    cpSync(resolve(sourceDirectory, 'tsconfig.json'), resolve(destinationDirectory, 'tsconfig.json'));
+    cpSync(resolve(sourceDirectory, 'src'), resolve(destinationDirectory, 'src'), {
+      recursive: true,
+    });
     rewriteConsumerManifest(resolve(destinationDirectory, 'package.json'), tarballs);
   }
+}
+
+function createPackedConsumerWorkspace(artifactRoot, tarballs) {
+  writeFileSync(
+    resolve(artifactRoot, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'packed-opencoven-consumer-workspace',
+        private: true,
+        pnpm: {
+          overrides: createPublicPackageOverrides(tarballs),
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFileSync(
+    resolve(artifactRoot, 'pnpm-workspace.yaml'),
+    `packages:
+  - packed-consumer
+  - examples/*
+`,
+  );
 }
 
 let artifactContext;
@@ -197,13 +214,13 @@ try {
     exampleRoot,
     tarballs,
   });
-  installIsolatedOfflineAfterWarming(fixtureRoot);
+  createPackedConsumerWorkspace(artifactRoot, tarballs);
+  installIsolatedOfflineAfterWarming(artifactRoot, { workspace: true });
   runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);
   assertPackedPackagesExcludeSources(fixtureRoot);
 
   for (const workspaceDirectory of ['cave-health', 'coven-health', 'unified-health']) {
     const destinationDirectory = resolve(exampleRoot, workspaceDirectory);
-    installIsolatedOfflineAfterWarming(destinationDirectory);
     runPnpm(['--ignore-workspace', 'run', 'build'], destinationDirectory);
     assertPackedPackagesExcludeSources(destinationDirectory);
   }

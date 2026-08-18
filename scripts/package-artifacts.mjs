@@ -20,9 +20,9 @@ export function runPnpm(args, cwd, options = {}) {
   return run('corepack', ['pnpm@10.34.0', ...args], cwd, options);
 }
 
-export function isolatedInstallArgs({ offline = true } = {}) {
+export function isolatedInstallArgs({ offline = true, workspace = false } = {}) {
   return [
-    '--ignore-workspace',
+    workspace ? '--recursive' : '--ignore-workspace',
     '--config.inject-workspace-packages=false',
     '--config.link-workspace-packages=false',
     '--config.prefer-workspace-packages=false',
@@ -35,7 +35,8 @@ export function isolatedInstallArgs({ offline = true } = {}) {
 }
 
 /**
- * Install an isolated fixture twice: once warm, once offline.
+ * Install an isolated fixture or fixture workspace twice: once warm, once
+ * offline.
  *
  * The offline install is the assertion. It proves every dependency the packed
  * tarballs pull in is genuinely present in the store, so nothing is being
@@ -52,9 +53,12 @@ export function isolatedInstallArgs({ offline = true } = {}) {
  * all, which is the property worth checking. Dropping --offline entirely would
  * have made the failure go away and taken the guarantee with it.
  */
-export function installIsolatedOfflineAfterWarming(directory, options = {}) {
-  runPnpm(isolatedInstallArgs({ offline: false }), directory, options);
-  runPnpm(isolatedInstallArgs({ offline: true }), directory, options);
+export function installIsolatedOfflineAfterWarming(
+  directory,
+  { workspace = false, ...options } = {},
+) {
+  runPnpm(isolatedInstallArgs({ offline: false, workspace }), directory, options);
+  runPnpm(isolatedInstallArgs({ offline: true, workspace }), directory, options);
 }
 
 export function findTarball(directory) {
