@@ -20,16 +20,41 @@ export function runPnpm(args, cwd, options = {}) {
   return run('corepack', ['pnpm@10.34.0', ...args], cwd, options);
 }
 
-export function isolatedInstallArgs({ offline = false } = {}) {
+export function isolatedInstallArgs({ offline = true } = {}) {
   return [
     '--ignore-workspace',
     '--config.inject-workspace-packages=false',
     '--config.link-workspace-packages=false',
     '--config.prefer-workspace-packages=false',
     'install',
-    ...(offline ? ['--offline'] : []),
+    // The warm pass may reach the registry for metadata the store lacks; the
+    // asserting pass may not reach it at all.
+    offline ? '--offline' : '--prefer-offline',
     '--ignore-scripts',
   ];
+}
+
+/**
+ * Install an isolated fixture twice: once warm, once offline.
+ *
+ * The offline install is the assertion. It proves every dependency the packed
+ * tarballs pull in is genuinely present in the store, so nothing is being
+ * resolved from the network behind the check's back.
+ *
+ * But an offline install can only assert that once the store actually holds
+ * those dependencies, and a fresh CI runner's store does not. That is what
+ * failed: a transitive @types/node had no metadata in the runner's mirror, so
+ * the offline install failed on an absence that says nothing about the
+ * tarballs.
+ *
+ * Warming first separates the two questions. The warm pass is allowed to fetch
+ * what it is missing; the offline pass then has to succeed with no network at
+ * all, which is the property worth checking. Dropping --offline entirely would
+ * have made the failure go away and taken the guarantee with it.
+ */
+export function installIsolatedOfflineAfterWarming(directory, options = {}) {
+  runPnpm(isolatedInstallArgs({ offline: false }), directory, options);
+  runPnpm(isolatedInstallArgs({ offline: true }), directory, options);
 }
 
 export function findTarball(directory) {

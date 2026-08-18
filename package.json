@@ -19,7 +19,7 @@
     "pack:public": "node ./scripts/pack-public-packages.mjs",
     "verify:contracts": "node ./scripts/verify-contracts.mjs",
     "verify:package": "node ./scripts/verify-package.mjs",
-    "verify": "corepack pnpm@10.34.0 lint && corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 build && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package"
+    "verify": "corepack pnpm@10.34.0 build && corepack pnpm@10.34.0 lint && corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

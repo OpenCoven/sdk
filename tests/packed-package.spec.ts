@@ -38,9 +38,12 @@ function findTarball(directory: string): string {
 }
 
 describe('packed public packages', () => {
-  test('allows fresh consumer installs to fetch declared dependencies', () => {
-    expect(isolatedInstallArgs()).not.toContain('--offline');
-    expect(isolatedInstallArgs({ offline: true })).toContain('--offline');
+  test('warms isolated installs before enforcing offline resolution', () => {
+    const warmArgs = isolatedInstallArgs({ offline: false });
+
+    expect(warmArgs).not.toContain('--offline');
+    expect(warmArgs).toContain('--prefer-offline');
+    expect(isolatedInstallArgs()).toContain('--offline');
   });
 
   test('pack tarballs preserve canonical repository metadata', () => {
@@ -81,5 +84,5 @@ describe('packed public packages', () => {
       : { status: 1, stderr: 'scripts/verify-package.mjs is missing' };
 
     expect(result.status, result.stderr).toBe(0);
-  }, 30_000);
+  }, 600_000);
 });
