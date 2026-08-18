@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
@@ -26,12 +26,51 @@ export function isolatedInstallArgs({ offline = true, workspace = false } = {}) 
     '--config.inject-workspace-packages=false',
     '--config.link-workspace-packages=false',
     '--config.prefer-workspace-packages=false',
+    '--no-hoist',
+    '--config.public-hoist-pattern=[]',
+    '--config.shamefully-hoist=false',
+    '--config.node-linker=isolated',
     'install',
     // The warm pass may reach the registry for metadata the store lacks; the
     // asserting pass may not reach it at all.
     offline ? '--offline' : '--prefer-offline',
     '--ignore-scripts',
   ];
+}
+
+function removeInstalledModuleTrees(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const entryPath = resolve(directory, entry.name);
+
+    if (entry.name === 'node_modules') {
+      rmSync(entryPath, { force: true, recursive: true });
+      continue;
+    }
+
+    if (entry.isDirectory()) {
+      removeInstalledModuleTrees(entryPath);
+    }
+  }
+}
+
+function runPnpmAsync(args, cwd, options = {}) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn('corepack', ['pnpm@10.34.0', ...args], {
+      cwd,
+      stdio: options.stdio ?? 'inherit',
+    });
+
+    child.once('error', reject);
+    child.once('exit', (code, signal) => {
+      if (code === 0) {
+        resolvePromise();
+        return;
+      }
+
+      const status = signal === null ? `exit code ${code}` : `signal ${signal}`;
+      reject(new Error(`pnpm ${args.join(' ')} failed in ${cwd} with ${status}.`));
+    });
+  });
 }
 
 /**
@@ -49,16 +88,40 @@ export function isolatedInstallArgs({ offline = true, workspace = false } = {}) 
  * tarballs.
  *
  * Warming first separates the two questions. The warm pass is allowed to fetch
- * what it is missing; the offline pass then has to succeed with no network at
- * all, which is the property worth checking. Dropping --offline entirely would
- * have made the failure go away and taken the guarantee with it.
+ * what it is missing. Its installed module trees are then removed while its
+ * store entries and lockfile remain, so the offline pass must perform a clean
+ * install with no network at all. Dropping --offline or retaining the warm
+ * install would make the check faster by removing the guarantee it exists to
+ * provide.
  */
 export function installIsolatedOfflineAfterWarming(
   directory,
   { workspace = false, ...options } = {},
 ) {
   runPnpm(isolatedInstallArgs({ offline: false, workspace }), directory, options);
+  removeInstalledModuleTrees(directory);
   runPnpm(isolatedInstallArgs({ offline: true, workspace }), directory, options);
+}
+
+export async function installIsolatedConsumersOfflineAfterWarming(
+  directories,
+  { workspace = false, ...options } = {},
+) {
+  await Promise.all(
+    directories.map((directory) =>
+      runPnpmAsync(isolatedInstallArgs({ offline: false, workspace }), directory, options),
+    ),
+  );
+
+  for (const directory of directories) {
+    removeInstalledModuleTrees(directory);
+  }
+
+  await Promise.all(
+    directories.map((directory) =>
+      runPnpmAsync(isolatedInstallArgs({ offline: true, workspace }), directory, options),
+    ),
+  );
 }
 
 export function findTarball(directory) {
