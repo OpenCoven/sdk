@@ -76,6 +76,33 @@ describe('pack-public-packages artifact directory safety', () => {
     expect(() => cleanupOwnedTempRoot(outputDirectory)).toThrow(/changed identity/);
   });
 
+  test('rejects cleanup when a recreated root reuses the freed inode number', () => {
+    // The test above depends on the platform allocating a fresh inode for the
+    // recreated directory. macOS does; Linux hands back the inode it just
+    // freed, so dev/ino match and an inode-only guard waves the impostor
+    // through. That divergence is why this suite passed locally and failed in
+    // CI.
+    //
+    // This one removes the platform from the equation: it recreates the root
+    // and then rewrites the recorded dev/ino to whatever the new directory
+    // actually has, which is exactly what inode reuse produces. Anything that
+    // still refuses is refusing on evidence other than the inode.
+    const outputDirectory = createPackArtifactOutputDirectory();
+    createdTempDirectories.push(outputDirectory);
+
+    rmSync(outputDirectory.rootPath, { force: true, recursive: true });
+    mkdirSync(outputDirectory.rootPath, { recursive: true, mode: 0o700 });
+
+    const impostorStats = lstatSync(outputDirectory.rootPath);
+    const withReusedInode = {
+      ...outputDirectory,
+      rootDevice: impostorStats.dev,
+      rootInode: impostorStats.ino,
+    };
+
+    expect(() => cleanupOwnedTempRoot(withReusedInode)).toThrow(/changed identity/);
+  });
+
   test('removes nested symlinks without following them during cleanup', () => {
     const outputDirectory = createPackArtifactOutputDirectory();
     const scratchRoot = mkdtempSync(

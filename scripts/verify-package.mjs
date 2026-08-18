@@ -6,7 +6,7 @@ import { cleanupOwnedTempRoot, createOwnedTempDirectory } from './owned-temp-dir
 import {
   assertPackedPackagesExcludeSources,
   createPublicPackageOverrides,
-  isolatedInstallArgs,
+  installIsolatedOfflineAfterWarming,
   packPublicPackages,
   run,
   runPnpm,
@@ -197,13 +197,13 @@ try {
     exampleRoot,
     tarballs,
   });
-  runPnpm(isolatedInstallArgs(), fixtureRoot);
+  installIsolatedOfflineAfterWarming(fixtureRoot);
   runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);
   assertPackedPackagesExcludeSources(fixtureRoot);
 
   for (const workspaceDirectory of ['cave-health', 'coven-health', 'unified-health']) {
     const destinationDirectory = resolve(exampleRoot, workspaceDirectory);
-    runPnpm(isolatedInstallArgs(), destinationDirectory);
+    installIsolatedOfflineAfterWarming(destinationDirectory);
     runPnpm(['--ignore-workspace', 'run', 'build'], destinationDirectory);
     assertPackedPackagesExcludeSources(destinationDirectory);
   }
