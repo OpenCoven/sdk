@@ -12,6 +12,7 @@ import {
   runPnpm,
   tarballSpecifier,
 } from './package-artifacts.mjs';
+import { PUBLIC_PACKAGES } from './repository-metadata.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -42,11 +43,20 @@ function rewriteConsumerManifest(manifestPath, tarballs) {
   }
 
   manifest.devDependencies = createToolingDevDependencies(manifest.devDependencies);
+  manifest.pnpm = {
+    ...(manifest.pnpm ?? {}),
+    overrides: {
+      ...(manifest.pnpm?.overrides ?? {}),
+      ...overrides,
+    },
+  };
 
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 function createFixture(fixtureRoot, tarballs) {
+  const overrides = createPublicPackageOverrides(tarballs);
+
   mkdirSync(resolve(fixtureRoot, 'src'), { recursive: true });
   writeFileSync(
     resolve(fixtureRoot, 'package.json'),
@@ -61,6 +71,9 @@ function createFixture(fixtureRoot, tarballs) {
           '@opencoven/coven-client': tarballSpecifier(tarballs, 'coven'),
           '@opencoven/sdk': tarballSpecifier(tarballs, 'sdk'),
           '@opencoven/dev-cli': tarballSpecifier(tarballs, 'cli'),
+        },
+        pnpm: {
+          overrides,
         },
         devDependencies: {
           '@types/node': '24.13.3',
@@ -166,27 +179,45 @@ function createPackedExamples({ artifactRoot, exampleRoot, tarballs }) {
   }
 }
 
-function createPackedConsumerWorkspace(artifactRoot, tarballs) {
-  writeFileSync(
-    resolve(artifactRoot, 'package.json'),
-    `${JSON.stringify(
-      {
-        name: 'packed-opencoven-consumer-workspace',
-        private: true,
-        pnpm: {
-          overrides: createPublicPackageOverrides(tarballs),
-        },
-      },
-      null,
-      2,
-    )}\n`,
+function assertConsumerDependencyIsolation(consumerRoot) {
+  const manifestPath = resolve(consumerRoot, 'package.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const declaredDependencies = new Set(
+    ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'].flatMap(
+      (field) => Object.keys(manifest[field] ?? {}),
+    ),
   );
-  writeFileSync(
-    resolve(artifactRoot, 'pnpm-workspace.yaml'),
-    `packages:
-  - packed-consumer
-  - examples/*
+  const expectations = PUBLIC_PACKAGES.map(({ packageName }) => [
+    packageName,
+    declaredDependencies.has(packageName),
+  ]);
+
+  run(
+    process.execPath,
+    [
+      '--input-type=module',
+      '--eval',
+      `const expectations = ${JSON.stringify(expectations)};
+for (const [packageName, isDeclared] of expectations) {
+  let isResolvable = false;
+
+  try {
+    import.meta.resolve(packageName);
+    isResolvable = true;
+  } catch (error) {
+    if (!error || typeof error !== 'object' || error.code !== 'ERR_MODULE_NOT_FOUND') {
+      throw error;
+    }
+  }
+
+  if (isResolvable !== isDeclared) {
+    const expectation = isDeclared ? 'resolve' : 'remain unavailable';
+    throw new Error(packageName + ' must ' + expectation + ' from ' + process.cwd() + '.');
+  }
+}
 `,
+    ],
+    consumerRoot,
   );
 }
 
@@ -214,13 +245,15 @@ try {
     exampleRoot,
     tarballs,
   });
-  createPackedConsumerWorkspace(artifactRoot, tarballs);
-  installIsolatedOfflineAfterWarming(artifactRoot, { workspace: true });
+  installIsolatedOfflineAfterWarming(fixtureRoot);
+  assertConsumerDependencyIsolation(fixtureRoot);
   runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);
   assertPackedPackagesExcludeSources(fixtureRoot);
 
   for (const workspaceDirectory of ['cave-health', 'coven-health', 'unified-health']) {
     const destinationDirectory = resolve(exampleRoot, workspaceDirectory);
+    installIsolatedOfflineAfterWarming(destinationDirectory);
+    assertConsumerDependencyIsolation(destinationDirectory);
     runPnpm(['--ignore-workspace', 'run', 'build'], destinationDirectory);
     assertPackedPackagesExcludeSources(destinationDirectory);
   }
