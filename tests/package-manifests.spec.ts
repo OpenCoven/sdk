@@ -11,8 +11,36 @@ import {
 } from '../scripts/repository-metadata.mjs';
 
 const workspaceRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const rootManifest = JSON.parse(readFileSync(resolve(workspaceRoot, 'package.json'), 'utf8')) as {
+  pnpm?: {
+    overrides?: Record<string, string>;
+  };
+  scripts?: Record<string, string>;
+};
 
 describe('public package manifests', () => {
+  test('builds declaration files before typed linting in the full verifier', () => {
+    expect(rootManifest.scripts?.verify).toMatch(
+      /^corepack pnpm@10\.34\.0 build && corepack pnpm@10\.34\.0 lint/,
+    );
+  });
+
+  test('keeps every package unpublished until an intentional release change', () => {
+    expect(rootManifest.pnpm?.overrides?.esbuild).toBe('0.28.1');
+
+    for (const { manifestPath } of PUBLIC_PACKAGES) {
+      const manifest = JSON.parse(readFileSync(resolve(workspaceRoot, manifestPath), 'utf8')) as {
+        private?: boolean;
+        scripts?: Record<string, string>;
+      };
+
+      expect(manifest.private).toBe(true);
+      expect(manifest.scripts?.prepublishOnly).toBe(
+        'node ../../scripts/require-release-authorization.mjs',
+      );
+    }
+  });
+
   test('declare only root exports and approved package metadata', () => {
     for (const { packageName, manifestPath, repositoryDirectory } of PUBLIC_PACKAGES) {
       const manifest = JSON.parse(readFileSync(resolve(workspaceRoot, manifestPath), 'utf8')) as {
