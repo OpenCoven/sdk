@@ -29,6 +29,8 @@ describe('opencoven binary', () => {
   });
 
   test('writes human command failures to stderr', () => {
+    expect(existsSync(binary), 'CLI binary is missing').toBe(true);
+
     const result = spawnSync(process.execPath, [binary, 'status'], {
       cwd: root,
       encoding: 'utf8',
@@ -40,6 +42,8 @@ describe('opencoven binary', () => {
   });
 
   test('keeps JSON command failures machine-readable on stdout', () => {
+    expect(existsSync(binary), 'CLI binary is missing').toBe(true);
+
     const result = spawnSync(process.execPath, [binary, '--json', 'status'], {
       cwd: root,
       encoding: 'utf8',
