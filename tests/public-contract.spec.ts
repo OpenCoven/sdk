@@ -22,6 +22,9 @@ function hasFunction(value: object, key: string): boolean {
 describe('public package entry points', () => {
   test('exports the supported public SDK surfaces', () => {
     expect(hasFunction(core, 'createMemorySecretStore')).toBe(true);
+    expect(hasFunction(core, 'createManagedMemorySecretStore')).toBe(true);
+    expect(hasFunction(core, 'InvalidSecretKeyError')).toBe(true);
+    expect(hasFunction(core, 'SecretStoreDisposedError')).toBe(true);
     expect(hasFunction(core, 'normalizeError')).toBe(true);
     expect(hasFunction(core, 'assessCompatibility')).toBe(true);
     expect(hasFunction(core, 'createOperationScope')).toBe(true);

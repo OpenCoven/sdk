@@ -27,5 +27,10 @@ export type {
 } from './operation-control.js';
 export type { OperationEvent, OperationObserver } from './operation-events.js';
 
-export { createMemorySecretStore } from './secret-store.js';
-export type { SecretStore } from './secret-store.js';
+export {
+  createManagedMemorySecretStore,
+  createMemorySecretStore,
+  InvalidSecretKeyError,
+  SecretStoreDisposedError,
+} from './secret-store.js';
+export type { ManagedSecretStore, SecretStore } from './secret-store.js';
