@@ -1,8 +1,14 @@
-import { CaveClient, CaveClientError, type CaveHealth } from '@opencoven/cave-client';
+import {
+  CaveClient,
+  CaveClientError,
+  isCaveClientError,
+  type CaveHealth,
+} from '@opencoven/cave-client';
 import {
   COVEN_DAEMON_PROTOCOL,
   CovenClient,
   CovenClientError,
+  isCovenClientError,
 } from '@opencoven/coven-client';
 import { OpenCovenSdkError, createOpenCovenSdk } from '@opencoven/sdk';
 import { describe, expect, test } from 'vitest';
@@ -257,5 +263,19 @@ describe('unified health reporting', () => {
     if (report.coven.status === 'unhealthy') {
       expect(report.coven.error.normalized.code).toBe('offline');
     }
+  });
+
+  test('rejects hostile error-brand proxies without escaping', () => {
+    const hostile = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error('hostile getter');
+        },
+      },
+    );
+
+    expect(isCaveClientError(hostile)).toBe(false);
+    expect(isCovenClientError(hostile)).toBe(false);
   });
 });

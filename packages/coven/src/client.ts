@@ -29,11 +29,15 @@ export class CovenClientError extends Error {
 }
 
 export function isCovenClientError(error: unknown): error is CovenClientError {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    Reflect.get(error, COVEN_CLIENT_ERROR_BRAND) === true
-  );
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  try {
+    return Reflect.get(error, COVEN_CLIENT_ERROR_BRAND) === true;
+  } catch {
+    return false;
+  }
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

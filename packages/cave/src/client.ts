@@ -47,11 +47,15 @@ export class CaveClientError extends Error {
 }
 
 export function isCaveClientError(error: unknown): error is CaveClientError {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    Reflect.get(error, CAVE_CLIENT_ERROR_BRAND) === true
-  );
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  try {
+    return Reflect.get(error, CAVE_CLIENT_ERROR_BRAND) === true;
+  } catch {
+    return false;
+  }
 }
 
 const CAVE_API_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;

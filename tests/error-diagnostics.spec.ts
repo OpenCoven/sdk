@@ -71,6 +71,29 @@ describe('safe error diagnostics', () => {
     });
   });
 
+  test('falls back safely when allowlisted error properties are hostile', () => {
+    const hostile = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error('hostile getter');
+        },
+      },
+    );
+
+    expect(
+      normalizeError(hostile, {
+        system: 'cave',
+        operation: 'health',
+      }),
+    ).toEqual({
+      system: 'cave',
+      code: 'unknown',
+      retryable: false,
+      operation: 'health',
+    });
+  });
+
   test('preserves Cave transport failures as native causes', async () => {
     const transportError = Object.assign(new Error('socket closed'), {
       code: 'unavailable',
