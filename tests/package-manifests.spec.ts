@@ -37,6 +37,16 @@ describe('public package manifests', () => {
     );
   });
 
+  test('runs deterministic multi-seed operation stress verification', () => {
+    expect(rootManifest.devDependencies?.['fast-check']).toBe('4.3.0');
+    expect(rootManifest.scripts?.['test:stress']).toBe(
+      'node ./scripts/run-operation-stress.mjs',
+    );
+    expect(rootManifest.scripts?.verify).toContain(
+      'corepack pnpm@10.34.0 test:stress',
+    );
+  });
+
   test('keeps every package unpublished until an intentional release change', () => {
     expect(rootManifest.pnpm?.overrides?.esbuild).toBe('0.28.1');
 

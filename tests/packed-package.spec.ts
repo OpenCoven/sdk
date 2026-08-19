@@ -324,6 +324,7 @@ setTimeout(() => {
     expect(result.stdout).toContain('Cave health example passed.');
     expect(result.stdout).toContain('Coven health example passed.');
     expect(result.stdout).toContain('Unified health example passed.');
+    expect(result.stdout).toContain('Packed timeout canary passed.');
     expect(String(result.stdout)).toContain('Packed license metadata verified.');
   }, 30_000);
 });
