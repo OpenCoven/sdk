@@ -6,7 +6,15 @@ import {
 } from '@opencoven/sdk-core';
 
 import type { CaveHealth } from './schemas.js';
-import type { CaveHealthResponse } from './schemas.js';
+import type {
+  CaveExecutionAttempt,
+  CaveExecutionWindow,
+  CaveFamiliar,
+  CaveFamiliarAnalytics,
+  CaveFamiliarContract,
+  CaveFamiliarWire,
+  CaveHealthResponse,
+} from './schemas.js';
 import type { CaveTransport } from './transport.js';
 import { CAVE_CLIENT_VERSION } from './version.js';
 
@@ -96,6 +104,152 @@ function validateHealthResponse(response: unknown): response is CaveHealthRespon
   return response.data.status === 'ok';
 }
 
+
+// ── Familiars ───────────────────────────────────────────────────────────────
+
+function invalidResponse(operation: string): CaveClientError {
+  return new CaveClientError(normalizeCaveError({ code: 'invalid_response' }, operation));
+}
+
+function unsupported(operation: string): CaveClientError {
+  return new CaveClientError(normalizeCaveError({ code: 'unsupported_operation' }, operation));
+}
+
+/**
+ * A Cave route that answers `{ ok: false, error }` has failed in a way the
+ * caller should hear about in the same shape as a transport failure. Left
+ * unchecked it would return an envelope with no payload and the caller would
+ * read `undefined` as "no familiars" rather than as "the request failed".
+ */
+function refusalOf(response: Record<string, unknown>, operation: string): CaveClientError | null {
+  if (response.ok === false) {
+    const reason = typeof response.reason === 'string' ? response.reason : 'request_failed';
+    const message = typeof response.error === 'string' ? response.error : undefined;
+
+    return new CaveClientError(normalizeCaveError({ code: reason, message }, operation));
+  }
+
+  return null;
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+function optionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
+}
+
+function optionalNumber(value: unknown): boolean {
+  return value === undefined || (typeof value === 'number' && Number.isFinite(value));
+}
+
+function isFamiliarWire(value: unknown): value is CaveFamiliarWire {
+  if (!isObject(value)) {
+    return false;
+  }
+
+  return (
+    isString(value.id) &&
+    isString(value.display_name) &&
+    isString(value.role) &&
+    optionalString(value.description) &&
+    optionalString(value.pronouns) &&
+    optionalString(value.status) &&
+    optionalString(value.last_seen) &&
+    optionalNumber(value.active_sessions) &&
+    optionalString(value.memory_freshness)
+  );
+}
+
+/** The one place the wire's snake_case meets the rest of the program. */
+function toFamiliar(wire: CaveFamiliarWire): CaveFamiliar {
+  return {
+    id: wire.id,
+    displayName: wire.display_name,
+    role: wire.role,
+    ...(wire.description === undefined ? {} : { description: wire.description }),
+    ...(wire.pronouns === undefined ? {} : { pronouns: wire.pronouns }),
+    ...(wire.status === undefined ? {} : { status: wire.status }),
+    ...(wire.last_seen === undefined ? {} : { lastSeen: wire.last_seen }),
+    ...(wire.active_sessions === undefined ? {} : { activeSessions: wire.active_sessions }),
+    ...(wire.memory_freshness === undefined ? {} : { memoryFreshness: wire.memory_freshness }),
+  };
+}
+
+function isContractReport(value: unknown): boolean {
+  if (!isObject(value)) {
+    return false;
+  }
+
+  if (!isString(value.specVersion) || typeof value.pass !== 'boolean') {
+    return false;
+  }
+
+  if (!Array.isArray(value.properties) || !Array.isArray(value.violations)) {
+    return false;
+  }
+
+  return value.properties.every(
+    (entry) => isObject(entry) && isString(entry.property) && typeof entry.pass === 'boolean',
+  );
+}
+
+function isWindow(value: unknown): value is CaveExecutionWindow {
+  if (!isObject(value)) {
+    return false;
+  }
+
+  const counts = ['attempts', 'completed', 'failed', 'cancelled', 'toolCalls', 'toolFailures'];
+
+  if (!counts.every((key) => typeof value[key] === 'number')) {
+    return false;
+  }
+
+  // Null is meaningful: a success rate over no attempts is not zero.
+  if (value.successRate !== null && typeof value.successRate !== 'number') {
+    return false;
+  }
+
+  return Array.isArray(value.models) && Array.isArray(value.harnesses);
+}
+
+function isAttempt(value: unknown): value is CaveExecutionAttempt {
+  if (!isObject(value)) {
+    return false;
+  }
+
+  return (
+    isString(value.id) &&
+    isString(value.executionKind) &&
+    isString(value.occurredAt) &&
+    isString(value.harnessId) &&
+    (value.status === 'completed' || value.status === 'failed' || value.status === 'cancelled') &&
+    typeof value.toolCalls === 'number' &&
+    typeof value.toolFailures === 'number'
+  );
+}
+
+function isAnalytics(value: unknown): value is CaveFamiliarAnalytics {
+  if (!isObject(value)) {
+    return false;
+  }
+
+  if (!isString(value.generatedAt) || !isObject(value.windows)) {
+    return false;
+  }
+
+  if (!Array.isArray(value.recentAttempts) || !value.recentAttempts.every(isAttempt)) {
+    return false;
+  }
+
+  if (!Object.values(value.windows).every(isWindow)) {
+    return false;
+  }
+
+  return isObject(value.backfill) && isString(value.backfill.state);
+}
+
 export class CaveClient {
   readonly #transport: CaveTransport;
 
@@ -157,6 +311,137 @@ export class CaveClient {
       }
 
       throw new CaveClientError(normalizeCaveError(error, 'health'), undefined, { cause: error });
+    }
+  }
+
+  /**
+   * The familiar roster.
+   *
+   * Mirrors `GET /api/familiars`. A malformed entry fails the whole call
+   * rather than being dropped: a roster silently missing one familiar is
+   * worse than a roster that says it could not be read.
+   */
+  async familiars(): Promise<CaveFamiliar[]> {
+    try {
+      const call = this.#transport.familiars?.bind(this.#transport);
+
+      if (call === undefined) {
+        throw unsupported('familiars');
+      }
+
+      const response: unknown = await call();
+
+      if (!isObject(response)) {
+        throw invalidResponse('familiars');
+      }
+
+      const refusal = refusalOf(response, 'familiars');
+
+      if (refusal !== null) {
+        throw refusal;
+      }
+
+      if (!Array.isArray(response.familiars) || !response.familiars.every(isFamiliarWire)) {
+        throw invalidResponse('familiars');
+      }
+
+      return response.familiars.map(toFamiliar);
+    } catch (error) {
+      if (isCaveClientError(error)) {
+        throw error;
+      }
+
+      throw new CaveClientError(normalizeCaveError(error, 'familiars'), undefined, {
+        cause: error,
+      });
+    }
+  }
+
+  /** The Familiar Contract report. Mirrors `GET /api/familiars/:id/contract`. */
+  async familiarContract(familiarId: string): Promise<CaveFamiliarContract> {
+    try {
+      const call = this.#transport.familiarContract?.bind(this.#transport);
+
+      if (call === undefined) {
+        throw unsupported('familiarContract');
+      }
+
+      const response: unknown = await call(familiarId);
+
+      if (!isObject(response)) {
+        throw invalidResponse('familiarContract');
+      }
+
+      const refusal = refusalOf(response, 'familiarContract');
+
+      if (refusal !== null) {
+        throw refusal;
+      }
+
+      if (typeof response.present !== 'boolean' || !isContractReport(response.report)) {
+        throw invalidResponse('familiarContract');
+      }
+
+      return {
+        id: isString(response.id) ? response.id : familiarId,
+        ...(isString(response.workspace) ? { workspace: response.workspace } : {}),
+        present: response.present,
+        report: response.report as CaveFamiliarContract['report'],
+      };
+    } catch (error) {
+      if (isCaveClientError(error)) {
+        throw error;
+      }
+
+      throw new CaveClientError(normalizeCaveError(error, 'familiarContract'), undefined, {
+        cause: error,
+      });
+    }
+  }
+
+  /**
+   * Execution analytics. Mirrors `GET /api/familiars/:id/execution-analytics`.
+   *
+   * `backfill` comes back untouched. A success rate drawn from a partial
+   * import is a different claim from one drawn from all of it, and dropping
+   * the distinction here would leave every caller unable to make it.
+   */
+  async familiarAnalytics(
+    familiarId: string,
+    options?: { recentLimit?: number },
+  ): Promise<CaveFamiliarAnalytics> {
+    try {
+      const call = this.#transport.familiarAnalytics?.bind(this.#transport);
+
+      if (call === undefined) {
+        throw unsupported('familiarAnalytics');
+      }
+
+      const response: unknown = await call(familiarId, options);
+
+      if (!isObject(response)) {
+        throw invalidResponse('familiarAnalytics');
+      }
+
+      const refusal = refusalOf(response, 'familiarAnalytics');
+
+      if (refusal !== null) {
+        throw refusal;
+      }
+
+      if (!isAnalytics(response.analytics)) {
+        throw invalidResponse('familiarAnalytics');
+      }
+
+      return response.analytics;
+    } catch (error) {
+      if (isCaveClientError(error)) {
+        throw error;
+      }
+
+      throw new CaveClientError(normalizeCaveError(error, 'familiarAnalytics'), undefined, {
+        cause: error,
+      });
     }
   }
 }

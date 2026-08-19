@@ -8,3 +8,201 @@ export interface CaveHealthResponse {
   requestId?: string;
   data: CaveHealth;
 }
+
+/**
+ * Familiars.
+ *
+ * These mirror what Cave already serves, rather than proposing a shape it does
+ * not have: `GET /api/familiars` for the roster, `/[id]/contract` for the
+ * Familiar Contract report, and `/[id]/execution-analytics` for run history.
+ * Field-for-field, so a change on either side is a type error rather than a
+ * value that silently arrives as undefined.
+ *
+ * The wire uses snake_case on the roster and camelCase everywhere else. The
+ * `*Wire` types below keep the wire spelling exactly, because that is what has
+ * to be validated; the exported types are camelCase, because that is what the
+ * rest of a TypeScript program expects. The client is the one place the two
+ * meet, and it is a better place for the seam than every call site.
+ */
+
+/** A familiar as the roster lists it. */
+export interface CaveFamiliar {
+  id: string;
+  displayName: string;
+  role: string;
+  description?: string;
+  pronouns?: string;
+  status?: string;
+  lastSeen?: string;
+  activeSessions?: number;
+  memoryFreshness?: string;
+}
+
+/** The roster entry as it arrives. */
+export interface CaveFamiliarWire {
+  id: string;
+  display_name: string;
+  role: string;
+  description?: string;
+  pronouns?: string;
+  status?: string;
+  last_seen?: string;
+  active_sessions?: number;
+  memory_freshness?: string;
+}
+
+export interface CaveFamiliarsResponse {
+  ok: boolean;
+  familiars?: CaveFamiliarWire[];
+  error?: string;
+  reason?: string;
+}
+
+/**
+ * The five normative properties of the Familiar Contract, in the spec's order.
+ *
+ * Duplicated from Cave rather than imported because the SDK does not depend on
+ * Cave's source. The contract report carries its own `specVersion`, so a client
+ * that finds a property it does not know about can say which version it was
+ * built against instead of guessing.
+ */
+export const CAVE_FAMILIAR_PROPERTIES = [
+  'Named Identity',
+  'Defined Purpose',
+  'Bounded Authority',
+  'Persistent Memory',
+  'Human Belonging',
+] as const;
+
+export type CaveFamiliarProperty = (typeof CAVE_FAMILIAR_PROPERTIES)[number];
+
+export type CaveContractFile = 'SOUL.md' | 'IDENTITY.md' | 'ward.toml' | 'MEMORY.md' | 'cross-file';
+
+export interface CaveContractViolation {
+  file: CaveContractFile;
+  field: string;
+  message: string;
+}
+
+export interface CavePropertyCoverage {
+  property: string;
+  pass: boolean;
+}
+
+/**
+ * `pass` is true when there are zero hard violations. Warnings do not fail a
+ * contract -- a familiar that keeps no memory is a real answer to a real
+ * question, not a malformed one.
+ */
+export interface CaveContractReport {
+  specVersion: string;
+  pass: boolean;
+  properties: CavePropertyCoverage[];
+  violations: CaveContractViolation[];
+  warnings: CaveContractViolation[];
+}
+
+export interface CaveFamiliarContract {
+  id: string;
+  workspace?: string;
+  present: boolean;
+  report: CaveContractReport;
+}
+
+export interface CaveFamiliarContractResponse {
+  ok: boolean;
+  id?: string;
+  workspace?: string;
+  present?: boolean;
+  report?: CaveContractReport;
+  error?: string;
+}
+
+/** The windows Cave aggregates over. */
+export const CAVE_ANALYTICS_WINDOWS = ['7d', '14d', '8w', 'all'] as const;
+
+export type CaveAnalyticsWindowKey = (typeof CAVE_ANALYTICS_WINDOWS)[number];
+
+export interface CaveExecutionSlice {
+  key: string;
+  label?: string;
+  attempts: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  successRate: number | null;
+  medianDurationMs?: number;
+  totalTokens?: number;
+  costUsd?: number;
+  toolCalls: number;
+  toolFailures: number;
+}
+
+export interface CaveExecutionCoverage {
+  known: number;
+  total: number;
+  ratio: number;
+}
+
+export interface CaveExecutionWindow {
+  attempts: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  /** Null when there were no attempts: a rate over nothing is not zero. */
+  successRate: number | null;
+  medianDurationMs?: number;
+  p95DurationMs?: number;
+  totalTokens?: number;
+  costUsd?: number;
+  toolCalls: number;
+  toolFailures: number;
+  models: CaveExecutionSlice[];
+  harnesses: CaveExecutionSlice[];
+  coverage: Record<string, CaveExecutionCoverage>;
+}
+
+export interface CaveExecutionAttempt {
+  id: string;
+  sessionId?: string;
+  turnId?: string;
+  executionKind: string;
+  occurredAt: string;
+  harnessId: string;
+  harnessVersion?: string;
+  requestedModel?: string;
+  forwardedModel?: string;
+  confirmedModel?: string;
+  status: 'completed' | 'failed' | 'cancelled';
+  durationMs?: number;
+  totalTokens?: number;
+  costUsd?: number;
+  toolCalls: number;
+  toolFailures: number;
+}
+
+/**
+ * Whether the history behind these numbers is complete.
+ *
+ * Reported rather than hidden, because a success rate drawn from a partial
+ * import is a different claim from one drawn from all of it, and a reader who
+ * cannot tell them apart will believe the wrong one.
+ */
+export interface CaveExecutionBackfill {
+  state: 'complete' | 'partial' | 'not-started';
+  imported: number;
+  remaining?: number;
+}
+
+export interface CaveFamiliarAnalytics {
+  generatedAt: string;
+  windows: Partial<Record<CaveAnalyticsWindowKey, CaveExecutionWindow>>;
+  recentAttempts: CaveExecutionAttempt[];
+  backfill: CaveExecutionBackfill;
+}
+
+export interface CaveFamiliarAnalyticsResponse {
+  ok: boolean;
+  analytics?: CaveFamiliarAnalytics;
+  error?: string;
+}

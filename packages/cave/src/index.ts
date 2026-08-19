@@ -13,6 +13,28 @@ export {
 } from './contract-fixture.js';
 export type { CaveClientOptions } from './client.js';
 export type { CaveContractFixture } from './contract-fixture.js';
-export type { CaveHealth, CaveHealthResponse } from './schemas.js';
+export { CAVE_ANALYTICS_WINDOWS, CAVE_FAMILIAR_PROPERTIES } from './schemas.js';
+export type {
+  CaveAnalyticsWindowKey,
+  CaveContractFile,
+  CaveContractReport,
+  CaveContractViolation,
+  CaveExecutionAttempt,
+  CaveExecutionBackfill,
+  CaveExecutionCoverage,
+  CaveExecutionSlice,
+  CaveExecutionWindow,
+  CaveFamiliar,
+  CaveFamiliarAnalytics,
+  CaveFamiliarAnalyticsResponse,
+  CaveFamiliarContract,
+  CaveFamiliarContractResponse,
+  CaveFamiliarProperty,
+  CaveFamiliarsResponse,
+  CaveFamiliarWire,
+  CaveHealth,
+  CaveHealthResponse,
+  CavePropertyCoverage,
+} from './schemas.js';
 export type { CaveTransport } from './transport.js';
 export { CAVE_CLIENT_VERSION } from './version.js';
