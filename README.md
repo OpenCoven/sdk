@@ -55,7 +55,30 @@ const cave = new CaveClient({
 });
 ```
 
-The SDK does not own the URL, authentication, retry, timeout, or fetch policy.
+The SDK does not own the URL, authentication, retry, or fetch policy. Callers
+may provide cancellation and an optional SDK-enforced timeout:
+
+```ts
+const controller = new AbortController();
+
+await cave.health({
+  signal: controller.signal,
+  timeoutMs: 5_000,
+  observer: {
+    onEvent(event) {
+      telemetry.record(event);
+    },
+    onObserverError(error, event) {
+      telemetry.recordObserverFailure(error, event);
+    },
+  },
+});
+```
+
+There is no default timeout. A configured timeout rejects promptly even when a
+transport ignores the supplied signal; only a cooperative transport can stop
+its underlying I/O. Transports receive an optional context with the composed
+`signal` and absolute monotonic `deadline`.
 
 ## Coordinated health
 
@@ -63,6 +86,11 @@ The SDK does not own the URL, authentication, retry, timeout, or fetch policy.
 | --- | --- |
 | `health()` | Checks configured clients in order and rejects on the first failure |
 | `healthReport()` | Starts configured checks concurrently and reports each as `healthy`, `unhealthy`, or `not_configured` |
+
+Top-level SDK timeouts are total budgets across all configured clients.
+Per-client timeouts and signals can make one check stricter, but cannot extend
+the global deadline. Lifecycle events remain Cave- or Coven-specific and
+contain only allowlisted normalized metadata.
 
 Client errors expose stable normalized metadata and retain the original failure
 as `cause`:
@@ -77,6 +105,32 @@ try {
   }
 }
 ```
+
+Do not serialize or log `cause` blindly: it may contain caller or transport
+data. Observer events exclude causes, stacks, transport messages, and response
+payloads.
+
+## Runtime control errors
+
+| Code | Meaning | Retryable |
+| --- | --- | --- |
+| `timeout` | The configured operation deadline elapsed | Yes |
+| `aborted` | A caller-owned signal cancelled the operation | No |
+| `invalid_options` | A timeout or signal option was invalid | No |
+
+Timeouts must be positive safe integers no greater than `2_147_483_647`.
+Automatic retries are intentionally not performed.
+
+## Production checklist
+
+- Configure an explicit timeout for every remote operation.
+- Define which application component owns each cancellation signal.
+- Implement both observer callbacks and route observer failures to a safe sink.
+- Supply application-managed persistent credential storage; SDK memory stores
+  are non-persistent.
+- Treat error causes as sensitive and log only normalized or event metadata.
+- Complete the separate release-readiness gate before publishing or production
+  adoption; these packages remain private and experimental.
 
 Reviewed Cave and Coven fixture bytes are committed under their client
 packages and verified locally. Refresh them with

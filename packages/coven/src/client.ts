@@ -1,4 +1,12 @@
-import { normalizeError, type NormalizedError } from '@opencoven/sdk-core';
+import {
+  isOperationAbortedError,
+  isOperationTimeoutError,
+  normalizeError,
+  runOperation,
+  type NormalizedError,
+  type OperationDefaults,
+  type OperationOptions,
+} from '@opencoven/sdk-core';
 
 import { COVEN_DAEMON_PROTOCOL, type CovenHealth, type CovenHealthResponse } from './schemas.js';
 import type { CovenTransport } from './transport.js';
@@ -7,6 +15,7 @@ const COVEN_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/coven-client/CovenClient
 
 export interface CovenClientOptions {
   transport: CovenTransport;
+  operation?: OperationDefaults;
 }
 
 export function normalizeCovenError(error: unknown, operation: string): NormalizedError {
@@ -19,21 +28,33 @@ export function normalizeCovenError(error: unknown, operation: string): Normaliz
 
 export class CovenClientError extends Error {
   readonly normalized: NormalizedError;
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly requestId: string | undefined;
+  readonly statusCode: number | undefined;
 
   constructor(normalized: NormalizedError, options?: ErrorOptions) {
     super(`${normalized.system}.${normalized.operation}: ${normalized.code}`, options);
     this.name = 'CovenClientError';
     this.normalized = normalized;
+    this.code = normalized.code;
+    this.retryable = normalized.retryable;
+    this.requestId = normalized.requestId;
+    this.statusCode = normalized.statusCode;
     Object.defineProperty(this, COVEN_CLIENT_ERROR_BRAND, { value: true });
   }
 }
 
 export function isCovenClientError(error: unknown): error is CovenClientError {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    Reflect.get(error, COVEN_CLIENT_ERROR_BRAND) === true
-  );
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  try {
+    return Reflect.get(error, COVEN_CLIENT_ERROR_BRAND) === true;
+  } catch {
+    return false;
+  }
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -82,26 +103,64 @@ function validateHealthResponse(response: unknown): response is CovenHealthRespo
 
 export class CovenClient {
   readonly #transport: CovenTransport;
+  readonly #operation: OperationDefaults | undefined;
 
   constructor(options: CovenClientOptions) {
     this.#transport = options.transport;
+    this.#operation = options.operation;
   }
 
-  async health(): Promise<CovenHealth> {
+  async health(options: OperationOptions = {}): Promise<CovenHealth> {
+    const timeoutMs = options.timeoutMs ?? this.#operation?.timeoutMs;
+    const observer = options.observer ?? this.#operation?.observer;
+    const operationOptions: OperationOptions = {
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      ...(observer === undefined ? {} : { observer }),
+    };
+
     try {
-      const response: unknown = await this.#transport.health();
+      return await runOperation(
+        {
+          system: 'coven',
+          operation: 'health',
+        },
+        operationOptions,
+        async (context) => {
+          try {
+            const response: unknown = await this.#transport.health(context);
 
-      if (!validateHealthResponse(response) || response.apiVersion !== COVEN_DAEMON_PROTOCOL) {
-        throw invalidHealthResponse();
-      }
+            if (
+              !validateHealthResponse(response) ||
+              response.apiVersion !== COVEN_DAEMON_PROTOCOL
+            ) {
+              throw invalidHealthResponse();
+            }
 
-      return { status: 'ok' };
+            return { status: 'ok' };
+          } catch (error) {
+            if (isCovenClientError(error)) {
+              throw error;
+            }
+
+            throw new CovenClientError(normalizeCovenError(error, 'health'), {
+              cause: error,
+            });
+          }
+        },
+      );
     } catch (error) {
       if (isCovenClientError(error)) {
         throw error;
       }
 
-      throw new CovenClientError(normalizeCovenError(error, 'health'), { cause: error });
+      if (isOperationTimeoutError(error) || isOperationAbortedError(error)) {
+        throw new CovenClientError(normalizeCovenError(error, 'health'), {
+          cause: error,
+        });
+      }
+
+      throw error;
     }
   }
 }

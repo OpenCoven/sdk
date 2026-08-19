@@ -14,8 +14,11 @@ import {
 } from '@opencoven/cave-client';
 
 const cave = new CaveClient({
+  operation: {
+    timeoutMs: 5_000,
+  },
   transport: {
-    health: async () => ({
+    health: async (context) => ({
       apiVersion: '1.0',
       minimumClientVersion: CAVE_CLIENT_VERSION,
       data: { status: 'ok' },
@@ -24,7 +27,17 @@ const cave = new CaveClient({
 });
 
 try {
-  await cave.health();
+  await cave.health({
+    signal: new AbortController().signal,
+    observer: {
+      onEvent(event) {
+        console.log(event.phase);
+      },
+      onObserverError(error) {
+        console.error(error);
+      },
+    },
+  });
 } catch (error) {
   if (isCaveClientError(error)) {
     console.error(error.normalized.code, error.cause);
@@ -37,6 +50,15 @@ and rejects incompatible API or minimum-client versions. No request is made
 until `health()` is called. Use `isCaveClientError(error)` when errors may cross
 bundles or duplicate package installations; unlike `instanceof`, the guard is
 stable across module instances.
+
+Constructor operation defaults are overridden by per-call values. There is no
+default timeout. The transport context is optional for source compatibility
+and contains a composed signal plus the earliest monotonic deadline. A timeout
+returns promptly even if the transport ignores the signal, but only a
+cooperative transport stops underlying I/O. Do not log `error.cause` blindly.
+The same controls apply to `familiars()`, `familiarContract()`, and
+`familiarAnalytics()`; analytics keeps `recentLimit` as a transport option
+while accepting operation controls in the same options object.
 
 Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,

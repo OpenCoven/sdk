@@ -1,5 +1,6 @@
 import { CaveClient, isCaveClientError } from '@opencoven/cave-client';
-import { describe, expect, test } from 'vitest';
+import type { OperationContext } from '@opencoven/sdk-core';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 /**
  * The familiar operations mirror routes Cave already serves. What these hold
@@ -83,6 +84,10 @@ async function codeOf(run: () => Promise<unknown>): Promise<string> {
   throw new Error('Expected the call to reject.');
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('cave familiars', () => {
   test('maps the roster out of the wire spelling', async () => {
     const client = clientWith({
@@ -103,6 +108,55 @@ describe('cave familiars', () => {
     });
     // The wire spelling must not survive the client.
     expect(Object.keys(familiar ?? {})).not.toContain('display_name');
+  });
+
+  test('enforces operation controls for a never-settling roster transport', async () => {
+    vi.useFakeTimers();
+    let context: OperationContext | undefined;
+    const client = clientWith({
+      familiars: (receivedContext?: OperationContext) => {
+        context = receivedContext;
+        return new Promise<never>(() => undefined);
+      },
+    });
+    const result = client.familiars({ timeoutMs: 10 });
+    const caught = result.catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(context?.signal.aborted).toBe(true);
+    expect(await caught).toMatchObject({
+      normalized: {
+        operation: 'familiars',
+        code: 'timeout',
+      },
+    });
+  });
+
+  test('separates analytics transport options from operation controls', async () => {
+    vi.useFakeTimers();
+    let receivedOptions: { recentLimit?: number } | undefined;
+    let context: OperationContext | undefined;
+    const client = clientWith({
+      familiarAnalytics: (
+        _familiarId: string,
+        options?: { recentLimit?: number },
+        receivedContext?: OperationContext,
+      ) => {
+        receivedOptions = options;
+        context = receivedContext;
+        return Promise.resolve({ ok: true, analytics: ANALYTICS });
+      },
+    });
+
+    await client.familiarAnalytics('cody', {
+      recentLimit: 5,
+      timeoutMs: 100,
+    });
+
+    expect(receivedOptions).toEqual({ recentLimit: 5 });
+    expect(context?.deadline).toBe(performance.now() + 100);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   test('omits absent optional fields rather than defining them as undefined', async () => {

@@ -11,7 +11,7 @@ import { COVEN_DAEMON_PROTOCOL, CovenClient } from '@opencoven/coven-client';
 
 const coven = new CovenClient({
   transport: {
-    health: async () => ({
+    health: async (context) => ({
       ok: true,
       apiVersion: COVEN_DAEMON_PROTOCOL,
       covenVersion: '0.1.0',
@@ -25,7 +25,7 @@ const coven = new CovenClient({
   },
 });
 
-await coven.health();
+await coven.health({ timeoutMs: 5_000 });
 ```
 
 `eventCursor` is optional and accepts any string for source compatibility.
@@ -33,6 +33,13 @@ Malformed responses and unsupported daemon protocols reject with
 `CovenClientError`; transport failures remain available through `error.cause`.
 Use `isCovenClientError(error)` when errors may cross bundles or duplicate
 package installations.
+
+`health()` accepts an optional signal, timeout, and lifecycle observer.
+Constructor operation defaults remain additive, and zero-argument transports
+remain compatible. There is no default timeout. Timeout rejects promptly for
+non-cooperative transports, while stopping underlying daemon I/O requires the
+transport to honor its context signal. Causes may contain transport data and
+must not be logged blindly.
 
 ## License
 

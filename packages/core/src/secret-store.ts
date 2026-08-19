@@ -4,6 +4,26 @@ export interface SecretStore {
   delete(key: string): Promise<boolean>;
 }
 
+export interface ManagedSecretStore extends SecretStore {
+  readonly disposed: boolean;
+  clear(): Promise<void>;
+  dispose(): Promise<void>;
+}
+
+export class InvalidSecretKeyError extends TypeError {
+  constructor() {
+    super('Secret keys must contain non-whitespace characters and be at most 256 characters');
+    this.name = 'InvalidSecretKeyError';
+  }
+}
+
+export class SecretStoreDisposedError extends Error {
+  constructor() {
+    super('Secret store has been disposed');
+    this.name = 'SecretStoreDisposedError';
+  }
+}
+
 class MemorySecretStore implements SecretStore {
   readonly #secrets = new Map<string, string>();
 
@@ -21,6 +41,73 @@ class MemorySecretStore implements SecretStore {
   }
 }
 
+class ManagedMemorySecretStore implements ManagedSecretStore {
+  readonly #secrets = new Map<string, string>();
+  #disposed = false;
+
+  get disposed(): boolean {
+    return this.#disposed;
+  }
+
+  get(key: string): Promise<string | undefined> {
+    const error = this.#operationError(key);
+    return error === undefined
+      ? Promise.resolve(this.#secrets.get(key))
+      : Promise.reject(error);
+  }
+
+  set(key: string, value: string): Promise<void> {
+    const error = this.#operationError(key);
+    if (error !== undefined) {
+      return Promise.reject(error);
+    }
+
+    this.#secrets.set(key, value);
+    return Promise.resolve();
+  }
+
+  delete(key: string): Promise<boolean> {
+    const error = this.#operationError(key);
+    return error === undefined
+      ? Promise.resolve(this.#secrets.delete(key))
+      : Promise.reject(error);
+  }
+
+  clear(): Promise<void> {
+    if (this.#disposed) {
+      return Promise.reject(new SecretStoreDisposedError());
+    }
+
+    this.#secrets.clear();
+    return Promise.resolve();
+  }
+
+  dispose(): Promise<void> {
+    if (!this.#disposed) {
+      this.#secrets.clear();
+      this.#disposed = true;
+    }
+
+    return Promise.resolve();
+  }
+
+  #operationError(key: string): Error | undefined {
+    if (this.#disposed) {
+      return new SecretStoreDisposedError();
+    }
+
+    if (key.trim().length === 0 || key.length > 256) {
+      return new InvalidSecretKeyError();
+    }
+
+    return undefined;
+  }
+}
+
 export function createMemorySecretStore(): SecretStore {
   return new MemorySecretStore();
+}
+
+export function createManagedMemorySecretStore(): ManagedSecretStore {
+  return new ManagedMemorySecretStore();
 }

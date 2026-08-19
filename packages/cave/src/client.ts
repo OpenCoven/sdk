@@ -1,8 +1,14 @@
 import {
   assessCompatibility,
+  isOperationAbortedError,
+  isOperationTimeoutError,
   normalizeError,
+  runOperation,
   type CompatibilityAssessment,
   type NormalizedError,
+  type OperationContext,
+  type OperationDefaults,
+  type OperationOptions,
 } from '@opencoven/sdk-core';
 
 import type { CaveHealth } from './schemas.js';
@@ -23,6 +29,11 @@ const CAVE_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveClientErr
 
 export interface CaveClientOptions {
   transport: CaveTransport;
+  operation?: OperationDefaults;
+}
+
+export interface CaveFamiliarAnalyticsOptions extends OperationOptions {
+  recentLimit?: number;
 }
 
 export function normalizeCaveError(error: unknown, operation: string): NormalizedError {
@@ -36,6 +47,10 @@ export function normalizeCaveError(error: unknown, operation: string): Normalize
 export class CaveClientError extends Error {
   readonly normalized: NormalizedError;
   readonly compatibility: CompatibilityAssessment | undefined;
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly requestId: string | undefined;
+  readonly statusCode: number | undefined;
 
   constructor(
     normalized: NormalizedError,
@@ -51,16 +66,24 @@ export class CaveClientError extends Error {
     this.name = 'CaveClientError';
     this.normalized = normalized;
     this.compatibility = compatibility;
+    this.code = normalized.code;
+    this.retryable = normalized.retryable;
+    this.requestId = normalized.requestId;
+    this.statusCode = normalized.statusCode;
     Object.defineProperty(this, CAVE_CLIENT_ERROR_BRAND, { value: true });
   }
 }
 
 export function isCaveClientError(error: unknown): error is CaveClientError {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    Reflect.get(error, CAVE_CLIENT_ERROR_BRAND) === true
-  );
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  try {
+    return Reflect.get(error, CAVE_CLIENT_ERROR_BRAND) === true;
+  } catch {
+    return false;
+  }
 }
 
 const CAVE_API_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -323,14 +346,65 @@ function isAnalytics(value: unknown): value is CaveFamiliarAnalytics {
 
 export class CaveClient {
   readonly #transport: CaveTransport;
+  readonly #operation: OperationDefaults | undefined;
 
   constructor(options: CaveClientOptions) {
     this.#transport = options.transport;
+    this.#operation = options.operation;
   }
 
-  async health(): Promise<CaveHealth> {
+  async #execute<T>(
+    operation: string,
+    options: OperationOptions,
+    executor: (context: OperationContext) => Promise<T>,
+  ): Promise<T> {
+    const timeoutMs = options.timeoutMs ?? this.#operation?.timeoutMs;
+    const observer = options.observer ?? this.#operation?.observer;
+    const operationOptions: OperationOptions = {
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      ...(observer === undefined ? {} : { observer }),
+    };
+
     try {
-      const response: unknown = await this.#transport.health();
+      return await runOperation(
+        {
+          system: 'cave',
+          operation,
+        },
+        operationOptions,
+        async (context) => {
+          try {
+            return await executor(context);
+          } catch (error) {
+            if (isCaveClientError(error)) {
+              throw error;
+            }
+
+            throw new CaveClientError(normalizeCaveError(error, operation), undefined, {
+              cause: error,
+            });
+          }
+        },
+      );
+    } catch (error) {
+      if (isCaveClientError(error)) {
+        throw error;
+      }
+
+      if (isOperationTimeoutError(error) || isOperationAbortedError(error)) {
+        throw new CaveClientError(normalizeCaveError(error, operation), undefined, {
+          cause: error,
+        });
+      }
+
+      throw error;
+    }
+  }
+
+  async health(options: OperationOptions = {}): Promise<CaveHealth> {
+    return this.#execute('health', options, async (context) => {
+      const response: unknown = await this.#transport.health(context);
 
       if (!validateHealthResponse(response)) {
         throw invalidHealthResponse();
@@ -340,7 +414,10 @@ export class CaveClient {
         let compatibility: CompatibilityAssessment;
 
         try {
-          compatibility = assessCompatibility(response.minimumClientVersion, CAVE_CLIENT_VERSION);
+          compatibility = assessCompatibility(
+            response.minimumClientVersion,
+            CAVE_CLIENT_VERSION,
+          );
         } catch {
           throw invalidHealthResponse();
         }
@@ -376,13 +453,7 @@ export class CaveClient {
       }
 
       return response.data;
-    } catch (error) {
-      if (isCaveClientError(error)) {
-        throw error;
-      }
-
-      throw new CaveClientError(normalizeCaveError(error, 'health'), undefined, { cause: error });
-    }
+    });
   }
 
   /**
@@ -392,15 +463,15 @@ export class CaveClient {
    * rather than being dropped: a roster silently missing one familiar is
    * worse than a roster that says it could not be read.
    */
-  async familiars(): Promise<CaveFamiliar[]> {
-    try {
+  async familiars(options: OperationOptions = {}): Promise<CaveFamiliar[]> {
+    return this.#execute('familiars', options, async (context) => {
       const call = this.#transport.familiars?.bind(this.#transport);
 
       if (call === undefined) {
         throw unsupported('familiars');
       }
 
-      const response: unknown = await call();
+      const response: unknown = await call(context);
 
       if (!isObject(response)) {
         throw invalidResponse('familiars');
@@ -424,27 +495,22 @@ export class CaveClient {
       }
 
       return response.familiars.map(toFamiliar);
-    } catch (error) {
-      if (isCaveClientError(error)) {
-        throw error;
-      }
-
-      throw new CaveClientError(normalizeCaveError(error, 'familiars'), undefined, {
-        cause: error,
-      });
-    }
+    });
   }
 
   /** The Familiar Contract report. Mirrors `GET /api/familiars/:id/contract`. */
-  async familiarContract(familiarId: string): Promise<CaveFamiliarContract> {
-    try {
+  async familiarContract(
+    familiarId: string,
+    options: OperationOptions = {},
+  ): Promise<CaveFamiliarContract> {
+    return this.#execute('familiarContract', options, async (context) => {
       const call = this.#transport.familiarContract?.bind(this.#transport);
 
       if (call === undefined) {
         throw unsupported('familiarContract');
       }
 
-      const response: unknown = await call(familiarId);
+      const response: unknown = await call(familiarId, context);
 
       if (!isObject(response)) {
         throw invalidResponse('familiarContract');
@@ -470,15 +536,7 @@ export class CaveClient {
         present: response.present,
         report: response.report as CaveFamiliarContract['report'],
       };
-    } catch (error) {
-      if (isCaveClientError(error)) {
-        throw error;
-      }
-
-      throw new CaveClientError(normalizeCaveError(error, 'familiarContract'), undefined, {
-        cause: error,
-      });
-    }
+    });
   }
 
   /**
@@ -490,16 +548,19 @@ export class CaveClient {
    */
   async familiarAnalytics(
     familiarId: string,
-    options?: { recentLimit?: number },
+    options: CaveFamiliarAnalyticsOptions = {},
   ): Promise<CaveFamiliarAnalytics> {
-    try {
+    const transportOptions =
+      options.recentLimit === undefined ? undefined : { recentLimit: options.recentLimit };
+
+    return this.#execute('familiarAnalytics', options, async (context) => {
       const call = this.#transport.familiarAnalytics?.bind(this.#transport);
 
       if (call === undefined) {
         throw unsupported('familiarAnalytics');
       }
 
-      const response: unknown = await call(familiarId, options);
+      const response: unknown = await call(familiarId, transportOptions, context);
 
       if (!isObject(response)) {
         throw invalidResponse('familiarAnalytics');
@@ -520,15 +581,7 @@ export class CaveClient {
       }
 
       return response.analytics;
-    } catch (error) {
-      if (isCaveClientError(error)) {
-        throw error;
-      }
-
-      throw new CaveClientError(normalizeCaveError(error, 'familiarAnalytics'), undefined, {
-        cause: error,
-      });
-    }
+    });
   }
 }
 
