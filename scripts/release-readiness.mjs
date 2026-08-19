@@ -113,13 +113,27 @@ function validateReleaseWorkflow(root, config) {
     throw new Error(`Required release workflow is missing: ${RELEASE_WORKFLOW_PATH}`);
   }
 
-  const workflow = readFileSync(workflowPath, 'utf8');
+  // Normalised, because the marker below is anchored to newlines and a file
+  // with CRLF endings would never match `publish:\n` -- the validator would
+  // report a missing publish job on a workflow that has one.
+  const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n/g, '\n');
   const publishJobMarker = '\n  publish:\n';
   const publishJobIndex = workflow.indexOf(publishJobMarker);
   if (publishJobIndex < 0) {
     throw new Error('Release workflow must define a publish job');
   }
-  const publishJob = workflow.slice(publishJobIndex + publishJobMarker.length);
+
+  // Only the publish job, not everything after it.
+  //
+  // Slicing to the end of the file let any later job satisfy these
+  // requirements: a publish job with no `environment` and no permissions block
+  // passed as long as some other job further down happened to contain those
+  // strings. That is the deployment lock reporting itself as present while
+  // being absent, which is the one failure this check exists to prevent.
+  const publishJobBody = workflow.slice(publishJobIndex + publishJobMarker.length);
+  const nextJobIndex = publishJobBody.search(/\n {2}\S/);
+  const publishJob =
+    nextJobIndex < 0 ? publishJobBody : publishJobBody.slice(0, nextJobIndex);
   if (!publishJob.includes(`environment: ${config.githubEnvironment}`)) {
     throw new Error(
       `Release workflow publish job must use environment ${config.githubEnvironment}`,

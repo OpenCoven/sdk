@@ -82,8 +82,16 @@ describe('workflow action pins', () => {
     expect(releaseWorkflow).toContain(
       "if [ -n \"$(git status --porcelain --untracked-files=all)\" ]; then",
     );
-    expect(releaseWorkflow.indexOf('Require clean reviewed tree')).toBeLessThan(
-      releaseWorkflow.indexOf('Create release artifacts'),
-    );
+    // Presence first, then order. indexOf returns -1 for a missing step, and
+    // -1 is less than any real index, so the comparison alone passed when
+    // "Require clean reviewed tree" was absent entirely -- an assertion that
+    // could not fail, guarding the step that keeps an unreviewed tree from
+    // being released.
+    const cleanTreeIndex = releaseWorkflow.indexOf('Require clean reviewed tree');
+    const artifactsIndex = releaseWorkflow.indexOf('Create release artifacts');
+
+    expect(cleanTreeIndex).toBeGreaterThan(-1);
+    expect(artifactsIndex).toBeGreaterThan(-1);
+    expect(cleanTreeIndex).toBeLessThan(artifactsIndex);
   });
 });
