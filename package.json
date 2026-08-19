@@ -24,6 +24,7 @@
     "test:stress": "node ./scripts/run-operation-stress.mjs",
     "lint": "pnpm exec eslint . --max-warnings=0",
     "release:status": "changeset status",
+    "release:artifacts": "node ./scripts/create-release-artifacts.mjs",
     "release:version": "changeset version",
     "sync:contracts": "node ./scripts/import-contract-fixtures.mjs",
     "pack:public": "node ./scripts/pack-public-packages.mjs",
