@@ -1,6 +1,5 @@
 import { formatCliOutput, type CliOutput } from './output.js';
-
-export const DEV_CLI_VERSION = '0.1.0' as const;
+import { DEV_CLI_VERSION } from './version.js';
 
 export interface CliRunResult {
   exitCode: number;

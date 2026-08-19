@@ -8,6 +8,7 @@ import {
 import type { CaveHealth } from './schemas.js';
 import type { CaveHealthResponse } from './schemas.js';
 import type { CaveTransport } from './transport.js';
+import { CAVE_CLIENT_VERSION } from './version.js';
 
 export interface CaveClientOptions {
   transport: CaveTransport;
@@ -37,7 +38,6 @@ export class CaveClientError extends Error {
   }
 }
 
-const CAVE_CLIENT_VERSION = '0.1.0' as const;
 const CAVE_API_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const SUPPORTED_CAVE_API_MAJOR = '1';
 

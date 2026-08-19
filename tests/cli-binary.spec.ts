@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -7,6 +7,11 @@ import { describe, expect, test } from 'vitest';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const binary = resolve(root, 'packages/cli/dist/bin.js');
+const cliVersion = (
+  JSON.parse(readFileSync(resolve(root, 'packages/cli/package.json'), 'utf8')) as {
+    version: string;
+  }
+).version;
 
 describe('opencoven binary', () => {
   test('emits the documented JSON help output', () => {
@@ -24,7 +29,7 @@ describe('opencoven binary', () => {
         name: 'opencoven',
       },
       ok: true,
-      version: '0.1.0',
+      version: cliVersion,
     });
   });
 });

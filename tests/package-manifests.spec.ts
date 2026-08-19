@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, test } from 'vitest';
 
+import { CAVE_CLIENT_VERSION } from '@opencoven/cave-client';
+import { DEV_CLI_VERSION } from '@opencoven/dev-cli';
+
 import {
   CANONICAL_REPOSITORY_URL,
   PUBLIC_PACKAGES,
@@ -42,8 +45,11 @@ describe('public package manifests', () => {
   });
 
   test('declare only root exports and approved package metadata', () => {
+    const versions = new Set<string>();
+
     for (const { packageName, manifestPath, repositoryDirectory } of PUBLIC_PACKAGES) {
       const manifest = JSON.parse(readFileSync(resolve(workspaceRoot, manifestPath), 'utf8')) as {
+        dependencies?: Record<string, string>;
         name: string;
         exports: Record<string, unknown>;
         license?: string;
@@ -58,13 +64,34 @@ describe('public package manifests', () => {
       expect(Object.keys(manifest.exports)).toEqual(['.', './package.json']);
       expect(manifest.license).toBe('AGPL-3.0-or-later OR MIT');
       expect(manifest.version).toBe('0.1.0');
+      versions.add(manifest.version ?? '');
       expect(manifest.engines?.node).toBe('>=24.18.0 <25');
       expect(assertCanonicalRepository(manifest, repositoryDirectory, packageName)).toEqual({
         type: 'git',
         url: CANONICAL_REPOSITORY_URL,
         directory: repositoryDirectory,
       });
+
+      for (const [dependency, range] of Object.entries(manifest.dependencies ?? {})) {
+        if (dependency.startsWith('@opencoven/')) {
+          expect(range).toBe(`workspace:${manifest.version}`);
+        }
+      }
     }
+
+    expect(versions).toEqual(new Set(['0.1.0']));
+  });
+
+  test('derives exported runtime versions from package manifests', () => {
+    const caveManifest = JSON.parse(
+      readFileSync(resolve(workspaceRoot, 'packages/cave/package.json'), 'utf8'),
+    ) as { version: string };
+    const cliManifest = JSON.parse(
+      readFileSync(resolve(workspaceRoot, 'packages/cli/package.json'), 'utf8'),
+    ) as { version: string };
+
+    expect(CAVE_CLIENT_VERSION).toBe(caveManifest.version);
+    expect(DEV_CLI_VERSION).toBe(cliManifest.version);
   });
 
   test('assigns the opencoven binary only to @opencoven/dev-cli', () => {
