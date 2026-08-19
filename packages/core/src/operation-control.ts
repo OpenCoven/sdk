@@ -1,4 +1,10 @@
 import type { OpenCovenSystem } from './errors.js';
+import {
+  normalizeOperationEventError,
+  notifyOperationObserver,
+  operationDuration,
+  type OperationObserver,
+} from './operation-events.js';
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const OPERATION_TIMEOUT_ERROR_BRAND = Symbol.for(
@@ -16,10 +22,12 @@ export interface OperationDescriptor {
 export interface OperationOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
+  observer?: OperationObserver;
 }
 
 export interface OperationDefaults {
   timeoutMs?: number;
+  observer?: OperationObserver;
 }
 
 export interface OperationContext {
@@ -212,14 +220,49 @@ export async function runOperation<T>(
     signals: options.signal === undefined ? [] : [options.signal],
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
   });
+  const startedAt = performance.now();
 
   try {
+    notifyOperationObserver(options.observer, {
+      phase: 'start',
+      system: descriptor.system,
+      operation: descriptor.operation,
+    });
+
     if (scope.context.signal.aborted) {
       return await scope.termination;
     }
 
     const operation = Promise.resolve().then(() => executor(scope.context));
-    return await Promise.race([operation, scope.termination]);
+    let result: T;
+    try {
+      result = await Promise.race([operation, scope.termination]);
+    } catch (error) {
+      const phase = isOperationTimeoutError(error)
+        ? 'timeout'
+        : isOperationAbortedError(error)
+          ? 'abort'
+          : 'failure';
+      notifyOperationObserver(options.observer, {
+        phase,
+        system: descriptor.system,
+        operation: descriptor.operation,
+        durationMs: operationDuration(startedAt),
+        error: normalizeOperationEventError(
+          error,
+          descriptor.system,
+          descriptor.operation,
+        ),
+      });
+      throw error;
+    }
+    notifyOperationObserver(options.observer, {
+      phase: 'success',
+      system: descriptor.system,
+      operation: descriptor.operation,
+      durationMs: operationDuration(startedAt),
+    });
+    return result;
   } finally {
     scope.dispose();
   }

@@ -25,6 +25,7 @@ export type {
   OperationScope,
   OperationScopeOptions,
 } from './operation-control.js';
+export type { OperationEvent, OperationObserver } from './operation-events.js';
 
 export { createMemorySecretStore } from './secret-store.js';
 export type { SecretStore } from './secret-store.js';
