@@ -1179,5 +1179,8 @@ prune the remote branch, and leave the primary repository clean on `main`.
   passed.
 - No npm package, GitHub release, tag, environment, trusted publisher,
   credential, or external publishing configuration was created.
-- PR URL, hosted matrix/CodeQL results, merge commit, and post-merge
-  verification remain to be recorded after delivery.
+- PR: https://github.com/OpenCoven/sdk/pull/22
+- Hosted checks passed for Node `24.18.1`, latest `24.x`, CodeQL Actions,
+  CodeQL JavaScript/TypeScript, and the repository CodeQL gate.
+- Merge commit and post-merge verification remain to be recorded after
+  delivery.
