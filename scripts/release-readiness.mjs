@@ -107,6 +107,38 @@ function validateConfigValues(config) {
   }
 }
 
+function validateReleaseWorkflow(root, config) {
+  const workflowPath = resolve(root, RELEASE_WORKFLOW_PATH);
+  if (!existsSync(workflowPath)) {
+    throw new Error(`Required release workflow is missing: ${RELEASE_WORKFLOW_PATH}`);
+  }
+
+  const workflow = readFileSync(workflowPath, 'utf8');
+  const publishJobMarker = '\n  publish:\n';
+  const publishJobIndex = workflow.indexOf(publishJobMarker);
+  if (publishJobIndex < 0) {
+    throw new Error('Release workflow must define a publish job');
+  }
+  const publishJob = workflow.slice(publishJobIndex + publishJobMarker.length);
+  if (!publishJob.includes(`environment: ${config.githubEnvironment}`)) {
+    throw new Error(
+      `Release workflow publish job must use environment ${config.githubEnvironment}`,
+    );
+  }
+  for (const requirement of [
+    'needs: preflight',
+    'contents: read',
+    'id-token: write',
+    'attestations: write',
+  ]) {
+    if (!publishJob.includes(requirement)) {
+      throw new Error(
+        `Release workflow publish job must contain ${requirement}`,
+      );
+    }
+  }
+}
+
 export function readReleaseConfig(root = process.cwd()) {
   const config = JSON.parse(readFileSync(resolve(root, 'release.config.json'), 'utf8'));
   assertExactFields(config, CONFIG_FIELDS, 'release.config.json');
@@ -132,9 +164,7 @@ export function validateReleaseReadiness({
   }
 
   const config = readReleaseConfig(root);
-  if (!existsSync(resolve(root, RELEASE_WORKFLOW_PATH))) {
-    throw new Error(`Required release workflow is missing: ${RELEASE_WORKFLOW_PATH}`);
-  }
+  validateReleaseWorkflow(root, config);
   if (tag !== undefined) {
     if (typeof tag !== 'string' || tag.length === 0) {
       throw new Error('Release tag must be a non-empty string');

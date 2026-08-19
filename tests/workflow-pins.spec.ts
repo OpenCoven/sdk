@@ -79,5 +79,11 @@ describe('workflow action pins', () => {
     expect(releaseWorkflow).toMatch(/^permissions:\n\s{2}contents: read\n/m);
     expect(releaseWorkflow.match(/id-token: write/g)).toHaveLength(1);
     expect(releaseWorkflow.match(/attestations: write/g)).toHaveLength(1);
+    expect(releaseWorkflow).toContain(
+      "if [ -n \"$(git status --porcelain --untracked-files=all)\" ]; then",
+    );
+    expect(releaseWorkflow.indexOf('Require clean reviewed tree')).toBeLessThan(
+      releaseWorkflow.indexOf('Create release artifacts'),
+    );
   });
 });
