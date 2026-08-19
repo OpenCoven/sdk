@@ -1,5 +1,7 @@
+import type { OperationContext } from '@opencoven/sdk-core';
+
 import type { CovenHealthResponse } from './schemas.js';
 
 export interface CovenTransport {
-  health(): Promise<CovenHealthResponse>;
+  health(context?: OperationContext): Promise<CovenHealthResponse>;
 }

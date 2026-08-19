@@ -1,5 +1,7 @@
+import type { OperationContext } from '@opencoven/sdk-core';
+
 import type { CaveHealthResponse } from './schemas.js';
 
 export interface CaveTransport {
-  health(): Promise<CaveHealthResponse>;
+  health(context?: OperationContext): Promise<CaveHealthResponse>;
 }

@@ -1,8 +1,13 @@
 import {
   assessCompatibility,
+  isOperationAbortedError,
+  isOperationTimeoutError,
   normalizeError,
+  runOperation,
   type CompatibilityAssessment,
   type NormalizedError,
+  type OperationDefaults,
+  type OperationOptions,
 } from '@opencoven/sdk-core';
 
 import type { CaveHealth } from './schemas.js';
@@ -14,6 +19,7 @@ const CAVE_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveClientErr
 
 export interface CaveClientOptions {
   transport: CaveTransport;
+  operation?: OperationDefaults;
 }
 
 export function normalizeCaveError(error: unknown, operation: string): NormalizedError {
@@ -27,6 +33,10 @@ export function normalizeCaveError(error: unknown, operation: string): Normalize
 export class CaveClientError extends Error {
   readonly normalized: NormalizedError;
   readonly compatibility: CompatibilityAssessment | undefined;
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly requestId: string | undefined;
+  readonly statusCode: number | undefined;
 
   constructor(
     normalized: NormalizedError,
@@ -42,6 +52,10 @@ export class CaveClientError extends Error {
     this.name = 'CaveClientError';
     this.normalized = normalized;
     this.compatibility = compatibility;
+    this.code = normalized.code;
+    this.retryable = normalized.retryable;
+    this.requestId = normalized.requestId;
+    this.statusCode = normalized.statusCode;
     Object.defineProperty(this, CAVE_CLIENT_ERROR_BRAND, { value: true });
   }
 }
@@ -102,65 +116,103 @@ function validateHealthResponse(response: unknown): response is CaveHealthRespon
 
 export class CaveClient {
   readonly #transport: CaveTransport;
+  readonly #operation: OperationDefaults | undefined;
 
   constructor(options: CaveClientOptions) {
     this.#transport = options.transport;
+    this.#operation = options.operation;
   }
 
-  async health(): Promise<CaveHealth> {
+  async health(options: OperationOptions = {}): Promise<CaveHealth> {
+    const timeoutMs = options.timeoutMs ?? this.#operation?.timeoutMs;
+    const observer = options.observer ?? this.#operation?.observer;
+    const operationOptions: OperationOptions = {
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      ...(observer === undefined ? {} : { observer }),
+    };
+
     try {
-      const response: unknown = await this.#transport.health();
+      return await runOperation(
+        {
+          system: 'cave',
+          operation: 'health',
+        },
+        operationOptions,
+        async (context) => {
+          try {
+            const response: unknown = await this.#transport.health(context);
 
-      if (!validateHealthResponse(response)) {
-        throw invalidHealthResponse();
-      }
+            if (!validateHealthResponse(response)) {
+              throw invalidHealthResponse();
+            }
 
-      if (response.minimumClientVersion !== undefined) {
-        let compatibility: CompatibilityAssessment;
+            if (response.minimumClientVersion !== undefined) {
+              let compatibility: CompatibilityAssessment;
 
-        try {
-          compatibility = assessCompatibility(response.minimumClientVersion, CAVE_CLIENT_VERSION);
-        } catch {
-          throw invalidHealthResponse();
-        }
+              try {
+                compatibility = assessCompatibility(
+                  response.minimumClientVersion,
+                  CAVE_CLIENT_VERSION,
+                );
+              } catch {
+                throw invalidHealthResponse();
+              }
 
-        if (!compatibility.compatible) {
-          throw new CaveClientError(
-            normalizeCaveError(
-              {
-                code: 'incompatible_version',
-              },
-              'health',
-            ),
-            compatibility,
-          );
-        }
-      }
+              if (!compatibility.compatible) {
+                throw new CaveClientError(
+                  normalizeCaveError(
+                    {
+                      code: 'incompatible_version',
+                    },
+                    'health',
+                  ),
+                  compatibility,
+                );
+              }
+            }
 
-      if (response.apiVersion !== undefined) {
-        if (!CAVE_API_VERSION_PATTERN.test(response.apiVersion)) {
-          throw invalidHealthResponse();
-        }
+            if (response.apiVersion !== undefined) {
+              if (!CAVE_API_VERSION_PATTERN.test(response.apiVersion)) {
+                throw invalidHealthResponse();
+              }
 
-        if (response.apiVersion.split('.')[0] !== SUPPORTED_CAVE_API_MAJOR) {
-          throw new CaveClientError(
-            normalizeCaveError(
-              {
-                code: 'incompatible_version',
-              },
-              'health',
-            ),
-          );
-        }
-      }
+              if (response.apiVersion.split('.')[0] !== SUPPORTED_CAVE_API_MAJOR) {
+                throw new CaveClientError(
+                  normalizeCaveError(
+                    {
+                      code: 'incompatible_version',
+                    },
+                    'health',
+                  ),
+                );
+              }
+            }
 
-      return response.data;
+            return response.data;
+          } catch (error) {
+            if (isCaveClientError(error)) {
+              throw error;
+            }
+
+            throw new CaveClientError(normalizeCaveError(error, 'health'), undefined, {
+              cause: error,
+            });
+          }
+        },
+      );
     } catch (error) {
       if (isCaveClientError(error)) {
         throw error;
       }
 
-      throw new CaveClientError(normalizeCaveError(error, 'health'), undefined, { cause: error });
+      if (isOperationTimeoutError(error) || isOperationAbortedError(error)) {
+        throw new CaveClientError(normalizeCaveError(error, 'health'), undefined, {
+          cause: error,
+        });
+      }
+
+      throw error;
     }
   }
 }
