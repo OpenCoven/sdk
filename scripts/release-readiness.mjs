@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { PUBLIC_PACKAGES } from './repository-metadata.mjs';
@@ -14,6 +15,7 @@ const CONFIG_FIELDS = Object.freeze([
   'packages',
 ]);
 const NODE_ENGINE = '>=24.18.0 <25';
+const RELEASE_WORKFLOW_PATH = '.github/workflows/release.yml';
 const STRICT_SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
@@ -130,6 +132,9 @@ export function validateReleaseReadiness({
   }
 
   const config = readReleaseConfig(root);
+  if (!existsSync(resolve(root, RELEASE_WORKFLOW_PATH))) {
+    throw new Error(`Required release workflow is missing: ${RELEASE_WORKFLOW_PATH}`);
+  }
   if (tag !== undefined) {
     if (typeof tag !== 'string' || tag.length === 0) {
       throw new Error('Release tag must be a non-empty string');
@@ -140,6 +145,29 @@ export function validateReleaseReadiness({
     }
   } else if (requireTag) {
     throw new Error('Release tag is required');
+  }
+
+  if (requireTag) {
+    let tagCommit;
+    try {
+      tagCommit = execFileSync(
+        'git',
+        ['-C', root, 'rev-parse', `refs/tags/${tag}^{commit}`],
+        {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        },
+      ).trim();
+    } catch {
+      throw new Error(`Release tag ${tag} is absent`);
+    }
+    const headCommit = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (tagCommit !== headCommit) {
+      throw new Error(`Release tag ${tag} does not point to HEAD`);
+    }
   }
 
   const manifests = PUBLIC_PACKAGES.map((packageMetadata) => ({

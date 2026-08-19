@@ -1,0 +1,111 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Verify artifacts or publish after all launch gates are open
+        required: true
+        type: choice
+        options:
+          - verify
+          - publish
+      version:
+        description: Exact fixed SDK version
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: 10.34.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Require main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Releases must run from main." >&2
+          exit 1
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify repository
+        run: corepack pnpm@10.34.0 verify
+      - name: Verify release tag
+        run: >-
+          node ./scripts/verify-release-readiness.mjs
+          --version "${{ inputs.version }}"
+          --tag "sdk-v${{ inputs.version }}"
+          --require-tag
+      - name: Create release artifacts
+        run: >-
+          corepack pnpm@10.34.0 release:artifacts --
+          --output .artifacts/release
+          --version "${{ inputs.version }}"
+          --skip-build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opencoven-sdk-${{ inputs.version }}
+          path: .artifacts/release
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    if: inputs.mode == 'publish'
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm-release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: 10.34.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: opencoven-sdk-${{ inputs.version }}
+          path: .artifacts/release
+      - name: Validate publication gates
+        run: >-
+          node ./scripts/verify-release-readiness.mjs
+          --mode publish
+          --version "${{ inputs.version }}"
+          --tag "sdk-v${{ inputs.version }}"
+          --require-tag
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: .artifacts/release/tarballs/**/*.tgz
+      - name: Publish exact release artifacts
+        run: |
+          OPENCOVEN_RELEASE_AUTHORIZATION=publish \
+            node ./scripts/publish-release-artifacts.mjs \
+            --artifact-root .artifacts/release \
+            --version "${{ inputs.version }}"

@@ -1,6 +1,7 @@
 import {
   cpSync,
   mkdtempSync,
+  mkdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -15,6 +16,10 @@ import {
   readReleaseConfig,
   validateReleaseReadiness,
 } from '../scripts/release-readiness.mjs';
+import {
+  createNpmPublishArgs,
+  publishReleaseArtifacts,
+} from '../scripts/publish-release-artifacts.mjs';
 import { PUBLIC_PACKAGES } from '../scripts/repository-metadata.mjs';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -43,6 +48,11 @@ function createReleaseFixture(): string {
   cpSync(
     resolve(workspaceRoot, 'release.config.json'),
     resolve(fixture, 'release.config.json'),
+  );
+  mkdirSync(resolve(fixture, '.github/workflows'), { recursive: true });
+  cpSync(
+    resolve(workspaceRoot, '.github/workflows/release.yml'),
+    resolve(fixture, '.github/workflows/release.yml'),
   );
 
   for (const packageMetadata of PUBLIC_PACKAGES) {
@@ -239,5 +249,54 @@ describe('release readiness contract', () => {
       publishingEnabled: false,
       packages: PUBLIC_PACKAGES.map(({ packageName }) => packageName),
     });
+  });
+
+  test('constructs provenance-enabled exact-tarball npm arguments', () => {
+    expect(
+      createNpmPublishArgs({
+        tarball: '/tmp/pkg.tgz',
+        access: 'public',
+        distTag: 'latest',
+      }),
+    ).toEqual([
+      'publish',
+      '/tmp/pkg.tgz',
+      '--access',
+      'public',
+      '--tag',
+      'latest',
+      '--provenance',
+    ]);
+  });
+
+  test('never invokes npm while publication is locked', () => {
+    expect(() =>
+      publishReleaseArtifacts({
+        root: workspaceRoot,
+        artifactRoot: '/tmp/missing-artifacts',
+        version: '0.1.0',
+        env: { OPENCOVEN_RELEASE_AUTHORIZATION: 'publish' },
+        execute: () => {
+          throw new Error('must not execute while locked');
+        },
+      }),
+    ).toThrow('Release publishing is disabled by release.config.json');
+  });
+
+  test('requires the release workflow identity and a tag on HEAD', () => {
+    const fixture = createReleaseFixture();
+    rmSync(resolve(fixture, '.github/workflows/release.yml'));
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Required release workflow is missing: .github/workflows/release.yml',
+    );
+    expect(() =>
+      validateReleaseReadiness({
+        root: workspaceRoot,
+        version: '0.1.0',
+        tag: 'sdk-v0.1.0',
+        requireTag: true,
+      }),
+    ).toThrow('Release tag sdk-v0.1.0 is absent');
   });
 });
