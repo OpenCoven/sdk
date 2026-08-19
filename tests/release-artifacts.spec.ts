@@ -108,7 +108,12 @@ describe('release artifacts', () => {
       outputRoot,
       build: false,
     });
-    const firstTarball = resolve(outputRoot, result.manifest.packages[0].file);
+    const [firstEntry] = result.manifest.packages;
+    expect(firstEntry).toBeDefined();
+    if (firstEntry === undefined) {
+      throw new Error('Expected at least one release artifact.');
+    }
+    const firstTarball = resolve(outputRoot, firstEntry.file);
     appendFileSync(firstTarball, 'tampered');
 
     expect(() =>

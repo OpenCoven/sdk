@@ -45,6 +45,14 @@ describe('workflow action pins', () => {
     expect(workflow).toContain('run: corepack pnpm@10.34.0 verify');
     expect(installStep).toBeGreaterThanOrEqual(0);
     expect(verifyStep).toBeGreaterThan(installStep);
-    expect(workflow.match(/corepack pnpm@10\.34\.0 verify/g)).toHaveLength(1);
+    expect(
+      workflow.match(/run: corepack pnpm@10\.34\.0 verify$/gm),
+    ).toHaveLength(1);
+  });
+
+  test('verifies the minimum and moving Node 24 targets', () => {
+    expect(workflow).toContain("node: ['24.18.1', '24.x']");
+    expect(workflow).toContain('run: corepack pnpm@10.34.0 verify:compat');
+    expect(workflow).toContain('run: corepack pnpm@10.34.0 verify');
   });
 });
