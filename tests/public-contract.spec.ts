@@ -24,6 +24,13 @@ describe('public package entry points', () => {
     expect(hasFunction(core, 'createMemorySecretStore')).toBe(true);
     expect(hasFunction(core, 'normalizeError')).toBe(true);
     expect(hasFunction(core, 'assessCompatibility')).toBe(true);
+    expect(hasFunction(core, 'createOperationScope')).toBe(true);
+    expect(hasFunction(core, 'runOperation')).toBe(true);
+    expect(hasFunction(core, 'isOperationTimeoutError')).toBe(true);
+    expect(hasFunction(core, 'isOperationAbortedError')).toBe(true);
+    expect(hasFunction(core, 'OperationTimeoutError')).toBe(true);
+    expect(hasFunction(core, 'OperationAbortedError')).toBe(true);
+    expect(hasFunction(core, 'OperationConfigurationError')).toBe(true);
     expect(hasFunction(cave, 'CaveClient')).toBe(true);
     expect(hasFunction(cave, 'parseCaveContractFixture')).toBe(true);
     expect(hasFunction(cave, 'parseVerifiedCaveContractFixture')).toBe(true);
