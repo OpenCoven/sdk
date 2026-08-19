@@ -1148,3 +1148,40 @@ prune the remote branch, and leave the primary repository clean on `main`.
 - Dependabot uses valid npm and GitHub Actions ecosystems.
 - Canonical verification, packed consumers, release negatives, hygiene, audit,
   independent review, and hosted checks pass.
+
+## Progress Record
+
+- Worktree: `.worktrees/release-readiness`
+- Branch: `feat/release-readiness`
+- Base: `2f12c3d6072aa3764d2790e6a378691fb24e3cdc`
+- Design: `0cfbf86`
+- Implementation plan: `14dc1f9`
+- Fixed-version Changesets and changelogs: `43a009d`
+- Fail-closed release contract: `9ec3b41`
+- Checksummed release artifacts: `a64cdfd`
+- Node support matrix and Dependabot: `10944dc`
+- Protected OIDC/attestation workflow: `55ca1fc`
+- Support, security, bootstrap, rollback, and incident policy: `1246310`
+- Packed release verification: `1d31c19`
+- Deterministic package-mutating tests: `f2b77b2`
+- Independent review found two important release-gate gaps: the verifier did
+  not enforce the workflow's protected environment, and preflight did not
+  assert a clean reviewed tree before packing. Regressions and fixes are in
+  `d001852`.
+- Canonical verification passed 31 test files and 240 tests with 93.11%
+  statements, 88.50% branches, 99.29% functions, and 93.04% lines.
+- All three deterministic fast-check seeds passed. Contract verification,
+  offline packed consumers, runnable examples, the timeout canary, changelog
+  packing, and release-manifest digest verification passed.
+- Publish-mode negative verification fails closed with
+  `Release publishing is disabled by release.config.json`.
+- Pre-commit, Gitleaks, `pnpm audit --audit-level high`, and `git diff --check`
+  passed.
+- No npm package, GitHub release, tag, environment, trusted publisher,
+  credential, or external publishing configuration was created.
+- PR: https://github.com/OpenCoven/sdk/pull/22
+- Hosted checks passed for Node `24.18.1`, latest `24.x`, CodeQL Actions,
+  CodeQL JavaScript/TypeScript, and the repository CodeQL gate.
+- PR #22 merged as `35b67b704fb10a5bb36a9c832afb3e5963fcc054`.
+- Post-merge canonical verification passed on `main` after refreshing the
+  frozen workspace install.

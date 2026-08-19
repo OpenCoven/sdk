@@ -39,6 +39,7 @@ export default defineConfig({
         test: {
           name: 'root',
           environment: 'node',
+          fileParallelism: false,
           include: ['tests/**/*.spec.ts'],
         },
       },

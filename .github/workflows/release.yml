@@ -52,6 +52,13 @@ jobs:
           --version "${{ inputs.version }}"
           --tag "sdk-v${{ inputs.version }}"
           --require-tag
+      - name: Require clean reviewed tree
+        run: |
+          if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
+            git status --short --untracked-files=all
+            echo "Release verification changed the reviewed tree." >&2
+            exit 1
+          fi
       - name: Create release artifacts
         run: >-
           corepack pnpm@10.34.0 release:artifacts --

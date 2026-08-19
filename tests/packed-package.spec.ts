@@ -6,7 +6,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { delimiter, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 
 import { describe, expect, test } from 'vitest';
 
@@ -22,6 +22,12 @@ import {
   isolatedInstallArgs,
 } from '../scripts/package-artifacts.mjs';
 import { cleanupOwnedTempRoot, createOwnedTempDirectory } from '../scripts/owned-temp-directory.mjs';
+
+function readTarballFile(tarball: string, path: string): string {
+  return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
+    encoding: 'utf8',
+  });
+}
 
 async function waitForPath(path: string) {
   const deadline = Date.now() + 2_000;
@@ -283,12 +289,14 @@ setTimeout(() => {
           },
         })}\n`,
       );
+      writeFileSync(resolve(packageRoot, 'CHANGELOG.md'), '# Changelog\n\n## 0.1.0\n');
       const packed = spawnSync('tar', ['-czf', tarball, 'package'], {
         cwd: artifactContext.rootPath,
         encoding: 'utf8',
       });
 
       expect(packed.status, packed.stderr).toBe(0);
+      expect(readTarballFile(tarball, 'CHANGELOG.md')).toContain('## 0.1.0');
       expect(
         assertCanonicalRepository(
           readPackedPackageManifest(tarball),

@@ -50,6 +50,16 @@ describe('packed package verifier contract', () => {
     );
   });
 
+  test('verifies every packed package changelog in the dedicated matrix command', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain('function assertPackedChangelogs(tarballs)');
+    expect(verifier).toContain(
+      "readTarballFile(tarballs[workspaceDirectory], 'CHANGELOG.md')",
+    );
+    expect(verifier).toContain('assertPackedChangelogs(tarballs);');
+  });
+
   test('keeps complete release verification in the dedicated matrix command', () => {
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>;

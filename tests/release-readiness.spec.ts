@@ -299,4 +299,18 @@ describe('release readiness contract', () => {
       }),
     ).toThrow('Release tag sdk-v0.1.0 is absent');
   });
+
+  test('enforces the protected publish job in the release workflow contract', () => {
+    const fixture = createReleaseFixture();
+    const workflowPath = resolve(fixture, '.github/workflows/release.yml');
+    const workflow = readFileSync(workflowPath, 'utf8').replace(
+      'environment: npm-release',
+      'environment: unprotected-release',
+    );
+    writeFileSync(workflowPath, workflow);
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow publish job must use environment npm-release',
+    );
+  });
 });

@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 
 import { cleanupOwnedTempRoot, createOwnedTempDirectory } from './owned-temp-directory.mjs';
 import {
+  createReleaseArtifacts,
+  verifyReleaseArtifacts,
+} from './create-release-artifacts.mjs';
+import {
   assertPackedPackagesExcludeSources,
   createPublicPackageOverrides,
   installIsolatedConsumersOfflineAfterWarming,
@@ -111,6 +115,19 @@ function assertPackedLicenses(tarballs) {
     ) {
       throw new Error(
         `Packed ${workspaceDirectory} package has inaccurate license metadata or text.`,
+      );
+    }
+  }
+}
+
+function assertPackedChangelogs(tarballs) {
+  for (const { packageName, workspaceDirectory } of PUBLIC_PACKAGES) {
+    const manifest = JSON.parse(readTarballFile(tarballs[workspaceDirectory], 'package.json'));
+    const changelog = readTarballFile(tarballs[workspaceDirectory], 'CHANGELOG.md');
+
+    if (!changelog.includes(`## ${manifest.version}`)) {
+      throw new Error(
+        `Packed ${packageName} package changelog does not contain version ${manifest.version}.`,
       );
     }
   }
@@ -420,6 +437,20 @@ try {
   assertInstalledPackageDirectoryMap();
   assertPackedLicenses(tarballs);
   process.stdout.write('Packed license metadata verified.\n');
+  assertPackedChangelogs(tarballs);
+  process.stdout.write('Packed changelog metadata verified.\n');
+
+  const releaseArtifactRoot = resolve(artifactRoot, 'release');
+  createReleaseArtifacts({
+    root,
+    outputRoot: releaseArtifactRoot,
+    build: false,
+  });
+  verifyReleaseArtifacts({
+    root,
+    artifactRoot: releaseArtifactRoot,
+  });
+  process.stdout.write('Release artifact manifest verified.\n');
 
   createFixture(fixtureRoot, tarballs);
   createPackedExamples({

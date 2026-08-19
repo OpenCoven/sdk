@@ -107,6 +107,52 @@ function validateConfigValues(config) {
   }
 }
 
+function validateReleaseWorkflow(root, config) {
+  const workflowPath = resolve(root, RELEASE_WORKFLOW_PATH);
+  if (!existsSync(workflowPath)) {
+    throw new Error(`Required release workflow is missing: ${RELEASE_WORKFLOW_PATH}`);
+  }
+
+  // Normalised, because the marker below is anchored to newlines and a file
+  // with CRLF endings would never match `publish:\n` -- the validator would
+  // report a missing publish job on a workflow that has one.
+  const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n/g, '\n');
+  const publishJobMarker = '\n  publish:\n';
+  const publishJobIndex = workflow.indexOf(publishJobMarker);
+  if (publishJobIndex < 0) {
+    throw new Error('Release workflow must define a publish job');
+  }
+
+  // Only the publish job, not everything after it.
+  //
+  // Slicing to the end of the file let any later job satisfy these
+  // requirements: a publish job with no `environment` and no permissions block
+  // passed as long as some other job further down happened to contain those
+  // strings. That is the deployment lock reporting itself as present while
+  // being absent, which is the one failure this check exists to prevent.
+  const publishJobBody = workflow.slice(publishJobIndex + publishJobMarker.length);
+  const nextJobIndex = publishJobBody.search(/\n {2}\S/);
+  const publishJob =
+    nextJobIndex < 0 ? publishJobBody : publishJobBody.slice(0, nextJobIndex);
+  if (!publishJob.includes(`environment: ${config.githubEnvironment}`)) {
+    throw new Error(
+      `Release workflow publish job must use environment ${config.githubEnvironment}`,
+    );
+  }
+  for (const requirement of [
+    'needs: preflight',
+    'contents: read',
+    'id-token: write',
+    'attestations: write',
+  ]) {
+    if (!publishJob.includes(requirement)) {
+      throw new Error(
+        `Release workflow publish job must contain ${requirement}`,
+      );
+    }
+  }
+}
+
 export function readReleaseConfig(root = process.cwd()) {
   const config = JSON.parse(readFileSync(resolve(root, 'release.config.json'), 'utf8'));
   assertExactFields(config, CONFIG_FIELDS, 'release.config.json');
@@ -132,9 +178,7 @@ export function validateReleaseReadiness({
   }
 
   const config = readReleaseConfig(root);
-  if (!existsSync(resolve(root, RELEASE_WORKFLOW_PATH))) {
-    throw new Error(`Required release workflow is missing: ${RELEASE_WORKFLOW_PATH}`);
-  }
+  validateReleaseWorkflow(root, config);
   if (tag !== undefined) {
     if (typeof tag !== 'string' || tag.length === 0) {
       throw new Error('Release tag must be a non-empty string');

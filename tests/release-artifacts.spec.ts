@@ -1,9 +1,9 @@
 import {
-  appendFileSync,
   existsSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -114,11 +114,17 @@ describe('release artifacts', () => {
       throw new Error('Expected at least one release artifact.');
     }
     const firstTarball = resolve(outputRoot, firstEntry.file);
-    appendFileSync(firstTarball, 'tampered');
+    const bytes = readFileSync(firstTarball);
+    const firstByte = bytes[0];
+    if (firstByte === undefined) {
+      throw new Error('Expected a non-empty release artifact.');
+    }
+    bytes[0] = firstByte ^ 0xff;
+    writeFileSync(firstTarball, bytes);
 
     expect(() =>
       verifyReleaseArtifacts({ root: workspaceRoot, artifactRoot: outputRoot }),
-    ).toThrow('does not match release-manifest.json');
+    ).toThrow('digest does not match release-manifest.json');
   }, 30_000);
 
   test('creates an owned temporary artifact root when output is omitted', () => {
