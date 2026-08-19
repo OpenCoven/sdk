@@ -81,5 +81,8 @@ describe('packed public packages', () => {
       : { status: 1, stderr: 'scripts/verify-package.mjs is missing' };
 
     expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('Cave health example passed.');
+    expect(result.stdout).toContain('Coven health example passed.');
+    expect(result.stdout).toContain('Unified health example passed.');
   }, 30_000);
 });

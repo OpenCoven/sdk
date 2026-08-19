@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc --pretty false",
+    "start": "node dist/index.js",
     "typecheck": "tsc --pretty false --noEmit"
   },
   "dependencies": {

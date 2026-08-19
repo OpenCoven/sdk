@@ -205,6 +205,7 @@ try {
     const destinationDirectory = resolve(exampleRoot, workspaceDirectory);
     runPnpm(isolatedInstallArgs(), destinationDirectory);
     runPnpm(['--ignore-workspace', 'run', 'build'], destinationDirectory);
+    runPnpm(['--ignore-workspace', 'run', 'start'], destinationDirectory);
     assertPackedPackagesExcludeSources(destinationDirectory);
   }
 

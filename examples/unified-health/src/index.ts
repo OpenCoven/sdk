@@ -25,4 +25,10 @@ const sdk = createOpenCovenSdk({
   }),
 });
 
-void sdk.health();
+const report = await sdk.healthReport();
+
+if (report.cave.status !== 'healthy' || report.coven.status !== 'healthy') {
+  throw new Error('Expected both configured clients to be healthy.');
+}
+
+process.stdout.write('Unified health example passed.\n');
