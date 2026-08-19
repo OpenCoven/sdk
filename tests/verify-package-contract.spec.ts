@@ -90,4 +90,20 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain("jsonOutput?.command !== 'status'");
     expect(verifier).toContain('jsonOutput?.ok !== false');
   });
+
+  test('invokes packed binary failure checks before reporting verification success', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+    const invocation = 'assertPackedCliFailurePaths(binary, fixtureRoot);';
+    const invocationMatches = verifier.match(
+      /assertPackedCliFailurePaths\(binary, fixtureRoot\);/g,
+    );
+
+    expect(invocationMatches).toHaveLength(1);
+    expect(verifier.indexOf(invocation)).toBeGreaterThan(
+      verifier.indexOf("run(binary, ['--json', '--help'], fixtureRoot);"),
+    );
+    expect(verifier.indexOf(invocation)).toBeLessThan(
+      verifier.indexOf("process.stdout.write('Packed package verification passed.\\n');"),
+    );
+  });
 });
