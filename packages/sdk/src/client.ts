@@ -1,5 +1,15 @@
-import type { CaveClient, CaveHealth } from '@opencoven/cave-client';
-import type { CovenClient, CovenHealth } from '@opencoven/coven-client';
+import {
+  isCaveClientError,
+  type CaveClient,
+  type CaveClientError,
+  type CaveHealth,
+} from '@opencoven/cave-client';
+import {
+  isCovenClientError,
+  type CovenClient,
+  type CovenClientError,
+  type CovenHealth,
+} from '@opencoven/coven-client';
 
 export interface OpenCovenSdkOptions {
   cave?: CaveClient;
@@ -14,6 +24,64 @@ export interface ClientAvailability {
 export interface OpenCovenHealth {
   cave?: CaveHealth;
   coven?: CovenHealth;
+}
+
+export type ClientHealthResult<THealth, TError extends Error> =
+  | { status: 'not_configured' }
+  | { status: 'healthy'; health: THealth }
+  | { status: 'unhealthy'; error: TError };
+
+export interface OpenCovenHealthReport {
+  cave: ClientHealthResult<CaveHealth, CaveClientError>;
+  coven: ClientHealthResult<CovenHealth, CovenClientError>;
+}
+
+async function reportCaveHealth(
+  client: CaveClient | undefined,
+): Promise<ClientHealthResult<CaveHealth, CaveClientError>> {
+  if (client === undefined) {
+    return { status: 'not_configured' };
+  }
+
+  try {
+    return {
+      status: 'healthy',
+      health: await client.health(),
+    };
+  } catch (error) {
+    if (isCaveClientError(error)) {
+      return {
+        status: 'unhealthy',
+        error,
+      };
+    }
+
+    throw error;
+  }
+}
+
+async function reportCovenHealth(
+  client: CovenClient | undefined,
+): Promise<ClientHealthResult<CovenHealth, CovenClientError>> {
+  if (client === undefined) {
+    return { status: 'not_configured' };
+  }
+
+  try {
+    return {
+      status: 'healthy',
+      health: await client.health(),
+    };
+  } catch (error) {
+    if (isCovenClientError(error)) {
+      return {
+        status: 'unhealthy',
+        error,
+      };
+    }
+
+    throw error;
+  }
 }
 
 export class OpenCovenSdkError extends Error {
@@ -70,6 +138,15 @@ export class OpenCovenSdk {
     }
 
     return health;
+  }
+
+  async healthReport(): Promise<OpenCovenHealthReport> {
+    const [cave, coven] = await Promise.all([
+      reportCaveHealth(this.cave),
+      reportCovenHealth(this.coven),
+    ]);
+
+    return { cave, coven };
   }
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { runCli } from '@opencoven/dev-cli';
+import { DEV_CLI_VERSION, runCli } from '@opencoven/dev-cli';
 
 describe('opencoven CLI behavior', () => {
   test('emits the documented JSON help output', async () => {
@@ -14,7 +14,7 @@ describe('opencoven CLI behavior', () => {
         name: 'opencoven',
       },
       ok: true,
-      version: '0.1.0',
+      version: DEV_CLI_VERSION,
     });
   });
 

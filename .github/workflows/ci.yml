@@ -9,9 +9,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
@@ -23,15 +28,7 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Typecheck
-        run: pnpm typecheck
-      - name: Test
-        run: pnpm test
-      - name: Build
-        run: pnpm --recursive build
-      - name: Verify authority fixtures
-        run: node scripts/verify-contracts.mjs
-      - name: Verify packed packages
-        run: node scripts/verify-package.mjs
-      - name: Lint
-        run: pnpm lint
+      # The canonical verifier runs the clean-install Phase 0 matrix first,
+      # then enforces coverage and linting.
+      - name: Verify
+        run: corepack pnpm@10.34.0 verify

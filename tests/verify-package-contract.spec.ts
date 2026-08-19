@@ -66,6 +66,7 @@ describe('packed package verifier contract', () => {
     );
     expect(verifier).toContain('assertPackedPackagesExcludeSources(fixtureRoot);');
     expect(verifier).toContain("runPnpm(['--ignore-workspace', 'run', 'build'], destinationDirectory);");
+    expect(verifier).toContain("runPnpm(['--ignore-workspace', 'run', 'start'], destinationDirectory);");
     expect(verifier).toContain('assertPackedPackagesExcludeSources(destinationDirectory);');
     expect(verifier).toContain("run(process.execPath, ['verify.mjs'], fixtureRoot);");
     expect(verifier).toContain(

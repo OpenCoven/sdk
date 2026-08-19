@@ -2,6 +2,7 @@ export {
   CovenClient,
   CovenClientError,
   createCovenClient,
+  isCovenClientError,
   normalizeCovenError,
 } from './client.js';
 export type { CovenClientOptions } from './client.js';

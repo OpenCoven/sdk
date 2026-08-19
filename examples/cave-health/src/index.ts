@@ -6,4 +6,10 @@ const cave = new CaveClient({
   },
 });
 
-void cave.health();
+const health = await cave.health();
+
+if (health.status !== 'ok') {
+  throw new Error('Expected Cave to report healthy.');
+}
+
+process.stdout.write('Cave health example passed.\n');

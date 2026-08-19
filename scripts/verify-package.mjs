@@ -371,6 +371,7 @@ try {
     const destinationDirectory = resolve(exampleRoot, workspaceDirectory);
     assertConsumerDependencyIsolation(destinationDirectory);
     runPnpm(['--ignore-workspace', 'run', 'build'], destinationDirectory);
+    runPnpm(['--ignore-workspace', 'run', 'start'], destinationDirectory);
     assertPackedPackagesExcludeSources(destinationDirectory);
   }
 
