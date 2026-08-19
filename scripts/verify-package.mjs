@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 
 import { cleanupOwnedTempRoot, createOwnedTempDirectory } from './owned-temp-directory.mjs';
 import {
+  createReleaseArtifacts,
+  verifyReleaseArtifacts,
+} from './create-release-artifacts.mjs';
+import {
   assertPackedPackagesExcludeSources,
   createPublicPackageOverrides,
   installIsolatedConsumersOfflineAfterWarming,
@@ -364,6 +368,18 @@ try {
   assertInstalledPackageDirectoryMap();
   assertPackedLicenses(tarballs);
   process.stdout.write('Packed license metadata verified.\n');
+
+  const releaseArtifactRoot = resolve(artifactRoot, 'release');
+  createReleaseArtifacts({
+    root,
+    outputRoot: releaseArtifactRoot,
+    build: false,
+  });
+  verifyReleaseArtifacts({
+    root,
+    artifactRoot: releaseArtifactRoot,
+  });
+  process.stdout.write('Release artifact manifest verified.\n');
 
   createFixture(fixtureRoot, tarballs);
   createPackedExamples({

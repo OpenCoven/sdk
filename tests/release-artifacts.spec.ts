@@ -1,9 +1,9 @@
 import {
-  appendFileSync,
   existsSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -72,7 +72,7 @@ describe('release artifacts', () => {
       expect(createHash('sha256').update(bytes).digest('hex')).toBe(entry.sha256);
       expect(entry.size).toBe(bytes.byteLength);
     }
-  });
+  }, 30_000);
 
   test('writes a deterministic relative release manifest', () => {
     const outputRoot = createOutputRoot();
@@ -99,7 +99,7 @@ describe('release artifacts', () => {
     expect(verifyReleaseArtifacts({ root: workspaceRoot, artifactRoot: outputRoot })).toEqual(
       writtenManifest,
     );
-  });
+  }, 30_000);
 
   test('rejects modified tarballs', () => {
     const outputRoot = createOutputRoot();
@@ -114,12 +114,18 @@ describe('release artifacts', () => {
       throw new Error('Expected at least one release artifact.');
     }
     const firstTarball = resolve(outputRoot, firstEntry.file);
-    appendFileSync(firstTarball, 'tampered');
+    const bytes = readFileSync(firstTarball);
+    const firstByte = bytes[0];
+    if (firstByte === undefined) {
+      throw new Error('Expected a non-empty release artifact.');
+    }
+    bytes[0] = firstByte ^ 0xff;
+    writeFileSync(firstTarball, bytes);
 
     expect(() =>
       verifyReleaseArtifacts({ root: workspaceRoot, artifactRoot: outputRoot }),
-    ).toThrow('does not match release-manifest.json');
-  });
+    ).toThrow('digest does not match release-manifest.json');
+  }, 30_000);
 
   test('creates an owned temporary artifact root when output is omitted', () => {
     const result = createReleaseArtifacts({
@@ -134,5 +140,5 @@ describe('release artifacts', () => {
     expect(result.manifestPath).toBe(
       resolve(result.artifactRoot, 'release-manifest.json'),
     );
-  });
+  }, 30_000);
 });

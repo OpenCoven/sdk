@@ -67,6 +67,13 @@ describe('public package manifests', () => {
     }
   });
 
+  test('verifies the release contract and artifacts on the compatibility path', () => {
+    expect(rootManifest.scripts?.['verify:compat']).toContain('verify:release');
+    expect(rootManifest.scripts?.['verify:compat']).toMatch(
+      /verify:release.*verify:package/,
+    );
+  });
+
   test('keeps every package unpublished until an intentional release change', () => {
     expect(rootManifest.pnpm?.overrides?.esbuild).toBe('0.28.1');
 
