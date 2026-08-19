@@ -260,14 +260,9 @@ export async function runOperation<T>(
       return await scope.termination;
     }
 
-    let operation: Promise<T>;
-    try {
-      operation = executor(scope.context);
-    } catch (error) {
-      operation = Promise.reject(error);
-    }
     let result: T;
     try {
+      const operation = executor(scope.context);
       result = await Promise.race([operation, scope.termination]);
     } catch (error) {
       const phase = isOperationTimeoutError(error)

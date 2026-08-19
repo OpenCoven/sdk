@@ -113,7 +113,8 @@ describe('operation control properties', () => {
                 if (key === hostileKey) {
                   throw new Error('hostile getter');
                 }
-                return Reflect.get(target, key, receiver);
+                const result: unknown = Reflect.get(target, key, receiver);
+                return result;
               },
             },
           );

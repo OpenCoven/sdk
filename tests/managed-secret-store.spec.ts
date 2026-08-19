@@ -98,7 +98,7 @@ describe('managed memory secret store', () => {
 
     await expect(second.get('token')).resolves.toBeUndefined();
     await first.dispose();
-    await expect(second.disposed).toBe(false);
+    expect(second.disposed).toBe(false);
     await second.set('token', 'second');
     await expect(second.get('token')).resolves.toBe('second');
   });

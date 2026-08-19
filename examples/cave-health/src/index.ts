@@ -5,7 +5,9 @@ const cave = new CaveClient({
   transport: {
     health: (context) => {
       if (context?.signal.aborted) {
-        return Promise.reject(context.signal.reason);
+        return Promise.reject(
+          new Error('Cave health was aborted', { cause: context.signal.reason }),
+        );
       }
       return Promise.resolve({ data: { status: 'ok' } });
     },

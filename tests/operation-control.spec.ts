@@ -119,6 +119,16 @@ describe('operation control', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  test('normalizes a synchronous executor throw as an operation rejection', async () => {
+    const executorError = new Error('synchronous failure');
+
+    await expect(
+      runOperation(descriptor, {}, () => {
+        throw executorError;
+      }),
+    ).rejects.toBe(executorError);
+  });
+
   test('rejects a never-settling executor at timeout', async () => {
     vi.useFakeTimers();
     const result = runOperation(

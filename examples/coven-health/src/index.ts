@@ -4,7 +4,9 @@ const coven = new CovenClient({
   transport: {
     health: (context) => {
       if (context?.signal.aborted) {
-        return Promise.reject(context.signal.reason);
+        return Promise.reject(
+          new Error('Coven health was aborted', { cause: context.signal.reason }),
+        );
       }
       return Promise.resolve({
         ok: true,
