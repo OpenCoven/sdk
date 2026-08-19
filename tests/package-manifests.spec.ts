@@ -15,6 +15,7 @@ import {
 
 const workspaceRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const rootManifest = JSON.parse(readFileSync(resolve(workspaceRoot, 'package.json'), 'utf8')) as {
+  devDependencies?: Record<string, string>;
   pnpm?: {
     overrides?: Record<string, string>;
   };
@@ -25,6 +26,14 @@ describe('public package manifests', () => {
   test('builds declaration files before typed linting in the full verifier', () => {
     expect(rootManifest.scripts?.verify).toMatch(
       /^corepack pnpm@10\.34\.0 build && corepack pnpm@10\.34\.0 lint/,
+    );
+  });
+
+  test('enforces source coverage in the canonical verifier', () => {
+    expect(rootManifest.scripts?.['test:coverage']).toBe('vitest run --coverage');
+    expect(rootManifest.scripts?.verify).toContain('corepack pnpm@10.34.0 test:coverage');
+    expect(rootManifest.devDependencies?.['@vitest/coverage-v8']).toBe(
+      rootManifest.devDependencies?.vitest,
     );
   });
 

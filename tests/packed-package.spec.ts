@@ -78,7 +78,7 @@ describe('packed public packages', () => {
           cwd: root,
           encoding: 'utf8',
         })
-      : { status: 1, stderr: 'scripts/verify-package.mjs is missing' };
+      : { status: 1, stderr: 'scripts/verify-package.mjs is missing', stdout: '' };
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('Cave health example passed.');

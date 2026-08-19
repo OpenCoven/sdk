@@ -4,7 +4,7 @@ import {
   CovenClient,
   CovenClientError,
 } from '@opencoven/coven-client';
-import { createOpenCovenSdk } from '@opencoven/sdk';
+import { OpenCovenSdkError, createOpenCovenSdk } from '@opencoven/sdk';
 import { describe, expect, test } from 'vitest';
 
 function createCaveClient(): CaveClient {
@@ -34,6 +34,33 @@ function createCovenClient(): CovenClient {
 }
 
 describe('unified health reporting', () => {
+  test('reports availability and requires configured clients', () => {
+    const cave = createCaveClient();
+    const coven = createCovenClient();
+    const configured = createOpenCovenSdk({ cave, coven });
+    const empty = createOpenCovenSdk({});
+
+    expect(configured.availability()).toEqual({ cave: true, coven: true });
+    expect(configured.requireCave()).toBe(cave);
+    expect(configured.requireCoven()).toBe(coven);
+    expect(empty.availability()).toEqual({ cave: false, coven: false });
+    expect(() => empty.requireCave()).toThrow(OpenCovenSdkError);
+    expect(() => empty.requireCoven()).toThrow(OpenCovenSdkError);
+  });
+
+  test('preserves the existing configured health response', async () => {
+    const sdk = createOpenCovenSdk({
+      cave: createCaveClient(),
+      coven: createCovenClient(),
+    });
+
+    await expect(createOpenCovenSdk({}).health()).resolves.toEqual({});
+    await expect(sdk.health()).resolves.toEqual({
+      cave: { status: 'ok' },
+      coven: { status: 'ok' },
+    });
+  });
+
   test('reports unconfigured clients explicitly', async () => {
     await expect(createOpenCovenSdk({}).healthReport()).resolves.toEqual({
       cave: { status: 'not_configured' },

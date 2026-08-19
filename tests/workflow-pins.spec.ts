@@ -36,12 +36,15 @@ describe('workflow action pins', () => {
     expect(workflow).toMatch(/actions\/setup-node@[0-9a-f]{40}\s+# v4\.4\.0/);
   });
 
-  test('builds workspace packages before running typed lint checks', () => {
-    const buildStep = workflow.indexOf('- name: Build');
-    const lintStep = workflow.indexOf('- name: Lint');
+  test('runs the canonical verifier with bounded, cancellable execution', () => {
+    const installStep = workflow.indexOf('- name: Install dependencies');
+    const verifyStep = workflow.indexOf('- name: Verify');
 
-    expect(buildStep).toBeGreaterThanOrEqual(0);
-    expect(lintStep).toBeGreaterThanOrEqual(0);
-    expect(buildStep).toBeLessThan(lintStep);
+    expect(workflow).toContain('cancel-in-progress: true');
+    expect(workflow).toContain('timeout-minutes: 15');
+    expect(workflow).toContain('run: corepack pnpm@10.34.0 verify');
+    expect(installStep).toBeGreaterThanOrEqual(0);
+    expect(verifyStep).toBeGreaterThan(installStep);
+    expect(workflow.match(/corepack pnpm@10\.34\.0 verify/g)).toHaveLength(1);
   });
 });

@@ -30,6 +30,16 @@ describe('constrained client transports', () => {
     await expect(response).resolves.toEqual({ status: 'ok' });
   });
 
+  test('creates Cave health clients through the public factory', async () => {
+    const client = cave.createCaveClient({
+      transport: {
+        health: () => Promise.resolve({ data: { status: 'ok' } }),
+      },
+    });
+
+    await expect(client.health()).resolves.toEqual({ status: 'ok' });
+  });
+
   test('requests Coven health through a caller-supplied constrained transport', async () => {
     const CovenClient = (coven as { CovenClient?: ClientConstructor }).CovenClient;
     const client =
@@ -57,5 +67,25 @@ describe('constrained client transports', () => {
         : Promise.resolve(undefined);
 
     await expect(response).resolves.toEqual({ status: 'ok' });
+  });
+
+  test('creates Coven health clients through the public factory', async () => {
+    const client = coven.createCovenClient({
+      transport: {
+        health: () =>
+          Promise.resolve({
+            ok: true,
+            apiVersion: coven.COVEN_DAEMON_PROTOCOL,
+            covenVersion: '0.1.0',
+            capabilities: {
+              sessions: true,
+              events: true,
+              structuredErrors: true,
+            },
+          }),
+      },
+    });
+
+    await expect(client.health()).resolves.toEqual({ status: 'ok' });
   });
 });

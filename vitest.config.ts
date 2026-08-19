@@ -13,6 +13,23 @@ export default defineConfig({
     },
   },
   test: {
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary', 'html'],
+      include: ['packages/*/src/**/*.ts'],
+      exclude: [
+        'packages/*/src/index.ts',
+        'packages/cli/src/bin.ts',
+        'packages/*/src/schemas.ts',
+        'packages/*/src/transport.ts',
+      ],
+      thresholds: {
+        branches: 85,
+        functions: 90,
+        lines: 90,
+        statements: 90,
+      },
+    },
     environment: 'node',
     include: ['packages/*/test/**/*.spec.ts', 'tests/**/*.spec.ts'],
     passWithNoTests: false,

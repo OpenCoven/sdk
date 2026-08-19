@@ -40,7 +40,7 @@ describe('public package entry points', () => {
   test('exposes additive unified health reporting', () => {
     const instance = sdk.createOpenCovenSdk({});
 
-    expect(instance.healthReport).toBeTypeOf('function');
+    expect(instance.healthReport.bind(instance)).toBeTypeOf('function');
   });
 
   test('normalizes Cave unauthorized errors with an explicit operation', () => {

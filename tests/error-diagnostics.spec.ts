@@ -1,5 +1,5 @@
 import { CaveClient, CaveClientError } from '@opencoven/cave-client';
-import { COVEN_DAEMON_PROTOCOL, CovenClient, CovenClientError } from '@opencoven/coven-client';
+import { CovenClient, CovenClientError } from '@opencoven/coven-client';
 import { normalizeError } from '@opencoven/sdk-core';
 import { describe, expect, test } from 'vitest';
 
@@ -86,9 +86,12 @@ describe('safe error diagnostics', () => {
 
     const error: unknown = await client.health().catch((caught: unknown) => caught);
 
-    expect(error).toBeInstanceOf(CaveClientError);
-    expect((error as CaveClientError).cause).toBe(transportError);
-    expect((error as CaveClientError).normalized).toEqual({
+    if (!(error instanceof CaveClientError)) {
+      throw new TypeError('Expected CaveClientError.');
+    }
+
+    expect(error.cause).toBe(transportError);
+    expect(error.normalized).toEqual({
       system: 'cave',
       code: 'unavailable',
       retryable: true,
@@ -107,25 +110,18 @@ describe('safe error diagnostics', () => {
     });
     const client = new CovenClient({
       transport: {
-        health: () =>
-          Promise.reject(transportError) as Promise<{
-            ok: true;
-            apiVersion: typeof COVEN_DAEMON_PROTOCOL;
-            covenVersion: string;
-            capabilities: {
-              sessions: boolean;
-              events: boolean;
-              structuredErrors: boolean;
-            };
-          }>,
+        health: () => Promise.reject(transportError),
       },
     });
 
     const error: unknown = await client.health().catch((caught: unknown) => caught);
 
-    expect(error).toBeInstanceOf(CovenClientError);
-    expect((error as CovenClientError).cause).toBe(transportError);
-    expect((error as CovenClientError).normalized).toEqual({
+    if (!(error instanceof CovenClientError)) {
+      throw new TypeError('Expected CovenClientError.');
+    }
+
+    expect(error.cause).toBe(transportError);
+    expect(error.normalized).toEqual({
       system: 'coven',
       code: 'unavailable',
       retryable: false,
