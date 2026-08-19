@@ -56,6 +56,9 @@ default timeout. The transport context is optional for source compatibility
 and contains a composed signal plus the earliest monotonic deadline. A timeout
 returns promptly even if the transport ignores the signal, but only a
 cooperative transport stops underlying I/O. Do not log `error.cause` blindly.
+The same controls apply to `familiars()`, `familiarContract()`, and
+`familiarAnalytics()`; analytics keeps `recentLimit` as a transport option
+while accepting operation controls in the same options object.
 
 Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,
