@@ -37,6 +37,12 @@ describe('public package entry points', () => {
     expect(hasFunction(cli, 'runCli')).toBe(true);
   });
 
+  test('exposes additive unified health reporting', () => {
+    const instance = sdk.createOpenCovenSdk({});
+
+    expect(instance.healthReport).toBeTypeOf('function');
+  });
+
   test('normalizes Cave unauthorized errors with an explicit operation', () => {
     const normalizeCaveError = (cave as { normalizeCaveError?: ErrorNormalizer }).normalizeCaveError;
     const normalized = normalizeCaveError?.({ code: 'unauthorized' }, 'health');
