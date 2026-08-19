@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -6,8 +6,22 @@ import { describe, expect, test } from 'vitest';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const workflow = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8');
+const preCommitConfigPath = resolve(root, '.pre-commit-config.yaml');
 
 describe('workflow action pins', () => {
+  test('uses an explicit read-only GitHub token scope', () => {
+    expect(workflow).toMatch(/^permissions:\n\s{2}contents: read\n/m);
+  });
+
+  test('configures staged secret detection', () => {
+    expect(existsSync(preCommitConfigPath)).toBe(true);
+
+    const config = readFileSync(preCommitConfigPath, 'utf8');
+
+    expect(config).toContain('repo: https://github.com/gitleaks/gitleaks');
+    expect(config).toContain('id: detect-private-key');
+  });
+
   test('pins third-party actions to full commit SHAs with release comments', () => {
     const uses = [...workflow.matchAll(/uses:\s+([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)@([^\s#]+)/g)];
 
