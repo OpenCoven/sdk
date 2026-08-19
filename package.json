@@ -17,11 +17,14 @@
   },
   "scripts": {
     "build": "corepack pnpm@10.34.0 --recursive --filter './packages/*' build && corepack pnpm@10.34.0 --recursive --filter './examples/*' build",
+    "changeset": "changeset",
     "typecheck": "corepack pnpm@10.34.0 --recursive --filter './packages/*' typecheck && corepack pnpm@10.34.0 --recursive --filter './examples/*' typecheck && corepack pnpm@10.34.0 exec tsc --pretty false --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:stress": "node ./scripts/run-operation-stress.mjs",
     "lint": "pnpm exec eslint . --max-warnings=0",
+    "release:status": "changeset status",
+    "release:version": "changeset version",
     "sync:contracts": "node ./scripts/import-contract-fixtures.mjs",
     "pack:public": "node ./scripts/pack-public-packages.mjs",
     "verify-contracts": "node ./scripts/verify-contracts.mjs",
@@ -31,6 +34,7 @@
     "verify": "corepack pnpm@10.34.0 build && corepack pnpm@10.34.0 lint && corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package"
   },
   "devDependencies": {
+    "@changesets/cli": "3.0.1",
     "@eslint/js": "10.0.1",
     "@types/node": "24.13.3",
     "@vitest/coverage-v8": "4.1.10",
