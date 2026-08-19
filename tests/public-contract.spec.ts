@@ -29,8 +29,10 @@ describe('public package entry points', () => {
     expect(hasFunction(cave, 'parseVerifiedCaveContractFixture')).toBe(true);
     expect(hasFunction(cave, 'verifyCaveContractFixtureDigest')).toBe(true);
     expect(hasFunction(cave, 'normalizeCaveError')).toBe(true);
+    expect(hasFunction(cave, 'isCaveClientError')).toBe(true);
     expect(hasFunction(coven, 'CovenClient')).toBe(true);
     expect(hasFunction(coven, 'normalizeCovenError')).toBe(true);
+    expect(hasFunction(coven, 'isCovenClientError')).toBe(true);
     expect(hasFunction(sdk, 'OpenCovenSdk')).toBe(true);
     expect(hasFunction(sdk, 'createOpenCovenSdk')).toBe(true);
     expect(hasFunction(cli, 'formatCliOutput')).toBe(true);

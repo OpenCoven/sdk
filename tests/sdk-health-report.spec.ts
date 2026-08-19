@@ -7,6 +7,14 @@ import {
 import { OpenCovenSdkError, createOpenCovenSdk } from '@opencoven/sdk';
 import { describe, expect, test } from 'vitest';
 
+interface DuplicateCaveModule {
+  CaveClient: typeof CaveClient;
+}
+
+interface DuplicateCovenModule {
+  CovenClient: typeof CovenClient;
+}
+
 function createCaveClient(): CaveClient {
   return new CaveClient({
     transport: {
@@ -204,6 +212,50 @@ describe('unified health reporting', () => {
     expect(report.coven.status).toBe('unhealthy');
     if (report.coven.status === 'unhealthy') {
       expect(report.coven.error).toBeInstanceOf(CovenClientError);
+    }
+  });
+
+  test('recognizes Cave errors from a duplicate client module instance', async () => {
+    const duplicateModuleUrl = new URL(
+      `../packages/cave/src/client.ts?duplicate=${Date.now()}`,
+      import.meta.url,
+    ).href;
+    const duplicateCave = (await import(
+      /* @vite-ignore */ duplicateModuleUrl
+    )) as DuplicateCaveModule;
+    const cave = new duplicateCave.CaveClient({
+      transport: {
+        health: () => Promise.reject(Object.assign(new Error('offline'), { code: 'offline' })),
+      },
+    });
+
+    const report = await createOpenCovenSdk({ cave }).healthReport();
+
+    expect(report.cave.status).toBe('unhealthy');
+    if (report.cave.status === 'unhealthy') {
+      expect(report.cave.error.normalized.code).toBe('offline');
+    }
+  });
+
+  test('recognizes Coven errors from a duplicate client module instance', async () => {
+    const duplicateModuleUrl = new URL(
+      `../packages/coven/src/client.ts?duplicate=${Date.now()}`,
+      import.meta.url,
+    ).href;
+    const duplicateCoven = (await import(
+      /* @vite-ignore */ duplicateModuleUrl
+    )) as DuplicateCovenModule;
+    const coven = new duplicateCoven.CovenClient({
+      transport: {
+        health: () => Promise.reject(Object.assign(new Error('offline'), { code: 'offline' })),
+      },
+    });
+
+    const report = await createOpenCovenSdk({ coven }).healthReport();
+
+    expect(report.coven.status).toBe('unhealthy');
+    if (report.coven.status === 'unhealthy') {
+      expect(report.coven.error.normalized.code).toBe('offline');
     }
   });
 });

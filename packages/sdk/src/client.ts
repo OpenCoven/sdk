@@ -1,11 +1,13 @@
 import {
-  CaveClientError,
+  isCaveClientError,
   type CaveClient,
+  type CaveClientError,
   type CaveHealth,
 } from '@opencoven/cave-client';
 import {
-  CovenClientError,
+  isCovenClientError,
   type CovenClient,
+  type CovenClientError,
   type CovenHealth,
 } from '@opencoven/coven-client';
 
@@ -47,7 +49,7 @@ async function reportCaveHealth(
       health: await client.health(),
     };
   } catch (error) {
-    if (error instanceof CaveClientError) {
+    if (isCaveClientError(error)) {
       return {
         status: 'unhealthy',
         error,
@@ -71,7 +73,7 @@ async function reportCovenHealth(
       health: await client.health(),
     };
   } catch (error) {
-    if (error instanceof CovenClientError) {
+    if (isCovenClientError(error)) {
       return {
         status: 'unhealthy',
         error,

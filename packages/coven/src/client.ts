@@ -3,6 +3,8 @@ import { normalizeError, type NormalizedError } from '@opencoven/sdk-core';
 import { COVEN_DAEMON_PROTOCOL, type CovenHealth, type CovenHealthResponse } from './schemas.js';
 import type { CovenTransport } from './transport.js';
 
+const COVEN_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/coven-client/CovenClientError');
+
 export interface CovenClientOptions {
   transport: CovenTransport;
 }
@@ -22,7 +24,16 @@ export class CovenClientError extends Error {
     super(`${normalized.system}.${normalized.operation}: ${normalized.code}`, options);
     this.name = 'CovenClientError';
     this.normalized = normalized;
+    Object.defineProperty(this, COVEN_CLIENT_ERROR_BRAND, { value: true });
   }
+}
+
+export function isCovenClientError(error: unknown): error is CovenClientError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    Reflect.get(error, COVEN_CLIENT_ERROR_BRAND) === true
+  );
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

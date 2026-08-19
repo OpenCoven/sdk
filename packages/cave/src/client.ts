@@ -10,6 +10,8 @@ import type { CaveHealthResponse } from './schemas.js';
 import type { CaveTransport } from './transport.js';
 import { CAVE_CLIENT_VERSION } from './version.js';
 
+const CAVE_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveClientError');
+
 export interface CaveClientOptions {
   transport: CaveTransport;
 }
@@ -40,7 +42,16 @@ export class CaveClientError extends Error {
     this.name = 'CaveClientError';
     this.normalized = normalized;
     this.compatibility = compatibility;
+    Object.defineProperty(this, CAVE_CLIENT_ERROR_BRAND, { value: true });
   }
+}
+
+export function isCaveClientError(error: unknown): error is CaveClientError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    Reflect.get(error, CAVE_CLIENT_ERROR_BRAND) === true
+  );
 }
 
 const CAVE_API_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;

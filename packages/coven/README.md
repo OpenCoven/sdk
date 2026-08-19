@@ -31,3 +31,5 @@ await coven.health();
 `eventCursor` is optional and accepts any string for source compatibility.
 Malformed responses and unsupported daemon protocols reject with
 `CovenClientError`; transport failures remain available through `error.cause`.
+Use `isCovenClientError(error)` when errors may cross bundles or duplicate
+package installations.

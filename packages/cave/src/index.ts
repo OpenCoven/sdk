@@ -2,6 +2,7 @@ export {
   CaveClient,
   CaveClientError,
   createCaveClient,
+  isCaveClientError,
   normalizeCaveError,
 } from './client.js';
 export {
