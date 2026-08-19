@@ -22,4 +22,20 @@ describe('memory secret store', () => {
     await expect(store?.delete('cave-token') ?? Promise.resolve(undefined)).resolves.toBe(true);
     await expect(store?.get('cave-token') ?? Promise.resolve(undefined)).resolves.toBeUndefined();
   });
+
+  test('isolates stores and reports missing or overwritten keys', async () => {
+    const createMemorySecretStore = (core as { createMemorySecretStore?: StoreFactory })
+      .createMemorySecretStore;
+    const first = createMemorySecretStore?.();
+    const second = createMemorySecretStore?.();
+
+    await expect(first?.get('missing') ?? Promise.resolve(undefined)).resolves.toBeUndefined();
+    await expect(first?.delete('missing') ?? Promise.resolve(undefined)).resolves.toBe(false);
+
+    await first?.set('token', 'first');
+    await first?.set('token', 'updated');
+
+    await expect(first?.get('token') ?? Promise.resolve(undefined)).resolves.toBe('updated');
+    await expect(second?.get('token') ?? Promise.resolve(undefined)).resolves.toBeUndefined();
+  });
 });

@@ -238,8 +238,13 @@ describe('health validation', () => {
     null,
     {},
     { data: {} },
+    { data: null },
     { data: { status: 'error' } },
     { apiVersion: 'v1', data: { status: 'ok' } },
+    { apiVersion: 1, data: { status: 'ok' } },
+    { minimumClientVersion: 1, data: { status: 'ok' } },
+    { minimumClientVersion: 'not-semver', data: { status: 'ok' } },
+    { requestId: 1, data: { status: 'ok' } },
   ])('normalizes invalid Cave health responses: %j', async (invalidResponse) => {
     const client = new CaveClient({
       transport: {

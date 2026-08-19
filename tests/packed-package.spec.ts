@@ -321,6 +321,9 @@ setTimeout(() => {
       : { status: 1, stderr: 'scripts/verify-package.mjs is missing', stdout: '' };
 
     expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('Cave health example passed.');
+    expect(result.stdout).toContain('Coven health example passed.');
+    expect(result.stdout).toContain('Unified health example passed.');
     expect(String(result.stdout)).toContain('Packed license metadata verified.');
   }, 30_000);
 });

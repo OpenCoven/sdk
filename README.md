@@ -27,6 +27,57 @@ The SDK performs no discovery, credential lookup, network, filesystem, or
 daemon I/O at import time. Callers provide transports explicitly; Cave and
 Coven models, transports, and normalized errors remain distinct.
 
+## Choosing a package
+
+| Need | Package |
+| --- | --- |
+| Shared errors, compatibility, or in-memory secrets | `@opencoven/sdk-core` |
+| Cave health and reviewed Cave contract fixtures | `@opencoven/cave-client` |
+| Coven daemon health | `@opencoven/coven-client` |
+| Optional Cave/Coven coordination | `@opencoven/sdk` |
+| Deterministic developer CLI output | `@opencoven/dev-cli` |
+
+## Caller-supplied transports
+
+Clients never discover an endpoint or credential. Supply the narrow transport
+needed by the operation:
+
+```ts
+import { CaveClient, isCaveClientError } from '@opencoven/cave-client';
+
+const cave = new CaveClient({
+  transport: {
+    health: async () => {
+      const response = await fetch('https://example.invalid/health');
+      return response.json();
+    },
+  },
+});
+```
+
+The SDK does not own the URL, authentication, retry, timeout, or fetch policy.
+
+## Coordinated health
+
+| API | Behavior |
+| --- | --- |
+| `health()` | Checks configured clients in order and rejects on the first failure |
+| `healthReport()` | Starts configured checks concurrently and reports each as `healthy`, `unhealthy`, or `not_configured` |
+
+Client errors expose stable normalized metadata and retain the original failure
+as `cause`:
+
+```ts
+try {
+  await cave.health();
+} catch (error) {
+  if (isCaveClientError(error)) {
+    console.error(error.normalized.code, error.normalized.requestId);
+    console.error(error.cause);
+  }
+}
+```
+
 Reviewed Cave and Coven fixture bytes are committed under their client
 packages and verified locally. Refresh them with
 `pnpm sync:contracts -- --cave-root <path> --coven-root <path>` before running
@@ -36,19 +87,15 @@ the contract verifier. No authority source tree is imported at runtime.
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm test
-pnpm --recursive build
-node scripts/verify-contracts.mjs
-node scripts/verify-package.mjs
-node scripts/pack-public-packages.mjs
-pnpm lint
+corepack pnpm@10.34.0 verify
 ```
 
 `pack-public-packages.mjs` is the reusable tarball producer for cross-repository
 consumers such as the Chat packed-package canary. It prints JSON containing a
 process-created temp `artifactRoot` plus the packed tarball paths for callers
 that intentionally keep those artifacts.
+
+Runnable deterministic examples are documented in [`examples/README.md`](examples/README.md).
 
 ## Local security checks
 

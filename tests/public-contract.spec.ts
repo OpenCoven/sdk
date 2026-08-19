@@ -29,12 +29,20 @@ describe('public package entry points', () => {
     expect(hasFunction(cave, 'parseVerifiedCaveContractFixture')).toBe(true);
     expect(hasFunction(cave, 'verifyCaveContractFixtureDigest')).toBe(true);
     expect(hasFunction(cave, 'normalizeCaveError')).toBe(true);
+    expect(hasFunction(cave, 'isCaveClientError')).toBe(true);
     expect(hasFunction(coven, 'CovenClient')).toBe(true);
     expect(hasFunction(coven, 'normalizeCovenError')).toBe(true);
+    expect(hasFunction(coven, 'isCovenClientError')).toBe(true);
     expect(hasFunction(sdk, 'OpenCovenSdk')).toBe(true);
     expect(hasFunction(sdk, 'createOpenCovenSdk')).toBe(true);
     expect(hasFunction(cli, 'formatCliOutput')).toBe(true);
     expect(hasFunction(cli, 'runCli')).toBe(true);
+  });
+
+  test('exposes additive unified health reporting', () => {
+    const instance = sdk.createOpenCovenSdk({});
+
+    expect(instance.healthReport.bind(instance)).toBeTypeOf('function');
   });
 
   test('normalizes Cave unauthorized errors with an explicit operation', () => {
@@ -46,6 +54,7 @@ describe('public package entry points', () => {
       code: 'unauthorized',
       retryable: false,
       operation: 'health',
+      message: 'Cave health request failed',
     });
   });
 
@@ -58,6 +67,7 @@ describe('public package entry points', () => {
       code: 'session_not_live',
       retryable: false,
       operation: 'health',
+      message: 'Coven health request failed',
     });
   });
 });

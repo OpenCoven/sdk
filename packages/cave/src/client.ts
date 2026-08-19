@@ -8,6 +8,9 @@ import {
 import type { CaveHealth } from './schemas.js';
 import type { CaveHealthResponse } from './schemas.js';
 import type { CaveTransport } from './transport.js';
+import { CAVE_CLIENT_VERSION } from './version.js';
+
+const CAVE_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveClientError');
 
 export interface CaveClientOptions {
   transport: CaveTransport;
@@ -17,6 +20,7 @@ export function normalizeCaveError(error: unknown, operation: string): Normalize
   return normalizeError(error, {
     system: 'cave',
     operation,
+    message: `Cave ${operation} request failed`,
   });
 }
 
@@ -24,20 +28,32 @@ export class CaveClientError extends Error {
   readonly normalized: NormalizedError;
   readonly compatibility: CompatibilityAssessment | undefined;
 
-  constructor(normalized: NormalizedError, compatibility?: CompatibilityAssessment) {
+  constructor(
+    normalized: NormalizedError,
+    compatibility?: CompatibilityAssessment,
+    options?: ErrorOptions,
+  ) {
     const suffix =
       compatibility === undefined
         ? ''
         : ` (minimum ${compatibility.minimumClientVersion}, client ${compatibility.clientVersion})`;
 
-    super(`${normalized.system}.${normalized.operation}: ${normalized.code}${suffix}`);
+    super(`${normalized.system}.${normalized.operation}: ${normalized.code}${suffix}`, options);
     this.name = 'CaveClientError';
     this.normalized = normalized;
     this.compatibility = compatibility;
+    Object.defineProperty(this, CAVE_CLIENT_ERROR_BRAND, { value: true });
   }
 }
 
-const CAVE_CLIENT_VERSION = '0.1.0' as const;
+export function isCaveClientError(error: unknown): error is CaveClientError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    Reflect.get(error, CAVE_CLIENT_ERROR_BRAND) === true
+  );
+}
+
 const CAVE_API_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const SUPPORTED_CAVE_API_MAJOR = '1';
 
@@ -136,11 +152,11 @@ export class CaveClient {
 
       return response.data;
     } catch (error) {
-      if (error instanceof CaveClientError) {
+      if (isCaveClientError(error)) {
         throw error;
       }
 
-      throw new CaveClientError(normalizeCaveError(error, 'health'));
+      throw new CaveClientError(normalizeCaveError(error, 'health'), undefined, { cause: error });
     }
   }
 }

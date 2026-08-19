@@ -16,4 +16,10 @@ const coven = new CovenClient({
   },
 });
 
-void coven.health();
+const health = await coven.health();
+
+if (health.status !== 'ok') {
+  throw new Error('Expected Coven to report healthy.');
+}
+
+process.stdout.write('Coven health example passed.\n');

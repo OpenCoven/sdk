@@ -3,6 +3,8 @@ import { normalizeError, type NormalizedError } from '@opencoven/sdk-core';
 import { COVEN_DAEMON_PROTOCOL, type CovenHealth, type CovenHealthResponse } from './schemas.js';
 import type { CovenTransport } from './transport.js';
 
+const COVEN_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/coven-client/CovenClientError');
+
 export interface CovenClientOptions {
   transport: CovenTransport;
 }
@@ -11,17 +13,27 @@ export function normalizeCovenError(error: unknown, operation: string): Normaliz
   return normalizeError(error, {
     system: 'coven',
     operation,
+    message: `Coven ${operation} request failed`,
   });
 }
 
 export class CovenClientError extends Error {
   readonly normalized: NormalizedError;
 
-  constructor(normalized: NormalizedError) {
-    super(`${normalized.system}.${normalized.operation}: ${normalized.code}`);
+  constructor(normalized: NormalizedError, options?: ErrorOptions) {
+    super(`${normalized.system}.${normalized.operation}: ${normalized.code}`, options);
     this.name = 'CovenClientError';
     this.normalized = normalized;
+    Object.defineProperty(this, COVEN_CLIENT_ERROR_BRAND, { value: true });
   }
+}
+
+export function isCovenClientError(error: unknown): error is CovenClientError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    Reflect.get(error, COVEN_CLIENT_ERROR_BRAND) === true
+  );
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -85,11 +97,11 @@ export class CovenClient {
 
       return { status: 'ok' };
     } catch (error) {
-      if (error instanceof CovenClientError) {
+      if (isCovenClientError(error)) {
         throw error;
       }
 
-      throw new CovenClientError(normalizeCovenError(error, 'health'));
+      throw new CovenClientError(normalizeCovenError(error, 'health'), { cause: error });
     }
   }
 }
