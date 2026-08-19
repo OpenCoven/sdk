@@ -10,10 +10,14 @@ This workspace provides the Phase 0 public SDK scaffold for OpenCoven.
 ## Release status
 
 This source repository is public, but its packages are explicitly marked
-private and standard publishing is blocked. It is experimental and not yet a
-security-audited release. Standard publishing also requires
+private, are not published, and have standard publishing blocked. It is
+experimental and not yet a security-audited release. Standard publishing also requires
 `OPENCOVEN_RELEASE_AUTHORIZATION=publish`; remove or change these gates only as
 part of an intentional release process.
+
+- [Support policy](SUPPORT.md)
+- [Security policy](SECURITY.md)
+- [Release process](RELEASING.md)
 
 | Path | Package | Purpose |
 | --- | --- | --- |

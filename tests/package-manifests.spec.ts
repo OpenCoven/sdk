@@ -47,6 +47,26 @@ describe('public package manifests', () => {
     );
   });
 
+  test('uses fixed-version Changesets and packs package changelogs', () => {
+    expect(rootManifest.devDependencies?.['@changesets/cli']).toBe('3.0.1');
+    expect(rootManifest.scripts?.changeset).toBe('changeset');
+    expect(rootManifest.scripts?.['release:status']).toBe('changeset status');
+    expect(rootManifest.scripts?.['release:version']).toBe('changeset version');
+
+    for (const { manifestPath, workspaceDirectory } of PUBLIC_PACKAGES) {
+      const manifest = JSON.parse(
+        readFileSync(resolve(workspaceRoot, manifestPath), 'utf8'),
+      ) as { files?: string[] };
+      const changelog = readFileSync(
+        resolve(workspaceRoot, 'packages', workspaceDirectory, 'CHANGELOG.md'),
+        'utf8',
+      );
+
+      expect(manifest.files).toContain('CHANGELOG.md');
+      expect(changelog).toContain('## 0.1.0');
+    }
+  });
+
   test('keeps every package unpublished until an intentional release change', () => {
     expect(rootManifest.pnpm?.overrides?.esbuild).toBe('0.28.1');
 

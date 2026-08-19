@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "publishingEnabled": false,
+  "tagPrefix": "sdk-v",
+  "npmAccess": "public",
+  "npmDistTag": "latest",
+  "githubEnvironment": "npm-release",
+  "supportedNode": {
+    "minimum": "24.18.0",
+    "major": 24
+  },
+  "packages": [
+    "@opencoven/sdk-core",
+    "@opencoven/cave-client",
+    "@opencoven/coven-client",
+    "@opencoven/sdk",
+    "@opencoven/dev-cli"
+  ]
+}

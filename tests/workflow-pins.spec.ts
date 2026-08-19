@@ -6,6 +6,10 @@ import { describe, expect, test } from 'vitest';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const workflow = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8');
+const releaseWorkflowPath = resolve(root, '.github/workflows/release.yml');
+const releaseWorkflow = existsSync(releaseWorkflowPath)
+  ? readFileSync(releaseWorkflowPath, 'utf8')
+  : '';
 const preCommitConfigPath = resolve(root, '.pre-commit-config.yaml');
 
 describe('workflow action pins', () => {
@@ -45,6 +49,35 @@ describe('workflow action pins', () => {
     expect(workflow).toContain('run: corepack pnpm@10.34.0 verify');
     expect(installStep).toBeGreaterThanOrEqual(0);
     expect(verifyStep).toBeGreaterThan(installStep);
-    expect(workflow.match(/corepack pnpm@10\.34\.0 verify/g)).toHaveLength(1);
+    expect(
+      workflow.match(/run: corepack pnpm@10\.34\.0 verify$/gm),
+    ).toHaveLength(1);
+  });
+
+  test('verifies the minimum and moving Node 24 targets', () => {
+    expect(workflow).toContain("node: ['24.18.1', '24.x']");
+    expect(workflow).toContain('run: corepack pnpm@10.34.0 verify:compat');
+    expect(workflow).toContain('run: corepack pnpm@10.34.0 verify');
+  });
+
+  test('protects publishing with OIDC, attestations, and exact artifact actions', () => {
+    expect(releaseWorkflow).toContain('workflow_dispatch:');
+    expect(releaseWorkflow).toContain('environment: npm-release');
+    expect(releaseWorkflow).toContain('id-token: write');
+    expect(releaseWorkflow).toContain('attestations: write');
+    expect(releaseWorkflow).not.toContain('NPM_TOKEN');
+    expect(releaseWorkflow).not.toContain('NODE_AUTH_TOKEN');
+    expect(releaseWorkflow).toContain(
+      'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2',
+    );
+    expect(releaseWorkflow).toContain(
+      'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0',
+    );
+    expect(releaseWorkflow).toContain(
+      'actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0',
+    );
+    expect(releaseWorkflow).toMatch(/^permissions:\n\s{2}contents: read\n/m);
+    expect(releaseWorkflow.match(/id-token: write/g)).toHaveLength(1);
+    expect(releaseWorkflow.match(/attestations: write/g)).toHaveLength(1);
   });
 });
