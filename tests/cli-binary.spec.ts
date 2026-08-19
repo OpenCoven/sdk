@@ -1,23 +1,13 @@
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
-
 import { describe, expect, test } from 'vitest';
 
-const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const binary = resolve(root, 'packages/cli/dist/bin.js');
+import { runCli } from '@opencoven/dev-cli';
 
-describe('opencoven binary', () => {
-  test('emits the documented JSON help output', () => {
-    const result = existsSync(binary)
-      ? spawnSync(process.execPath, [binary, '--json', '--help'], {
-          cwd: root,
-          encoding: 'utf8',
-        })
-      : { status: 1, stdout: '', stderr: 'CLI binary is missing' };
+describe('opencoven CLI behavior', () => {
+  test('emits the documented JSON help output', async () => {
+    const result = await runCli(['--json', '--help']);
 
-    expect(result.status, result.stderr).toBe(0);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe('');
     expect(JSON.parse(result.stdout)).toEqual({
       command: 'help',
       data: {
@@ -28,28 +18,18 @@ describe('opencoven binary', () => {
     });
   });
 
-  test('writes human command failures to stderr', () => {
-    expect(existsSync(binary), 'CLI binary is missing').toBe(true);
+  test('writes human command failures to stderr', async () => {
+    const result = await runCli(['status']);
 
-    const result = spawnSync(process.execPath, [binary, 'status'], {
-      cwd: root,
-      encoding: 'utf8',
-    });
-
-    expect(result.status).toBe(1);
+    expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe('');
     expect(result.stderr).toBe('This command is reserved for a future operational task.\n');
   });
 
-  test('keeps JSON command failures machine-readable on stdout', () => {
-    expect(existsSync(binary), 'CLI binary is missing').toBe(true);
+  test('keeps JSON command failures machine-readable on stdout', async () => {
+    const result = await runCli(['--json', 'status']);
 
-    const result = spawnSync(process.execPath, [binary, '--json', 'status'], {
-      cwd: root,
-      encoding: 'utf8',
-    });
-
-    expect(result.status).toBe(1);
+    expect(result.exitCode).toBe(1);
     expect(result.stderr).toBe('');
     expect(JSON.parse(result.stdout)).toMatchObject({
       command: 'status',

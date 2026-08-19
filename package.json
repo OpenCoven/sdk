@@ -17,7 +17,7 @@
   },
   "scripts": {
     "build": "corepack pnpm@10.34.0 --recursive --filter './packages/*' build && corepack pnpm@10.34.0 --recursive --filter './examples/*' build",
-    "typecheck": "corepack pnpm@10.34.0 --recursive --filter './packages/*' typecheck && corepack pnpm@10.34.0 --recursive --filter './examples/*' typecheck && corepack pnpm@10.34.0 exec tsc --pretty false --noEmit -p tsconfig.json",
+    "typecheck": "corepack pnpm@10.34.0 exec tsc --pretty false --noEmit -p tsconfig.eslint.json",
     "test": "vitest run",
     "lint": "pnpm exec eslint . --max-warnings=0",
     "sync:contracts": "node ./scripts/import-contract-fixtures.mjs",

@@ -49,4 +49,27 @@ describe('packed package verifier contract', () => {
       /assertApprovedPackageLicense\(\s*manifest\.license,\s*selector,\s*[^)]+\)/,
     );
   });
+
+  test('keeps complete release verification in the dedicated matrix command', () => {
+    const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    const packedPackageTests = readFileSync(resolve(root, 'tests/packed-package.spec.ts'), 'utf8');
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(manifest.scripts['verify-package']).toBe('node ./scripts/verify-package.mjs');
+    expect(packedPackageTests).not.toContain('verify-package.mjs');
+    expect(verifier).toContain('const tarballs = packPublicPackages({');
+    expect(verifier).toContain('await installIsolatedConsumersOfflineAfterWarming(consumerRoots);');
+    expect(verifier).toContain(
+      "runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);",
+    );
+    expect(verifier).toContain('assertPackedPackagesExcludeSources(fixtureRoot);');
+    expect(verifier).toContain("runPnpm(['--ignore-workspace', 'run', 'build'], destinationDirectory);");
+    expect(verifier).toContain('assertPackedPackagesExcludeSources(destinationDirectory);');
+    expect(verifier).toContain("run(process.execPath, ['verify.mjs'], fixtureRoot);");
+    expect(verifier).toContain(
+      "run(resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven'), ['--json', '--help'], fixtureRoot);",
+    );
+  });
 });

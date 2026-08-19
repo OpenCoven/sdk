@@ -36,12 +36,19 @@ describe('workflow action pins', () => {
     expect(workflow).toMatch(/actions\/setup-node@[0-9a-f]{40}\s+# v4\.4\.0/);
   });
 
-  test('builds workspace packages before running typed lint checks', () => {
-    const buildStep = workflow.indexOf('- name: Build');
-    const lintStep = workflow.indexOf('- name: Lint');
+  test('runs the clean source matrix in its documented order before lint', () => {
+    const orderedSteps = [
+      '- name: Install dependencies',
+      '- name: Typecheck',
+      '- name: Test',
+      '- name: Build',
+      '- name: Verify authority fixtures',
+      '- name: Verify packed packages',
+      '- name: Lint',
+    ];
+    const indexes = orderedSteps.map((step) => workflow.indexOf(step));
 
-    expect(buildStep).toBeGreaterThanOrEqual(0);
-    expect(lintStep).toBeGreaterThanOrEqual(0);
-    expect(buildStep).toBeLessThan(lintStep);
+    expect(indexes.every((index) => index >= 0)).toBe(true);
+    expect(indexes).toEqual([...indexes].sort((left, right) => left - right));
   });
 });
