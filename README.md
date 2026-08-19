@@ -68,5 +68,5 @@ gitleaks git .
 
 ## License
 
-OpenCoven SDK is dual-licensed under AGPL-3.0-or-later or MIT. See
+OpenCoven SDK is dual-licensed under AGPL-3.0-only OR MIT. See
 [`LICENSE`](LICENSE).

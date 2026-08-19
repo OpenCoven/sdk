@@ -56,7 +56,7 @@ describe('public package manifests', () => {
 
       expect(manifest.name).toBe(packageName);
       expect(Object.keys(manifest.exports)).toEqual(['.', './package.json']);
-      expect(manifest.license).toBe('AGPL-3.0-or-later OR MIT');
+      expect(manifest.license).toBe('AGPL-3.0-only OR MIT');
       expect(manifest.version).toBe('0.1.0');
       expect(manifest.engines?.node).toBe('>=24.18.0 <25');
       expect(assertCanonicalRepository(manifest, repositoryDirectory, packageName)).toEqual({
@@ -64,6 +64,20 @@ describe('public package manifests', () => {
         url: CANONICAL_REPOSITORY_URL,
         directory: repositoryDirectory,
       });
+    }
+  });
+
+  test('uses the exact approved license components in every package selector', () => {
+    for (const { workspaceDirectory } of PUBLIC_PACKAGES) {
+      const selector = readFileSync(
+        resolve(workspaceRoot, 'packages', workspaceDirectory, 'LICENSE'),
+        'utf8',
+      );
+      const components = [...selector.matchAll(/\(([^()\r\n]+)\), see \[LICENSE-[^\]]+\]/g)].map(
+        (match) => match[1],
+      );
+
+      expect(components).toEqual(['AGPL-3.0-only', 'MIT']);
     }
   });
 

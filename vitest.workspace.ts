@@ -1,10 +1,8 @@
 import { fileURLToPath } from 'node:url';
 
-import { defineConfig } from 'vitest/config';
+import { defineProject } from 'vitest/config';
 
-import packagesAndExamples from './vitest.workspace.js';
-
-export default defineConfig({
+export default defineProject({
   resolve: {
     alias: {
       '@opencoven/sdk-core': fileURLToPath(new URL('./packages/core/src/index.ts', import.meta.url)),
@@ -15,16 +13,8 @@ export default defineConfig({
     },
   },
   test: {
-    projects: [
-      packagesAndExamples,
-      {
-        extends: true,
-        test: {
-          name: 'root',
-          environment: 'node',
-          include: ['tests/**/*.spec.ts'],
-        },
-      },
-    ],
+    name: 'packages-and-examples',
+    environment: 'node',
+    include: ['packages/*/test/**/*.spec.ts', 'examples/*/test/**/*.spec.ts'],
   },
 });
