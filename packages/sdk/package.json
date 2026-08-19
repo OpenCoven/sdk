@@ -18,6 +18,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE",
     "LICENSE-AGPL",
     "LICENSE-MIT",
@@ -39,6 +40,7 @@
   },
   "dependencies": {
     "@opencoven/cave-client": "workspace:0.1.0",
-    "@opencoven/coven-client": "workspace:0.1.0"
+    "@opencoven/coven-client": "workspace:0.1.0",
+    "@opencoven/sdk-core": "workspace:0.1.0"
   }
 }

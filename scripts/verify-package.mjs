@@ -215,45 +215,116 @@ function createFixture(fixtureRoot, tarballs) {
     `import { CaveClient } from '@opencoven/cave-client';
 import { COVEN_DAEMON_PROTOCOL, CovenClient } from '@opencoven/coven-client';
 import { formatCliOutput } from '@opencoven/dev-cli';
-import { createMemorySecretStore } from '@opencoven/sdk-core';
+import {
+  createManagedMemorySecretStore,
+  createMemorySecretStore,
+  type OperationContext,
+  type OperationEvent,
+} from '@opencoven/sdk-core';
 import { createOpenCovenSdk } from '@opencoven/sdk';
 
 const eventCursor: string = 'sequence';
+const events: OperationEvent[] = [];
+const observer = {
+  onEvent(event: OperationEvent) {
+    events.push(event);
+  },
+  onObserverError(error: unknown) {
+    throw error;
+  },
+};
 const cave = new CaveClient({
+  operation: {
+    timeoutMs: 1_000,
+    observer,
+  },
   transport: {
-    health: async () => ({ data: { status: 'ok' } }),
+    health: async (context?: OperationContext) => {
+      void context?.signal;
+      void context?.deadline;
+      return { data: { status: 'ok' } };
+    },
   },
 });
 const coven = new CovenClient({
   transport: {
-    health: async () => ({
-      ok: true,
-      apiVersion: COVEN_DAEMON_PROTOCOL,
-      covenVersion: '0.1.0',
-      capabilities: {
-        sessions: true,
-        events: true,
-        eventCursor,
-        structuredErrors: true,
-      },
-    }),
+    health: async (context?: OperationContext) => {
+      void context?.signal;
+      void context?.deadline;
+      return {
+        ok: true,
+        apiVersion: COVEN_DAEMON_PROTOCOL,
+        covenVersion: '0.1.0',
+        capabilities: {
+          sessions: true,
+          events: true,
+          eventCursor,
+          structuredErrors: true,
+        },
+      };
+    },
   },
 });
 const sdk = createOpenCovenSdk({ cave, coven });
 const store = createMemorySecretStore();
+const managedStore = createManagedMemorySecretStore();
+const controller = new AbortController();
 
 await store.set('token', 'in-memory');
-void sdk;
+await managedStore.set('token', 'managed');
+await managedStore.clear();
+await managedStore.dispose();
+await cave.health({
+  signal: controller.signal,
+  timeoutMs: 500,
+  observer,
+});
+await sdk.healthReport({
+  signal: controller.signal,
+  timeoutMs: 1_000,
+  cave: { timeoutMs: 500 },
+  coven: { timeoutMs: 500 },
+  observer,
+});
+void events;
 void formatCliOutput;
 `,
   );
   writeFileSync(
     resolve(fixtureRoot, 'verify.mjs'),
     `await import('@opencoven/sdk-core');
-await import('@opencoven/cave-client');
+const { CaveClient } = await import('@opencoven/cave-client');
 await import('@opencoven/coven-client');
 await import('@opencoven/sdk');
 await import('@opencoven/dev-cli');
+
+const startedAt = Date.now();
+let watchdog;
+try {
+  await Promise.race([
+    new CaveClient({
+      transport: {
+        health: () => new Promise(() => {}),
+      },
+    }).health({ timeoutMs: 25 }),
+    new Promise((_, reject) => {
+      watchdog = setTimeout(() => {
+        reject(new Error('Packed timeout canary exceeded its watchdog.'));
+      }, 1_000);
+    }),
+  ]);
+  throw new Error('Never-settling packed transport unexpectedly resolved.');
+} catch (error) {
+  if (!error || typeof error !== 'object' || error.normalized?.code !== 'timeout') {
+    throw error;
+  }
+  if (Date.now() - startedAt > 1_000) {
+    throw new Error('Packed timeout canary did not reject promptly.');
+  }
+} finally {
+  clearTimeout(watchdog);
+}
+console.log('Packed timeout canary passed.');
 
 try {
   await import('@opencoven/sdk-core/src/errors.js');

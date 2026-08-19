@@ -18,16 +18,20 @@ export interface NormalizeErrorOptions {
   message?: string;
 }
 
-interface ErrorShape {
-  code?: unknown;
-  requestId?: unknown;
-  retryable?: unknown;
-  status?: unknown;
-  statusCode?: unknown;
+function asErrorShape(value: unknown): object | undefined {
+  return typeof value === 'object' && value !== null ? value : undefined;
 }
 
-function asErrorShape(value: unknown): ErrorShape | undefined {
-  return typeof value === 'object' && value !== null ? value : undefined;
+function safeGet(value: object | undefined, key: PropertyKey): unknown {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  try {
+    return Reflect.get(value, key);
+  } catch {
+    return undefined;
+  }
 }
 
 function asRequestId(value: unknown): string | undefined {
@@ -45,17 +49,23 @@ function asStatusCode(value: unknown): number | undefined {
 
 export function normalizeError(error: unknown, options: NormalizeErrorOptions): NormalizedError {
   const shape = asErrorShape(error);
+  const shapeCode = safeGet(shape, 'code');
+  const shapeRequestId = safeGet(shape, 'requestId');
+  const shapeRetryable = safeGet(shape, 'retryable');
+  const shapeStatusCode = safeGet(shape, 'statusCode');
+  const shapeStatus = safeGet(shape, 'status');
   const code =
-    typeof shape?.code === 'string' && shape.code.length > 0
-      ? shape.code
+    typeof shapeCode === 'string' && shapeCode.length > 0
+      ? shapeCode
       : (options.defaultCode ?? 'unknown');
-  const requestId = asRequestId(shape?.requestId);
-  const statusCode = asStatusCode(shape?.statusCode) ?? asStatusCode(shape?.status);
+  const requestId = asRequestId(shapeRequestId);
+  const statusCode = asStatusCode(shapeStatusCode) ?? asStatusCode(shapeStatus);
 
   return {
     system: options.system,
     code,
-    retryable: typeof shape?.retryable === 'boolean' ? shape.retryable : (options.retryable ?? false),
+    retryable:
+      typeof shapeRetryable === 'boolean' ? shapeRetryable : (options.retryable ?? false),
     operation: options.operation,
     ...(options.message === undefined ? {} : { message: options.message }),
     ...(requestId === undefined ? {} : { requestId }),

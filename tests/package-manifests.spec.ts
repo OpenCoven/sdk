@@ -23,9 +23,9 @@ const rootManifest = JSON.parse(readFileSync(resolve(workspaceRoot, 'package.jso
 };
 
 describe('public package manifests', () => {
-  test('runs the clean Phase 0 matrix before coverage and lint in the full verifier', () => {
+  test('runs the clean Phase 0 matrix before the remaining full verification', () => {
     expect(rootManifest.scripts?.verify).toBe(
-      'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 --recursive build && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 lint',
+      'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 --recursive build && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint',
     );
   });
 
@@ -35,6 +35,36 @@ describe('public package manifests', () => {
     expect(rootManifest.devDependencies?.['@vitest/coverage-v8']).toBe(
       rootManifest.devDependencies?.vitest,
     );
+  });
+
+  test('runs deterministic multi-seed operation stress verification', () => {
+    expect(rootManifest.devDependencies?.['fast-check']).toBe('4.3.0');
+    expect(rootManifest.scripts?.['test:stress']).toBe(
+      'node ./scripts/run-operation-stress.mjs',
+    );
+    expect(rootManifest.scripts?.verify).toContain(
+      'corepack pnpm@10.34.0 test:stress',
+    );
+  });
+
+  test('uses fixed-version Changesets and packs package changelogs', () => {
+    expect(rootManifest.devDependencies?.['@changesets/cli']).toBe('3.0.1');
+    expect(rootManifest.scripts?.changeset).toBe('changeset');
+    expect(rootManifest.scripts?.['release:status']).toBe('changeset status');
+    expect(rootManifest.scripts?.['release:version']).toBe('changeset version');
+
+    for (const { manifestPath, workspaceDirectory } of PUBLIC_PACKAGES) {
+      const manifest = JSON.parse(
+        readFileSync(resolve(workspaceRoot, manifestPath), 'utf8'),
+      ) as { files?: string[] };
+      const changelog = readFileSync(
+        resolve(workspaceRoot, 'packages', workspaceDirectory, 'CHANGELOG.md'),
+        'utf8',
+      );
+
+      expect(manifest.files).toContain('CHANGELOG.md');
+      expect(changelog).toContain('## 0.1.0');
+    }
   });
 
   test('keeps every package unpublished until an intentional release change', () => {

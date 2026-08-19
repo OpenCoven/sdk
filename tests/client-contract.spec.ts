@@ -1,6 +1,7 @@
 import * as cave from '@opencoven/cave-client';
 import * as coven from '@opencoven/coven-client';
-import { describe, expect, test } from 'vitest';
+import type { OperationContext, OperationEvent } from '@opencoven/sdk-core';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 interface HealthClient {
   health(): Promise<{ status: 'ok' }>;
@@ -9,6 +10,10 @@ interface HealthClient {
 interface ClientConstructor {
   new (options: { transport: unknown }): HealthClient;
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('constrained client transports', () => {
   test('requests Cave health through a caller-supplied constrained transport', async () => {
@@ -123,5 +128,150 @@ describe('constrained client transports', () => {
         operation: 'health',
       },
     });
+  });
+
+  test('keeps zero-argument transports source compatible', async () => {
+    const caveTransport = {
+      health: () => Promise.resolve({ data: { status: 'ok' as const } }),
+    } satisfies cave.CaveTransport;
+    const covenTransport = {
+      health: () =>
+        Promise.resolve({
+          ok: true as const,
+          apiVersion: coven.COVEN_DAEMON_PROTOCOL,
+          covenVersion: '0.1.0',
+          capabilities: {
+            sessions: true,
+            events: true,
+            structuredErrors: true as const,
+          },
+        }),
+    } satisfies coven.CovenTransport;
+
+    await expect(new cave.CaveClient({ transport: caveTransport }).health()).resolves.toEqual({
+      status: 'ok',
+    });
+    await expect(new coven.CovenClient({ transport: covenTransport }).health()).resolves.toEqual({
+      status: 'ok',
+    });
+  });
+
+  test('passes an operation context to Cave transports', async () => {
+    vi.useFakeTimers();
+    let context: OperationContext | undefined;
+    const client = new cave.CaveClient({
+      transport: {
+        health(receivedContext) {
+          context = receivedContext;
+          return Promise.resolve({ data: { status: 'ok' } });
+        },
+      },
+    });
+
+    await client.health({ timeoutMs: 50 });
+
+    expect(context?.signal).toBeInstanceOf(AbortSignal);
+    expect(context?.deadline).toBe(performance.now() + 50);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('passes an undefined deadline when no Cave timeout is configured', async () => {
+    let context: OperationContext | undefined;
+    const client = new cave.CaveClient({
+      transport: {
+        health(receivedContext) {
+          context = receivedContext;
+          return Promise.resolve({ data: { status: 'ok' } });
+        },
+      },
+    });
+
+    await client.health();
+
+    expect(context?.deadline).toBeUndefined();
+  });
+
+  test('lets per-call Cave controls override constructor defaults', async () => {
+    vi.useFakeTimers();
+    const defaultEvents: OperationEvent[] = [];
+    const callEvents: OperationEvent[] = [];
+    const client = new cave.CaveClient({
+      operation: {
+        timeoutMs: 100,
+        observer: {
+          onEvent(event) {
+            defaultEvents.push(event);
+          },
+          onObserverError(error) {
+            throw error;
+          },
+        },
+      },
+      transport: {
+        health: () => new Promise<never>(() => undefined),
+      },
+    });
+    const result = client.health({
+      timeoutMs: 10,
+      observer: {
+        onEvent(event) {
+          callEvents.push(event);
+        },
+        onObserverError(error) {
+          throw error;
+        },
+      },
+    });
+    const caught = result.catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    const error = await caught;
+    expect(error).toBeInstanceOf(cave.CaveClientError);
+    expect(error).toMatchObject({
+      normalized: {
+        code: 'timeout',
+        retryable: true,
+      },
+      cause: {
+        code: 'timeout',
+      },
+    });
+    expect(defaultEvents).toEqual([]);
+    expect(callEvents.map(({ phase }) => phase)).toEqual(['start', 'timeout']);
+  });
+
+  test('applies Coven constructor controls and combines caller cancellation', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    let receivedContext: OperationContext | undefined;
+    const client = new coven.CovenClient({
+      operation: {
+        timeoutMs: 100,
+      },
+      transport: {
+        health(context) {
+          receivedContext = context;
+          return new Promise<never>(() => undefined);
+        },
+      },
+    });
+    const result = client.health({ signal: controller.signal });
+
+    controller.abort('stop');
+
+    const error = await result.catch((caught: unknown) => caught);
+    expect(receivedContext?.signal.aborted).toBe(true);
+    expect(error).toBeInstanceOf(coven.CovenClientError);
+    expect(error).toMatchObject({
+      normalized: {
+        code: 'aborted',
+        retryable: false,
+      },
+      cause: {
+        code: 'aborted',
+      },
+    });
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

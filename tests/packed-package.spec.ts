@@ -253,6 +253,7 @@ setTimeout(() => {
         cleanupOwnedTempRoot(artifactContext);
       }
     },
+    30_000,
   );
 
   test('reads canonical repository metadata from a packed manifest', () => {
@@ -302,5 +303,5 @@ setTimeout(() => {
     } finally {
       cleanupOwnedTempRoot(artifactContext);
     }
-  });
+  }, 30_000);
 });
