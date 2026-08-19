@@ -200,6 +200,26 @@ describe('operation control', () => {
     scope.dispose();
   });
 
+  test('inherits an earlier parent deadline without creating a duplicate timer', async () => {
+    vi.useFakeTimers();
+    const parent = createOperationScope(descriptor, { timeoutMs: 100 });
+    const child = createOperationScope(descriptor, {
+      signals: [parent.context.signal],
+      timeoutMs: 200,
+    });
+    const parentError = parent.termination.catch((error: unknown) => error);
+    const childError = child.termination.catch((error: unknown) => error);
+
+    expect(child.context.deadline).toBe(parent.context.deadline);
+    expect(vi.getTimerCount()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(await childError).toBe(await parentError);
+    child.dispose();
+    parent.dispose();
+  });
+
   test('rejects hostile error-brand proxies safely', () => {
     const hostile = new Proxy(
       {},

@@ -10,8 +10,13 @@ import {
   CovenClientError,
   isCovenClientError,
 } from '@opencoven/coven-client';
-import { OpenCovenSdkError, createOpenCovenSdk } from '@opencoven/sdk';
-import { describe, expect, test } from 'vitest';
+import {
+  OpenCovenSdkError,
+  createOpenCovenSdk,
+  type OpenCovenHealthOptions,
+} from '@opencoven/sdk';
+import type { OperationEvent } from '@opencoven/sdk-core';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 interface DuplicateCaveModule {
   CaveClient: typeof CaveClient;
@@ -46,6 +51,10 @@ function createCovenClient(): CovenClient {
     },
   });
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('unified health reporting', () => {
   test('reports availability and requires configured clients', () => {
@@ -277,5 +286,205 @@ describe('unified health reporting', () => {
 
     expect(isCaveClientError(hostile)).toBe(false);
     expect(isCovenClientError(hostile)).toBe(false);
+  });
+
+  test('uses one global timeout as the complete sequential health budget', async () => {
+    vi.useFakeTimers();
+    let covenStarted = false;
+    const sdk = createOpenCovenSdk({
+      cave: new CaveClient({
+        transport: {
+          health: () =>
+            new Promise((resolve) => {
+              setTimeout(() => {
+                resolve({ data: { status: 'ok' } });
+              }, 30);
+            }),
+        },
+      }),
+      coven: new CovenClient({
+        transport: {
+          health: () => {
+            covenStarted = true;
+            return new Promise<never>(() => undefined);
+          },
+        },
+      }),
+    });
+    const result = sdk.health({ timeoutMs: 50 });
+    const caught = result.catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(30);
+    expect(covenStarted).toBe(true);
+    await vi.advanceTimersByTimeAsync(20);
+
+    const error = await caught;
+    expect(error).toBeInstanceOf(CovenClientError);
+    expect(error).toMatchObject({
+      normalized: {
+        code: 'timeout',
+        retryable: true,
+      },
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('prevents a later sequential client from starting after global abort', async () => {
+    const controller = new AbortController();
+    let covenStarted = false;
+    const sdk = createOpenCovenSdk({
+      cave: new CaveClient({
+        transport: {
+          health: () => new Promise<never>(() => undefined),
+        },
+      }),
+      coven: new CovenClient({
+        transport: {
+          health: () => {
+            covenStarted = true;
+            return Promise.resolve({
+              ok: true,
+              apiVersion: COVEN_DAEMON_PROTOCOL,
+              covenVersion: '0.1.0',
+              capabilities: {
+                sessions: true,
+                events: true,
+                structuredErrors: true,
+              },
+            });
+          },
+        },
+      }),
+    });
+    const result = sdk.health({ signal: controller.signal });
+
+    controller.abort();
+
+    await expect(result).rejects.toMatchObject({
+      normalized: {
+        system: 'cave',
+        code: 'aborted',
+      },
+    });
+    expect(covenStarted).toBe(false);
+  });
+
+  test('retains a healthy report peer when the other client times out', async () => {
+    vi.useFakeTimers();
+    const sdk = createOpenCovenSdk({
+      cave: new CaveClient({
+        transport: {
+          health: () => new Promise<never>(() => undefined),
+        },
+      }),
+      coven: createCovenClient(),
+    });
+    const report = sdk.healthReport({
+      timeoutMs: 100,
+      cave: { timeoutMs: 10 },
+    });
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    await expect(report).resolves.toMatchObject({
+      cave: {
+        status: 'unhealthy',
+        error: {
+          normalized: {
+            code: 'timeout',
+          },
+        },
+      },
+      coven: {
+        status: 'healthy',
+        health: { status: 'ok' },
+      },
+    });
+  });
+
+  test('applies a shared global timeout to all concurrent checks', async () => {
+    vi.useFakeTimers();
+    const sdk = createOpenCovenSdk({
+      cave: new CaveClient({
+        transport: {
+          health: () => new Promise<never>(() => undefined),
+        },
+      }),
+      coven: new CovenClient({
+        transport: {
+          health: () => new Promise<never>(() => undefined),
+        },
+      }),
+    });
+    const report = sdk.healthReport({ timeoutMs: 20 });
+    const settled = report.then((value) => value);
+
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(20);
+
+    await expect(settled).resolves.toMatchObject({
+      cave: {
+        status: 'unhealthy',
+        error: { normalized: { code: 'timeout' } },
+      },
+      coven: {
+        status: 'unhealthy',
+        error: { normalized: { code: 'timeout' } },
+      },
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('limits a per-client abort to that report entry', async () => {
+    const caveController = new AbortController();
+    const options: OpenCovenHealthOptions = {
+      cave: { signal: caveController.signal },
+    };
+    const sdk = createOpenCovenSdk({
+      cave: new CaveClient({
+        transport: {
+          health: () => new Promise<never>(() => undefined),
+        },
+      }),
+      coven: createCovenClient(),
+    });
+    const report = sdk.healthReport(options);
+
+    caveController.abort();
+
+    await expect(report).resolves.toMatchObject({
+      cave: {
+        status: 'unhealthy',
+        error: { normalized: { code: 'aborted' } },
+      },
+      coven: {
+        status: 'healthy',
+      },
+    });
+  });
+
+  test('forwards only system-specific lifecycle events', async () => {
+    const events: OperationEvent[] = [];
+    const sdk = createOpenCovenSdk({
+      cave: createCaveClient(),
+      coven: createCovenClient(),
+    });
+
+    await sdk.healthReport({
+      observer: {
+        onEvent(event) {
+          events.push(event);
+        },
+        onObserverError(error) {
+          throw error;
+        },
+      },
+    });
+
+    expect(events).toHaveLength(4);
+    expect(new Set(events.map(({ system }) => system))).toEqual(
+      new Set(['cave', 'coven']),
+    );
+    expect(events.some(({ system }) => system === 'sdk')).toBe(false);
   });
 });

@@ -13,6 +13,7 @@ const OPERATION_TIMEOUT_ERROR_BRAND = Symbol.for(
 const OPERATION_ABORTED_ERROR_BRAND = Symbol.for(
   '@opencoven/sdk-core/OperationAbortedError',
 );
+const operationDeadlines = new WeakMap<object, number>();
 
 export interface OperationDescriptor {
   system: OpenCovenSystem;
@@ -141,8 +142,24 @@ export function createOperationScope(
   }
 
   const controller = new AbortController();
-  const deadline =
+  const ownDeadline =
     options.timeoutMs === undefined ? undefined : performance.now() + options.timeoutMs;
+  const inheritedDeadline = signals.reduce<number | undefined>((earliest, signal) => {
+    const candidate = operationDeadlines.get(signal);
+    if (candidate === undefined) {
+      return earliest;
+    }
+    return earliest === undefined ? candidate : Math.min(earliest, candidate);
+  }, undefined);
+  const deadline =
+    ownDeadline === undefined
+      ? inheritedDeadline
+      : inheritedDeadline === undefined
+        ? ownDeadline
+        : Math.min(ownDeadline, inheritedDeadline);
+  if (deadline !== undefined) {
+    operationDeadlines.set(controller.signal, deadline);
+  }
   const removers: Array<() => void> = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
@@ -164,10 +181,15 @@ export function createOperationScope(
 
   for (const signal of signals) {
     const onAbort = (): void => {
-      abort(new OperationAbortedError(descriptor, { cause: signalReason(signal) }));
+      const reason = signalReason(signal);
+      abort(
+        isOperationTimeoutError(reason) || isOperationAbortedError(reason)
+          ? reason
+          : new OperationAbortedError(descriptor, { cause: reason }),
+      );
     };
 
-    if (signal.aborted) {
+    if (safelyRead(signal, 'aborted') === true) {
       onAbort();
       break;
     }
@@ -178,7 +200,12 @@ export function createOperationScope(
     });
   }
 
-  if (options.timeoutMs !== undefined && !controller.signal.aborted) {
+  if (
+    options.timeoutMs !== undefined &&
+    (inheritedDeadline === undefined ||
+      (ownDeadline !== undefined && ownDeadline < inheritedDeadline)) &&
+    !controller.signal.aborted
+  ) {
     timer = setTimeout(() => {
       abort(new OperationTimeoutError(descriptor, options.timeoutMs as number));
     }, options.timeoutMs);
@@ -233,7 +260,12 @@ export async function runOperation<T>(
       return await scope.termination;
     }
 
-    const operation = Promise.resolve().then(() => executor(scope.context));
+    let operation: Promise<T>;
+    try {
+      operation = executor(scope.context);
+    } catch (error) {
+      operation = Promise.reject(error);
+    }
     let result: T;
     try {
       result = await Promise.race([operation, scope.termination]);

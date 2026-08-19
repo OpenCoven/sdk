@@ -91,6 +91,9 @@ importers:
       '@opencoven/coven-client':
         specifier: workspace:0.1.0
         version: link:../coven
+      '@opencoven/sdk-core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 
