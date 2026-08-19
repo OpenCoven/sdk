@@ -46,6 +46,7 @@ describe('public package entry points', () => {
       code: 'unauthorized',
       retryable: false,
       operation: 'health',
+      message: 'Cave health request failed',
     });
   });
 
@@ -58,6 +59,7 @@ describe('public package entry points', () => {
       code: 'session_not_live',
       retryable: false,
       operation: 'health',
+      message: 'Coven health request failed',
     });
   });
 });

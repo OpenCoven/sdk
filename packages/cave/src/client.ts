@@ -18,6 +18,7 @@ export function normalizeCaveError(error: unknown, operation: string): Normalize
   return normalizeError(error, {
     system: 'cave',
     operation,
+    message: `Cave ${operation} request failed`,
   });
 }
 
@@ -25,13 +26,17 @@ export class CaveClientError extends Error {
   readonly normalized: NormalizedError;
   readonly compatibility: CompatibilityAssessment | undefined;
 
-  constructor(normalized: NormalizedError, compatibility?: CompatibilityAssessment) {
+  constructor(
+    normalized: NormalizedError,
+    compatibility?: CompatibilityAssessment,
+    options?: ErrorOptions,
+  ) {
     const suffix =
       compatibility === undefined
         ? ''
         : ` (minimum ${compatibility.minimumClientVersion}, client ${compatibility.clientVersion})`;
 
-    super(`${normalized.system}.${normalized.operation}: ${normalized.code}${suffix}`);
+    super(`${normalized.system}.${normalized.operation}: ${normalized.code}${suffix}`, options);
     this.name = 'CaveClientError';
     this.normalized = normalized;
     this.compatibility = compatibility;
@@ -140,7 +145,7 @@ export class CaveClient {
         throw error;
       }
 
-      throw new CaveClientError(normalizeCaveError(error, 'health'));
+      throw new CaveClientError(normalizeCaveError(error, 'health'), undefined, { cause: error });
     }
   }
 }

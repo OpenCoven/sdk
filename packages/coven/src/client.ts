@@ -11,14 +11,15 @@ export function normalizeCovenError(error: unknown, operation: string): Normaliz
   return normalizeError(error, {
     system: 'coven',
     operation,
+    message: `Coven ${operation} request failed`,
   });
 }
 
 export class CovenClientError extends Error {
   readonly normalized: NormalizedError;
 
-  constructor(normalized: NormalizedError) {
-    super(`${normalized.system}.${normalized.operation}: ${normalized.code}`);
+  constructor(normalized: NormalizedError, options?: ErrorOptions) {
+    super(`${normalized.system}.${normalized.operation}: ${normalized.code}`, options);
     this.name = 'CovenClientError';
     this.normalized = normalized;
   }
@@ -89,7 +90,7 @@ export class CovenClient {
         throw error;
       }
 
-      throw new CovenClientError(normalizeCovenError(error, 'health'));
+      throw new CovenClientError(normalizeCovenError(error, 'health'), { cause: error });
     }
   }
 }
