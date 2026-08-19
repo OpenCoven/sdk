@@ -54,14 +54,26 @@ describe('operation control', () => {
     const controller = new AbortController();
     controller.abort('caller stopped');
     const executor = vi.fn(() => Promise.resolve('unexpected'));
+    const phases: string[] = [];
 
     const error = await runOperation(
       descriptor,
-      { signal: controller.signal },
+      {
+        signal: controller.signal,
+        observer: {
+          onEvent(event) {
+            phases.push(event.phase);
+          },
+          onObserverError(observerError) {
+            throw observerError;
+          },
+        },
+      },
       executor,
     ).catch((caught: unknown) => caught);
 
     expect(executor).not.toHaveBeenCalled();
+    expect(phases).toEqual(['start', 'abort']);
     expect(error).toBeInstanceOf(OperationAbortedError);
     expect(isOperationAbortedError(error)).toBe(true);
     expect((error as Error).cause).toBe('caller stopped');

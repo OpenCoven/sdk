@@ -487,4 +487,76 @@ describe('unified health reporting', () => {
     );
     expect(events.some(({ system }) => system === 'sdk')).toBe(false);
   });
+
+  test('enforces a global budget when a source-compatible client override ignores options', async () => {
+    vi.useFakeTimers();
+    class NonCooperativeCaveClient extends CaveClient {
+      override health(): Promise<CaveHealth> {
+        return new Promise<never>(() => undefined);
+      }
+    }
+    const sdk = createOpenCovenSdk({
+      cave: new NonCooperativeCaveClient({
+        transport: {
+          health: () => Promise.resolve({ data: { status: 'ok' } }),
+        },
+      }),
+    });
+    const result = sdk.health({ timeoutMs: 10 });
+    const caught = result.catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(await caught).toMatchObject({
+      normalized: {
+        system: 'cave',
+        code: 'timeout',
+      },
+    });
+  });
+
+  test('reports timeout for a non-cooperative client override', async () => {
+    vi.useFakeTimers();
+    class NonCooperativeCovenClient extends CovenClient {
+      override health(): Promise<{ status: 'ok' }> {
+        return new Promise<never>(() => undefined);
+      }
+    }
+    const sdk = createOpenCovenSdk({
+      cave: createCaveClient(),
+      coven: new NonCooperativeCovenClient({
+        transport: {
+          health: () =>
+            Promise.resolve({
+              ok: true,
+              apiVersion: COVEN_DAEMON_PROTOCOL,
+              covenVersion: '0.1.0',
+              capabilities: {
+                sessions: true,
+                events: true,
+                structuredErrors: true,
+              },
+            }),
+        },
+      }),
+    });
+    const report = sdk.healthReport({
+      coven: { timeoutMs: 15 },
+    });
+
+    await vi.advanceTimersByTimeAsync(15);
+
+    await expect(report).resolves.toMatchObject({
+      cave: { status: 'healthy' },
+      coven: {
+        status: 'unhealthy',
+        error: {
+          normalized: {
+            system: 'coven',
+            code: 'timeout',
+          },
+        },
+      },
+    });
+  });
 });

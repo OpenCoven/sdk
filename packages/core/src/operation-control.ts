@@ -256,14 +256,14 @@ export async function runOperation<T>(
       operation: descriptor.operation,
     });
 
-    if (scope.context.signal.aborted) {
-      return await scope.termination;
-    }
-
     let result: T;
     try {
-      const operation = executor(scope.context);
-      result = await Promise.race([operation, scope.termination]);
+      if (scope.context.signal.aborted) {
+        result = await scope.termination;
+      } else {
+        const operation = executor(scope.context);
+        result = await Promise.race([operation, scope.termination]);
+      }
     } catch (error) {
       const phase = isOperationTimeoutError(error)
         ? 'timeout'

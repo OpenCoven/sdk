@@ -1,17 +1,21 @@
 import {
+  CaveClientError,
   isCaveClientError,
+  normalizeCaveError,
   type CaveClient,
-  type CaveClientError,
   type CaveHealth,
 } from '@opencoven/cave-client';
 import {
+  CovenClientError,
   isCovenClientError,
+  normalizeCovenError,
   type CovenClient,
-  type CovenClientError,
   type CovenHealth,
 } from '@opencoven/coven-client';
 import {
   createOperationScope,
+  isOperationAbortedError,
+  isOperationTimeoutError,
   type OperationObserver,
   type OperationOptions,
   type OperationScope,
@@ -49,7 +53,7 @@ export interface OpenCovenHealthReport {
 
 async function reportCaveHealth(
   client: CaveClient | undefined,
-  options: OperationOptions = {},
+  operation: ClientOperation | undefined,
 ): Promise<ClientHealthResult<CaveHealth, CaveClientError>> {
   if (client === undefined) {
     return { status: 'not_configured' };
@@ -58,7 +62,10 @@ async function reportCaveHealth(
   try {
     return {
       status: 'healthy',
-      health: await client.health(options),
+      health:
+        operation === undefined
+          ? await client.health()
+          : await executeCaveHealth(client, operation),
     };
   } catch (error) {
     if (isCaveClientError(error)) {
@@ -74,7 +81,7 @@ async function reportCaveHealth(
 
 async function reportCovenHealth(
   client: CovenClient | undefined,
-  options: OperationOptions = {},
+  operation: ClientOperation | undefined,
 ): Promise<ClientHealthResult<CovenHealth, CovenClientError>> {
   if (client === undefined) {
     return { status: 'not_configured' };
@@ -83,7 +90,10 @@ async function reportCovenHealth(
   try {
     return {
       status: 'healthy',
-      health: await client.health(options),
+      health:
+        operation === undefined
+          ? await client.health()
+          : await executeCovenHealth(client, operation),
     };
   } catch (error) {
     if (isCovenClientError(error)) {
@@ -117,7 +127,12 @@ function createClientOperation(
       system,
       operation: 'health',
     },
-    { signals },
+    {
+      signals,
+      ...(constraints?.timeoutMs === undefined
+        ? {}
+        : { timeoutMs: constraints.timeoutMs }),
+    },
   );
   const timeoutMs = constraints?.timeoutMs;
 
@@ -129,6 +144,50 @@ function createClientOperation(
       ...(observer === undefined ? {} : { observer }),
     },
   };
+}
+
+async function executeCaveHealth(
+  client: CaveClient,
+  operation: ClientOperation,
+): Promise<CaveHealth> {
+  try {
+    return await Promise.race([
+      client.health(operation.options),
+      operation.scope.termination,
+    ]);
+  } catch (error) {
+    if (isCaveClientError(error)) {
+      throw error;
+    }
+    if (isOperationTimeoutError(error) || isOperationAbortedError(error)) {
+      throw new CaveClientError(normalizeCaveError(error, 'health'), undefined, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+}
+
+async function executeCovenHealth(
+  client: CovenClient,
+  operation: ClientOperation,
+): Promise<CovenHealth> {
+  try {
+    return await Promise.race([
+      client.health(operation.options),
+      operation.scope.termination,
+    ]);
+  } catch (error) {
+    if (isCovenClientError(error)) {
+      throw error;
+    }
+    if (isOperationTimeoutError(error) || isOperationAbortedError(error)) {
+      throw new CovenClientError(normalizeCovenError(error, 'health'), {
+        cause: error,
+      });
+    }
+    throw error;
+  }
 }
 
 export class OpenCovenSdkError extends Error {
@@ -199,7 +258,7 @@ export class OpenCovenSdk {
           options.observer,
         );
         try {
-          health.cave = await this.cave.health(cave.options);
+          health.cave = await executeCaveHealth(this.cave, cave);
         } finally {
           cave.scope.dispose();
         }
@@ -213,7 +272,7 @@ export class OpenCovenSdk {
           options.observer,
         );
         try {
-          health.coven = await this.coven.health(coven.options);
+          health.coven = await executeCovenHealth(this.coven, coven);
         } finally {
           coven.scope.dispose();
         }
@@ -261,8 +320,8 @@ export class OpenCovenSdk {
 
     try {
       const [caveResult, covenResult] = await Promise.all([
-        reportCaveHealth(this.cave, cave?.options),
-        reportCovenHealth(this.coven, coven?.options),
+        reportCaveHealth(this.cave, cave),
+        reportCovenHealth(this.coven, coven),
       ]);
 
       return { cave: caveResult, coven: covenResult };
