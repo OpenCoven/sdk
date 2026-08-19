@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { delimiter, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 
 import { describe, expect, test } from 'vitest';
 
@@ -49,6 +49,12 @@ function findTarball(directory: string): string {
   }
 
   return resolve(directory, tarball);
+}
+
+function readTarballFile(tarball: string, path: string): string {
+  return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
+    encoding: 'utf8',
+  });
 }
 
 async function waitForPath(path: string) {
@@ -301,6 +307,9 @@ setTimeout(() => {
         expect(packed.status, packed.stderr).toBe(0);
 
         const manifest = readPackedPackageManifest(findTarball(destination));
+        expect(readTarballFile(findTarball(destination), 'CHANGELOG.md')).toContain(
+          '## 0.1.0',
+        );
         expect(assertCanonicalRepository(manifest, repositoryDirectory, packageName)).toEqual({
           type: 'git',
           url: CANONICAL_REPOSITORY_URL,
@@ -326,5 +335,6 @@ setTimeout(() => {
     expect(result.stdout).toContain('Unified health example passed.');
     expect(result.stdout).toContain('Packed timeout canary passed.');
     expect(String(result.stdout)).toContain('Packed license metadata verified.');
-  }, 60_000);
+    expect(result.stdout).toContain('Release artifact manifest verified.');
+  }, 180_000);
 });

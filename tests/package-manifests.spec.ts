@@ -21,6 +21,7 @@ const rootManifest = JSON.parse(readFileSync(resolve(workspaceRoot, 'package.jso
   };
   scripts?: Record<string, string>;
 };
+const vitestConfig = readFileSync(resolve(workspaceRoot, 'vitest.config.ts'), 'utf8');
 
 describe('public package manifests', () => {
   test('builds declaration files before typed linting in the full verifier', () => {
@@ -65,6 +66,17 @@ describe('public package manifests', () => {
       expect(manifest.files).toContain('CHANGELOG.md');
       expect(changelog).toContain('## 0.1.0');
     }
+  });
+
+  test('verifies the release contract and artifacts on the compatibility path', () => {
+    expect(rootManifest.scripts?.['verify:compat']).toContain('verify:release');
+    expect(rootManifest.scripts?.['verify:compat']).toMatch(
+      /verify:release.*verify:package/,
+    );
+  });
+
+  test('serializes package-mutating test files to protect build outputs', () => {
+    expect(vitestConfig).toContain('fileParallelism: false');
   });
 
   test('keeps every package unpublished until an intentional release change', () => {
