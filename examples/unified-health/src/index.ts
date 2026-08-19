@@ -25,7 +25,11 @@ const sdk = createOpenCovenSdk({
   }),
 });
 
-const report = await sdk.healthReport();
+const report = await sdk.healthReport({
+  timeoutMs: 1_000,
+  cave: { timeoutMs: 500 },
+  coven: { timeoutMs: 500 },
+});
 
 if (report.cave.status !== 'healthy' || report.coven.status !== 'healthy') {
   throw new Error('Expected both configured clients to be healthy.');
