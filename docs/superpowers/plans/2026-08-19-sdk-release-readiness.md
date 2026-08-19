@@ -1182,5 +1182,6 @@ prune the remote branch, and leave the primary repository clean on `main`.
 - PR: https://github.com/OpenCoven/sdk/pull/22
 - Hosted checks passed for Node `24.18.1`, latest `24.x`, CodeQL Actions,
   CodeQL JavaScript/TypeScript, and the repository CodeQL gate.
-- Merge commit and post-merge verification remain to be recorded after
-  delivery.
+- PR #22 merged as `35b67b704fb10a5bb36a9c832afb3e5963fcc054`.
+- Post-merge canonical verification passed on `main` after refreshing the
+  frozen workspace install.
