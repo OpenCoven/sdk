@@ -41,4 +41,12 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain("sdk: 'sdk'");
     expect(verifier).not.toContain("packageDirectory === 'sdk'");
   });
+
+  test('enforces the exact approved license contract in packed tarballs', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toMatch(
+      /assertApprovedPackageLicense\(\s*manifest\.license,\s*selector,\s*[^)]+\)/,
+    );
+  });
 });

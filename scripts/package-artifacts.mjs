@@ -73,6 +73,17 @@ function runPnpmAsync(args, cwd, options = {}) {
   });
 }
 
+async function runPnpmAsyncForDirectories(args, directories, options) {
+  const results = await Promise.allSettled(
+    directories.map((directory) => runPnpmAsync(args, directory, options)),
+  );
+  const failure = results.find((result) => result.status === 'rejected');
+
+  if (failure !== undefined) {
+    throw failure.reason;
+  }
+}
+
 /**
  * Install an isolated fixture or fixture workspace twice: once warm, once
  * offline.
@@ -107,20 +118,20 @@ export async function installIsolatedConsumersOfflineAfterWarming(
   directories,
   { workspace = false, ...options } = {},
 ) {
-  await Promise.all(
-    directories.map((directory) =>
-      runPnpmAsync(isolatedInstallArgs({ offline: false, workspace }), directory, options),
-    ),
+  await runPnpmAsyncForDirectories(
+    isolatedInstallArgs({ offline: false, workspace }),
+    directories,
+    options,
   );
 
   for (const directory of directories) {
     removeInstalledModuleTrees(directory);
   }
 
-  await Promise.all(
-    directories.map((directory) =>
-      runPnpmAsync(isolatedInstallArgs({ offline: true, workspace }), directory, options),
-    ),
+  await runPnpmAsyncForDirectories(
+    isolatedInstallArgs({ offline: true, workspace }),
+    directories,
+    options,
   );
 }
 

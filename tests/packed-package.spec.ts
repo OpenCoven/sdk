@@ -51,6 +51,14 @@ function findTarball(directory: string): string {
   return resolve(directory, tarball);
 }
 
+async function waitForPath(path: string) {
+  const deadline = Date.now() + 2_000;
+
+  while (!existsSync(path) && Date.now() < deadline) {
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 20));
+  }
+}
+
 describe('packed public packages', () => {
   test('warms isolated installs before enforcing offline resolution', () => {
     const warmArgs = isolatedInstallArgs({ offline: false });
@@ -212,6 +220,68 @@ if (existsSync(rootModules) || existsSync(nestedModules) || !existsSync(lockfile
       cleanupOwnedTempRoot(artifactContext);
     }
   });
+
+  test.each(['warm', 'offline'] as const)(
+    'waits for every parallel %s install before propagating a child failure',
+    async (failingPhase) => {
+      const artifactContext = createOwnedTempDirectory({
+        prefix: `opencoven-packed-${failingPhase}-settling-spec`,
+        childSegments: ['fake-bin'],
+      });
+      const fakeBin = resolve(artifactContext.rootPath, 'fake-bin');
+      const fakeCorepack = resolve(fakeBin, 'corepack');
+      const markerPath = resolve(artifactContext.rootPath, `${failingPhase}-slow-settled`);
+      const originalPath = process.env.PATH;
+      const consumerRoots = ['consumer-a', 'consumer-b'].map((name) =>
+        resolve(artifactContext.rootPath, name),
+      );
+
+      for (const consumerRoot of consumerRoots) {
+        mkdirSync(consumerRoot, { recursive: true });
+      }
+
+      writeFileSync(
+        fakeCorepack,
+        `#!/usr/bin/env node
+const { writeFileSync } = require('node:fs');
+const { basename, resolve } = require('node:path');
+
+const args = process.argv.slice(2);
+const cwd = process.cwd();
+const phase = args.includes('--offline') ? 'offline' : 'warm';
+
+if (phase !== ${JSON.stringify(failingPhase)}) {
+  process.exit(0);
+}
+
+if (basename(cwd) === 'consumer-a') {
+  process.exit(17);
+}
+
+setTimeout(() => {
+  writeFileSync(resolve(cwd, '..', ${JSON.stringify(`${failingPhase}-slow-settled`)}), 'settled\\n');
+}, 150);
+`,
+      );
+      chmodSync(fakeCorepack, 0o700);
+      process.env.PATH = `${fakeBin}${delimiter}${originalPath ?? ''}`;
+
+      try {
+        await expect(
+          installIsolatedConsumersOfflineAfterWarming(consumerRoots),
+        ).rejects.toThrow(/failed in .*consumer-a with exit code 17/);
+
+        const slowSettledBeforeRejection = existsSync(markerPath);
+        await waitForPath(markerPath);
+
+        expect(slowSettledBeforeRejection).toBe(true);
+        expect(readFileSync(markerPath, 'utf8')).toBe('settled\n');
+      } finally {
+        process.env.PATH = originalPath;
+        cleanupOwnedTempRoot(artifactContext);
+      }
+    },
+  );
 
   test('pack tarballs preserve canonical repository metadata', () => {
     const artifactRoot = mkdtempSync(resolve(tmpdir(), 'opencoven-packed-package-spec-'));

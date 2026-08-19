@@ -67,6 +67,20 @@ describe('public package manifests', () => {
     }
   });
 
+  test('uses the exact approved license components in every package selector', () => {
+    for (const { workspaceDirectory } of PUBLIC_PACKAGES) {
+      const selector = readFileSync(
+        resolve(workspaceRoot, 'packages', workspaceDirectory, 'LICENSE'),
+        'utf8',
+      );
+      const components = [...selector.matchAll(/\(([^()\r\n]+)\), see \[LICENSE-[^\]]+\]/g)].map(
+        (match) => match[1],
+      );
+
+      expect(components).toEqual(['AGPL-3.0-only', 'MIT']);
+    }
+  });
+
   test('assigns the opencoven binary only to @opencoven/dev-cli', () => {
     const owners = PUBLIC_PACKAGES.flatMap(({ packageName, manifestPath }) => {
       const manifest = JSON.parse(readFileSync(resolve(workspaceRoot, manifestPath), 'utf8')) as {

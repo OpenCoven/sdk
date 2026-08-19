@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
 
 export const CANONICAL_REPOSITORY_URL = 'git+https://github.com/OpenCoven/sdk.git';
+export const APPROVED_PACKAGE_LICENSE_EXPRESSION = 'AGPL-3.0-only OR MIT';
+export const APPROVED_PACKAGE_LICENSE_COMPONENTS = Object.freeze(['AGPL-3.0-only', 'MIT']);
 
 export const PUBLIC_PACKAGES = [
   {
@@ -49,6 +51,36 @@ function isLocalRepositoryUrl(url) {
     url.startsWith('~') ||
     /^[A-Za-z]:[\\/]/.test(url)
   );
+}
+
+export function assertApprovedPackageLicense(manifestLicense, selector, context) {
+  if (manifestLicense !== APPROVED_PACKAGE_LICENSE_EXPRESSION) {
+    throw new Error(
+      `${context} manifest license must be ${APPROVED_PACKAGE_LICENSE_EXPRESSION}, received ${manifestLicense}.`,
+    );
+  }
+
+  const selectorComponents =
+    typeof selector === 'string'
+      ? [...selector.matchAll(/\(([^()\r\n]+)\), see \[LICENSE-[^\]]+\]/g)].map(
+          (match) => match[1],
+        )
+      : [];
+
+  if (
+    selectorComponents.length !== APPROVED_PACKAGE_LICENSE_COMPONENTS.length ||
+    selectorComponents.some(
+      (component, index) => component !== APPROVED_PACKAGE_LICENSE_COMPONENTS[index],
+    )
+  ) {
+    throw new Error(
+      `${context} selector license components must be ${APPROVED_PACKAGE_LICENSE_COMPONENTS.join(
+        ' OR ',
+      )}, received ${selectorComponents.join(' OR ') || 'none'}.`,
+    );
+  }
+
+  return selectorComponents;
 }
 
 export function assertCanonicalRepository(manifest, expectedDirectory, packageName) {

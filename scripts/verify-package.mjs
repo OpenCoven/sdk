@@ -13,7 +13,10 @@ import {
   runPnpm,
   tarballSpecifier,
 } from './package-artifacts.mjs';
-import { PUBLIC_PACKAGES } from './repository-metadata.mjs';
+import {
+  PUBLIC_PACKAGES,
+  assertApprovedPackageLicense,
+} from './repository-metadata.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const installedPackageNames = {
@@ -37,9 +40,14 @@ function assertPackedLicenses(tarballs) {
     const agpl = readTarballFile(tarballs[workspaceDirectory], 'LICENSE-AGPL');
     const mit = readTarballFile(tarballs[workspaceDirectory], 'LICENSE-MIT');
 
+    assertApprovedPackageLicense(
+      manifest.license,
+      selector,
+      `Packed ${packageName} package`,
+    );
+
     if (
       manifest.name !== packageName ||
-      manifest.license !== 'AGPL-3.0-only OR MIT' ||
       !selector.includes('OpenCoven SDK') ||
       selector.includes('coven-cave') ||
       !agpl.includes('GNU AFFERO GENERAL PUBLIC LICENSE') ||
