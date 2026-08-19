@@ -69,7 +69,25 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain('assertPackedPackagesExcludeSources(destinationDirectory);');
     expect(verifier).toContain("run(process.execPath, ['verify.mjs'], fixtureRoot);");
     expect(verifier).toContain(
-      "run(resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven'), ['--json', '--help'], fixtureRoot);",
+      "const binary = resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven');",
     );
+    expect(verifier).toContain("run(binary, ['--json', '--help'], fixtureRoot);");
+  });
+
+  test('checks both packed binary failure output modes', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain("spawnSync(binary, ['status']");
+    expect(verifier).toContain("spawnSync(binary, ['--json', 'status']");
+    expect(verifier).toContain("humanFailure.status !== 1");
+    expect(verifier).toContain("humanFailure.stdout !== ''");
+    expect(verifier).toContain(
+      "humanFailure.stderr !== 'This command is reserved for a future operational task.\\n'",
+    );
+    expect(verifier).toContain("jsonFailure.status !== 1");
+    expect(verifier).toContain("jsonFailure.stderr !== ''");
+    expect(verifier).toContain("jsonOutput?.error?.code !== 'not_implemented'");
+    expect(verifier).toContain("jsonOutput?.command !== 'status'");
+    expect(verifier).toContain('jsonOutput?.ok !== false');
   });
 });

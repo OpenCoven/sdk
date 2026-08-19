@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +31,62 @@ function readTarballFile(tarball, path) {
   return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
     encoding: 'utf8',
   });
+}
+
+function summarizeCliResult(result) {
+  return JSON.stringify({
+    error: result.error?.message,
+    signal: result.signal,
+    status: result.status,
+    stderr: result.stderr,
+    stdout: result.stdout,
+  });
+}
+
+function assertPackedCliFailurePaths(binary, cwd) {
+  const humanFailure = spawnSync(binary, ['status'], {
+    cwd,
+    encoding: 'utf8',
+  });
+
+  if (
+    humanFailure.error !== undefined ||
+    humanFailure.status !== 1 ||
+    humanFailure.stdout !== '' ||
+    humanFailure.stderr !== 'This command is reserved for a future operational task.\n'
+  ) {
+    throw new Error(
+      `Packed opencoven human failure output is incorrect: ${summarizeCliResult(humanFailure)}.`,
+    );
+  }
+
+  const jsonFailure = spawnSync(binary, ['--json', 'status'], {
+    cwd,
+    encoding: 'utf8',
+  });
+  let jsonOutput;
+
+  try {
+    jsonOutput = JSON.parse(jsonFailure.stdout);
+  } catch (error) {
+    throw new Error(
+      `Packed opencoven JSON failure output is invalid: ${summarizeCliResult(jsonFailure)}.`,
+      { cause: error },
+    );
+  }
+
+  if (
+    jsonFailure.error !== undefined ||
+    jsonFailure.status !== 1 ||
+    jsonFailure.stderr !== '' ||
+    jsonOutput?.error?.code !== 'not_implemented' ||
+    jsonOutput?.command !== 'status' ||
+    jsonOutput?.ok !== false
+  ) {
+    throw new Error(
+      `Packed opencoven JSON failure output is incorrect: ${summarizeCliResult(jsonFailure)}.`,
+    );
+  }
 }
 
 function assertPackedLicenses(tarballs) {
@@ -319,7 +375,9 @@ try {
   }
 
   run(process.execPath, ['verify.mjs'], fixtureRoot);
-  run(resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven'), ['--json', '--help'], fixtureRoot);
+  const binary = resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven');
+  run(binary, ['--json', '--help'], fixtureRoot);
+  assertPackedCliFailurePaths(binary, fixtureRoot);
   process.stdout.write('Packed package verification passed.\n');
 } finally {
   if (artifactContext !== undefined) {
