@@ -111,6 +111,8 @@ export interface CaveFamiliarContract {
 
 export interface CaveFamiliarContractResponse {
   ok: boolean;
+  /** Present on a refusal. The client surfaces it as the error code. */
+  reason?: string;
   id?: string;
   workspace?: string;
   present?: boolean;
@@ -203,6 +205,8 @@ export interface CaveFamiliarAnalytics {
 
 export interface CaveFamiliarAnalyticsResponse {
   ok: boolean;
+  /** Present on a refusal. The client surfaces it as the error code. */
+  reason?: string;
   analytics?: CaveFamiliarAnalytics;
   error?: string;
 }

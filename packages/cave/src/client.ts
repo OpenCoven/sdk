@@ -8,6 +8,7 @@ import {
 import type { CaveHealth } from './schemas.js';
 import type {
   CaveExecutionAttempt,
+  CaveExecutionSlice,
   CaveExecutionWindow,
   CaveFamiliar,
   CaveFamiliarAnalytics,
@@ -177,6 +178,12 @@ function toFamiliar(wire: CaveFamiliarWire): CaveFamiliar {
   };
 }
 
+function isViolation(value: unknown): boolean {
+  return (
+    isObject(value) && isString(value.file) && isString(value.field) && isString(value.message)
+  );
+}
+
 function isContractReport(value: unknown): boolean {
   if (!isObject(value)) {
     return false;
@@ -186,12 +193,46 @@ function isContractReport(value: unknown): boolean {
     return false;
   }
 
-  if (!Array.isArray(value.properties) || !Array.isArray(value.violations)) {
+  // `warnings` is required, not optional. A report that omits it is not a
+  // report with no warnings -- it is a shape this client does not recognise,
+  // and reading it as "none" would quietly hide the difference.
+  if (
+    !Array.isArray(value.properties) ||
+    !Array.isArray(value.violations) ||
+    !Array.isArray(value.warnings)
+  ) {
+    return false;
+  }
+
+  if (!value.violations.every(isViolation) || !value.warnings.every(isViolation)) {
     return false;
   }
 
   return value.properties.every(
     (entry) => isObject(entry) && isString(entry.property) && typeof entry.pass === 'boolean',
+  );
+}
+
+function isSlice(value: unknown): value is CaveExecutionSlice {
+  if (!isObject(value) || !isString(value.key)) {
+    return false;
+  }
+
+  const counts = ['attempts', 'completed', 'failed', 'cancelled', 'toolCalls', 'toolFailures'];
+
+  if (!counts.every((key) => typeof value[key] === 'number')) {
+    return false;
+  }
+
+  return value.successRate === null || typeof value.successRate === 'number';
+}
+
+function isCoverage(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    typeof value.known === 'number' &&
+    typeof value.total === 'number' &&
+    typeof value.ratio === 'number'
   );
 }
 
@@ -211,7 +252,23 @@ function isWindow(value: unknown): value is CaveExecutionWindow {
     return false;
   }
 
-  return Array.isArray(value.models) && Array.isArray(value.harnesses);
+  if (
+    !Array.isArray(value.models) ||
+    !Array.isArray(value.harnesses) ||
+    !value.models.every(isSlice) ||
+    !value.harnesses.every(isSlice)
+  ) {
+    return false;
+  }
+
+  // Absent coverage is allowed; present-but-malformed is not.
+  if (value.coverage !== undefined) {
+    if (!isObject(value.coverage) || !Object.values(value.coverage).every(isCoverage)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function isAttempt(value: unknown): value is CaveExecutionAttempt {
@@ -247,7 +304,21 @@ function isAnalytics(value: unknown): value is CaveFamiliarAnalytics {
     return false;
   }
 
-  return isObject(value.backfill) && isString(value.backfill.state);
+  const backfill = value.backfill;
+
+  if (!isObject(backfill) || typeof backfill.imported !== 'number') {
+    return false;
+  }
+
+  if (
+    backfill.state !== 'complete' &&
+    backfill.state !== 'partial' &&
+    backfill.state !== 'not-started'
+  ) {
+    return false;
+  }
+
+  return backfill.remaining === undefined || typeof backfill.remaining === 'number';
 }
 
 export class CaveClient {
@@ -341,6 +412,13 @@ export class CaveClient {
         throw refusal;
       }
 
+      // Affirmatively true, not merely "not false": an envelope missing `ok`
+      // is a shape this client does not recognise, and treating it as success
+      // would let a malformed response through as an empty roster.
+      if (response.ok !== true) {
+        throw invalidResponse('familiars');
+      }
+
       if (!Array.isArray(response.familiars) || !response.familiars.every(isFamiliarWire)) {
         throw invalidResponse('familiars');
       }
@@ -376,6 +454,10 @@ export class CaveClient {
 
       if (refusal !== null) {
         throw refusal;
+      }
+
+      if (response.ok !== true) {
+        throw invalidResponse('familiarContract');
       }
 
       if (typeof response.present !== 'boolean' || !isContractReport(response.report)) {
@@ -427,6 +509,10 @@ export class CaveClient {
 
       if (refusal !== null) {
         throw refusal;
+      }
+
+      if (response.ok !== true) {
+        throw invalidResponse('familiarAnalytics');
       }
 
       if (!isAnalytics(response.analytics)) {
