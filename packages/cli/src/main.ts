@@ -8,10 +8,12 @@ export interface CliRunResult {
 }
 
 function createResult(output: CliOutput, format: 'human' | 'json', exitCode: number): CliRunResult {
+  const rendered = formatCliOutput(output, format);
+
   return {
     exitCode,
-    stdout: formatCliOutput(output, format),
-    stderr: '',
+    stdout: format === 'human' && !output.ok ? '' : rendered,
+    stderr: format === 'human' && !output.ok ? rendered : '',
   };
 }
 

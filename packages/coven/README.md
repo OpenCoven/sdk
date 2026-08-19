@@ -33,3 +33,7 @@ Malformed responses and unsupported daemon protocols reject with
 `CovenClientError`; transport failures remain available through `error.cause`.
 Use `isCovenClientError(error)` when errors may cross bundles or duplicate
 package installations.
+
+## License
+
+AGPL-3.0-only OR MIT. See [LICENSE](LICENSE).

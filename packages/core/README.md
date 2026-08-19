@@ -20,3 +20,7 @@ precedence, including prerelease identifiers, and throws for invalid SemVer.
 `createMemorySecretStore()` creates an isolated asynchronous store. Values
 exist only in process memory and disappear when the store is discarded; this
 package does not read environment variables, keychains, or files.
+
+## License
+
+AGPL-3.0-only OR MIT. See [LICENSE](LICENSE).

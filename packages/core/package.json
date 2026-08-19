@@ -31,7 +31,7 @@
     "url": "git+https://github.com/OpenCoven/sdk.git",
     "directory": "packages/core"
   },
-  "license": "AGPL-3.0-or-later OR MIT",
+  "license": "AGPL-3.0-only OR MIT",
   "scripts": {
     "build": "tsup --config tsup.config.ts",
     "prepublishOnly": "node ../../scripts/require-release-authorization.mjs",

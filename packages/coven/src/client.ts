@@ -89,7 +89,7 @@ export class CovenClient {
 
   async health(): Promise<CovenHealth> {
     try {
-      const response = await this.#transport.health();
+      const response: unknown = await this.#transport.health();
 
       if (!validateHealthResponse(response) || response.apiVersion !== COVEN_DAEMON_PROTOCOL) {
         throw invalidHealthResponse();
@@ -97,7 +97,7 @@ export class CovenClient {
 
       return { status: 'ok' };
     } catch (error) {
-      if (error instanceof CovenClientError) {
+      if (isCovenClientError(error)) {
         throw error;
       }
 

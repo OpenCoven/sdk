@@ -2,6 +2,8 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'vitest/config';
 
+import packagesAndExamples from './vitest.workspace.js';
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -30,8 +32,16 @@ export default defineConfig({
         statements: 90,
       },
     },
-    environment: 'node',
-    include: ['packages/*/test/**/*.spec.ts', 'tests/**/*.spec.ts'],
-    passWithNoTests: false,
+    projects: [
+      packagesAndExamples,
+      {
+        extends: true,
+        test: {
+          name: 'root',
+          environment: 'node',
+          include: ['tests/**/*.spec.ts'],
+        },
+      },
+    ],
   },
 });

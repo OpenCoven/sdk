@@ -71,7 +71,7 @@ describe('public package manifests', () => {
 
       expect(manifest.name).toBe(packageName);
       expect(Object.keys(manifest.exports)).toEqual(['.', './package.json']);
-      expect(manifest.license).toBe('AGPL-3.0-or-later OR MIT');
+      expect(manifest.license).toBe('AGPL-3.0-only OR MIT');
       expect(manifest.version).toBe('0.1.0');
       versions.add(manifest.version ?? '');
       expect(manifest.engines?.node).toBe('>=24.18.0 <25');
@@ -101,6 +101,20 @@ describe('public package manifests', () => {
 
     expect(CAVE_CLIENT_VERSION).toBe(caveManifest.version);
     expect(DEV_CLI_VERSION).toBe(cliManifest.version);
+  });
+
+  test('uses the exact approved license components in every package selector', () => {
+    for (const { workspaceDirectory } of PUBLIC_PACKAGES) {
+      const selector = readFileSync(
+        resolve(workspaceRoot, 'packages', workspaceDirectory, 'LICENSE'),
+        'utf8',
+      );
+      const components = [...selector.matchAll(/\(([^()\r\n]+)\), see \[LICENSE-[^\]]+\]/g)].map(
+        (match) => match[1],
+      );
+
+      expect(components).toEqual(['AGPL-3.0-only', 'MIT']);
+    }
   });
 
   test('assigns the opencoven binary only to @opencoven/dev-cli', () => {

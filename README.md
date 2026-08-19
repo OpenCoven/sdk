@@ -43,7 +43,7 @@ Clients never discover an endpoint or credential. Supply the narrow transport
 needed by the operation:
 
 ```ts
-import { CaveClient, CaveClientError } from '@opencoven/cave-client';
+import { CaveClient, isCaveClientError } from '@opencoven/cave-client';
 
 const cave = new CaveClient({
   transport: {
@@ -71,7 +71,7 @@ as `cause`:
 try {
   await cave.health();
 } catch (error) {
-  if (error instanceof CaveClientError) {
+  if (isCaveClientError(error)) {
     console.error(error.normalized.code, error.normalized.requestId);
     console.error(error.cause);
   }
@@ -115,5 +115,5 @@ gitleaks git .
 
 ## License
 
-OpenCoven SDK is dual-licensed under AGPL-3.0-or-later or MIT. See
+OpenCoven SDK is dual-licensed under AGPL-3.0-only OR MIT. See
 [`LICENSE`](LICENSE).

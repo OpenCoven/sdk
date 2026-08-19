@@ -28,5 +28,7 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # The canonical verifier builds declarations before typed lint/typecheck,
+      # then runs coverage, contract, and packed-package verification.
       - name: Verify
         run: corepack pnpm@10.34.0 verify

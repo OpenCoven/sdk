@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,14 +7,66 @@ import { cleanupOwnedTempRoot, createOwnedTempDirectory } from './owned-temp-dir
 import {
   assertPackedPackagesExcludeSources,
   createPublicPackageOverrides,
-  isolatedInstallArgs,
+  installIsolatedConsumersOfflineAfterWarming,
   packPublicPackages,
   run,
   runPnpm,
   tarballSpecifier,
 } from './package-artifacts.mjs';
+import {
+  PUBLIC_PACKAGES,
+  assertApprovedPackageLicense,
+} from './repository-metadata.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const installedPackageNames = {
+  core: 'sdk-core',
+  cave: 'cave-client',
+  coven: 'coven-client',
+  sdk: 'sdk',
+  cli: 'dev-cli',
+};
+
+function readTarballFile(tarball, path) {
+  return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
+    encoding: 'utf8',
+  });
+}
+
+function assertPackedLicenses(tarballs) {
+  for (const { packageName, workspaceDirectory } of PUBLIC_PACKAGES) {
+    const manifest = JSON.parse(readTarballFile(tarballs[workspaceDirectory], 'package.json'));
+    const selector = readTarballFile(tarballs[workspaceDirectory], 'LICENSE');
+    const agpl = readTarballFile(tarballs[workspaceDirectory], 'LICENSE-AGPL');
+    const mit = readTarballFile(tarballs[workspaceDirectory], 'LICENSE-MIT');
+
+    assertApprovedPackageLicense(
+      manifest.license,
+      selector,
+      `Packed ${packageName} package`,
+    );
+
+    if (
+      manifest.name !== packageName ||
+      !selector.includes('OpenCoven SDK') ||
+      selector.includes('coven-cave') ||
+      !agpl.includes('GNU AFFERO GENERAL PUBLIC LICENSE') ||
+      !mit.startsWith('MIT License\n')
+    ) {
+      throw new Error(
+        `Packed ${workspaceDirectory} package has inaccurate license metadata or text.`,
+      );
+    }
+  }
+}
+
+function assertInstalledPackageDirectoryMap() {
+  for (const { packageName, workspaceDirectory } of PUBLIC_PACKAGES) {
+    if (installedPackageNames[workspaceDirectory] !== packageName.split('/')[1]) {
+      throw new Error(`Installed package directory mapping is incomplete for ${packageName}.`);
+    }
+  }
+}
 
 function createToolingDevDependencies(existing = {}) {
   return {
@@ -168,9 +221,56 @@ function createPackedExamples({ artifactRoot, exampleRoot, tarballs }) {
     const sourceDirectory = resolve(root, 'examples', workspaceDirectory);
     const destinationDirectory = resolve(exampleRoot, workspaceDirectory);
 
-    cpSync(sourceDirectory, destinationDirectory, { recursive: true });
+    mkdirSync(destinationDirectory, { recursive: true });
+    cpSync(resolve(sourceDirectory, 'package.json'), resolve(destinationDirectory, 'package.json'));
+    cpSync(resolve(sourceDirectory, 'tsconfig.json'), resolve(destinationDirectory, 'tsconfig.json'));
+    cpSync(resolve(sourceDirectory, 'src'), resolve(destinationDirectory, 'src'), {
+      recursive: true,
+    });
     rewriteConsumerManifest(resolve(destinationDirectory, 'package.json'), tarballs);
   }
+}
+
+function assertConsumerDependencyIsolation(consumerRoot) {
+  const manifestPath = resolve(consumerRoot, 'package.json');
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const declaredDependencies = new Set(
+    ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'].flatMap(
+      (field) => Object.keys(manifest[field] ?? {}),
+    ),
+  );
+  const expectations = PUBLIC_PACKAGES.map(({ packageName }) => [
+    packageName,
+    declaredDependencies.has(packageName),
+  ]);
+
+  run(
+    process.execPath,
+    [
+      '--input-type=module',
+      '--eval',
+      `const expectations = ${JSON.stringify(expectations)};
+for (const [packageName, isDeclared] of expectations) {
+  let isResolvable = false;
+
+  try {
+    import.meta.resolve(packageName);
+    isResolvable = true;
+  } catch (error) {
+    if (!error || typeof error !== 'object' || error.code !== 'ERR_MODULE_NOT_FOUND') {
+      throw error;
+    }
+  }
+
+  if (isResolvable !== isDeclared) {
+    const expectation = isDeclared ? 'resolve' : 'remain unavailable';
+    throw new Error(packageName + ' must ' + expectation + ' from ' + process.cwd() + '.');
+  }
+}
+`,
+    ],
+    consumerRoot,
+  );
 }
 
 let artifactContext;
@@ -190,6 +290,9 @@ try {
     root,
     destinationRoot: tarballRoot,
   });
+  assertInstalledPackageDirectoryMap();
+  assertPackedLicenses(tarballs);
+  process.stdout.write('Packed license metadata verified.\n');
 
   createFixture(fixtureRoot, tarballs);
   createPackedExamples({
@@ -197,13 +300,20 @@ try {
     exampleRoot,
     tarballs,
   });
-  runPnpm(isolatedInstallArgs(), fixtureRoot);
+  const consumerRoots = [
+    fixtureRoot,
+    ...['cave-health', 'coven-health', 'unified-health'].map((workspaceDirectory) =>
+      resolve(exampleRoot, workspaceDirectory),
+    ),
+  ];
+  await installIsolatedConsumersOfflineAfterWarming(consumerRoots);
+  assertConsumerDependencyIsolation(fixtureRoot);
   runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);
   assertPackedPackagesExcludeSources(fixtureRoot);
 
   for (const workspaceDirectory of ['cave-health', 'coven-health', 'unified-health']) {
     const destinationDirectory = resolve(exampleRoot, workspaceDirectory);
-    runPnpm(isolatedInstallArgs(), destinationDirectory);
+    assertConsumerDependencyIsolation(destinationDirectory);
     runPnpm(['--ignore-workspace', 'run', 'build'], destinationDirectory);
     runPnpm(['--ignore-workspace', 'run', 'start'], destinationDirectory);
     assertPackedPackagesExcludeSources(destinationDirectory);

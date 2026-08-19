@@ -23,3 +23,7 @@ returns a discriminated result for each client:
 
 `availability()` reports configured clients. `requireCave()` and
 `requireCoven()` return their client or throw `OpenCovenSdkError`.
+
+## License
+
+AGPL-3.0-only OR MIT. See [LICENSE](LICENSE).

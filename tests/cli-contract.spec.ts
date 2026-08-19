@@ -63,8 +63,8 @@ describe('opencoven CLI output', () => {
   test('returns stable unsupported-command errors', async () => {
     await expect(runCli(['sessions', 'list'])).resolves.toEqual({
       exitCode: 1,
-      stderr: '',
-      stdout: 'This command is reserved for a future operational task.\n',
+      stderr: 'This command is reserved for a future operational task.\n',
+      stdout: '',
     });
 
     const json = await runCli(['--json', '--unknown']);

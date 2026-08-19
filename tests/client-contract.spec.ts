@@ -88,4 +88,40 @@ describe('constrained client transports', () => {
 
     await expect(client.health()).resolves.toEqual({ status: 'ok' });
   });
+
+  test('normalizes malformed Cave health responses with a stable code', async () => {
+    const client = new cave.CaveClient({
+      transport: {
+        health: () =>
+          Promise.resolve({} as unknown as cave.CaveHealthResponse),
+      },
+    });
+
+    await expect(client.health()).rejects.toMatchObject({
+      normalized: {
+        system: 'cave',
+        code: 'invalid_response',
+        retryable: false,
+        operation: 'health',
+      },
+    });
+  });
+
+  test('normalizes malformed Coven health responses with a stable code', async () => {
+    const client = new coven.CovenClient({
+      transport: {
+        health: () =>
+          Promise.resolve(null as unknown as coven.CovenHealthResponse),
+      },
+    });
+
+    await expect(client.health()).rejects.toMatchObject({
+      normalized: {
+        system: 'coven',
+        code: 'invalid_response',
+        retryable: false,
+        operation: 'health',
+      },
+    });
+  });
 });

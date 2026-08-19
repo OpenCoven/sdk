@@ -10,7 +10,7 @@ foundation-only Cave contract fixture.
 import {
   CAVE_CLIENT_VERSION,
   CaveClient,
-  CaveClientError,
+  isCaveClientError,
 } from '@opencoven/cave-client';
 
 const cave = new CaveClient({
@@ -26,7 +26,7 @@ const cave = new CaveClient({
 try {
   await cave.health();
 } catch (error) {
-  if (error instanceof CaveClientError) {
+  if (isCaveClientError(error)) {
     console.error(error.normalized.code, error.cause);
   }
 }
@@ -41,3 +41,7 @@ stable across module instances.
 Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,
 `verifyCaveContractFixtureDigest`, and `digestCaveContractFixture`.
+
+## License
+
+AGPL-3.0-only OR MIT. See [LICENSE](LICENSE).
