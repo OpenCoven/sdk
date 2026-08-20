@@ -4,6 +4,16 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # The typings must not lead the runtime. engines.node is >=24.18.0 <25 and
+    # release.config.json declares major 24, so @types/node on the 26 line
+    # accepts APIs that do not exist where this ships -- and typechecks
+    # cleanly, because nothing has used one yet. A major bump here is only
+    # correct once the support matrix moves, which is a deliberate change
+    # rather than a weekly one.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
     groups:
       development-dependencies:
         dependency-type: "development"
