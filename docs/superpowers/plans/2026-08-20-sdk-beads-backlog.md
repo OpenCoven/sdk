@@ -60,8 +60,8 @@ git merge-base --is-ancestor origin/main HEAD
 test ! -e .beads
 ```
 
-Expected: branch `docs/sdk-beads-backlog-design` is clean, contains current
-`origin/main`, and `.beads` does not exist.
+Expected: the isolated implementation branch is clean, contains the approved
+spec and plan plus current `origin/main`, and `.beads` does not exist.
 
 - [ ] **Step 2: Reconfirm the live GitHub boundary**
 
@@ -140,7 +140,7 @@ remote or claim JSONL is a full Dolt backup.
 Run:
 
 ```bash
-for pr in 1 2 7 8 9 10 11 12 13; do
+for pr in 1 2 3 4 5 6 7 8 9 10 11 12 13; do
   gh api "repos/OpenCoven/sdk/pulls/$pr" \
     --jq '{number,state,merged_at,merge_commit_sha,html_url}'
 done
