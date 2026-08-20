@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 import { cleanupOwnedTempRoot, createOwnedTempDirectory } from './owned-temp-directory.mjs';
 import {
@@ -23,6 +24,7 @@ import {
 } from './repository-metadata.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const packedCliTimeoutMs = 5_000;
 const installedPackageNames = {
   core: 'sdk-core',
   cave: 'cave-client',
@@ -47,11 +49,67 @@ function summarizeCliResult(result) {
   });
 }
 
-function assertPackedCliFailurePaths(binary, cwd) {
-  const humanFailure = spawnSync(binary, ['status'], {
+function runPackedCliProbe(binary, args, cwd, description) {
+  const result = spawnSync(binary, args, {
     cwd,
     encoding: 'utf8',
+    timeout: packedCliTimeoutMs,
+    killSignal: 'SIGKILL',
   });
+
+  if (result.error?.code === 'ETIMEDOUT') {
+    throw new Error(
+      `Packed opencoven ${description} timed out after ${packedCliTimeoutMs}ms: ${summarizeCliResult(result)}.`,
+    );
+  }
+  if (result.signal !== null) {
+    throw new Error(
+      `Packed opencoven ${description} terminated by signal ${result.signal}: ${summarizeCliResult(result)}.`,
+    );
+  }
+  if (result.error !== undefined) {
+    throw new Error(
+      `Packed opencoven ${description} could not execute: ${summarizeCliResult(result)}.`,
+    );
+  }
+
+  return result;
+}
+
+function assertPackedCliJsonHelp(binary, cwd, expectedVersion) {
+  const result = runPackedCliProbe(binary, ['--json', '--help'], cwd, 'JSON help');
+  let jsonOutput;
+
+  try {
+    jsonOutput = JSON.parse(result.stdout);
+  } catch (error) {
+    throw new Error(
+      `Packed opencoven JSON help output is invalid: ${summarizeCliResult(result)}.`,
+      { cause: error },
+    );
+  }
+
+  const expectedOutput = {
+    command: 'help',
+    data: { name: 'opencoven' },
+    ok: true,
+    version: expectedVersion,
+  };
+
+  if (
+    result.error !== undefined ||
+    result.status !== 0 ||
+    result.stderr !== '' ||
+    !isDeepStrictEqual(jsonOutput, expectedOutput)
+  ) {
+    throw new Error(
+      `Packed opencoven JSON help output is incorrect: ${summarizeCliResult(result)}.`,
+    );
+  }
+}
+
+function assertPackedCliFailurePaths(binary, cwd) {
+  const humanFailure = runPackedCliProbe(binary, ['status'], cwd, 'human failure');
 
   if (
     humanFailure.error !== undefined ||
@@ -64,10 +122,7 @@ function assertPackedCliFailurePaths(binary, cwd) {
     );
   }
 
-  const jsonFailure = spawnSync(binary, ['--json', 'status'], {
-    cwd,
-    encoding: 'utf8',
-  });
+  const jsonFailure = runPackedCliProbe(binary, ['--json', 'status'], cwd, 'JSON failure');
   let jsonOutput;
 
   try {
@@ -479,7 +534,8 @@ try {
 
   run(process.execPath, ['verify.mjs'], fixtureRoot);
   const binary = resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven');
-  run(binary, ['--json', '--help'], fixtureRoot);
+  const packedCliVersion = JSON.parse(readTarballFile(tarballs.cli, 'package.json')).version;
+  assertPackedCliJsonHelp(binary, fixtureRoot, packedCliVersion);
   assertPackedCliFailurePaths(binary, fixtureRoot);
   process.stdout.write('Packed package verification passed.\n');
 } finally {

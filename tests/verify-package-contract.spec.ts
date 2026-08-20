@@ -82,14 +82,48 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain(
       "const binary = resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven');",
     );
-    expect(verifier).toContain("run(binary, ['--json', '--help'], fixtureRoot);");
+    expect(verifier).toContain(
+      'assertPackedCliJsonHelp(binary, fixtureRoot, packedCliVersion);',
+    );
+  });
+
+  test('applies a hard deadline and clear diagnostics to every packed CLI probe', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+    const probeCalls = verifier.match(/runPackedCliProbe\(/g);
+
+    expect(verifier).toContain('const packedCliTimeoutMs = 5_000;');
+    expect(probeCalls).toHaveLength(4);
+    expect(verifier).toContain('timeout: packedCliTimeoutMs');
+    expect(verifier).toContain("killSignal: 'SIGKILL'");
+    expect(verifier).toContain("result.error?.code === 'ETIMEDOUT'");
+    expect(verifier).toContain('timed out after ${packedCliTimeoutMs}ms');
+    expect(verifier).toContain('terminated by signal ${result.signal}');
+  });
+
+  test('validates the exact captured packed JSON help contract', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain("import { isDeepStrictEqual } from 'node:util';");
+    expect(verifier).toContain(
+      "const result = runPackedCliProbe(binary, ['--json', '--help'], cwd, 'JSON help');",
+    );
+    expect(verifier).toContain("result.stderr !== ''");
+    expect(verifier).toContain("command: 'help'");
+    expect(verifier).toContain("data: { name: 'opencoven' }");
+    expect(verifier).toContain('ok: true');
+    expect(verifier).toContain('version: expectedVersion');
+    expect(verifier).toContain('!isDeepStrictEqual(jsonOutput, expectedOutput)');
   });
 
   test('checks both packed binary failure output modes', () => {
     const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
 
-    expect(verifier).toContain("spawnSync(binary, ['status']");
-    expect(verifier).toContain("spawnSync(binary, ['--json', 'status']");
+    expect(verifier).toContain(
+      "runPackedCliProbe(binary, ['status'], cwd, 'human failure')",
+    );
+    expect(verifier).toContain(
+      "runPackedCliProbe(binary, ['--json', 'status'], cwd, 'JSON failure')",
+    );
     expect(verifier).toContain("humanFailure.status !== 1");
     expect(verifier).toContain("humanFailure.stdout !== ''");
     expect(verifier).toContain(
@@ -111,7 +145,7 @@ describe('packed package verifier contract', () => {
 
     expect(invocationMatches).toHaveLength(1);
     expect(verifier.indexOf(invocation)).toBeGreaterThan(
-      verifier.indexOf("run(binary, ['--json', '--help'], fixtureRoot);"),
+      verifier.indexOf('assertPackedCliJsonHelp(binary, fixtureRoot, packedCliVersion);'),
     );
     expect(verifier.indexOf(invocation)).toBeLessThan(
       verifier.indexOf("process.stdout.write('Packed package verification passed.\\n');"),
