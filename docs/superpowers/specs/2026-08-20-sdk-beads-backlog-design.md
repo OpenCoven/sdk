@@ -33,6 +33,9 @@ steps.
 
 - Initialize a repository-local Dolt Beads database with prefix `sdk`.
 - Use non-interactive maintainer initialization.
+- In linked Git worktrees, allow Beads to anchor the shared database at the
+  common Git root as designed; code verification may remain isolated while
+  repository-owned Beads metadata is committed from the canonical checkout.
 - Keep the existing repository instructions untouched: initialization must not
   generate or overwrite `AGENTS.md` and must not install unrelated Git hooks.
 - Track the repository-owned Beads metadata and exported issue ledger needed by
@@ -185,8 +188,9 @@ references only; they are not recreated as active SDK tasks.
 - P3: repository-state retirement.
 - Closed historical work retains the priority appropriate to its delivered
   phase but never appears in `bd ready`.
-- Parent epics remain open until all required children close and depend on their
-  terminal child so orchestration containers do not appear as ready work.
+- Parent epics remain open orchestration containers until all required children
+  close. Beads 1.0.5 does not allow an epic to depend on a task, so worker queue
+  queries exclude epics rather than adding an invalid terminal-child blocker.
 - Dependency direction must be validated with `bd dep tree` and
   `bd dep cycles`; no cycles are permitted.
 - `bd ready` must initially expose only genuinely actionable decisions or
@@ -199,7 +203,7 @@ After construction:
 1. `bd context` resolves the SDK database and `sdk` prefix.
 2. `bd list --json` contains the designed closed history and open backlog with
    no duplicate plan or PR records.
-3. `bd ready --json` contains only actionable work.
+3. `bd ready --exclude-type epic --json` contains only actionable leaf work.
 4. `bd blocked --json` explains every gated release or cleanup item through an
    explicit dependency.
 5. `bd dep cycles` reports no dependency cycles.

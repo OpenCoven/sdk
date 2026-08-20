@@ -21,9 +21,10 @@
 - `.beads/metadata.json` — backend and project identity metadata.
 - `.beads/issues.jsonl` — reviewable export of the designed issue graph.
 
-**Modify through `bd init`:**
+**Inspect without modifying:**
 
-- `.gitignore` — generated Beads integration exclusions.
+- `.gitignore` — existing project ignores; `.beads/.gitignore` owns Beads
+  runtime exclusions in this repository.
 
 **Reference without modifying:**
 
@@ -34,9 +35,11 @@
 - `RELEASING.md`
 - `packages/cli/README.md`
 
-`bd init` creates its own Git commit for generated initialization files. Later
-issue writes are committed to Dolt in bounded batches, then exported and
-committed to Git once the graph has passed verification.
+`bd init` may create its own Git commit from a primary checkout. In a linked
+worktree Beads anchors at the common Git root, so inspect and commit generated
+metadata explicitly from the canonical feature checkout. Later issue writes are
+committed to Dolt in bounded batches, then exported and committed to Git once
+the graph has passed verification.
 
 ### Task 1: Verify the baseline and initialize Beads
 
@@ -47,7 +50,7 @@ committed to Git once the graph has passed verification.
 - Create: `.beads/config.yaml`
 - Create: `.beads/interactions.jsonl`
 - Create: `.beads/metadata.json`
-- Modify: `.gitignore`
+- Inspect: `.gitignore`
 
 - [ ] **Step 1: Confirm the feature branch is clean and current**
 
@@ -96,8 +99,8 @@ bd init \
 ```
 
 Expected: embedded Dolt database `sdk`, issue prefix `sdk`, no generated
-`AGENTS.md`, no added Beads hooks, and one automatic Git commit titled
-`bd init: initialize beads issue tracking`.
+`AGENTS.md`, and no added Beads hooks. In a linked worktree, `bd where` resolves
+the shared database at the common repository root.
 
 - [ ] **Step 4: Inspect the generated scope before further writes**
 
@@ -110,8 +113,10 @@ git status --short --branch
 git ls-files .beads .gitignore
 ```
 
-Expected: only the five generated `.beads` metadata files plus `.gitignore` are
-tracked; Dolt data, locks, sockets, logs, and local version files are ignored.
+Expected: only the five generated `.beads` metadata files require tracking;
+Dolt data, locks, sockets, logs, and local version files are ignored. Commit the
+five exact files as `chore: initialize SDK Beads tracking` if initialization did
+not create an automatic commit.
 
 - [ ] **Step 5: Enable the reviewable issue export**
 
@@ -177,7 +182,6 @@ Run:
 ```bash
 bd --dolt-auto-commit=batch create \
   --id sdk-phase0-foundation \
-  --parent sdk-phase0 \
   --title 'Land the SDK foundation and security safeguards' \
   --type task \
   --priority P1 \
@@ -186,6 +190,7 @@ bd --dolt-auto-commit=batch create \
   --description 'Historical record for PRs #1-#8: initial SDK packages, licenses, CI repair, experimental warning, leak prevention, publication lock, and safeguards completion record.' \
   --acceptance 'PRs #1-#8 are merged or intentionally superseded, required merge commits are ancestors of main, and security/release gates remain represented in current source.' \
   --notes 'Primary merges: PR #1 33091b7; PR #2 72888c2; PR #7 2291002; PR #8 a1c24d2.'
+bd --dolt-auto-commit=batch update sdk-phase0-foundation --parent sdk-phase0
 ```
 
 Expected: `sdk-phase0-foundation` is a child of `sdk-phase0`.
@@ -197,7 +202,6 @@ Run:
 ```bash
 bd --dolt-auto-commit=batch create \
   --id sdk-phase0-reconcile \
-  --parent sdk-phase0 \
   --title 'Reconcile and mature the Phase 0 SDK' \
   --type task \
   --priority P1 \
@@ -206,6 +210,7 @@ bd --dolt-auto-commit=batch create \
   --description 'Historical record for PRs #9-#13: reconcile independent implementation lines, mature package boundaries, make the clean-install matrix safe, add Cave familiar analytics, and harden runtime operations.' \
   --acceptance 'PRs #9-#13 are merged, their guarantees remain on current main, and historical Cave task references are not recreated as open SDK work.' \
   --notes 'Historical cross-repository references: cave-o2bqs and cave-u0oli. SDK delivery continued through PRs #9, #10, #11, #12, and #13.'
+bd --dolt-auto-commit=batch update sdk-phase0-reconcile --parent sdk-phase0
 ```
 
 Expected: `sdk-phase0-reconcile` is a child of `sdk-phase0`.
@@ -265,7 +270,6 @@ bd --dolt-auto-commit=batch create \
 
 bd --dolt-auto-commit=batch create \
   --id sdk-release-system \
-  --parent sdk-release-ready \
   --title 'Land the two-key locked release system' \
   --type task \
   --priority P1 \
@@ -274,10 +278,10 @@ bd --dolt-auto-commit=batch create \
   --description 'Historical record for PRs #14, #22, and #23: release design, implementation, independent review fixes, hosted verification, and completion documentation.' \
   --acceptance 'The release system is merged, publishingEnabled remains false, packages remain private, and the current verifier enforces release contracts.' \
   --notes 'Release implementation merged as 35b67b7; completion documentation landed in PR #23.'
+bd --dolt-auto-commit=batch update sdk-release-system --parent sdk-release-ready
 
 bd --dolt-auto-commit=batch create \
   --id sdk-deps-through-27 \
-  --parent sdk-release-ready \
   --title 'Complete dependency and workflow maintenance through PR #27' \
   --type chore \
   --priority P2 \
@@ -285,6 +289,7 @@ bd --dolt-auto-commit=batch create \
   --external-ref https://github.com/OpenCoven/sdk/pull/27 \
   --description 'Historical record for merged dependency and workflow-action maintenance in PRs #15-#21 and #24-#27, including support-matrix pin repairs.' \
   --acceptance 'All referenced PRs are merged, latest main checks pass, and no open Dependabot or CodeQL alert remains.'
+bd --dolt-auto-commit=batch update sdk-deps-through-27 --parent sdk-release-ready
 ```
 
 Expected: one epic with two historical children.
@@ -347,7 +352,6 @@ bd --dolt-auto-commit=batch create \
 
 bd --dolt-auto-commit=batch create \
   --id sdk-state-audit \
-  --parent sdk-state-retire \
   --title 'Audit legacy branches, worktrees, and the preserved stash' \
   --type chore \
   --priority P3 \
@@ -355,10 +359,10 @@ bd --dolt-auto-commit=batch create \
   --description 'Classify every attached worktree, local and remote branch, and stash@{0} as merged, patch-equivalent, superseded, unique, or still needed.' \
   --acceptance 'The audit records exact refs, ancestry or patch-equivalence proof, dirty state, stash comparison, and a proposed keep or retire disposition for every item. No state is deleted.' \
   --notes 'Preserved stash: sdk/cave-o2bqs-post-merge-verifier-isolation-2026-08-18.'
+bd --dolt-auto-commit=batch update sdk-state-audit --parent sdk-state-retire
 
 bd --dolt-auto-commit=batch create \
   --id sdk-state-cleanup \
-  --parent sdk-state-retire \
   --title 'Retire approved superseded branches, worktrees, and stash state' \
   --type chore \
   --priority P3 \
@@ -366,6 +370,7 @@ bd --dolt-auto-commit=batch create \
   --description 'Remove only repository state proven superseded by the audit and explicitly approved by the maintainer.' \
   --acceptance 'Approval is recorded; exact targets are enumerated; recoverability is documented; approved targets are removed; retained targets and the canonical checkout remain clean.' \
   --notes 'Destructive cleanup is not authorized by creating this Bead.'
+bd --dolt-auto-commit=batch update sdk-state-cleanup --parent sdk-state-retire
 ```
 
 Expected: audit and cleanup children exist under the maintenance epic.
@@ -394,11 +399,11 @@ Run:
 
 ```bash
 bd --dolt-auto-commit=batch dep add sdk-state-cleanup sdk-state-audit
-bd --dolt-auto-commit=batch dep add sdk-state-retire sdk-state-cleanup
 bd dolt commit -m 'Add SDK documentation and maintenance backlog'
 ```
 
-Expected: the audit is ready; cleanup and its parent epic are blocked.
+Expected: the audit is ready and cleanup is blocked. The open parent epic is an
+orchestration container and is excluded from worker-ready queries.
 
 ### Task 5: Create the gated first-release program
 
@@ -423,7 +428,6 @@ bd --dolt-auto-commit=batch create \
 
 bd --dolt-auto-commit=batch create \
   --id sdk-release-authorize \
-  --parent sdk-first-release \
   --title 'Authorize the first SDK release and target version' \
   --type decision \
   --priority P1 \
@@ -431,6 +435,7 @@ bd --dolt-auto-commit=batch create \
   --description 'Decide whether the experimental SDK is approved to publish and define the exact fixed-group version and release scope.' \
   --acceptance 'A maintainer records approve or defer, target version, included package scope, launch criteria, and explicit authority to begin external release preparation. No publication occurs in this decision.' \
   --design 'Current state is version 0.1.0, publishingEnabled false, and all five packages private. Preserve those locks unless this decision explicitly authorizes a reviewed launch change.'
+bd --dolt-auto-commit=batch update sdk-release-authorize --parent sdk-first-release
 ```
 
 Expected: the epic and its first decision exist; the decision is the only ready
@@ -443,7 +448,6 @@ Run:
 ```bash
 bd --dolt-auto-commit=batch create \
   --id sdk-release-governance \
-  --parent sdk-first-release \
   --title 'Reconcile SDK release governance prerequisites' \
   --type task \
   --priority P1 \
@@ -451,10 +455,10 @@ bd --dolt-auto-commit=batch create \
   --description 'Confirm npm ownership, account 2FA, package bootstrap constraints, protected npm-release environment, required checks, and the current branch-protection constraint before unlock.' \
   --acceptance 'Evidence covers npm organization and package-name readiness, least-privilege bootstrap ownership, protected environment reviewers, required checks, and an explicit decision about branch protection. No branch protection or environment is changed without separate approval.' \
   --design 'RELEASING.md requires a protected npm-release environment. Prior maintainer direction leaves branch protection untouched unless separately authorized.'
+bd --dolt-auto-commit=batch update sdk-release-governance --parent sdk-first-release
 
 bd --dolt-auto-commit=batch create \
   --id sdk-release-security \
-  --parent sdk-first-release \
   --title 'Complete the first-release security review' \
   --type task \
   --priority P1 \
@@ -462,6 +466,7 @@ bd --dolt-auto-commit=batch create \
   --description 'Review package APIs, release scripts and workflows, dependency findings, secret handling, provenance, and the documented experimental boundary before publication unlock.' \
   --acceptance 'The review records scope, threat boundaries, automated and manual evidence, all findings with disposition, and an explicit ship or block recommendation.' \
   --design 'Treat current zero CodeQL and Dependabot alerts as inputs, not a substitute for release-scope review.'
+bd --dolt-auto-commit=batch update sdk-release-security --parent sdk-first-release
 ```
 
 Expected: two open gates exist beneath the release epic.
@@ -473,7 +478,6 @@ Run:
 ```bash
 bd --dolt-auto-commit=batch create \
   --id sdk-release-unlock \
-  --parent sdk-first-release \
   --title 'Prepare the reviewed SDK launch and publication-unlock change' \
   --type feature \
   --priority P1 \
@@ -481,20 +485,20 @@ bd --dolt-auto-commit=batch create \
   --description 'Prepare a reviewed release branch that versions the fixed group, updates changelogs and internal ranges, opens repository publication locks, and preserves the protected environment gate.' \
   --acceptance 'Canonical verification passes in a clean checkout; version and ranges are exact; publish mode still requires the protected environment; a PR is reviewed and merged without direct push to main.' \
   --design 'Use Changesets and the existing release contract. Do not create credentials, tags, or registry records in this task.'
+bd --dolt-auto-commit=batch update sdk-release-unlock --parent sdk-first-release
 
 bd --dolt-auto-commit=batch create \
   --id sdk-release-rehearsal \
-  --parent sdk-first-release \
   --title 'Tag the reviewed commit and run verify-mode artifacts' \
   --type task \
   --priority P1 \
   --labels release,external-gate \
   --description 'Create the annotated sdk-v<version> tag from the exact reviewed main commit and run release workflow verify mode without publishing.' \
   --acceptance 'The tag resolves to reviewed HEAD; five tarballs, release-manifest.json, checksums, and attestations are retained; every digest and package contract passes; registry state is unchanged.'
+bd --dolt-auto-commit=batch update sdk-release-rehearsal --parent sdk-first-release
 
 bd --dolt-auto-commit=batch create \
   --id sdk-release-bootstrap \
-  --parent sdk-first-release \
   --title 'Perform the one-time SDK npm bootstrap publication' \
   --type task \
   --priority P1 \
@@ -502,6 +506,7 @@ bd --dolt-auto-commit=batch create \
   --description 'Publish the exact verified tarballs in canonical order with an explicitly approved least-privilege bootstrap credential, then revoke it.' \
   --acceptance 'All five package records and expected versions exist; bytes and ownership match the verified artifacts; the credential is revoked; no token is stored in GitHub, repository files, or shell history; the audit trail is recorded.' \
   --design 'This external mutation requires fresh explicit authorization at execution time even after its dependency chain is clear.'
+bd --dolt-auto-commit=batch update sdk-release-bootstrap --parent sdk-first-release
 ```
 
 Expected: launch, rehearsal, and bootstrap records exist but are blocked after
@@ -514,23 +519,23 @@ Run:
 ```bash
 bd --dolt-auto-commit=batch create \
   --id sdk-release-trusted \
-  --parent sdk-first-release \
   --title 'Configure trusted publishing for all SDK packages' \
   --type task \
   --priority P1 \
   --labels release,security,external-gate \
   --description 'Bind all five npm packages to OpenCoven/sdk, the exact release workflow, and the protected npm-release environment.' \
   --acceptance 'Every package has the expected trusted-publisher identity; normal workflow publication uses OIDC; NPM_TOKEN and NODE_AUTH_TOKEN fallback remain absent.'
+bd --dolt-auto-commit=batch update sdk-release-trusted --parent sdk-first-release
 
 bd --dolt-auto-commit=batch create \
   --id sdk-release-validate \
-  --parent sdk-first-release \
   --title 'Validate SDK registry state, provenance, and OIDC readiness' \
   --type task \
   --priority P1 \
   --labels release,security \
   --description 'Verify the published fixed group and preserve evidence that future releases can use the protected OIDC path.' \
   --acceptance 'Versions, latest dist-tags, manifests, licenses, changelogs, binaries, internal ranges, checksums, npm provenance, GitHub attestations, and clean consumer imports all match the release record.'
+bd --dolt-auto-commit=batch update sdk-release-validate --parent sdk-first-release
 ```
 
 Expected: the final two release children exist.
@@ -547,12 +552,11 @@ bd --dolt-auto-commit=batch dep add sdk-release-rehearsal sdk-release-unlock
 bd --dolt-auto-commit=batch dep add sdk-release-bootstrap sdk-release-rehearsal
 bd --dolt-auto-commit=batch dep add sdk-release-trusted sdk-release-bootstrap
 bd --dolt-auto-commit=batch dep add sdk-release-validate sdk-release-trusted
-bd --dolt-auto-commit=batch dep add sdk-first-release sdk-release-validate
 bd dolt commit -m 'Add gated SDK first-release program'
 ```
 
-Expected: one linear child gate chain; the parent epic depends on final
-validation and does not appear ready.
+Expected: one linear child gate chain. The open parent epic is an orchestration
+container and is excluded from worker-ready queries.
 
 ### Task 6: Validate the Beads graph and exported ledger
 
@@ -567,13 +571,14 @@ Run:
 
 ```bash
 bd context
+bd config show | rg 'beads.role'
 bd config get export.auto
 bd config get export.path
 bd dolt status
 ```
 
-Expected: SDK context, prefix/database `sdk`, export enabled to `issues.jsonl`,
-and a healthy embedded Dolt backend.
+Expected: SDK context, prefix/database `sdk`, effective Git role `maintainer`,
+export enabled to `issues.jsonl`, and a healthy embedded Dolt backend.
 
 - [ ] **Step 2: Check issue counts and statuses**
 
@@ -591,7 +596,7 @@ Expected: 20 records total: 6 closed and 14 open. Expected types are 4 epics,
 Run:
 
 ```bash
-bd ready --json | jq 'map(.id) | sort'
+bd ready --exclude-type epic --json | jq 'map(.id) | sort'
 ```
 
 Expected:
@@ -611,8 +616,10 @@ Run:
 
 ```bash
 bd blocked --json | jq 'map(.id) | sort'
-bd dep tree sdk-state-retire --direction=down
-bd dep tree sdk-first-release --direction=down
+bd list --parent sdk-state-retire --all --tree --pretty
+bd dep tree sdk-state-cleanup --direction=down
+bd list --parent sdk-first-release --all --tree --pretty
+bd dep tree sdk-release-validate --direction=down
 bd dep cycles
 ```
 
@@ -620,7 +627,6 @@ Expected blocked IDs:
 
 ```json
 [
-  "sdk-first-release",
   "sdk-release-bootstrap",
   "sdk-release-governance",
   "sdk-release-rehearsal",
@@ -628,8 +634,7 @@ Expected blocked IDs:
   "sdk-release-trusted",
   "sdk-release-unlock",
   "sdk-release-validate",
-  "sdk-state-cleanup",
-  "sdk-state-retire"
+  "sdk-state-cleanup"
 ]
 ```
 
@@ -658,7 +663,7 @@ Expected: 20 JSONL lines, 20 unique stable IDs, and `duplicate_ids: []`.
 - Stage only: `.beads/interactions.jsonl`
 - Stage only: `.beads/issues.jsonl`
 - Stage only: `.beads/metadata.json`
-- Stage only: `.gitignore`
+- Inspect only: `.gitignore`
 
 - [ ] **Step 1: Inspect tracked and ignored Beads state**
 
@@ -697,14 +702,13 @@ git add -- \
   .beads/config.yaml \
   .beads/interactions.jsonl \
   .beads/issues.jsonl \
-  .beads/metadata.json \
-  .gitignore
+  .beads/metadata.json
 git diff --cached --check
 git diff --cached --stat
 git diff --cached --name-only
 ```
 
-Expected: only the seven named project files are staged. Some initialization
+Expected: only the six named project files are staged. Some initialization
 files may already be committed by `bd init`; staged output may therefore be a
 smaller subset, but it must never include Dolt runtime data or unrelated files.
 
@@ -728,12 +732,12 @@ Run:
 git status --short --branch
 git log --oneline --decorate -4
 bd list --all --json | jq 'length'
-bd ready --json | jq 'map(.id) | sort'
+bd ready --exclude-type epic --json | jq 'map(.id) | sort'
 bd blocked --json | jq 'map(.id) | sort'
 bd dep cycles
 bd export | wc -l
 ```
 
-Expected: clean feature branch, 20 records, exactly four ready IDs, exactly ten
-blocked IDs, no dependency cycles, and 20 exported issue records. Do not push or
+Expected: clean feature branch, 20 records, exactly four ready leaf IDs, exactly
+eight blocked IDs, no dependency cycles, and 20 exported issue records. Do not push or
 open a PR without separate authorization.
