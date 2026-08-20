@@ -49,4 +49,106 @@ describe('packed package verifier contract', () => {
       /assertApprovedPackageLicense\(\s*manifest\.license,\s*selector,\s*[^)]+\)/,
     );
   });
+
+  test('verifies every packed package changelog in the dedicated matrix command', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain('function assertPackedChangelogs(tarballs)');
+    expect(verifier).toContain(
+      "readTarballFile(tarballs[workspaceDirectory], 'CHANGELOG.md')",
+    );
+    expect(verifier).toContain('assertPackedChangelogs(tarballs);');
+  });
+
+  test('keeps complete release verification in the dedicated matrix command', () => {
+    const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    const packedPackageTests = readFileSync(resolve(root, 'tests/packed-package.spec.ts'), 'utf8');
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(manifest.scripts['verify-package']).toBe('node ./scripts/verify-package.mjs');
+    expect(packedPackageTests).not.toContain('verify-package.mjs');
+    expect(verifier).toContain('const tarballs = packPublicPackages({');
+    expect(verifier).toContain('await installIsolatedConsumersOfflineAfterWarming(consumerRoots);');
+    expect(verifier).toContain(
+      "runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);",
+    );
+    expect(verifier).toContain('assertPackedPackagesExcludeSources(fixtureRoot);');
+    expect(verifier).toContain("runPnpm(['--ignore-workspace', 'run', 'build'], destinationDirectory);");
+    expect(verifier).toContain("runPnpm(['--ignore-workspace', 'run', 'start'], destinationDirectory);");
+    expect(verifier).toContain('assertPackedPackagesExcludeSources(destinationDirectory);');
+    expect(verifier).toContain("run(process.execPath, ['verify.mjs'], fixtureRoot);");
+    expect(verifier).toContain(
+      "const binary = resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven');",
+    );
+    expect(verifier).toContain(
+      'assertPackedCliJsonHelp(binary, fixtureRoot, packedCliVersion);',
+    );
+  });
+
+  test('applies a hard deadline and clear diagnostics to every packed CLI probe', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+    const probeCalls = verifier.match(/runPackedCliProbe\(/g);
+
+    expect(verifier).toContain('const packedCliTimeoutMs = 5_000;');
+    expect(probeCalls).toHaveLength(4);
+    expect(verifier).toContain('timeout: packedCliTimeoutMs');
+    expect(verifier).toContain("killSignal: 'SIGKILL'");
+    expect(verifier).toContain("result.error?.code === 'ETIMEDOUT'");
+    expect(verifier).toContain('timed out after ${packedCliTimeoutMs}ms');
+    expect(verifier).toContain('terminated by signal ${result.signal}');
+  });
+
+  test('validates the exact captured packed JSON help contract', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain("import { isDeepStrictEqual } from 'node:util';");
+    expect(verifier).toContain(
+      "const result = runPackedCliProbe(binary, ['--json', '--help'], cwd, 'JSON help');",
+    );
+    expect(verifier).toContain("result.stderr !== ''");
+    expect(verifier).toContain("command: 'help'");
+    expect(verifier).toContain("data: { name: 'opencoven' }");
+    expect(verifier).toContain('ok: true');
+    expect(verifier).toContain('version: expectedVersion');
+    expect(verifier).toContain('!isDeepStrictEqual(jsonOutput, expectedOutput)');
+  });
+
+  test('checks both packed binary failure output modes', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain(
+      "runPackedCliProbe(binary, ['status'], cwd, 'human failure')",
+    );
+    expect(verifier).toContain(
+      "runPackedCliProbe(binary, ['--json', 'status'], cwd, 'JSON failure')",
+    );
+    expect(verifier).toContain("humanFailure.status !== 1");
+    expect(verifier).toContain("humanFailure.stdout !== ''");
+    expect(verifier).toContain(
+      "humanFailure.stderr !== 'This command is reserved for a future operational task.\\n'",
+    );
+    expect(verifier).toContain("jsonFailure.status !== 1");
+    expect(verifier).toContain("jsonFailure.stderr !== ''");
+    expect(verifier).toContain("jsonOutput?.error?.code !== 'not_implemented'");
+    expect(verifier).toContain("jsonOutput?.command !== 'status'");
+    expect(verifier).toContain('jsonOutput?.ok !== false');
+  });
+
+  test('invokes packed binary failure checks before reporting verification success', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+    const invocation = 'assertPackedCliFailurePaths(binary, fixtureRoot);';
+    const invocationMatches = verifier.match(
+      /assertPackedCliFailurePaths\(binary, fixtureRoot\);/g,
+    );
+
+    expect(invocationMatches).toHaveLength(1);
+    expect(verifier.indexOf(invocation)).toBeGreaterThan(
+      verifier.indexOf('assertPackedCliJsonHelp(binary, fixtureRoot, packedCliVersion);'),
+    );
+    expect(verifier.indexOf(invocation)).toBeLessThan(
+      verifier.indexOf("process.stdout.write('Packed package verification passed.\\n');"),
+    );
+  });
 });

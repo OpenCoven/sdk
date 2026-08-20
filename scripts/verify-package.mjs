@@ -1,7 +1,8 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 import { cleanupOwnedTempRoot, createOwnedTempDirectory } from './owned-temp-directory.mjs';
 import {
@@ -23,6 +24,7 @@ import {
 } from './repository-metadata.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const packedCliTimeoutMs = 5_000;
 const installedPackageNames = {
   core: 'sdk-core',
   cave: 'cave-client',
@@ -35,6 +37,115 @@ function readTarballFile(tarball, path) {
   return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
     encoding: 'utf8',
   });
+}
+
+function summarizeCliResult(result) {
+  return JSON.stringify({
+    error: result.error?.message,
+    signal: result.signal,
+    status: result.status,
+    stderr: result.stderr,
+    stdout: result.stdout,
+  });
+}
+
+function runPackedCliProbe(binary, args, cwd, description) {
+  const result = spawnSync(binary, args, {
+    cwd,
+    encoding: 'utf8',
+    timeout: packedCliTimeoutMs,
+    killSignal: 'SIGKILL',
+  });
+
+  if (result.error?.code === 'ETIMEDOUT') {
+    throw new Error(
+      `Packed opencoven ${description} timed out after ${packedCliTimeoutMs}ms: ${summarizeCliResult(result)}.`,
+    );
+  }
+  if (result.signal !== null) {
+    throw new Error(
+      `Packed opencoven ${description} terminated by signal ${result.signal}: ${summarizeCliResult(result)}.`,
+    );
+  }
+  if (result.error !== undefined) {
+    throw new Error(
+      `Packed opencoven ${description} could not execute: ${summarizeCliResult(result)}.`,
+    );
+  }
+
+  return result;
+}
+
+function assertPackedCliJsonHelp(binary, cwd, expectedVersion) {
+  const result = runPackedCliProbe(binary, ['--json', '--help'], cwd, 'JSON help');
+  let jsonOutput;
+
+  try {
+    jsonOutput = JSON.parse(result.stdout);
+  } catch (error) {
+    throw new Error(
+      `Packed opencoven JSON help output is invalid: ${summarizeCliResult(result)}.`,
+      { cause: error },
+    );
+  }
+
+  const expectedOutput = {
+    command: 'help',
+    data: { name: 'opencoven' },
+    ok: true,
+    version: expectedVersion,
+  };
+
+  if (
+    result.error !== undefined ||
+    result.status !== 0 ||
+    result.stderr !== '' ||
+    !isDeepStrictEqual(jsonOutput, expectedOutput)
+  ) {
+    throw new Error(
+      `Packed opencoven JSON help output is incorrect: ${summarizeCliResult(result)}.`,
+    );
+  }
+}
+
+function assertPackedCliFailurePaths(binary, cwd) {
+  const humanFailure = runPackedCliProbe(binary, ['status'], cwd, 'human failure');
+
+  if (
+    humanFailure.error !== undefined ||
+    humanFailure.status !== 1 ||
+    humanFailure.stdout !== '' ||
+    humanFailure.stderr !== 'This command is reserved for a future operational task.\n'
+  ) {
+    throw new Error(
+      `Packed opencoven human failure output is incorrect: ${summarizeCliResult(humanFailure)}.`,
+    );
+  }
+
+  const jsonFailure = runPackedCliProbe(binary, ['--json', 'status'], cwd, 'JSON failure');
+  let jsonOutput;
+
+  try {
+    jsonOutput = JSON.parse(jsonFailure.stdout);
+  } catch (error) {
+    throw new Error(
+      `Packed opencoven JSON failure output is invalid: ${summarizeCliResult(jsonFailure)}.`,
+      { cause: error },
+    );
+  }
+
+  if (
+    jsonFailure.error !== undefined ||
+    jsonFailure.status !== 1 ||
+    jsonFailure.stderr !== '' ||
+    jsonOutput?.error?.code !== 'not_implemented' ||
+    jsonOutput?.command !== 'status' ||
+    jsonOutput?.ok !== false
+  ) {
+    throw new Error(
+      `Packed opencoven JSON failure output is incorrect: ${summarizeCliResult(jsonFailure)}.`,
+    );
+  }
 }
 
 function assertPackedLicenses(tarballs) {
@@ -59,6 +170,19 @@ function assertPackedLicenses(tarballs) {
     ) {
       throw new Error(
         `Packed ${workspaceDirectory} package has inaccurate license metadata or text.`,
+      );
+    }
+  }
+}
+
+function assertPackedChangelogs(tarballs) {
+  for (const { packageName, workspaceDirectory } of PUBLIC_PACKAGES) {
+    const manifest = JSON.parse(readTarballFile(tarballs[workspaceDirectory], 'package.json'));
+    const changelog = readTarballFile(tarballs[workspaceDirectory], 'CHANGELOG.md');
+
+    if (!changelog.includes(`## ${manifest.version}`)) {
+      throw new Error(
+        `Packed ${packageName} package changelog does not contain version ${manifest.version}.`,
       );
     }
   }
@@ -368,6 +492,8 @@ try {
   assertInstalledPackageDirectoryMap();
   assertPackedLicenses(tarballs);
   process.stdout.write('Packed license metadata verified.\n');
+  assertPackedChangelogs(tarballs);
+  process.stdout.write('Packed changelog metadata verified.\n');
 
   const releaseArtifactRoot = resolve(artifactRoot, 'release');
   createReleaseArtifacts({
@@ -407,7 +533,10 @@ try {
   }
 
   run(process.execPath, ['verify.mjs'], fixtureRoot);
-  run(resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven'), ['--json', '--help'], fixtureRoot);
+  const binary = resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven');
+  const packedCliVersion = JSON.parse(readTarballFile(tarballs.cli, 'package.json')).version;
+  assertPackedCliJsonHelp(binary, fixtureRoot, packedCliVersion);
+  assertPackedCliFailurePaths(binary, fixtureRoot);
   process.stdout.write('Packed package verification passed.\n');
 } finally {
   if (artifactContext !== undefined) {

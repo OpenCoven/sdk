@@ -2,15 +2,10 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
-  readdirSync,
-  rmSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { delimiter, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 import { describe, expect, test } from 'vitest';
@@ -27,29 +22,6 @@ import {
   isolatedInstallArgs,
 } from '../scripts/package-artifacts.mjs';
 import { cleanupOwnedTempRoot, createOwnedTempDirectory } from '../scripts/owned-temp-directory.mjs';
-
-const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const verifier = resolve(root, 'scripts/verify-package.mjs');
-
-function runPnpm(args: string[], cwd: string) {
-  return spawnSync('corepack', ['pnpm@10.34.0', ...args], {
-    cwd,
-    encoding: 'utf8',
-  });
-}
-
-function findTarball(directory: string): string {
-  const tarballs = readdirSync(directory).filter((entry) => entry.endsWith('.tgz'));
-
-  expect(tarballs, `Expected one tarball in ${directory}.`).toHaveLength(1);
-  const [tarball] = tarballs;
-
-  if (tarball === undefined) {
-    throw new Error(`Expected one tarball in ${directory}.`);
-  }
-
-  return resolve(directory, tarball);
-}
 
 function readTarballFile(tarball: string, path: string): string {
   return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
@@ -287,54 +259,57 @@ setTimeout(() => {
         cleanupOwnedTempRoot(artifactContext);
       }
     },
+    30_000,
   );
 
-  test('pack tarballs preserve canonical repository metadata', () => {
-    const artifactRoot = mkdtempSync(resolve(tmpdir(), 'opencoven-packed-package-spec-'));
-    const tarballRoot = resolve(artifactRoot, 'tarballs');
-    mkdirSync(tarballRoot, { recursive: true });
+  test('reads canonical repository metadata from a packed manifest', () => {
+    const artifactContext = createOwnedTempDirectory({
+      prefix: 'opencoven-packed-metadata-spec',
+      childSegments: ['package'],
+    });
+    const packageRoot = resolve(artifactContext.rootPath, 'package');
+    const tarball = resolve(artifactContext.rootPath, 'package.tgz');
+    const packageMetadata = PUBLIC_PACKAGES[0];
+
+    if (packageMetadata === undefined) {
+      throw new Error('Expected at least one public package metadata entry.');
+    }
+
+    const { packageName, repositoryDirectory } = packageMetadata;
 
     try {
-      for (const { packageName, repositoryDirectory, workspaceDirectory } of PUBLIC_PACKAGES) {
-        const destination = resolve(tarballRoot, workspaceDirectory);
-        mkdirSync(destination, { recursive: true });
+      writeFileSync(
+        resolve(packageRoot, 'package.json'),
+        `${JSON.stringify({
+          name: packageName,
+          repository: {
+            type: 'git',
+            url: CANONICAL_REPOSITORY_URL,
+            directory: repositoryDirectory,
+          },
+        })}\n`,
+      );
+      writeFileSync(resolve(packageRoot, 'CHANGELOG.md'), '# Changelog\n\n## 0.1.0\n');
+      const packed = spawnSync('tar', ['-czf', tarball, 'package'], {
+        cwd: artifactContext.rootPath,
+        encoding: 'utf8',
+      });
 
-        const packed = runPnpm(
-          ['pack', '--pack-destination', destination],
-          resolve(root, 'packages', workspaceDirectory),
-        );
-
-        expect(packed.status, packed.stderr).toBe(0);
-
-        const manifest = readPackedPackageManifest(findTarball(destination));
-        expect(readTarballFile(findTarball(destination), 'CHANGELOG.md')).toContain(
-          '## 0.1.0',
-        );
-        expect(assertCanonicalRepository(manifest, repositoryDirectory, packageName)).toEqual({
-          type: 'git',
-          url: CANONICAL_REPOSITORY_URL,
-          directory: repositoryDirectory,
-        });
-      }
+      expect(packed.status, packed.stderr).toBe(0);
+      expect(readTarballFile(tarball, 'CHANGELOG.md')).toContain('## 0.1.0');
+      expect(
+        assertCanonicalRepository(
+          readPackedPackageManifest(tarball),
+          repositoryDirectory,
+          packageName,
+        ),
+      ).toEqual({
+        type: 'git',
+        url: CANONICAL_REPOSITORY_URL,
+        directory: repositoryDirectory,
+      });
     } finally {
-      rmSync(artifactRoot, { force: true, recursive: true });
+      cleanupOwnedTempRoot(artifactContext);
     }
   }, 30_000);
-
-  test('pack, install, import, and compile only their public exports', () => {
-    const result = existsSync(verifier)
-      ? spawnSync(process.execPath, [verifier], {
-          cwd: root,
-          encoding: 'utf8',
-        })
-      : { status: 1, stderr: 'scripts/verify-package.mjs is missing', stdout: '' };
-
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('Cave health example passed.');
-    expect(result.stdout).toContain('Coven health example passed.');
-    expect(result.stdout).toContain('Unified health example passed.');
-    expect(result.stdout).toContain('Packed timeout canary passed.');
-    expect(String(result.stdout)).toContain('Packed license metadata verified.');
-    expect(result.stdout).toContain('Release artifact manifest verified.');
-  }, 180_000);
 });

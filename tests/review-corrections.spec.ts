@@ -15,11 +15,26 @@ const selectorFiles = [
 ] as const;
 
 describe('review corrections', () => {
-  test('exposes exact runnable verification scripts', () => {
+  test('exposes exact runnable matrix scripts', () => {
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>;
     };
+    const sourceTypecheckConfig = JSON.parse(
+      readFileSync(resolve(root, 'tsconfig.eslint.json'), 'utf8'),
+    ) as {
+      include: string[];
+    };
 
+    expect(manifest.scripts.typecheck).toBe(
+      'corepack pnpm@10.34.0 exec tsc --pretty false --noEmit -p tsconfig.eslint.json',
+    );
+    expect(sourceTypecheckConfig.include).toEqual([
+      'examples/**/*.ts',
+      'packages/**/*.ts',
+      'tests/**/*.ts',
+      'vitest.config.ts',
+      'vitest.workspace.ts',
+    ]);
     expect(manifest.scripts['verify-contracts']).toBe('node ./scripts/verify-contracts.mjs');
     expect(manifest.scripts['verify-package']).toBe('node ./scripts/verify-package.mjs');
   });

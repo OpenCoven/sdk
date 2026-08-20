@@ -32,6 +32,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      # The minimum-version verifier runs the clean-install Phase 0 matrix first,
+      # then enforces release readiness, coverage, stress, and linting.
       - name: Verify minimum supported Node
         if: matrix.node == '24.18.1'
         run: corepack pnpm@10.34.0 verify

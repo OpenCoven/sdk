@@ -145,8 +145,18 @@ the contract verifier. No authority source tree is imported at runtime.
 
 ```bash
 pnpm install --frozen-lockfile
-corepack pnpm@10.34.0 verify
+pnpm typecheck
+pnpm test
+pnpm build
+node scripts/verify-contracts.mjs
+node scripts/verify-package.mjs
+node scripts/verify-release-readiness.mjs
+pnpm test:coverage
+pnpm test:stress
+pnpm lint
 ```
+
+`corepack pnpm@10.34.0 verify` runs that canonical sequence after installation.
 
 `pack-public-packages.mjs` is the reusable tarball producer for cross-repository
 consumers such as the Chat packed-package canary. It prints JSON containing a
