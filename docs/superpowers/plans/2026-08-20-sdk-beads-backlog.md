@@ -8,6 +8,10 @@
 
 **Tech Stack:** Beads `bd` CLI, embedded Dolt, JSONL, Git, GitHub REST API via `gh api`, jq, pnpm 10.34.0.
 
+**Status:** Completed and verified on branch `docs/sdk-beads-backlog-design` on
+2026-08-20. The latest backlog commits remain unpushed and unmerged pending
+maintainer disposition.
+
 ---
 
 ## File Map
@@ -52,7 +56,7 @@ the graph has passed verification.
 - Create: `.beads/metadata.json`
 - Inspect: `.gitignore`
 
-- [ ] **Step 1: Confirm the feature branch is clean and current**
+- [x] **Step 1: Confirm the feature branch is clean and current**
 
 Run:
 
@@ -66,7 +70,7 @@ test ! -e .beads
 Expected: the isolated implementation branch is clean, contains the approved
 spec and plan plus current `origin/main`, and `.beads` does not exist.
 
-- [ ] **Step 2: Reconfirm the live GitHub boundary**
+- [x] **Step 2: Reconfirm the live GitHub boundary**
 
 Run:
 
@@ -85,7 +89,7 @@ Expected: no open SDK issues, PRs, Dependabot alerts, or CodeQL alerts. If live
 state differs, stop and add only evidence-backed work to the design before
 constructing the database.
 
-- [ ] **Step 3: Initialize the repository-owned database**
+- [x] **Step 3: Initialize the repository-owned database**
 
 Run:
 
@@ -102,7 +106,7 @@ Expected: embedded Dolt database `sdk`, issue prefix `sdk`, no generated
 `AGENTS.md`, and no added Beads hooks. In a linked worktree, `bd where` resolves
 the shared database at the common repository root.
 
-- [ ] **Step 4: Inspect the generated scope before further writes**
+- [x] **Step 4: Inspect the generated scope before further writes**
 
 Run:
 
@@ -118,7 +122,7 @@ Dolt data, locks, sockets, logs, and local version files are ignored. Commit the
 five exact files as `chore: initialize SDK Beads tracking` if initialization did
 not create an automatic commit.
 
-- [ ] **Step 5: Enable the reviewable issue export**
+- [x] **Step 5: Enable the reviewable issue export**
 
 Run:
 
@@ -140,7 +144,7 @@ remote or claim JSONL is a full Dolt backup.
 
 - Modify through `bd`: `.beads/issues.jsonl`
 
-- [ ] **Step 1: Prove the referenced Phase 0 merges remain on `main`**
+- [x] **Step 1: Prove the referenced Phase 0 merges remain on `main`**
 
 Run:
 
@@ -157,7 +161,7 @@ done
 Expected: every PR is closed with a non-null `merged_at`, and every named merge
 commit is an ancestor of `origin/main`.
 
-- [ ] **Step 2: Create the historical epic**
+- [x] **Step 2: Create the historical epic**
 
 Run:
 
@@ -175,7 +179,7 @@ bd --dolt-auto-commit=batch create \
 
 Expected: `sdk-phase0` is open pending its historical children.
 
-- [ ] **Step 3: Create the foundation and safeguards child**
+- [x] **Step 3: Create the foundation and safeguards child**
 
 Run:
 
@@ -195,7 +199,7 @@ bd --dolt-auto-commit=batch update sdk-phase0-foundation --parent sdk-phase0
 
 Expected: `sdk-phase0-foundation` is a child of `sdk-phase0`.
 
-- [ ] **Step 4: Create the reconciliation and maturity child**
+- [x] **Step 4: Create the reconciliation and maturity child**
 
 Run:
 
@@ -215,7 +219,7 @@ bd --dolt-auto-commit=batch update sdk-phase0-reconcile --parent sdk-phase0
 
 Expected: `sdk-phase0-reconcile` is a child of `sdk-phase0`.
 
-- [ ] **Step 5: Close the verified historical records**
+- [x] **Step 5: Close the verified historical records**
 
 Run:
 
@@ -237,7 +241,7 @@ Expected: all three records are closed and one Dolt commit records the batch.
 
 - Modify through `bd`: `.beads/issues.jsonl`
 
-- [ ] **Step 1: Prove release-readiness and maintenance merges**
+- [x] **Step 1: Prove release-readiness and maintenance merges**
 
 Run:
 
@@ -253,7 +257,7 @@ git merge-base --is-ancestor d32738a origin/main
 Expected: every PR is merged and both the release-system merge and latest
 maintenance merge are ancestors of `origin/main`.
 
-- [ ] **Step 2: Create the release-readiness epic and children**
+- [x] **Step 2: Create the release-readiness epic and children**
 
 Run:
 
@@ -294,7 +298,7 @@ bd --dolt-auto-commit=batch update sdk-deps-through-27 --parent sdk-release-read
 
 Expected: one epic with two historical children.
 
-- [ ] **Step 3: Close the verified release-readiness records**
+- [x] **Step 3: Close the verified release-readiness records**
 
 Run:
 
@@ -316,7 +320,7 @@ Expected: all three records are closed.
 
 - Modify through `bd`: `.beads/issues.jsonl`
 
-- [ ] **Step 1: Create the plan-reconciliation task**
+- [x] **Step 1: Create the plan-reconciliation task**
 
 Run:
 
@@ -335,7 +339,7 @@ bd --dolt-auto-commit=batch create \
 
 Expected: `sdk-plan-reconcile` is open and ready.
 
-- [ ] **Step 2: Create the repository-state retirement epic**
+- [x] **Step 2: Create the repository-state retirement epic**
 
 Run:
 
@@ -375,7 +379,7 @@ bd --dolt-auto-commit=batch update sdk-state-cleanup --parent sdk-state-retire
 
 Expected: audit and cleanup children exist under the maintenance epic.
 
-- [ ] **Step 3: Create the CLI scope decision**
+- [x] **Step 3: Create the CLI scope decision**
 
 Run:
 
@@ -393,7 +397,7 @@ bd --dolt-auto-commit=batch create \
 
 Expected: `sdk-cli-scope` is open and ready without speculative child features.
 
-- [ ] **Step 4: Wire retirement dependencies and commit the batch**
+- [x] **Step 4: Wire retirement dependencies and commit the batch**
 
 Run:
 
@@ -411,7 +415,7 @@ orchestration container and is excluded from worker-ready queries.
 
 - Modify through `bd`: `.beads/issues.jsonl`
 
-- [ ] **Step 1: Create the release epic and authorization decision**
+- [x] **Step 1: Create the release epic and authorization decision**
 
 Run:
 
@@ -441,7 +445,7 @@ bd --dolt-auto-commit=batch update sdk-release-authorize --parent sdk-first-rele
 Expected: the epic and its first decision exist; the decision is the only ready
 release child.
 
-- [ ] **Step 2: Create governance and security gates**
+- [x] **Step 2: Create governance and security gates**
 
 Run:
 
@@ -471,7 +475,7 @@ bd --dolt-auto-commit=batch update sdk-release-security --parent sdk-first-relea
 
 Expected: two open gates exist beneath the release epic.
 
-- [ ] **Step 3: Create launch, rehearsal, and bootstrap tasks**
+- [x] **Step 3: Create launch, rehearsal, and bootstrap tasks**
 
 Run:
 
@@ -512,7 +516,7 @@ bd --dolt-auto-commit=batch update sdk-release-bootstrap --parent sdk-first-rele
 Expected: launch, rehearsal, and bootstrap records exist but are blocked after
 dependency wiring.
 
-- [ ] **Step 4: Create trusted-publisher and validation tasks**
+- [x] **Step 4: Create trusted-publisher and validation tasks**
 
 Run:
 
@@ -540,7 +544,7 @@ bd --dolt-auto-commit=batch update sdk-release-validate --parent sdk-first-relea
 
 Expected: the final two release children exist.
 
-- [ ] **Step 5: Wire the release dependency chain**
+- [x] **Step 5: Wire the release dependency chain**
 
 Run:
 
@@ -565,7 +569,7 @@ container and is excluded from worker-ready queries.
 - Create: `.beads/issues.jsonl`
 - Modify: `.beads/config.yaml`
 
-- [ ] **Step 1: Check database identity and configuration**
+- [x] **Step 1: Check database identity and configuration**
 
 Run:
 
@@ -580,7 +584,7 @@ bd dolt status
 Expected: SDK context, prefix/database `sdk`, effective Git role `maintainer`,
 export enabled to `issues.jsonl`, and a healthy embedded Dolt backend.
 
-- [ ] **Step 2: Check issue counts and statuses**
+- [x] **Step 2: Check issue counts and statuses**
 
 Run:
 
@@ -591,7 +595,7 @@ bd list --all --json | jq '{total:length, by_status:(group_by(.status)|map({stat
 Expected: 20 records total: 6 closed and 14 open. Expected types are 4 epics,
 1 feature, 2 decisions, 10 tasks, and 3 chores.
 
-- [ ] **Step 3: Check the ready queue exactly**
+- [x] **Step 3: Check the ready queue exactly**
 
 Run:
 
@@ -610,7 +614,7 @@ Expected:
 ]
 ```
 
-- [ ] **Step 4: Check blocked work and dependency shape**
+- [x] **Step 4: Check blocked work and dependency shape**
 
 Run:
 
@@ -641,7 +645,7 @@ Expected blocked IDs:
 Expected: the two trees reflect the designed ordering and `bd dep cycles`
 reports no cycles.
 
-- [ ] **Step 5: Export and inspect the issue ledger**
+- [x] **Step 5: Export and inspect the issue ledger**
 
 Run:
 
@@ -665,7 +669,7 @@ Expected: 20 JSONL lines, 20 unique stable IDs, and `duplicate_ids: []`.
 - Stage only: `.beads/metadata.json`
 - Inspect only: `.gitignore`
 
-- [ ] **Step 1: Inspect tracked and ignored Beads state**
+- [x] **Step 1: Inspect tracked and ignored Beads state**
 
 Run:
 
@@ -679,7 +683,7 @@ git diff --check
 Expected: only repository-owned Beads metadata/export files are uncommitted;
 Dolt runtime and local-version files are ignored; no whitespace errors exist.
 
-- [ ] **Step 2: Run the full SDK verifier**
+- [x] **Step 2: Run the full SDK verifier**
 
 Run:
 
@@ -691,7 +695,7 @@ Expected: typecheck, 246 unit tests, builds, contract verification, packed
 package checks, release readiness, coverage, all three stress seeds, and lint
 pass. Record actual counts if the suite has legitimately changed.
 
-- [ ] **Step 3: Stage only the Beads project files**
+- [x] **Step 3: Stage only the Beads project files**
 
 Run:
 
@@ -712,7 +716,7 @@ Expected: only the six named project files are staged. Some initialization
 files may already be committed by `bd init`; staged output may therefore be a
 smaller subset, but it must never include Dolt runtime data or unrelated files.
 
-- [ ] **Step 4: Commit the verified issue graph**
+- [x] **Step 4: Commit the verified issue graph**
 
 Run:
 
@@ -724,7 +728,7 @@ Expected: pre-commit secret and private-key hooks pass and the issue-ledger
 commit is created. If no Git changes remain because the installed `bd` version
 committed them automatically, do not create an empty commit.
 
-- [ ] **Step 5: Run final read-only verification**
+- [x] **Step 5: Run final read-only verification**
 
 Run:
 
@@ -741,3 +745,29 @@ bd export | wc -l
 Expected: clean feature branch, 20 records, exactly four ready leaf IDs, exactly
 eight blocked IDs, no dependency cycles, and 20 exported issue records. Do not push or
 open a PR without separate authorization.
+
+## Completion Record
+
+- Initialized the shared embedded-Dolt database with prefix `sdk`, effective
+  role `maintainer`, automatic JSONL export, and a configured Git-backed Dolt
+  remote.
+- Recorded 20 evidence-backed Beads: 6 closed historical records and 14 open
+  records across 4 epics, 1 feature, 2 decisions, 10 tasks, and 3 chores.
+- Verified the actionable leaf queue contains exactly `sdk-cli-scope`,
+  `sdk-plan-reconcile`, `sdk-release-authorize`, and `sdk-state-audit`.
+- Verified eight dependency-blocked tasks and zero dependency cycles.
+- Verified 20 unique exported IDs with no missing descriptions, acceptance
+  criteria, or historical close reasons.
+- Ran `corepack pnpm@10.34.0 verify` after database construction: 31 test files
+  and 246 tests passed, coverage remained 93.11% statements / 88.50% branches /
+  99.29% functions / 93.04% lines, all three stress seeds passed, and typecheck,
+  builds, contracts, packed packages, release readiness, and lint passed.
+- Beads 1.0.5 anchors linked worktrees at the common Git root, rejects
+  `--id` plus `--parent` in one create call, and forbids task-to-epic blockers.
+  The written workflow now uses separate parent updates and filters epics from
+  the actionable ready queue.
+- `bd doctor` is unavailable in embedded mode; database health was verified
+  through `bd context`, `bd dolt status`, list/export parity, dependency trees,
+  and successful reads from the final graph.
+- No package, tag, release, npm record, GitHub environment, branch-protection
+  setting, branch, worktree, or stash was deleted or externally mutated.
