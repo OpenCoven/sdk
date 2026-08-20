@@ -21,6 +21,16 @@ const preCommitConfigPath = resolve(root, '.pre-commit-config.yaml');
  * version froze it: Dependabot's bumps keep the SHA pin and update the comment,
  * exactly as intended, and failed a test that named the old version.
  */
+/**
+ * A release tag, as the comment beside a pinned SHA.
+ *
+ * Checked for shape rather than merely for existing. "Names the release it
+ * pins" is what the failure message claims, and a bare `# pinned` would
+ * satisfy a presence check while making that claim false -- a weaker guarantee
+ * is worse for being stated as the stronger one.
+ */
+const RELEASE_TAG = /^v\d+(?:\.\d+){0,2}$/;
+
 const USES_PATTERN =
   /uses:\s+([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)@([^\s#]+)(?:[^\S\n]+#[^\S\n]*(\S+))?/g;
 
@@ -63,6 +73,7 @@ describe('workflow action pins', () => {
           /^[0-9a-f]{40}$/,
         );
         expect(comment, `${name}: ${action} must name the release it pins.`).toBeDefined();
+        expect(comment, `${name}: ${action} comment must be a release tag.`).toMatch(RELEASE_TAG);
       }
     }
 
