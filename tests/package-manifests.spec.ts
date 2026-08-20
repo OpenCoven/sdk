@@ -76,8 +76,14 @@ describe('public package manifests', () => {
       '@types/node must track release.config.json supportedNode.major',
     ).toBe(releaseConfig.supportedNode?.major);
 
-    // And the engines range must name that same major.
-    expect(rootManifest.engines?.node).toContain(`>=${releaseConfig.supportedNode?.major}.`);
+    // And the engines range must span that major and no other. Checking only
+    // the lower bound accepted ">=24.18.0 <26", which covers two majors while
+    // reading as though it pinned one.
+    const major = releaseConfig.supportedNode?.major;
+
+    expect(rootManifest.engines?.node, 'engines.node must span exactly one major').toMatch(
+      new RegExp(`^>=${major}\\.\\d+\\.\\d+ <${Number(major) + 1}$`),
+    );
   });
 
   test('runs deterministic multi-seed operation stress verification', () => {
