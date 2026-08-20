@@ -32,6 +32,7 @@ const EXACT_VERSION =
 const workspaceRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const rootManifest = JSON.parse(readFileSync(resolve(workspaceRoot, 'package.json'), 'utf8')) as {
   devDependencies?: Record<string, string>;
+  engines?: { node?: string };
   pnpm?: {
     overrides?: Record<string, string>;
   };
@@ -52,6 +53,31 @@ describe('public package manifests', () => {
     expect(rootManifest.devDependencies?.['@vitest/coverage-v8']).toBe(
       rootManifest.devDependencies?.vitest,
     );
+  });
+
+  test('keeps the typings on the runtime this ships for', () => {
+    // @types/node describes the runtime the code is compiled against. A major
+    // ahead of engines.node accepts APIs that do not exist where this ships,
+    // and typechecks cleanly while doing it -- the failure arrives at runtime,
+    // on the version the release config says is supported.
+    //
+    // This is asserted rather than left to the Dependabot ignore rule beside
+    // it, because an ignore rule is a request and this is a requirement: a
+    // hand-edited bump would sail past the config and be caught here.
+    const releaseConfig = JSON.parse(
+      readFileSync(resolve(workspaceRoot, 'release.config.json'), 'utf8'),
+    ) as { supportedNode?: { major?: number } };
+
+    const typesVersion = rootManifest.devDependencies?.['@types/node'];
+
+    expect(typesVersion).toMatch(EXACT_VERSION);
+    expect(
+      Number(String(typesVersion).split('.')[0]),
+      '@types/node must track release.config.json supportedNode.major',
+    ).toBe(releaseConfig.supportedNode?.major);
+
+    // And the engines range must name that same major.
+    expect(rootManifest.engines?.node).toContain(`>=${releaseConfig.supportedNode?.major}.`);
   });
 
   test('runs deterministic multi-seed operation stress verification', () => {
