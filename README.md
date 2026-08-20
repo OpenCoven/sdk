@@ -147,7 +147,7 @@ the contract verifier. No authority source tree is imported at runtime.
 pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm test
-pnpm --recursive build
+pnpm build
 node scripts/verify-contracts.mjs
 node scripts/verify-package.mjs
 node scripts/verify-release-readiness.mjs
