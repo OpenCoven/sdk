@@ -12,6 +12,36 @@ const releaseWorkflow = existsSync(releaseWorkflowPath)
   : '';
 const preCommitConfigPath = resolve(root, '.pre-commit-config.yaml');
 
+/**
+ * Every `uses:` in a workflow, with its ref and its trailing comment.
+ *
+ * What these tests protect is that third-party actions are pinned to an
+ * immutable commit and labelled with the release that commit belongs to. That
+ * is a property of the pin, not of any particular version -- and asserting the
+ * version froze it: Dependabot's bumps keep the SHA pin and update the comment,
+ * exactly as intended, and failed a test that named the old version.
+ */
+/**
+ * A release tag, as the comment beside a pinned SHA.
+ *
+ * Checked for shape rather than merely for existing. "Names the release it
+ * pins" is what the failure message claims, and a bare `# pinned` would
+ * satisfy a presence check while making that claim false -- a weaker guarantee
+ * is worse for being stated as the stronger one.
+ */
+const RELEASE_TAG = /^v\d+(?:\.\d+){0,2}$/;
+
+const USES_PATTERN =
+  /uses:\s+([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)@([^\s#]+)(?:[^\S\n]+#[^\S\n]*(\S+))?/g;
+
+function actionPins(source: string) {
+  return [...source.matchAll(USES_PATTERN)].map(([, action, ref, comment]) => ({
+    action,
+    ref,
+    comment,
+  }));
+}
+
 describe('workflow action pins', () => {
   test('uses an explicit read-only GitHub token scope', () => {
     expect(workflow).toMatch(/^permissions:\n\s{2}contents: read\n/m);
@@ -27,17 +57,31 @@ describe('workflow action pins', () => {
   });
 
   test('pins third-party actions to full commit SHAs with release comments', () => {
-    const uses = [...workflow.matchAll(/uses:\s+([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)@([^\s#]+)/g)];
+    // Both workflows, not just CI. The release workflow is the one that can
+    // publish, so an unpinned action there matters more, and it was never
+    // checked.
+    for (const [name, source] of [
+      ['ci.yml', workflow],
+      ['release.yml', releaseWorkflow],
+    ] as const) {
+      const pins = actionPins(source);
 
-    expect(uses.length).toBeGreaterThan(0);
+      expect(pins.length, `${name} should use at least one action.`).toBeGreaterThan(0);
 
-    for (const [, action, ref] of uses) {
-      expect(ref, `${action} must be pinned to a full commit SHA.`).toMatch(/^[0-9a-f]{40}$/);
+      for (const { action, ref, comment } of pins) {
+        expect(ref, `${name}: ${action} must be pinned to a full commit SHA.`).toMatch(
+          /^[0-9a-f]{40}$/,
+        );
+        expect(comment, `${name}: ${action} must name the release it pins.`).toBeDefined();
+        expect(comment, `${name}: ${action} comment must be a release tag.`).toMatch(RELEASE_TAG);
+      }
     }
 
-    expect(workflow).toMatch(/actions\/checkout@[0-9a-f]{40}\s+# v4\.4\.0/);
-    expect(workflow).toMatch(/pnpm\/action-setup@[0-9a-f]{40}\s+# v4\.4\.0/);
-    expect(workflow).toMatch(/actions\/setup-node@[0-9a-f]{40}\s+# v4\.4\.0/);
+    // The actions themselves are the requirement; which release they sit on is
+    // Dependabot's business.
+    for (const action of ['actions/checkout', 'pnpm/action-setup', 'actions/setup-node']) {
+      expect(actionPins(workflow).map((pin) => pin.action)).toContain(action);
+    }
   });
 
   test('runs the canonical verifier with bounded, cancellable execution', () => {
@@ -67,15 +111,16 @@ describe('workflow action pins', () => {
     expect(releaseWorkflow).toContain('attestations: write');
     expect(releaseWorkflow).not.toContain('NPM_TOKEN');
     expect(releaseWorkflow).not.toContain('NODE_AUTH_TOKEN');
-    expect(releaseWorkflow).toContain(
-      'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2',
-    );
-    expect(releaseWorkflow).toContain(
-      'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0',
-    );
-    expect(releaseWorkflow).toContain(
-      'actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0',
-    );
+    // These three actions must be present and SHA-pinned; the pin itself is
+    // asserted for every action by the test above. Naming their exact SHAs
+    // here froze the versions and blocked every bump.
+    for (const action of [
+      'actions/upload-artifact',
+      'actions/download-artifact',
+      'actions/attest-build-provenance',
+    ]) {
+      expect(actionPins(releaseWorkflow).map((pin) => pin.action)).toContain(action);
+    }
     expect(releaseWorkflow).toMatch(/^permissions:\n\s{2}contents: read\n/m);
     expect(releaseWorkflow.match(/id-token: write/g)).toHaveLength(1);
     expect(releaseWorkflow.match(/attestations: write/g)).toHaveLength(1);
