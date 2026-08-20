@@ -14,7 +14,10 @@ import {
 } from '../scripts/repository-metadata.mjs';
 
 /**
- * An exact version: a bare semver with no range operator in front of it.
+ * An exact version: a SemVer 2.0.0 string with no range operator in front of
+ * it. This is the grammar from semver.org rather than an approximation of it --
+ * a looser \\d+ core would accept 01.2.3, which is not a version, and reject
+ * 1.2.3+build.4, which is.
  *
  * The pins below are asserted by shape rather than by value. What these tests
  * are protecting is that the versions are *pinned* -- a `^` or `~` would let a
@@ -23,7 +26,8 @@ import {
  * invariant, and hard-coding it meant every dependency bump failed a test that
  * had no opinion about the new version, only about the old one.
  */
-const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+const EXACT_VERSION =
+  /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*)?$/;
 
 const workspaceRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const rootManifest = JSON.parse(readFileSync(resolve(workspaceRoot, 'package.json'), 'utf8')) as {
