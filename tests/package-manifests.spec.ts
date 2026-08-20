@@ -13,6 +13,18 @@ import {
   assertCanonicalRepository,
 } from '../scripts/repository-metadata.mjs';
 
+/**
+ * An exact version: a bare semver with no range operator in front of it.
+ *
+ * The pins below are asserted by shape rather than by value. What these tests
+ * are protecting is that the versions are *pinned* -- a `^` or `~` would let a
+ * resolution drift between runs, which is the opposite of the determinism the
+ * stress and release checks depend on. The particular number is not the
+ * invariant, and hard-coding it meant every dependency bump failed a test that
+ * had no opinion about the new version, only about the old one.
+ */
+const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+
 const workspaceRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const rootManifest = JSON.parse(readFileSync(resolve(workspaceRoot, 'package.json'), 'utf8')) as {
   devDependencies?: Record<string, string>;
@@ -39,7 +51,7 @@ describe('public package manifests', () => {
   });
 
   test('runs deterministic multi-seed operation stress verification', () => {
-    expect(rootManifest.devDependencies?.['fast-check']).toBe('4.3.0');
+    expect(rootManifest.devDependencies?.['fast-check']).toMatch(EXACT_VERSION);
     expect(rootManifest.scripts?.['test:stress']).toBe(
       'node ./scripts/run-operation-stress.mjs',
     );
@@ -49,7 +61,7 @@ describe('public package manifests', () => {
   });
 
   test('uses fixed-version Changesets and packs package changelogs', () => {
-    expect(rootManifest.devDependencies?.['@changesets/cli']).toBe('3.0.1');
+    expect(rootManifest.devDependencies?.['@changesets/cli']).toMatch(EXACT_VERSION);
     expect(rootManifest.scripts?.changeset).toBe('changeset');
     expect(rootManifest.scripts?.['release:status']).toBe('changeset status');
     expect(rootManifest.scripts?.['release:version']).toBe('changeset version');
@@ -80,7 +92,7 @@ describe('public package manifests', () => {
   });
 
   test('keeps every package unpublished until an intentional release change', () => {
-    expect(rootManifest.pnpm?.overrides?.esbuild).toBe('0.28.1');
+    expect(rootManifest.pnpm?.overrides?.esbuild).toMatch(EXACT_VERSION);
 
     for (const { manifestPath } of PUBLIC_PACKAGES) {
       const manifest = JSON.parse(readFileSync(resolve(workspaceRoot, manifestPath), 'utf8')) as {
