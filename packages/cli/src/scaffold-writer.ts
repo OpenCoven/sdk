@@ -105,7 +105,40 @@ export interface WrittenScaffold {
   files: string[];
 }
 
-/** Write every file, or none of them. */
+/**
+ * Undo a partial write.
+ *
+ * A cleanup failure is swallowed: the error that caused the rollback is the one
+ * the caller needs, and replacing it with an error about tidying up would hide
+ * the actual fault. Directories created along the way are left behind, which
+ * costs nothing -- conflicts are judged per file, so an empty directory does not
+ * refuse the retry.
+ */
+async function removeWrittenFiles(directory: string, written: readonly string[]): Promise<void> {
+  const { rm } = await import('node:fs/promises');
+
+  for (const path of written) {
+    try {
+      await rm(join(directory, path), { force: true });
+    } catch {
+      continue;
+    }
+  }
+}
+
+/**
+ * Write every file, or leave the directory as it was found.
+ *
+ * Without the rollback a write that died partway through left a half-scaffold
+ * whose retry then failed with a conflict on the files the failed run had
+ * already created -- the generator refusing to finish what it started.
+ *
+ * Rollback runs only when the write was refusing overwrites, because that is the
+ * only case in which every file written is known to be new. Under `force` a
+ * partial write stays: some of those files existed beforehand, and deleting them
+ * to tidy up a failure would destroy the caller's originals, which is worse than
+ * the half-written tree.
+ */
 export async function writeScaffoldFiles(
   files: readonly ScaffoldFile[],
   targetDirectory: string,
@@ -116,8 +149,9 @@ export async function writeScaffoldFiles(
   }
 
   const directory = resolve(targetDirectory);
+  const refusesOverwrite = options.force !== true;
 
-  if (options.force !== true) {
+  if (refusesOverwrite) {
     const conflicts = await findConflicts(directory, files);
 
     if (conflicts.length > 0) {
@@ -130,15 +164,23 @@ export async function writeScaffoldFiles(
 
   await mkdir(directory, { recursive: true });
 
-  for (const file of files) {
-    const destination = join(directory, file.path);
+  try {
+    for (const file of files) {
+      const destination = join(directory, file.path);
 
-    await mkdir(dirname(destination), { recursive: true });
-    await writeFile(destination, file.contents, {
-      encoding: 'utf8',
-      flag: options.force === true ? 'w' : 'wx',
-    });
-    written.push(file.path);
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, file.contents, {
+        encoding: 'utf8',
+        flag: refusesOverwrite ? 'wx' : 'w',
+      });
+      written.push(file.path);
+    }
+  } catch (error) {
+    if (refusesOverwrite) {
+      await removeWrittenFiles(directory, written);
+    }
+
+    throw error;
   }
 
   return { directory, files: written };

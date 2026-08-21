@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
@@ -176,6 +176,45 @@ describe('scaffold writing', () => {
     await writeScaffoldFiles(createScaffoldFiles('cave-chat'), directory, { force: true });
 
     expect(readFileSync(resolve(directory, 'src/index.ts'), 'utf8')).toContain('CaveClient');
+  });
+
+  /**
+   * A file list whose second entry lands on the directory the first entry
+   * created. Nothing exists when the conflict check runs, so the failure happens
+   * inside the write loop -- the only place a rollback can be observed.
+   */
+  const collidingFiles = [
+    { path: 'nested/inner.txt', contents: 'first\n' },
+    { path: 'nested', contents: 'second\n' },
+  ];
+
+  test('rolls a failed write back so a retry is not blocked by its own leftovers', async () => {
+    const directory = targetPath('app');
+
+    await expect(writeScaffoldFiles(collidingFiles, directory)).rejects.toThrow();
+    expect(existsSync(resolve(directory, 'nested/inner.txt'))).toBe(false);
+
+    const retried = await writeScaffoldFiles(createScaffoldFiles('cave-chat'), directory);
+
+    expect(retried.files).toHaveLength(5);
+  });
+
+  test('leaves a forced partial write in place rather than deleting the caller files', async () => {
+    const directory = targetPath('app');
+
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(resolve(directory, 'kept.txt'), 'my own work\n');
+
+    await expect(
+      writeScaffoldFiles([{ path: 'kept.txt', contents: 'scaffold\n' }, ...collidingFiles], directory, {
+        force: true,
+      }),
+    ).rejects.toThrow();
+
+    // Rolling this back would delete a file that existed before the run, which
+    // is worse than the half-written tree it would be tidying up.
+    expect(existsSync(resolve(directory, 'kept.txt'))).toBe(true);
+    expect(existsSync(resolve(directory, 'nested/inner.txt'))).toBe(true);
   });
 
   test('reports a single conflict in the singular', async () => {
