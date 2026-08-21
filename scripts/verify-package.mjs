@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { cpSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
@@ -149,7 +149,24 @@ function assertPackedCliFailurePaths(binary, cwd) {
   }
 }
 
-const scaffoldFilePaths = ['.gitignore', 'README.md', 'package.json', 'src/index.ts', 'tsconfig.json'];
+/**
+ * Every file under a directory, `/`-separated and relative to it, sorted.
+ *
+ * Read rather than listed. A hand-written list of the five files a template
+ * emits today would leave a sixth uncompared the moment one is added, silently
+ * narrowing the only check that the CLI inside the tarball writes what the
+ * workspace one writes -- and nothing anywhere would fail. Reading the tree also
+ * catches the two cases a list cannot see at all: a file the packed CLI writes
+ * and the workspace one does not, and one it forgets.
+ */
+function scaffoldFilePaths(directory) {
+  return readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) =>
+      relative(directory, resolve(entry.parentPath, entry.name)).split(sep).join('/'),
+    )
+    .sort();
+}
 
 /**
  * Prove the packed binary generates the same scaffold the workspace one does.
@@ -176,9 +193,27 @@ function assertPackedCliScaffold(binary, cwd, referenceRoot) {
     );
   }
 
-  for (const relativePath of scaffoldFilePaths) {
+  const referenceDirectory = resolve(referenceRoot, template);
+  const generatedPaths = scaffoldFilePaths(destination);
+  const referencePaths = scaffoldFilePaths(referenceDirectory);
+
+  // A list cannot come back empty; a walk can, and two empty walks compare
+  // equal and then compare no bytes at all. That would be this check reporting
+  // success for having looked at nothing.
+  if (referencePaths.length === 0) {
+    throw new Error(`Workspace opencoven scaffold ${template} wrote no files to compare.`);
+  }
+
+  if (!isDeepStrictEqual(generatedPaths, referencePaths)) {
+    throw new Error(
+      `Packed opencoven scaffold ${template} wrote [${generatedPaths.join(', ')}] where the ` +
+        `workspace CLI wrote [${referencePaths.join(', ')}].`,
+    );
+  }
+
+  for (const relativePath of referencePaths) {
     const generated = readFileSync(resolve(destination, relativePath), 'utf8');
-    const reference = readFileSync(resolve(referenceRoot, template, relativePath), 'utf8');
+    const reference = readFileSync(resolve(referenceDirectory, relativePath), 'utf8');
 
     if (generated !== reference) {
       throw new Error(

@@ -106,6 +106,16 @@ describe('packed package verifier contract', () => {
   test('proves the packed binary generates the same scaffold and still refuses to overwrite', () => {
     const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
 
+    // The set of files compared is read off the pristine reference tree rather
+    // than listed here, so a template that grows a file cannot quietly fall out
+    // of the byte comparison.
+    expect(verifier).toContain('const generatedPaths = scaffoldFilePaths(destination);');
+    expect(verifier).toContain(
+      'const referencePaths = scaffoldFilePaths(referenceDirectory);',
+    );
+    expect(verifier).toContain('referencePaths.length === 0');
+    expect(verifier).toContain('!isDeepStrictEqual(generatedPaths, referencePaths)');
+    expect(verifier).toContain('for (const relativePath of referencePaths) {');
     expect(verifier).toContain(
       "does not match the workspace CLI output",
     );
