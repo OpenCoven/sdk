@@ -1317,30 +1317,34 @@ export function createCovenUnixTransport(
 
   return {
     async health(context) {
-      const effectiveUid = getEffectiveUid();
-      if (!Number.isSafeInteger(effectiveUid) || (effectiveUid as number) < 0) {
-        throw ipcError(
-          'owner_mismatch',
-          'The current effective user could not be identified.',
-          'validate_endpoint',
-        );
-      }
-      const expectedUid = effectiveUid as number;
-      if (
-        discovered.owner?.kind === 'unix' &&
-        discovered.owner.uid !== expectedUid
-      ) {
-        throw ipcError(
-          'owner_mismatch',
-          'Discovered Coven owner did not match the current user.',
-          'validate_endpoint',
-        );
-      }
-
-      const initial = await awaitOperationStep(
+      const { expectedUid, initial } = await awaitOperationStep(
         async () => {
+          const effectiveUid = getEffectiveUid();
+          if (
+            !Number.isSafeInteger(effectiveUid) ||
+            (effectiveUid as number) < 0
+          ) {
+            throw ipcError(
+              'owner_mismatch',
+              'The current effective user could not be identified.',
+              'validate_endpoint',
+            );
+          }
+          const expectedUid = effectiveUid as number;
+          if (
+            discovered.owner?.kind === 'unix' &&
+            discovered.owner.uid !== expectedUid
+          ) {
+            throw ipcError(
+              'owner_mismatch',
+              'Discovered Coven owner did not match the current user.',
+              'validate_endpoint',
+            );
+          }
+
+          let initial: CovenUnixFileIdentity;
           try {
-            return await lstat(endpoint.path);
+            initial = await lstat(endpoint.path);
           } catch (error) {
             const notFound =
               typeof error === 'object' &&
@@ -1354,11 +1358,12 @@ export function createCovenUnixTransport(
               'validate_endpoint',
             );
           }
+          validateUnixIdentity(initial, expectedUid, 'validate_endpoint');
+          return { expectedUid, initial };
         },
         context,
         'validate_endpoint',
       );
-      validateUnixIdentity(initial, expectedUid, 'validate_endpoint');
 
       return requestCovenHealthOverSocket(
         endpoint.path,

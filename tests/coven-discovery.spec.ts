@@ -2777,16 +2777,21 @@ describe('Unix owner-local health transport', () => {
     vi.useFakeTimers();
     const now = 0;
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const getEffectiveUid = vi.fn(() => 501);
     const lstat = vi.fn(() => Promise.resolve(unixIdentity()));
+    const inspectConnected = vi.fn(() =>
+      Promise.resolve(unixPeerIdentity()),
+    );
     const connect = vi.fn(() => new FakeSocket());
     const transport = createCovenUnixTransport(
       unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
       {
         dependencies: {
           connect,
-          getEffectiveUid: () => 501,
+          getEffectiveUid,
           lstat,
         },
+        peerIdentity: { inspectConnected },
       },
     );
 
@@ -2800,12 +2805,45 @@ describe('Unix owner-local health transport', () => {
         code: 'timeout',
         diagnostics: { phase: 'validate_endpoint' },
       });
+      expect(getEffectiveUid).not.toHaveBeenCalled();
       expect(lstat).not.toHaveBeenCalled();
+      expect(inspectConnected).not.toHaveBeenCalled();
       expect(connect).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       nowSpy.mockRestore();
     }
+  });
+
+  test('rejects an aborted Unix health request before starting validation', async () => {
+    const reason = new Error('stop before Unix health');
+    const controller = new AbortController();
+    controller.abort(reason);
+    const getEffectiveUid = vi.fn(() => 501);
+    const lstat = vi.fn(() => Promise.resolve(unixIdentity()));
+    const inspectConnected = vi.fn(() =>
+      Promise.resolve(unixPeerIdentity()),
+    );
+    const connect = vi.fn(() => new FakeSocket());
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect,
+          getEffectiveUid,
+          lstat,
+        },
+        peerIdentity: { inspectConnected },
+      },
+    );
+
+    await expect(
+      transport.health({ signal: controller.signal, deadline: undefined }),
+    ).rejects.toBe(reason);
+    expect(getEffectiveUid).not.toHaveBeenCalled();
+    expect(lstat).not.toHaveBeenCalled();
+    expect(inspectConnected).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
   });
 
   test('does not write a Unix health request at its 1ms absolute deadline', async () => {
@@ -3602,13 +3640,16 @@ describe('Windows owner-local health transport', () => {
       Promise.resolve('S-1-5-21-current-user'),
     );
     const inspect = vi.fn(() => Promise.resolve(windowsIdentity()));
+    const inspectConnected = vi.fn(() =>
+      Promise.resolve(windowsIdentity()),
+    );
     const connect = vi.fn(() => new FakeSocket());
     const transport = createCovenWindowsTransport(windowsEndpoint(), {
       dependencies: { connect },
       ownership: {
         currentUserIdentity,
         inspect,
-        inspectConnected: () => Promise.resolve(windowsIdentity()),
+        inspectConnected,
       },
     });
 
@@ -3624,11 +3665,42 @@ describe('Windows owner-local health transport', () => {
       });
       expect(currentUserIdentity).not.toHaveBeenCalled();
       expect(inspect).not.toHaveBeenCalled();
+      expect(inspectConnected).not.toHaveBeenCalled();
       expect(connect).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       nowSpy.mockRestore();
     }
+  });
+
+  test('rejects an aborted Windows health request before starting validation', async () => {
+    const reason = new Error('stop before Windows health');
+    const controller = new AbortController();
+    controller.abort(reason);
+    const currentUserIdentity = vi.fn(() =>
+      Promise.resolve('S-1-5-21-current-user'),
+    );
+    const inspect = vi.fn(() => Promise.resolve(windowsIdentity()));
+    const inspectConnected = vi.fn(() =>
+      Promise.resolve(windowsIdentity()),
+    );
+    const connect = vi.fn(() => new FakeSocket());
+    const transport = createCovenWindowsTransport(windowsEndpoint(), {
+      dependencies: { connect },
+      ownership: {
+        currentUserIdentity,
+        inspect,
+        inspectConnected,
+      },
+    });
+
+    await expect(
+      transport.health({ signal: controller.signal, deadline: undefined }),
+    ).rejects.toBe(reason);
+    expect(currentUserIdentity).not.toHaveBeenCalled();
+    expect(inspect).not.toHaveBeenCalled();
+    expect(inspectConnected).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
   });
 
   test('does not write a Windows health request at its 1ms absolute deadline', async () => {
