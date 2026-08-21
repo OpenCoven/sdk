@@ -2846,6 +2846,83 @@ describe('Unix owner-local health transport', () => {
     expect(connect).not.toHaveBeenCalled();
   });
 
+  test('does not invoke Unix collaborators when aborted before queued validation runs', async () => {
+    const reason = new Error('stop queued Unix validation');
+    const controller = new AbortController();
+    const getEffectiveUid = vi.fn(() => 501);
+    const lstat = vi.fn(() => Promise.resolve(unixIdentity()));
+    const inspectConnected = vi.fn(() =>
+      Promise.resolve(unixPeerIdentity()),
+    );
+    const connect = vi.fn(() => new FakeSocket());
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect,
+          getEffectiveUid,
+          lstat,
+        },
+        peerIdentity: { inspectConnected },
+      },
+    );
+
+    const result = transport.health({
+      signal: controller.signal,
+      deadline: undefined,
+    });
+    controller.abort(reason);
+
+    await expect(result).rejects.toBe(reason);
+    expect(getEffectiveUid).not.toHaveBeenCalled();
+    expect(lstat).not.toHaveBeenCalled();
+    expect(inspectConnected).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  test('does not invoke Unix collaborators when the deadline expires before queued validation runs', async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const getEffectiveUid = vi.fn(() => 501);
+    const lstat = vi.fn(() => Promise.resolve(unixIdentity()));
+    const inspectConnected = vi.fn(() =>
+      Promise.resolve(unixPeerIdentity()),
+    );
+    const connect = vi.fn(() => new FakeSocket());
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect,
+          getEffectiveUid,
+          lstat,
+        },
+        peerIdentity: { inspectConnected },
+      },
+    );
+
+    try {
+      const result = transport.health({
+        signal: new AbortController().signal,
+        deadline: now + 1,
+      });
+      now = 1;
+
+      await expect(result).rejects.toMatchObject({
+        code: 'timeout',
+        diagnostics: { phase: 'validate_endpoint' },
+      });
+      expect(getEffectiveUid).not.toHaveBeenCalled();
+      expect(lstat).not.toHaveBeenCalled();
+      expect(inspectConnected).not.toHaveBeenCalled();
+      expect(connect).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   test('does not write a Unix health request at its 1ms absolute deadline', async () => {
     vi.useFakeTimers();
     let now = 0;
@@ -3701,6 +3778,81 @@ describe('Windows owner-local health transport', () => {
     expect(inspect).not.toHaveBeenCalled();
     expect(inspectConnected).not.toHaveBeenCalled();
     expect(connect).not.toHaveBeenCalled();
+  });
+
+  test('does not invoke Windows collaborators when aborted before queued validation runs', async () => {
+    const reason = new Error('stop queued Windows validation');
+    const controller = new AbortController();
+    const currentUserIdentity = vi.fn(() =>
+      Promise.resolve('S-1-5-21-current-user'),
+    );
+    const inspect = vi.fn(() => Promise.resolve(windowsIdentity()));
+    const inspectConnected = vi.fn(() =>
+      Promise.resolve(windowsIdentity()),
+    );
+    const connect = vi.fn(() => new FakeSocket());
+    const transport = createCovenWindowsTransport(windowsEndpoint(), {
+      dependencies: { connect },
+      ownership: {
+        currentUserIdentity,
+        inspect,
+        inspectConnected,
+      },
+    });
+
+    const result = transport.health({
+      signal: controller.signal,
+      deadline: undefined,
+    });
+    controller.abort(reason);
+
+    await expect(result).rejects.toBe(reason);
+    expect(currentUserIdentity).not.toHaveBeenCalled();
+    expect(inspect).not.toHaveBeenCalled();
+    expect(inspectConnected).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  test('does not invoke Windows collaborators when the deadline expires before queued validation runs', async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const currentUserIdentity = vi.fn(() =>
+      Promise.resolve('S-1-5-21-current-user'),
+    );
+    const inspect = vi.fn(() => Promise.resolve(windowsIdentity()));
+    const inspectConnected = vi.fn(() =>
+      Promise.resolve(windowsIdentity()),
+    );
+    const connect = vi.fn(() => new FakeSocket());
+    const transport = createCovenWindowsTransport(windowsEndpoint(), {
+      dependencies: { connect },
+      ownership: {
+        currentUserIdentity,
+        inspect,
+        inspectConnected,
+      },
+    });
+
+    try {
+      const result = transport.health({
+        signal: new AbortController().signal,
+        deadline: now + 1,
+      });
+      now = 1;
+
+      await expect(result).rejects.toMatchObject({
+        code: 'timeout',
+        diagnostics: { phase: 'validate_endpoint' },
+      });
+      expect(currentUserIdentity).not.toHaveBeenCalled();
+      expect(inspect).not.toHaveBeenCalled();
+      expect(inspectConnected).not.toHaveBeenCalled();
+      expect(connect).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   test('does not write a Windows health request at its 1ms absolute deadline', async () => {

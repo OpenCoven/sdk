@@ -757,7 +757,13 @@ export function awaitOperationStep<T>(
     return Promise.reject(initialControlError);
   }
 
-  const pending = Promise.resolve().then(operation);
+  const pending = Promise.resolve().then(() => {
+    const controlError = operationControlError(context, phase);
+    if (controlError !== undefined) {
+      throw controlError;
+    }
+    return operation();
+  });
   return new Promise((resolvePromise, reject) => {
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
