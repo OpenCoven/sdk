@@ -20,7 +20,7 @@ import type {
 } from './transport.js';
 import {
   createCovenUnixTransport,
-  isCovenDaemonResponseError,
+  daemonFailureFromError,
   type CovenDaemonFailure,
   type CovenUnixTransportSecurityProvider,
   type CovenUnixTransportOptions,
@@ -71,8 +71,33 @@ export type CovenDiscoveredClientOptions =
   | CovenDiscoveredUnixClientOptions
   | CovenDiscoveredWindowsClientOptions;
 
+function ownDataErrorShape(error: unknown): Record<string, unknown> {
+  if (typeof error !== 'object' || error === null) {
+    return {};
+  }
+  try {
+    const descriptors = Object.getOwnPropertyDescriptors(error);
+    const shape: Record<string, unknown> = {};
+    for (const key of [
+      'code',
+      'requestId',
+      'retryable',
+      'status',
+      'statusCode',
+    ] as const) {
+      const descriptor = descriptors[key];
+      if (descriptor !== undefined && Object.hasOwn(descriptor, 'value')) {
+        shape[key] = descriptor.value;
+      }
+    }
+    return shape;
+  } catch {
+    return {};
+  }
+}
+
 export function normalizeCovenError(error: unknown, operation: string): NormalizedError {
-  return normalizeError(error, {
+  return normalizeError(ownDataErrorShape(error), {
     system: 'coven',
     operation,
     message: `Coven ${operation} request failed`,
@@ -95,9 +120,7 @@ export class CovenClientError extends Error {
     this.retryable = normalized.retryable;
     this.requestId = normalized.requestId;
     this.statusCode = normalized.statusCode;
-    this.daemon = isCovenDaemonResponseError(options?.cause)
-      ? options.cause.daemon
-      : undefined;
+    this.daemon = daemonFailureFromError(options?.cause);
     Object.defineProperty(this, COVEN_CLIENT_ERROR_BRAND, { value: true });
   }
 }
@@ -108,7 +131,13 @@ export function isCovenClientError(error: unknown): error is CovenClientError {
   }
 
   try {
-    return Reflect.get(error, COVEN_CLIENT_ERROR_BRAND) === true;
+    const descriptor = Object.getOwnPropertyDescriptor(
+      error,
+      COVEN_CLIENT_ERROR_BRAND,
+    );
+    return descriptor !== undefined &&
+      Object.hasOwn(descriptor, 'value') &&
+      descriptor.value === true;
   } catch {
     return false;
   }

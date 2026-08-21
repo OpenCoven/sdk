@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
-import { createConnection, createServer, type Socket } from 'node:net';
+import { chmod, mkdir, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 
 import {
@@ -15,9 +16,11 @@ import {
   isCovenDaemonResponseError,
   isCovenIpcError,
   type CovenConnectedSocket,
+  type CovenDiscoveryFileIdentity,
   type CovenDiscoveredEndpoint,
   type CovenExecFile,
   type CovenExecFileError,
+  type CovenMetadataFileHandle,
   type CovenSocket,
   type CovenUnixFileIdentity,
   type CovenUnixTransportOptions,
@@ -60,7 +63,11 @@ function httpResponse(
   );
 }
 
-function configPathsReport(endpointPath: string, metadataPath: string): string {
+function configPathsReport(
+  endpointPath: string,
+  metadataPath: string,
+  homePath = resolve(endpointPath, '..'),
+): string {
   return JSON.stringify({
     schema: 'coven.config.paths',
     version: 1,
@@ -68,7 +75,7 @@ function configPathsReport(endpointPath: string, metadataPath: string): string {
       {
         id: 'coven.home',
         status: 'resolved',
-        path: resolve(endpointPath, '..'),
+        path: homePath,
         source: 'default',
         access: 'read_only',
       },
@@ -115,6 +122,7 @@ class FakeSocket extends EventEmitter implements CovenSocket {
   connecting = false;
   destroyed = false;
   ended = false;
+  paused = false;
   onWrite: ((request: Buffer) => void) | undefined;
 
   write(data: Uint8Array | string): boolean {
@@ -131,6 +139,16 @@ class FakeSocket extends EventEmitter implements CovenSocket {
 
   destroy(): this {
     this.destroyed = true;
+    return this;
+  }
+
+  pause(): this {
+    this.paused = true;
+    return this;
+  }
+
+  resume(): this {
+    this.paused = false;
     return this;
   }
 }
@@ -164,9 +182,9 @@ function unixIdentity(
 }
 
 interface TestUnixPeerIdentity {
-  device: number;
-  inode: number;
-  ownerUid: number;
+  uid: number;
+  gid?: number;
+  pid?: number;
 }
 
 interface TestUnixTransportOptions
@@ -180,9 +198,129 @@ function unixPeerIdentity(
   overrides: Partial<TestUnixPeerIdentity> = {},
 ): TestUnixPeerIdentity {
   return {
+    uid: 501,
+    ...overrides,
+  };
+}
+
+function discoveryFileIdentity(
+  overrides: Partial<CovenDiscoveryFileIdentity> = {},
+): CovenDiscoveryFileIdentity {
+  return {
     device: 7,
     inode: 11,
+    mode: 0o100755,
     ownerUid: 501,
+    regularFile: true,
+    size: 128,
+    symbolicLink: false,
+    ...overrides,
+  };
+}
+
+function memoryMetadataFile(
+  serialized: string,
+  options: {
+    close?: () => Promise<void>;
+    read?: CovenMetadataFileHandle['read'];
+  } = {},
+): CovenMetadataFileHandle {
+  let position = 0;
+  const bytes = Buffer.from(serialized);
+  return {
+    close: options.close ?? (() => Promise.resolve()),
+    read:
+      options.read ??
+      ((buffer, offset, length) => {
+        const bytesRead = Math.min(length, bytes.length - position);
+        if (bytesRead > 0) {
+          buffer.set(bytes.subarray(position, position + bytesRead), offset);
+          position += bytesRead;
+        }
+        return Promise.resolve({ bytesRead });
+      }),
+  };
+}
+
+const TRUSTED_UNIX_COVEN = '/opt/opencoven/bin/coven';
+const TRUSTED_WINDOWS_COVEN = 'C:\\Program Files\\Coven\\coven.exe';
+
+function trustedCommandDependencies(
+  execFile: CovenExecFile,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    execFile,
+    getEffectiveUid: () => 501,
+    resolveExecutable: () => Promise.resolve(TRUSTED_UNIX_COVEN),
+    realpath: (path: string) => Promise.resolve(path),
+    lstat: (path: string) =>
+      path === TRUSTED_UNIX_COVEN
+        ? Promise.resolve(discoveryFileIdentity())
+        : Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
+    openFile: () =>
+      Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
+    ...overrides,
+  };
+}
+
+function metadataDependencies(
+  metadataPath: string,
+  serialized: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    getEffectiveUid: () => 501,
+    lstat: (path: string) =>
+      path === metadataPath
+        ? Promise.resolve(
+            discoveryFileIdentity({
+              mode: 0o100600,
+              size: Buffer.byteLength(serialized),
+            }),
+          )
+        : Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
+    openFile: (path: string) =>
+      path === metadataPath
+        ? Promise.resolve(memoryMetadataFile(serialized))
+        : Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
+    ...overrides,
+  };
+}
+
+function windowsDiscoveryDependencies(
+  execFile: CovenExecFile,
+  metadataPath: string,
+  serialized: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    execFile,
+    resolveExecutable: () => Promise.resolve(TRUSTED_WINDOWS_COVEN),
+    realpath: (path: string) => Promise.resolve(path),
+    lstat: (path: string) => {
+      if (path === TRUSTED_WINDOWS_COVEN) {
+        return Promise.resolve(discoveryFileIdentity());
+      }
+      if (path === metadataPath) {
+        return Promise.resolve(
+          discoveryFileIdentity({
+            mode: 0o100600,
+            size: Buffer.byteLength(serialized),
+          }),
+        );
+      }
+      return Promise.reject(
+        Object.assign(new Error('missing'), { code: 'ENOENT' }),
+      );
+    },
+    openFile: (path: string) =>
+      path === metadataPath
+        ? Promise.resolve(memoryMetadataFile(serialized))
+        : Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
+    windowsFileTrust: {
+      validate: () => Promise.resolve(true),
+    },
     ...overrides,
   };
 }
@@ -308,28 +446,55 @@ describe('Coven endpoint discovery', () => {
     const home = resolve(ownedRoot.rootPath, 'profile');
     const socketPath = resolve(home, 'coven.sock');
     const metadataPath = resolve(home, 'daemon.json');
+    const metadata = JSON.stringify({
+      pid: 42,
+      startedAt: '2026-08-21T06:00:00Z',
+      socket: socketPath,
+    });
     const endpoint = await discoverCovenEndpoint({
       env: { COVEN_HOME: home, PATH: '/safe/bin', SECRET_TOKEN: 'redact-me' },
       platform: 'darwin',
       dependencies: {
         execFile,
-        getEffectiveUid: () => 501,
-        readFile: vi.fn((path) => {
-          expect(path).toBe(metadataPath);
-          return Promise.resolve(
-            JSON.stringify({
-              pid: 42,
-              startedAt: '2026-08-21T06:00:00Z',
-              socket: socketPath,
-            }),
-          );
-        }),
+        ...metadataDependencies(metadataPath, metadata),
       },
     });
 
     expect(endpoint).toEqual(unixEndpoint(socketPath));
     expect(execFile).not.toHaveBeenCalled();
   });
+
+  test.runIf(process.platform !== 'win32')(
+    'reads owner-safe Unix metadata through the default bounded file adapter',
+    async () => {
+      const home = resolve(ownedRoot.rootPath, 'default-file-adapter');
+      const socketPath = resolve(home, 'coven.sock');
+      await mkdir(home);
+      await writeFile(
+        resolve(home, 'daemon.json'),
+        JSON.stringify({
+          pid: 42,
+          startedAt: '2026-08-21T06:00:00Z',
+          socket: socketPath,
+        }),
+        { mode: 0o600 },
+      );
+      await chmod(resolve(home, 'daemon.json'), 0o600);
+
+      await expect(
+        discoverCovenEndpoint({
+          env: { COVEN_HOME: home },
+          platform: process.platform,
+        }),
+      ).resolves.toMatchObject({
+        endpoint: { kind: 'unix', path: socketPath },
+        freshness: {
+          daemonPid: 42,
+          daemonStartedAt: '2026-08-21T06:00:00Z',
+        },
+      });
+    },
+  );
 
   test('falls back to exact no-shell config paths argv with a sanitized environment', async () => {
     const socketPath = resolve(ownedRoot.rootPath, 'coven.sock');
@@ -347,12 +512,7 @@ describe('Coven endpoint discovery', () => {
           AWS_SECRET_ACCESS_KEY: 'redact-me-too',
         },
         platform: 'linux',
-        dependencies: {
-          execFile,
-          readFile: vi.fn(() =>
-            Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
-          ),
-        },
+        dependencies: trustedCommandDependencies(execFile),
       }),
     ).resolves.toMatchObject({
       protocol: COVEN_DAEMON_PROTOCOL,
@@ -362,17 +522,18 @@ describe('Coven endpoint discovery', () => {
 
     expect(execFile).toHaveBeenCalledTimes(1);
     const [file, args, options] = vi.mocked(execFile).mock.calls[0] ?? [];
-    expect(file).toBe('coven');
+    expect(file).toBe(TRUSTED_UNIX_COVEN);
     expect(args).toEqual(['config', 'paths', '--json']);
     expect(options).toMatchObject({
       encoding: 'utf8',
       cwd: ownedRoot.rootPath,
       shell: false,
-      timeout: 2_000,
       maxBuffer: 65_536,
       killSignal: 'SIGKILL',
       windowsHide: true,
     });
+    expect(options?.timeout).toBeGreaterThan(0);
+    expect(options?.timeout).toBeLessThanOrEqual(2_000);
     expect(options?.env).toEqual({
       HOME: ownedRoot.rootPath,
       PATH: '/safe/bin',
@@ -387,19 +548,83 @@ describe('Coven endpoint discovery', () => {
     await discoverCovenEndpoint({
       command: 'attacker-controlled-coven',
       env: { PATH: '/safe/bin' },
-      dependencies: {
-        execFile,
-        readFile: () =>
-          Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
-      },
+      dependencies: trustedCommandDependencies(execFile),
     } as Parameters<typeof discoverCovenEndpoint>[0]);
 
     expect(execFile).toHaveBeenCalledWith(
-      'coven',
+      TRUSTED_UNIX_COVEN,
       ['config', 'paths', '--json'],
       expect.objectContaining({ shell: false }),
       expect.any(Function),
     );
+  });
+
+  test.each([
+    ['relative path', 'bin/coven', 'bin/coven'],
+    ['wrong executable name', '/opt/opencoven/bin/coven-copy', '/opt/opencoven/bin/coven-copy'],
+    ['non-canonical path', '/opt/opencoven/bin/../bin/coven', TRUSTED_UNIX_COVEN],
+  ])('rejects a trusted resolver returning a %s', async (_label, executable, canonical) => {
+    const execFile = execResult('{}');
+
+    await expect(
+      discoverCovenEndpoint({
+        env: { PATH: '/attacker/bin' },
+        platform: 'linux',
+        dependencies: trustedCommandDependencies(execFile, {
+          resolveExecutable: () => Promise.resolve(executable),
+          realpath: () => Promise.resolve(canonical),
+        }),
+      }),
+    ).rejects.toMatchObject({
+      code: 'unsafe_endpoint',
+      diagnostics: { phase: 'config_command' },
+    });
+    expect(execFile).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['symlink', discoveryFileIdentity({ symbolicLink: true })],
+    ['non-file', discoveryFileIdentity({ regularFile: false })],
+    ['non-executable', discoveryFileIdentity({ mode: 0o100600 })],
+    ['unsafe mode', discoveryFileIdentity({ mode: 0o100775 })],
+    ['wrong owner', discoveryFileIdentity({ ownerUid: 502 })],
+  ])('rejects a trusted Unix Coven executable with %s', async (_label, identity) => {
+    const execFile = execResult('{}');
+
+    await expect(
+      discoverCovenEndpoint({
+        env: { PATH: '/attacker/bin' },
+        platform: 'linux',
+        dependencies: trustedCommandDependencies(execFile, {
+          lstat: () => Promise.resolve(identity),
+        }),
+      }),
+    ).rejects.toMatchObject({
+      code: identity.ownerUid === 502 ? 'owner_mismatch' : 'unsafe_endpoint',
+      diagnostics: { phase: 'config_command' },
+    });
+    expect(execFile).not.toHaveBeenCalled();
+  });
+
+  test('requires the injected Windows executable trust validator', async () => {
+    const execFile = execResult('{}');
+
+    await expect(
+      discoverCovenEndpoint({
+        env: {},
+        platform: 'win32',
+        dependencies: {
+          execFile,
+          resolveExecutable: () => Promise.resolve(TRUSTED_WINDOWS_COVEN),
+          realpath: (path) => Promise.resolve(path),
+          lstat: () => Promise.resolve(discoveryFileIdentity()),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'unsafe_endpoint',
+      diagnostics: { phase: 'config_command' },
+    });
+    expect(execFile).not.toHaveBeenCalled();
   });
 
   test.each([
@@ -442,9 +667,10 @@ describe('Coven endpoint discovery', () => {
       code: 'malformed_config',
     },
   ])('rejects $label with stable diagnostics', async ({ stdout, code }) => {
+    const execFile = execResult(stdout);
     const error: unknown = await discoverCovenEndpoint({
       env: { PATH: '/safe/bin' },
-      dependencies: { execFile: execResult(stdout) },
+      dependencies: trustedCommandDependencies(execFile),
     }).catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(CovenIpcError);
@@ -475,7 +701,7 @@ describe('Coven endpoint discovery', () => {
     await expect(
       discoverCovenEndpoint({
         env: { PATH: '/safe/bin' },
-        dependencies: { execFile: execResult(report) },
+        dependencies: trustedCommandDependencies(execResult(report)),
       }),
     ).rejects.toMatchObject({ code: 'malformed_config' });
   });
@@ -580,7 +806,9 @@ describe('Coven endpoint discovery', () => {
     await expect(
       discoverCovenEndpoint({
         env: { PATH: '/safe/bin' },
-        dependencies: { execFile: execResult(JSON.stringify(report)) },
+        dependencies: trustedCommandDependencies(
+          execResult(JSON.stringify(report)),
+        ),
       }),
     ).rejects.toMatchObject({ code });
   });
@@ -592,7 +820,7 @@ describe('Coven endpoint discovery', () => {
       discoverCovenEndpoint({
         env: { PATH: '/safe/bin' },
         platform: 'linux',
-        dependencies: { execFile: execResult(report) },
+        dependencies: trustedCommandDependencies(execResult(report)),
       }),
     ).rejects.toMatchObject({ code: 'unsafe_endpoint' });
   });
@@ -600,9 +828,10 @@ describe('Coven endpoint discovery', () => {
   test('bounds command output and never exposes stdout or stderr contents', async () => {
     const secret = 'secret-output-value';
     const oversized = `${secret}${'x'.repeat(65_536)}`;
+    const execFile = execResult(oversized, secret);
     const error: unknown = await discoverCovenEndpoint({
       env: { PATH: '/safe/bin' },
-      dependencies: { execFile: execResult(oversized, secret) },
+      dependencies: trustedCommandDependencies(execFile),
     }).catch((caught: unknown) => caught);
 
     expect(error).toMatchObject({
@@ -619,9 +848,10 @@ describe('Coven endpoint discovery', () => {
 
   test('rejects oversized stderr without exposing it', async () => {
     const stderr = `sensitive-stderr${'x'.repeat(65_536)}`;
+    const execFile = execResult('', stderr);
     const error: unknown = await discoverCovenEndpoint({
       env: { PATH: '/safe/bin' },
-      dependencies: { execFile: execResult('', stderr) },
+      dependencies: trustedCommandDependencies(execFile),
     }).catch((caught: unknown) => caught);
 
     expect(error).toMatchObject({
@@ -652,11 +882,10 @@ describe('Coven endpoint discovery', () => {
       code: 'command_failed',
     },
   ])('reports $label without raw process output', async ({ error: commandError, code }) => {
+    const execFile = execResult('secret stdout', 'secret stderr', commandError);
     const error: unknown = await discoverCovenEndpoint({
       env: { PATH: '/safe/bin' },
-      dependencies: {
-        execFile: execResult('secret stdout', 'secret stderr', commandError),
-      },
+      dependencies: trustedCommandDependencies(execFile),
     }).catch((caught: unknown) => caught);
 
     expect(error).toMatchObject({
@@ -672,30 +901,28 @@ describe('Coven endpoint discovery', () => {
   });
 
   test('classifies child-process max-buffer failures as body limits', async () => {
+    const execFile = execResult(
+      '',
+      '',
+      Object.assign(new Error('max buffer'), {
+        code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
+      }),
+    );
     await expect(
       discoverCovenEndpoint({
         env: { PATH: '/safe/bin' },
-        dependencies: {
-          execFile: execResult(
-            '',
-            '',
-            Object.assign(new Error('max buffer'), {
-              code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER',
-            }),
-          ),
-        },
+        dependencies: trustedCommandDependencies(execFile),
       }),
     ).rejects.toMatchObject({ code: 'body_limit' });
   });
 
   test('sanitizes synchronous config command failures', async () => {
+    const execFile: CovenExecFile = () => {
+      throw new Error('private synchronous detail');
+    };
     const error: unknown = await discoverCovenEndpoint({
       env: { PATH: '/safe/bin' },
-      dependencies: {
-        execFile: () => {
-          throw new Error('private synchronous detail');
-        },
-      },
+      dependencies: trustedCommandDependencies(execFile),
     }).catch((caught: unknown) => caught);
 
     expect(error).toMatchObject({ code: 'command_failed' });
@@ -708,9 +935,7 @@ describe('Coven endpoint discovery', () => {
     const request = discoverCovenEndpoint({
       env: { PATH: '/safe/bin' },
       timeoutMs: 10,
-      dependencies: {
-        execFile: () => ({ kill }),
-      },
+      dependencies: trustedCommandDependencies(() => ({ kill })),
     });
     const rejection = request.catch((error: unknown) => error);
 
@@ -743,11 +968,9 @@ describe('Coven endpoint discovery', () => {
     await expect(
       discoverCovenEndpoint({
         env: { PATH: '/safe/bin' },
-        dependencies: {
-          execFile: execResult(JSON.stringify(report)),
-          readFile: () =>
-            Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
-        },
+        dependencies: trustedCommandDependencies(
+          execResult(JSON.stringify(report)),
+        ),
       }),
     ).rejects.toMatchObject({ code: 'unsafe_endpoint' });
   });
@@ -792,104 +1015,308 @@ describe('Coven endpoint discovery', () => {
     },
   ])('rejects daemon metadata with $label', async ({ metadata, code }) => {
     const home = resolve(ownedRoot.rootPath, 'profile');
+    const metadataPath = resolve(home, 'daemon.json');
+    const serialized = JSON.stringify({
+      ...metadata,
+      socket:
+        metadata.socket === 'placeholder'
+          ? resolve(home, 'coven.sock')
+          : metadata.socket,
+    });
+    await expect(
+      discoverCovenEndpoint({
+        env: { COVEN_HOME: home },
+        platform: 'linux',
+        dependencies: metadataDependencies(metadataPath, serialized),
+      }),
+    ).rejects.toMatchObject({ code });
+  });
+
+  test('rejects unsafe and oversized daemon metadata before materializing it', async () => {
+    const home = resolve(ownedRoot.rootPath, 'profile');
+    const metadataPath = resolve(home, 'daemon.json');
     await expect(
       discoverCovenEndpoint({
         env: { COVEN_HOME: home },
         platform: 'linux',
         dependencies: {
           getEffectiveUid: () => 501,
-          readFile: () =>
+          lstat: () =>
+            Promise.resolve(discoveryFileIdentity({ regularFile: false })),
+          openFile: vi.fn(),
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'unsafe_endpoint' });
+
+    const read = vi.fn<CovenMetadataFileHandle['read']>(
+      (buffer, offset, length) => {
+        buffer.fill(0x78, offset, offset + length);
+        return Promise.resolve({ bytesRead: length });
+      },
+    );
+    await expect(
+      discoverCovenEndpoint({
+        env: { COVEN_HOME: home },
+        platform: 'linux',
+        dependencies: metadataDependencies(metadataPath, '{}', {
+          lstat: () =>
             Promise.resolve(
-              JSON.stringify({
-                ...metadata,
-                socket:
-                  metadata.socket === 'placeholder'
-                    ? resolve(home, 'coven.sock')
-                    : metadata.socket,
+              discoveryFileIdentity({
+                mode: 0o100600,
+                size: 16 * 1024 + 1,
               }),
             ),
-        },
-      }),
-    ).rejects.toMatchObject({ code });
-  });
-
-  test('rejects unreadable and oversized daemon metadata safely', async () => {
-    const home = resolve(ownedRoot.rootPath, 'profile');
-    await expect(
-      discoverCovenEndpoint({
-        env: { COVEN_HOME: home },
-        dependencies: {
-          readFile: () =>
-            Promise.reject(Object.assign(new Error('private'), { code: 'EACCES' })),
-        },
-      }),
-    ).rejects.toMatchObject({ code: 'command_failed' });
-
-    await expect(
-      discoverCovenEndpoint({
-        env: { COVEN_HOME: home },
-        dependencies: {
-          readFile: () => Promise.resolve('x'.repeat(16 * 1024 + 1)),
-        },
+          openFile: () => Promise.resolve(memoryMetadataFile('', { read })),
+        }),
       }),
     ).rejects.toMatchObject({ code: 'body_limit' });
+    expect(read).not.toHaveBeenCalled();
   });
 
-  test('discovers the current Windows pipe and process freshness from COVEN_HOME', async () => {
+  test.each([
+    ['symlink', discoveryFileIdentity({ symbolicLink: true })],
+    ['FIFO', discoveryFileIdentity({ regularFile: false, mode: 0o010600 })],
+    ['device', discoveryFileIdentity({ regularFile: false, mode: 0o020600 })],
+    ['unsafe mode', discoveryFileIdentity({ mode: 0o100660 })],
+    ['wrong owner', discoveryFileIdentity({ ownerUid: 502 })],
+  ])('rejects daemon metadata with %s before open', async (_label, identity) => {
+    const home = resolve(ownedRoot.rootPath, 'profile');
+    const openFile = vi.fn();
+
+    await expect(
+      discoverCovenEndpoint({
+        env: { COVEN_HOME: home },
+        platform: 'linux',
+        dependencies: {
+          getEffectiveUid: () => 501,
+          lstat: () => Promise.resolve(identity),
+          openFile,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: identity.ownerUid === 502 ? 'owner_mismatch' : 'unsafe_endpoint',
+      diagnostics: { phase: 'read_metadata' },
+    });
+    expect(openFile).not.toHaveBeenCalled();
+  });
+
+  test('reads at most the daemon metadata limit plus one byte', async () => {
+    const home = resolve(ownedRoot.rootPath, 'profile');
+    const metadataPath = resolve(home, 'daemon.json');
+    const read = vi.fn<CovenMetadataFileHandle['read']>(
+      (buffer, offset, length) => {
+        buffer.fill(0x78, offset, offset + length);
+        return Promise.resolve({ bytesRead: length });
+      },
+    );
+
+    await expect(
+      discoverCovenEndpoint({
+        env: { COVEN_HOME: home },
+        platform: 'linux',
+        dependencies: metadataDependencies(metadataPath, '{}', {
+          lstat: () =>
+            Promise.resolve(
+              discoveryFileIdentity({ mode: 0o100600, size: 0 }),
+            ),
+          openFile: () => Promise.resolve(memoryMetadataFile('', { read })),
+        }),
+      }),
+    ).rejects.toMatchObject({ code: 'body_limit' });
+
+    expect(read).toHaveBeenCalledOnce();
+    expect(read.mock.calls[0]?.[2]).toBe(16 * 1024 + 1);
+  });
+
+  test.each(['lstat', 'open', 'read', 'close'])(
+    'applies the discovery deadline to a stalled metadata %s',
+    async (stage) => {
+      vi.useFakeTimers();
+      const home = resolve(ownedRoot.rootPath, 'profile');
+      const metadataPath = resolve(home, 'daemon.json');
+      const metadata = JSON.stringify({
+        pid: 42,
+        startedAt: '2026-08-21T06:00:00Z',
+        socket: resolve(home, 'coven.sock'),
+      });
+      const never = () => new Promise<never>(() => undefined);
+      const dependencies = metadataDependencies(metadataPath, metadata, {
+        lstat:
+          stage === 'lstat'
+            ? never
+            : () =>
+                Promise.resolve(
+                  discoveryFileIdentity({
+                    mode: 0o100600,
+                    size: Buffer.byteLength(metadata),
+                  }),
+                ),
+        openFile:
+          stage === 'open'
+            ? never
+            : () =>
+                Promise.resolve(
+                  memoryMetadataFile(metadata, {
+                    ...(stage === 'read' ? { read: never } : {}),
+                    ...(stage === 'close' ? { close: never } : {}),
+                  }),
+                ),
+      });
+      const result = discoverCovenEndpoint({
+        env: { COVEN_HOME: home },
+        platform: 'linux',
+        timeoutMs: 10,
+        dependencies,
+      }).catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(10);
+
+      await expect(result).resolves.toMatchObject({
+        code: 'timeout',
+        diagnostics: { phase: 'read_metadata' },
+      });
+    },
+  );
+
+  test('closes a metadata handle that opens after the discovery deadline', async () => {
+    vi.useFakeTimers();
+    const home = resolve(ownedRoot.rootPath, 'profile');
+    const metadataPath = resolve(home, 'daemon.json');
+    const close = vi.fn(() => Promise.resolve());
+    let resolveOpen: ((handle: CovenMetadataFileHandle) => void) | undefined;
+    const openFile = new Promise<CovenMetadataFileHandle>((resolvePromise) => {
+      resolveOpen = resolvePromise;
+    });
+    const open = vi.fn(() => openFile);
+    const result = discoverCovenEndpoint({
+      env: { COVEN_HOME: home },
+      platform: 'linux',
+      timeoutMs: 10,
+      dependencies: metadataDependencies(metadataPath, '{}', {
+        openFile: open,
+      }),
+    }).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(open).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(result).resolves.toMatchObject({ code: 'timeout' });
+
+    resolveOpen?.(memoryMetadataFile('{}', { close }));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  test('uses the selected Windows profile state.daemon_ipc even with COVEN_HOME', async () => {
+    const metadataPath = 'C:\\profiles\\coven\\daemon.json';
+    const report = configPathsReport(
+      '\\\\.\\pipe\\coven-daemon-v2-deadbeef.sock',
+      metadataPath,
+      'C:\\profiles\\coven',
+    );
+    const execFile = execResult(report);
+    const metadata = JSON.stringify({
+      pid: 42,
+      startedAt: '2026-08-21T06:00:00Z',
+      socket: 'coven-daemon-v2-deadbeef.sock',
+      processCreationTime: '100',
+    });
     const endpoint = await discoverCovenEndpoint({
       cwd: 'C:\\workspace',
       env: { COVEN_HOME: 'C:\\profiles\\coven' },
       platform: 'win32',
-      dependencies: {
-        readFile: (path) => {
-          expect(path).toBe('C:\\profiles\\coven\\daemon.json');
-          return Promise.resolve(
-            JSON.stringify({
-              pid: 42,
-              startedAt: '2026-08-21T06:00:00Z',
-              socket: 'coven-daemon-v2-deadbeef.sock',
-              processCreationTime: '100',
-            }),
-          );
-        },
-      },
+      dependencies: windowsDiscoveryDependencies(
+        execFile,
+        metadataPath,
+        metadata,
+      ),
     });
 
     expect(endpoint).toEqual({
       ...windowsEndpoint(),
-      source: 'coven_home',
+      source: 'config_paths',
     });
+    const [file, args, options] = vi.mocked(execFile).mock.calls[0] ?? [];
+    expect(file).toBe(TRUSTED_WINDOWS_COVEN);
+    expect(args).toEqual(['config', 'paths', '--json']);
+    expect(options?.shell).toBe(false);
+    expect(options?.env.COVEN_HOME).toBe('C:\\profiles\\coven');
   });
 
-  test('fails closed when Windows COVEN_HOME has no daemon metadata', async () => {
+  test('rejects copied Windows daemon metadata instead of following its socket', async () => {
+    const metadataPath = 'C:\\profiles\\selected\\daemon.json';
+    const selectedPipe = '\\\\.\\pipe\\coven-daemon-v2-selected.sock';
+    const copiedPipe = 'coven-daemon-v2-other-profile.sock';
+    const execFile = execResult(
+      configPathsReport(
+        selectedPipe,
+        metadataPath,
+        'C:\\profiles\\selected',
+      ),
+    );
+    const metadata = JSON.stringify({
+      pid: 42,
+      startedAt: '2026-08-21T06:00:00Z',
+      socket: copiedPipe,
+      processCreationTime: '100',
+    });
+
     await expect(
       discoverCovenEndpoint({
         cwd: 'C:\\workspace',
-        env: { COVEN_HOME: 'C:\\profiles\\coven' },
+        env: { COVEN_HOME: 'C:\\profiles\\selected' },
         platform: 'win32',
-        dependencies: {
-          readFile: () =>
-            Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
-        },
+        dependencies: windowsDiscoveryDependencies(
+          execFile,
+          metadataPath,
+          metadata,
+        ),
       }),
-    ).rejects.toMatchObject({ code: 'not_found' });
+    ).rejects.toMatchObject({ code: 'unsafe_endpoint' });
+    expect(execFile).toHaveBeenCalledOnce();
+  });
+
+  test('rejects a Windows config-path report for a different profile', async () => {
+    const metadataPath = 'C:\\profiles\\other\\daemon.json';
+    const execFile = execResult(
+      configPathsReport(
+        '\\\\.\\pipe\\coven-daemon-v2-other.sock',
+        metadataPath,
+        'C:\\profiles\\other',
+      ),
+    );
+
+    await expect(
+      discoverCovenEndpoint({
+        cwd: 'C:\\workspace',
+        env: { COVEN_HOME: 'C:\\profiles\\selected' },
+        platform: 'win32',
+        dependencies: windowsDiscoveryDependencies(
+          execFile,
+          metadataPath,
+          '{}',
+        ),
+      }),
+    ).rejects.toMatchObject({
+      code: 'unsafe_endpoint',
+      diagnostics: { phase: 'validate_endpoint' },
+    });
   });
 
   test('rejects daemon metadata that points at another profile endpoint', async () => {
     const home = resolve(ownedRoot.rootPath, 'profile');
+    const metadataPath = resolve(home, 'daemon.json');
+    const metadata = JSON.stringify({
+      pid: 42,
+      startedAt: '2026-08-21T06:00:00Z',
+      socket: resolve(ownedRoot.rootPath, 'other.sock'),
+    });
     await expect(
       discoverCovenEndpoint({
         env: { COVEN_HOME: home },
-        dependencies: {
-          readFile: () =>
-            Promise.resolve(
-              JSON.stringify({
-                pid: 42,
-                startedAt: '2026-08-21T06:00:00Z',
-                socket: resolve(ownedRoot.rootPath, 'other.sock'),
-              }),
-            ),
-        },
+        platform: 'linux',
+        dependencies: metadataDependencies(metadataPath, metadata),
       }),
     ).rejects.toMatchObject({ code: 'unsafe_endpoint' });
   });
@@ -1004,35 +1431,66 @@ describe('Unix owner-local health transport', () => {
     expect(socket.destroyed).toBe(true);
   });
 
-  test('rejects replacement-connect-restore attacks using connected peer identity', async () => {
-    const original = unixIdentity();
-    const replacement = unixIdentity({ inode: 12 });
-    let currentPathIdentity = original;
-    const socket = connectedSocket(httpResponse(HEALTH_BODY));
+  test('validates uid-only peer credentials before revalidating the pathname', async () => {
+    const validationOrder: string[] = [];
+    let inspections = 0;
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect: () => connectedSocket(httpResponse(HEALTH_BODY)),
+          getEffectiveUid: () => 501,
+          lstat: () => {
+            inspections += 1;
+            validationOrder.push(`lstat-${inspections}`);
+            return Promise.resolve(unixIdentity());
+          },
+        },
+        peerIdentity: {
+          inspectConnected: () => {
+            validationOrder.push('peer');
+            return Promise.resolve({ uid: 501 });
+          },
+        },
+      },
+    );
+
+    await expect(transport.health()).resolves.toMatchObject({ ok: true });
+    expect(validationOrder).toEqual(['lstat-1', 'peer', 'lstat-2']);
+  });
+
+  test.each([
+    ['device', unixIdentity({ device: 8 })],
+    ['inode', unixIdentity({ inode: 12 })],
+    ['owner', unixIdentity({ ownerUid: 0 })],
+    ['mode', unixIdentity({ mode: 0o140400 })],
+    ['socket type', unixIdentity({ socket: false })],
+  ])('rejects a post-connect pathname %s change', async (_label, confirmed) => {
+    let inspection = 0;
+    const socket = new FakeSocket();
     const transport = createCovenUnixTransport(
       unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
-            currentPathIdentity = replacement;
             queueMicrotask(() => {
-              currentPathIdentity = original;
               socket.emit('connect');
             });
             return socket;
           },
           getEffectiveUid: () => 501,
-          lstat: () => Promise.resolve(currentPathIdentity),
-        },
-        peerIdentity: {
-          inspectConnected: () =>
-            Promise.resolve(unixPeerIdentity({ inode: replacement.inode })),
+          lstat: () => {
+            inspection += 1;
+            return Promise.resolve(
+              inspection === 1 ? unixIdentity() : confirmed,
+            );
+          },
         },
       },
     );
 
     await expect(transport.health()).rejects.toMatchObject({
-      code: 'unsafe_endpoint',
+      code: confirmed.ownerUid === 0 ? 'owner_mismatch' : 'unsafe_endpoint',
       diagnostics: { phase: 'revalidate_endpoint' },
     });
     expect(socket.writes).toEqual([]);
@@ -1063,7 +1521,7 @@ describe('Unix owner-local health transport', () => {
         peerIdentity: {
           inspectConnected: (connected) => {
             expect(connected).toBe(socket);
-            return Promise.resolve(unixPeerIdentity({ ownerUid: 502 }));
+            return Promise.resolve(unixPeerIdentity({ uid: 502 }));
           },
         },
       },
@@ -1275,6 +1733,62 @@ describe('Unix owner-local health transport', () => {
     await expect(transport.health()).rejects.toMatchObject({
       code: 'invalid_response',
     });
+  });
+
+  test.each([
+    {
+      error: {
+        code: 'daemon.busy',
+        message: 'Busy',
+        status: 503,
+        requestId: 'safe-additive-field',
+      },
+      expected: {
+        code: 'daemon.busy',
+        message: 'Busy',
+        status: 503,
+      },
+    },
+    {
+      error: {
+        code: 'daemon.busy',
+        message: 'Busy',
+        status: 503,
+        details: { state: 'starting' },
+        documentation: 'https://example.invalid/errors/daemon.busy',
+      },
+      expected: {
+        code: 'daemon.busy',
+        message: 'Busy',
+        status: 503,
+        details: { state: 'starting' },
+      },
+    },
+  ])('accepts safe additive daemon error fields and optional details', async ({
+    error,
+    expected,
+  }) => {
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect: () =>
+            connectedSocket(httpResponse(JSON.stringify({ error }), 503)),
+          getEffectiveUid: () => 501,
+          lstat: () => Promise.resolve(unixIdentity()),
+        },
+      },
+    );
+
+    const failure: unknown = await transport.health().catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      code: 'daemon.busy',
+      statusCode: 503,
+    });
+    if (!(failure instanceof CovenDaemonResponseError)) {
+      throw new TypeError('Expected CovenDaemonResponseError.');
+    }
+    expect(failure.daemon).toEqual(expected);
   });
 
   test.each([
@@ -1570,6 +2084,59 @@ describe('Unix owner-local health transport', () => {
     expect(socket.destroyed).toBe(true);
   });
 
+  test('does not resolve unsolicited response data before peer validation', async () => {
+    const socket = new FakeSocket();
+    let resolvePeer: ((identity: TestUnixPeerIdentity) => void) | undefined;
+    const peer = new Promise<TestUnixPeerIdentity>((resolvePromise) => {
+      resolvePeer = resolvePromise;
+    });
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect: () => {
+            queueMicrotask(() => {
+              socket.emit('connect');
+              socket.emit('data', httpResponse(HEALTH_BODY));
+            });
+            return socket;
+          },
+          getEffectiveUid: () => 501,
+          lstat: () => Promise.resolve(unixIdentity()),
+        },
+        peerIdentity: {
+          inspectConnected: () => peer,
+        },
+      },
+    );
+    let settled = false;
+    const result = transport.health().then(
+      (value) => {
+        settled = true;
+        return value;
+      },
+      (error: unknown) => {
+        settled = true;
+        throw error;
+      },
+    );
+
+    await new Promise((resolvePromise) => setImmediate(resolvePromise));
+
+    expect(settled).toBe(false);
+    expect(socket.paused).toBe(true);
+    expect(socket.writes).toEqual([]);
+
+    resolvePeer?.({ uid: 502 });
+
+    await expect(result).rejects.toMatchObject({
+      code: 'owner_mismatch',
+      diagnostics: { phase: 'revalidate_endpoint' },
+    });
+    expect(socket.writes).toEqual([]);
+    expect(socket.destroyed).toBe(true);
+  });
+
   test('rejects invalid UTF-8 response bodies', async () => {
     const body = Buffer.from([0xff]);
     const response = Buffer.concat([
@@ -1654,11 +2221,7 @@ describe('Unix owner-local health transport', () => {
     async () => {
       const shortRoot = createOwnedTempDirectory({ prefix: 'c' });
       const socketPath = resolve(shortRoot.rootPath, 's');
-      let clientSocket: Socket | undefined;
-      const peerIdentityBySocket = new WeakMap<
-        Socket,
-        TestUnixPeerIdentity
-      >();
+      let clientSocket: CovenConnectedSocket | undefined;
       const server = createServer((socket) => {
         socket.once('data', () => {
           socket.end(httpResponse(HEALTH_BODY));
@@ -1674,8 +2237,6 @@ describe('Unix owner-local health transport', () => {
         if (uid === undefined) {
           throw new Error('Expected effective UID on Unix.');
         }
-        const endpointIdentity = unixIdentity({ ownerUid: uid });
-        const connectedIdentity = unixPeerIdentity({ ownerUid: uid });
         const transport = createCovenUnixTransport({
           version: 1,
           protocol: COVEN_DAEMON_PROTOCOL,
@@ -1683,30 +2244,18 @@ describe('Unix owner-local health transport', () => {
           endpoint: { kind: 'unix', path: socketPath },
           owner: { kind: 'unix', uid },
         }, {
-          dependencies: {
-            connect(path) {
-              clientSocket = createConnection({ path });
-              peerIdentityBySocket.set(clientSocket, connectedIdentity);
-              return clientSocket;
-            },
-            getEffectiveUid: () => uid,
-            lstat: () => Promise.resolve(endpointIdentity),
-          },
           peerIdentity: {
             inspectConnected(socket) {
-              expect(socket).toBe(clientSocket);
+              clientSocket = socket;
               expect(socket.connecting).toBe(false);
               expect(socket.destroyed).toBe(false);
-              const identity = peerIdentityBySocket.get(socket as Socket);
-              if (identity === undefined) {
-                throw new Error('Missing native peer credentials.');
-              }
-              return Promise.resolve(identity);
+              return Promise.resolve({ uid });
             },
           },
         });
 
         await expect(transport.health()).resolves.toEqual(JSON.parse(HEALTH_BODY));
+        expect(clientSocket).toBeDefined();
       } finally {
         await new Promise<void>((resolvePromise) => {
           server.close(() => {
@@ -2176,12 +2725,10 @@ describe('structured client behavior', () => {
       discovery: {
         env: { PATH: '/safe/bin' },
         platform: 'linux',
-        dependencies: {
-          execFile: execResult(configPathsReport(socketPath, metadataPath)),
-          getEffectiveUid: () => 501,
-          readFile: () =>
-            Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
-        },
+        dependencies: trustedCommandDependencies(
+          execResult(configPathsReport(socketPath, metadataPath)),
+          { getEffectiveUid: () => 501 },
+        ),
       },
       unix: {
         dependencies: {
@@ -2209,17 +2756,15 @@ describe('structured client behavior', () => {
         discovery: {
           env: { PATH: '/safe/bin' },
           platform: 'linux',
-          dependencies: {
-            execFile: execResult(
+          dependencies: trustedCommandDependencies(
+            execResult(
               configPathsReport(
                 resolve(ownedRoot.rootPath, 'coven.sock'),
                 resolve(ownedRoot.rootPath, 'daemon.json'),
               ),
             ),
-            getEffectiveUid: () => 501,
-            readFile: () =>
-              Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
-          },
+            { getEffectiveUid: () => 501 },
+          ),
         },
       }),
     ).rejects.toMatchObject({
@@ -2266,6 +2811,40 @@ describe('structured client behavior', () => {
         details: { state: 'stale' },
       },
     });
+  });
+
+  test('does not invoke getters while inspecting branded transport errors', async () => {
+    let getterCalls = 0;
+    const transportError = new Error('hostile branded transport error');
+    Object.defineProperty(
+      transportError,
+      Symbol.for('@opencoven/coven-client/CovenDaemonResponseError'),
+      { value: true },
+    );
+    Object.defineProperty(transportError, 'daemon', {
+      get() {
+        getterCalls += 1;
+        throw new Error('getter escaped');
+      },
+    });
+    Object.defineProperty(transportError, 'code', {
+      get() {
+        getterCalls += 1;
+        throw new Error('code getter escaped');
+      },
+    });
+    const client = new CovenClient({
+      transport: {
+        health: () => Promise.reject(transportError),
+      },
+    });
+
+    const error: unknown = await client.health().catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(CovenClientError);
+    expect(error).toMatchObject({ code: 'unknown', daemon: undefined });
+    expect(String(error)).not.toContain('getter escaped');
+    expect(getterCalls).toBe(0);
   });
 
   test('rejects a health response with the wrong daemon protocol', async () => {

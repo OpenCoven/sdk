@@ -21,15 +21,19 @@ export {
 } from './discovery.js';
 export type {
   CovenDiscoveredEndpoint,
+  CovenDiscoveryFileIdentity,
   CovenDiscoveryDependencies,
   CovenDiscoverySource,
   CovenEndpointFreshness,
   CovenEndpointOwner,
+  CovenExecutableResolver,
   CovenExecFile,
   CovenExecFileError,
   CovenExecFileOptions,
   CovenIpcDiagnostics,
   CovenIpcErrorCode,
+  CovenMetadataFileHandle,
+  CovenWindowsFileTrustValidator,
   DiscoverCovenEndpointOptions,
 } from './discovery.js';
 export { COVEN_DAEMON_PROTOCOL } from './schemas.js';

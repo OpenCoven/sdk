@@ -30,7 +30,7 @@ const windowsEndpoint: CovenDiscoveredEndpoint = {
 const peerIdentity: CovenUnixPeerIdentityAdapter = {
   inspectConnected: (socket) => {
     void socket.destroyed;
-    return Promise.resolve({ device: 7, inode: 11, ownerUid: 501 });
+    return Promise.resolve({ uid: 501, gid: 20, pid: 42 });
   },
 };
 

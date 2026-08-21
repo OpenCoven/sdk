@@ -1,5 +1,9 @@
 import { execFile as nodeExecFile } from 'node:child_process';
-import { readFile as nodeReadFile } from 'node:fs/promises';
+import {
+  lstat as nodeLstat,
+  open as nodeOpen,
+  realpath as nodeRealpath,
+} from 'node:fs/promises';
 import { posix, win32 } from 'node:path';
 
 import {
@@ -19,6 +23,7 @@ const MAX_DAEMON_STATUS_BYTES = 16 * 1024;
 const COVEN_COMMAND_ARGS = ['config', 'paths', '--json'] as const;
 const SAFE_ENVIRONMENT_KEYS = [
   'ComSpec',
+  'COVEN_HOME',
   'HOMEDRIVE',
   'HOMEPATH',
   'HOME',
@@ -98,7 +103,13 @@ export function isCovenIpcError(error: unknown): error is CovenIpcError {
   }
 
   try {
-    return Reflect.get(error, COVEN_IPC_ERROR_BRAND) === true;
+    const descriptor = Object.getOwnPropertyDescriptor(
+      error,
+      COVEN_IPC_ERROR_BRAND,
+    );
+    return descriptor !== undefined &&
+      Object.hasOwn(descriptor, 'value') &&
+      descriptor.value === true;
   } catch {
     return false;
   }
@@ -136,10 +147,43 @@ export type CovenExecFile = (
   ) => void,
 ) => CovenExecFileChild | void;
 
+export interface CovenDiscoveryFileIdentity {
+  device: number;
+  inode: number;
+  mode: number;
+  ownerUid: number;
+  regularFile: boolean;
+  size: number;
+  symbolicLink: boolean;
+}
+
+export interface CovenMetadataFileHandle {
+  read(
+    buffer: Uint8Array,
+    offset: number,
+    length: number,
+    position: number | null,
+  ): Promise<{ bytesRead: number }>;
+  close(): Promise<void>;
+}
+
+export type CovenExecutableResolver = () => string | Promise<string>;
+
+export interface CovenWindowsFileTrustValidator {
+  validate(
+    path: string,
+    purpose: 'executable' | 'metadata',
+  ): Promise<boolean>;
+}
+
 export interface CovenDiscoveryDependencies {
   execFile?: CovenExecFile;
   getEffectiveUid?: () => number | undefined;
-  readFile?: (path: string, encoding: 'utf8') => Promise<string>;
+  lstat?: (path: string) => Promise<CovenDiscoveryFileIdentity>;
+  openFile?: (path: string) => Promise<CovenMetadataFileHandle>;
+  realpath?: (path: string) => Promise<string>;
+  resolveExecutable?: CovenExecutableResolver;
+  windowsFileTrust?: CovenWindowsFileTrustValidator;
 }
 
 export interface DiscoverCovenEndpointOptions {
@@ -401,36 +445,337 @@ function discoveredEndpoint(
 }
 
 function isNotFound(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    Reflect.get(error, 'code') === 'ENOENT'
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(error, 'code');
+    return descriptor !== undefined &&
+      Object.hasOwn(descriptor, 'value') &&
+      descriptor.value === 'ENOENT';
+  } catch {
+    return false;
+  }
+}
+
+interface DiscoveryDeadline {
+  readonly expiresAt: number;
+}
+
+interface DiscoveryFileDependencies {
+  getEffectiveUid: () => number | undefined;
+  lstat: (path: string) => Promise<CovenDiscoveryFileIdentity>;
+  openFile: (path: string) => Promise<CovenMetadataFileHandle>;
+  platform: NodeJS.Platform;
+  windowsFileTrust: CovenWindowsFileTrustValidator | undefined;
+}
+
+function discoveryTimeout(
+  phase: CovenIpcDiagnostics['phase'],
+): CovenIpcError {
+  return new CovenIpcError(
+    'timeout',
+    'Coven discovery timed out.',
+    { phase },
   );
+}
+
+function remainingDiscoveryTime(deadline: DiscoveryDeadline): number {
+  return Math.max(0, deadline.expiresAt - performance.now());
+}
+
+function awaitDiscoveryStep<T>(
+  operation: () => T | Promise<T>,
+  deadline: DiscoveryDeadline,
+  phase: CovenIpcDiagnostics['phase'],
+  onLateResolve?: (value: T) => void | Promise<void>,
+): Promise<T> {
+  const pending = Promise.resolve().then(operation);
+  return new Promise((resolvePromise, reject) => {
+    let settled = false;
+    const timeout: { timer?: ReturnType<typeof setTimeout> } = {};
+    const finish = (action: () => void): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeout.timer !== undefined) {
+        clearTimeout(timeout.timer);
+      }
+      action();
+    };
+
+    pending.then(
+      (value) => {
+        if (settled) {
+          if (onLateResolve !== undefined) {
+            void Promise.resolve()
+              .then(() => onLateResolve(value))
+              .catch(() => undefined);
+          }
+          return;
+        }
+        finish(() => {
+          resolvePromise(value);
+        });
+      },
+      (error: unknown) => {
+        finish(() => {
+          reject(
+            isCovenIpcError(error)
+              ? error
+              : new CovenIpcError(
+                  'command_failed',
+                  phase === 'read_metadata'
+                    ? 'Coven daemon metadata operation failed.'
+                    : 'Coven executable validation failed.',
+                  { phase },
+                ),
+          );
+        });
+      },
+    );
+
+    const remainingMs = remainingDiscoveryTime(deadline);
+    if (remainingMs <= 0) {
+      finish(() => {
+        reject(discoveryTimeout(phase));
+      });
+      return;
+    }
+    timeout.timer = setTimeout(() => {
+      finish(() => {
+        reject(discoveryTimeout(phase));
+      });
+    }, remainingMs);
+  });
+}
+
+function validateSafeFileIdentity(
+  identity: CovenDiscoveryFileIdentity,
+  options: {
+    expectedUid: number | undefined;
+    phase: 'config_command' | 'read_metadata';
+    requireExecutable: boolean;
+  },
+): void {
+  if (
+    !Number.isSafeInteger(identity.device) ||
+    identity.device < 0 ||
+    !Number.isSafeInteger(identity.inode) ||
+    identity.inode <= 0 ||
+    !Number.isSafeInteger(identity.mode) ||
+    identity.mode < 0 ||
+    !Number.isSafeInteger(identity.ownerUid) ||
+    identity.ownerUid < 0 ||
+    !Number.isSafeInteger(identity.size) ||
+    identity.size < 0 ||
+    identity.symbolicLink ||
+    !identity.regularFile ||
+    (options.requireExecutable && (identity.mode & 0o111) === 0) ||
+    (identity.mode & 0o022) !== 0
+  ) {
+    return fail(
+      'unsafe_endpoint',
+      options.requireExecutable
+        ? 'The Coven executable was not a trusted regular executable.'
+        : 'Coven daemon metadata was not an owner-safe regular file.',
+      { phase: options.phase },
+    );
+  }
+  if (
+    options.expectedUid === undefined ||
+    (identity.ownerUid !== options.expectedUid && identity.ownerUid !== 0)
+  ) {
+    return fail(
+      'owner_mismatch',
+      options.requireExecutable
+        ? 'The Coven executable owner was not trusted.'
+        : 'Coven daemon metadata owner was not trusted.',
+      { phase: options.phase },
+    );
+  }
+}
+
+async function validateWindowsFile(
+  path: string,
+  purpose: 'executable' | 'metadata',
+  validator: CovenWindowsFileTrustValidator | undefined,
+  deadline: DiscoveryDeadline,
+  phase: 'config_command' | 'read_metadata',
+): Promise<void> {
+  if (validator === undefined || typeof validator.validate !== 'function') {
+    return fail(
+      'unsafe_endpoint',
+      'Windows file trust validation is required.',
+      { phase },
+    );
+  }
+  const trusted = await awaitDiscoveryStep(
+    () => validator.validate(path, purpose),
+    deadline,
+    phase,
+  );
+  if (trusted !== true) {
+    return fail(
+      'owner_mismatch',
+      'Windows file ownership or trust validation failed.',
+      { phase },
+    );
+  }
+}
+
+function decodeMetadata(bytes: Buffer): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return fail(
+      'malformed_config',
+      'Coven daemon metadata was not UTF-8.',
+      { phase: 'parse_config' },
+    );
+  }
 }
 
 async function readOptionalDaemonStatus(
   path: string,
-  readFile: (path: string, encoding: 'utf8') => Promise<string>,
+  dependencies: DiscoveryFileDependencies,
+  deadline: DiscoveryDeadline,
 ): Promise<DaemonStatus | undefined> {
-  let serialized: string;
-  try {
-    serialized = await readFile(path, 'utf8');
-  } catch (error) {
-    if (isNotFound(error)) {
-      return undefined;
+  const identity = await awaitDiscoveryStep(
+    async () => {
+      try {
+        return await dependencies.lstat(path);
+      } catch (error) {
+        if (isNotFound(error)) {
+          return undefined;
+        }
+        throw error;
+      }
+    },
+    deadline,
+    'read_metadata',
+  );
+  if (identity === undefined) {
+    return undefined;
+  }
+
+  if (dependencies.platform === 'win32') {
+    if (
+      identity.symbolicLink ||
+      !identity.regularFile ||
+      !Number.isSafeInteger(identity.size) ||
+      identity.size < 0
+    ) {
+      return fail(
+        'unsafe_endpoint',
+        'Coven daemon metadata was not an owner-safe regular file.',
+        { phase: 'read_metadata' },
+      );
     }
-    return fail('command_failed', 'Coven daemon metadata could not be read.', {
+    await validateWindowsFile(
+      path,
+      'metadata',
+      dependencies.windowsFileTrust,
+      deadline,
+      'read_metadata',
+    );
+  } else {
+    validateSafeFileIdentity(identity, {
+      expectedUid: dependencies.getEffectiveUid(),
       phase: 'read_metadata',
+      requireExecutable: false,
     });
   }
 
-  if (safeByteLength(serialized) > MAX_DAEMON_STATUS_BYTES) {
+  if (identity.size > MAX_DAEMON_STATUS_BYTES) {
     return fail('body_limit', 'Coven daemon metadata exceeded its size limit.', {
       phase: 'read_metadata',
       limitBytes: MAX_DAEMON_STATUS_BYTES,
     });
   }
 
+  const handle = await awaitDiscoveryStep(
+    () => dependencies.openFile(path),
+    deadline,
+    'read_metadata',
+    (lateHandle) => lateHandle.close(),
+  );
+  let serialized: string | undefined;
+  let primaryError: CovenIpcError | undefined;
+  try {
+    const buffer = Buffer.alloc(MAX_DAEMON_STATUS_BYTES + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const { bytesRead } = await awaitDiscoveryStep(
+        () => handle.read(buffer, offset, buffer.length - offset, null),
+        deadline,
+        'read_metadata',
+      );
+      if (
+        !Number.isSafeInteger(bytesRead) ||
+        bytesRead < 0 ||
+        bytesRead > buffer.length - offset
+      ) {
+        return fail(
+          'command_failed',
+          'Coven daemon metadata could not be read safely.',
+          { phase: 'read_metadata' },
+        );
+      }
+      if (bytesRead === 0) {
+        break;
+      }
+      offset += bytesRead;
+    }
+    if (offset > MAX_DAEMON_STATUS_BYTES) {
+      return fail(
+        'body_limit',
+        'Coven daemon metadata exceeded its size limit.',
+        {
+          phase: 'read_metadata',
+          limitBytes: MAX_DAEMON_STATUS_BYTES,
+        },
+      );
+    }
+    serialized = decodeMetadata(buffer.subarray(0, offset));
+  } catch (error) {
+    primaryError = isCovenIpcError(error)
+      ? error
+      : new CovenIpcError(
+          'command_failed',
+          'Coven daemon metadata could not be read safely.',
+          { phase: 'read_metadata' },
+        );
+  }
+
+  try {
+    await awaitDiscoveryStep(
+      () => handle.close(),
+      deadline,
+      'read_metadata',
+    );
+  } catch (error) {
+    if (primaryError === undefined) {
+      throw isCovenIpcError(error)
+        ? error
+        : new CovenIpcError(
+            'command_failed',
+            'Coven daemon metadata could not be closed safely.',
+            { phase: 'read_metadata' },
+          );
+    }
+  }
+  if (primaryError !== undefined) {
+    throw primaryError;
+  }
+  if (serialized === undefined) {
+    return fail(
+      'command_failed',
+      'Coven daemon metadata could not be read safely.',
+      { phase: 'read_metadata' },
+    );
+  }
   return parseDaemonStatus(serialized);
 }
 
@@ -440,34 +785,19 @@ function pathApi(platform: NodeJS.Platform): typeof posix {
 
 async function discoverFromHome(
   homeValue: string,
-  options: Required<
-    Pick<DiscoverCovenEndpointOptions, 'cwd' | 'platform'>
-  > & {
-    getEffectiveUid: () => number | undefined;
-    readFile: (path: string, encoding: 'utf8') => Promise<string>;
-  },
+  options: Required<Pick<DiscoverCovenEndpointOptions, 'cwd' | 'platform'>> &
+    DiscoveryFileDependencies & {
+      deadline: DiscoveryDeadline;
+    },
 ): Promise<CovenDiscoveredEndpoint> {
   const paths = pathApi(options.platform);
   const home = paths.resolve(options.cwd, homeValue);
   const metadataPath = paths.join(home, 'daemon.json');
-  const status = await readOptionalDaemonStatus(metadataPath, options.readFile);
-
-  if (options.platform === 'win32') {
-    if (status === undefined) {
-      return fail(
-        'not_found',
-        'Coven daemon metadata was not found for the selected profile.',
-        { phase: 'read_metadata' },
-      );
-    }
-    return discoveredEndpoint(
-      statusEndpoint(status, options.platform),
-      'coven_home',
-      options.platform,
-      options.getEffectiveUid,
-      status,
-    );
-  }
+  const status = await readOptionalDaemonStatus(
+    metadataPath,
+    options,
+    options.deadline,
+  );
 
   const endpoint = endpointFromPath(paths.join(home, 'coven.sock'), options.platform);
   if (status !== undefined && !sameEndpoint(endpoint, statusEndpoint(status, options.platform))) {
@@ -513,7 +843,95 @@ function outputDiagnostics(
   };
 }
 
+async function resolveTrustedExecutable(
+  options: {
+    deadline: DiscoveryDeadline;
+    getEffectiveUid: () => number | undefined;
+    lstat: (path: string) => Promise<CovenDiscoveryFileIdentity>;
+    platform: NodeJS.Platform;
+    realpath: (path: string) => Promise<string>;
+    resolveExecutable: CovenExecutableResolver | undefined;
+    windowsFileTrust: CovenWindowsFileTrustValidator | undefined;
+  },
+): Promise<string> {
+  if (typeof options.resolveExecutable !== 'function') {
+    return fail(
+      'unsafe_endpoint',
+      'A trusted Coven executable resolver is required.',
+      { phase: 'config_command' },
+    );
+  }
+  const executable = await awaitDiscoveryStep(
+    () => options.resolveExecutable?.(),
+    options.deadline,
+    'config_command',
+  );
+  if (typeof executable !== 'string' || executable.length === 0) {
+    return fail(
+      'unsafe_endpoint',
+      'The Coven executable resolver returned an unsafe path.',
+      { phase: 'config_command' },
+    );
+  }
+  const paths = pathApi(options.platform);
+  const expectedName = options.platform === 'win32' ? 'coven.exe' : 'coven';
+  if (
+    !paths.isAbsolute(executable) ||
+    (options.platform === 'win32'
+      ? paths.basename(executable).toLowerCase() !== expectedName
+      : paths.basename(executable) !== expectedName) ||
+    paths.normalize(executable) !== executable
+  ) {
+    return fail(
+      'unsafe_endpoint',
+      'The Coven executable resolver returned an unsafe path.',
+      { phase: 'config_command' },
+    );
+  }
+  const canonical = await awaitDiscoveryStep(
+    () => options.realpath(executable),
+    options.deadline,
+    'config_command',
+  );
+  if (canonical !== executable) {
+    return fail(
+      'unsafe_endpoint',
+      'The Coven executable path was not canonical.',
+      { phase: 'config_command' },
+    );
+  }
+  const identity = await awaitDiscoveryStep(
+    () => options.lstat(canonical),
+    options.deadline,
+    'config_command',
+  );
+  if (options.platform === 'win32') {
+    if (identity.symbolicLink || !identity.regularFile) {
+      return fail(
+        'unsafe_endpoint',
+        'The Coven executable was not a trusted regular executable.',
+        { phase: 'config_command' },
+      );
+    }
+    await validateWindowsFile(
+      canonical,
+      'executable',
+      options.windowsFileTrust,
+      options.deadline,
+      'config_command',
+    );
+  } else {
+    validateSafeFileIdentity(identity, {
+      expectedUid: options.getEffectiveUid(),
+      phase: 'config_command',
+      requireExecutable: true,
+    });
+  }
+  return canonical;
+}
+
 function executeConfigPaths(
+  executable: string,
   cwd: string,
   execFile: CovenExecFile,
   environment: Readonly<NodeJS.ProcessEnv>,
@@ -613,7 +1031,7 @@ function executeConfigPaths(
 
     try {
       child = execFile(
-        'coven',
+        executable,
         COVEN_COMMAND_ARGS,
         {
           cwd,
@@ -641,7 +1059,7 @@ function executeConfigPaths(
               { phase: 'config_command' },
             ),
           );
-        }, timeoutMs + 25);
+        }, timeoutMs);
       }
     } catch {
       rejectOnce(
@@ -797,21 +1215,37 @@ function resolvedSurfacePath(
 async function discoverFromCommand(
   options: {
     cwd: string;
+    deadline: DiscoveryDeadline;
     environment: Readonly<NodeJS.ProcessEnv>;
     execFile: CovenExecFile;
     getEffectiveUid: () => number | undefined;
+    lstat: (path: string) => Promise<CovenDiscoveryFileIdentity>;
     maxOutputBytes: number;
+    openFile: (path: string) => Promise<CovenMetadataFileHandle>;
     platform: NodeJS.Platform;
-    readFile: (path: string, encoding: 'utf8') => Promise<string>;
+    realpath: (path: string) => Promise<string>;
+    resolveExecutable: CovenExecutableResolver | undefined;
     timeoutMs: number;
+    windowsFileTrust: CovenWindowsFileTrustValidator | undefined;
   },
 ): Promise<CovenDiscoveredEndpoint> {
-  const serialized = await executeConfigPaths(
-    options.cwd,
-    options.execFile,
-    options.environment,
-    options.timeoutMs,
-    options.maxOutputBytes,
+  const executable = await resolveTrustedExecutable(options);
+  const commandTimeoutMs = Math.max(
+    1,
+    Math.min(options.timeoutMs, remainingDiscoveryTime(options.deadline)),
+  );
+  const serialized = await awaitDiscoveryStep(
+    () =>
+      executeConfigPaths(
+        executable,
+        options.cwd,
+        options.execFile,
+        options.environment,
+        commandTimeoutMs,
+        options.maxOutputBytes,
+      ),
+    options.deadline,
+    'config_command',
   );
   const surfaces = parseConfigPaths(serialized);
   const homePath = resolvedSurfacePath(surfaces, 'coven.home', true);
@@ -831,6 +1265,9 @@ async function discoverFromCommand(
   if (
     !paths.isAbsolute(homePath) ||
     paths.normalize(homePath) !== homePath ||
+    (options.environment.COVEN_HOME !== undefined &&
+      options.environment.COVEN_HOME.length > 0 &&
+      homePath !== paths.resolve(options.cwd, options.environment.COVEN_HOME)) ||
     (options.platform !== 'win32' &&
       endpointPath !== paths.join(homePath, 'coven.sock')) ||
     (metadataPath !== undefined &&
@@ -845,7 +1282,11 @@ async function discoverFromCommand(
   const status =
     metadataPath === undefined
       ? undefined
-      : await readOptionalDaemonStatus(metadataPath, options.readFile);
+      : await readOptionalDaemonStatus(
+          metadataPath,
+          options,
+          options.deadline,
+        );
 
   if (status !== undefined && !sameEndpoint(endpoint, statusEndpoint(status, options.platform))) {
     return fail(
@@ -866,6 +1307,25 @@ async function discoverFromCommand(
 
 const defaultExecFile = nodeExecFile as unknown as CovenExecFile;
 
+async function defaultDiscoveryLstat(
+  path: string,
+): Promise<CovenDiscoveryFileIdentity> {
+  const stats = await nodeLstat(path);
+  return {
+    device: stats.dev,
+    inode: stats.ino,
+    mode: stats.mode,
+    ownerUid: stats.uid,
+    regularFile: stats.isFile(),
+    size: stats.size,
+    symbolicLink: stats.isSymbolicLink(),
+  };
+}
+
+async function defaultOpenFile(path: string): Promise<CovenMetadataFileHandle> {
+  return nodeOpen(path, 'r');
+}
+
 export async function discoverCovenEndpoint(
   options: DiscoverCovenEndpointOptions = {},
 ): Promise<CovenDiscoveredEndpoint> {
@@ -875,29 +1335,48 @@ export async function discoverCovenEndpoint(
   const timeoutMs = options.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
   const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   const execFile = options.dependencies?.execFile ?? defaultExecFile;
-  const readFile = options.dependencies?.readFile ?? nodeReadFile;
+  const lstat = options.dependencies?.lstat ?? defaultDiscoveryLstat;
+  const openFile = options.dependencies?.openFile ?? defaultOpenFile;
+  const realpath = options.dependencies?.realpath ?? nodeRealpath;
+  const resolveExecutable = options.dependencies?.resolveExecutable;
+  const windowsFileTrust = options.dependencies?.windowsFileTrust;
   const getEffectiveUid =
     options.dependencies?.getEffectiveUid ??
     (() => process.geteuid?.());
   const covenHome = environment.COVEN_HOME;
+  const deadline: DiscoveryDeadline = {
+    expiresAt: performance.now() + timeoutMs,
+  };
 
-  if (covenHome !== undefined && covenHome.length > 0) {
+  if (
+    platform !== 'win32' &&
+    covenHome !== undefined &&
+    covenHome.length > 0
+  ) {
     return discoverFromHome(covenHome, {
       cwd,
+      deadline,
       platform,
       getEffectiveUid,
-      readFile,
+      lstat,
+      openFile,
+      windowsFileTrust,
     });
   }
 
   return discoverFromCommand({
     cwd,
+    deadline,
     environment,
     execFile,
     getEffectiveUid,
+    lstat,
     maxOutputBytes,
+    openFile,
     platform,
-    readFile,
+    realpath,
+    resolveExecutable,
     timeoutMs,
+    windowsFileTrust,
   });
 }

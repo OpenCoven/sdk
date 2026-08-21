@@ -42,6 +42,8 @@ export interface CovenSocket {
   write(data: Uint8Array | string): boolean;
   end(): this;
   destroy(): this;
+  pause(): this;
+  resume(): this;
 }
 
 export interface CovenConnectedSocket extends CovenSocket {
@@ -61,9 +63,9 @@ export interface CovenUnixFileIdentity {
 }
 
 export interface CovenUnixPeerIdentity {
-  device: number;
-  inode: number;
-  ownerUid: number;
+  uid: number;
+  gid?: number;
+  pid?: number;
 }
 
 export interface CovenUnixPeerIdentityAdapter {
@@ -78,7 +80,8 @@ export interface CovenUnixTransportSecurityProvider {
 export interface CovenDaemonFailure {
   code: string;
   message: string;
-  details: unknown;
+  status?: number;
+  details?: unknown;
 }
 
 export class CovenDaemonResponseError extends Error {
@@ -112,9 +115,32 @@ export function isCovenDaemonResponseError(
   }
 
   try {
-    return Reflect.get(error, COVEN_DAEMON_RESPONSE_ERROR_BRAND) === true;
+    const descriptor = Object.getOwnPropertyDescriptor(
+      error,
+      COVEN_DAEMON_RESPONSE_ERROR_BRAND,
+    );
+    return descriptor !== undefined &&
+      Object.hasOwn(descriptor, 'value') &&
+      descriptor.value === true;
   } catch {
     return false;
+  }
+}
+
+export function daemonFailureFromError(
+  error: unknown,
+): CovenDaemonFailure | undefined {
+  if (!isCovenDaemonResponseError(error)) {
+    return undefined;
+  }
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(error, 'daemon');
+    if (descriptor === undefined || !Object.hasOwn(descriptor, 'value')) {
+      return undefined;
+    }
+    return sanitizeDaemonFailure(descriptor.value);
+  } catch {
+    return undefined;
   }
 }
 
@@ -392,15 +418,15 @@ function sanitizeDaemonFailure(value: unknown): CovenDaemonFailure {
       'read_response',
     );
   }
-  const fields = Object.keys(sanitized);
   if (
-    fields.length !== 3 ||
-    fields.some((field) => !['code', 'message', 'details'].includes(field)) ||
     typeof sanitized.code !== 'string' ||
     sanitized.code.length === 0 ||
     typeof sanitized.message !== 'string' ||
     sanitized.message.length === 0 ||
-    !Object.hasOwn(sanitized, 'details')
+    (Object.hasOwn(sanitized, 'status') &&
+      (!Number.isInteger(sanitized.status) ||
+        (sanitized.status as number) < 100 ||
+        (sanitized.status as number) > 599))
   ) {
     throw ipcError(
       'invalid_response',
@@ -412,7 +438,12 @@ function sanitizeDaemonFailure(value: unknown): CovenDaemonFailure {
   return {
     code: sanitized.code,
     message: sanitized.message,
-    details: sanitized.details,
+    ...(Object.hasOwn(sanitized, 'status')
+      ? { status: sanitized.status as number }
+      : {}),
+    ...(Object.hasOwn(sanitized, 'details')
+      ? { details: sanitized.details }
+      : {}),
   };
 }
 
@@ -782,7 +813,10 @@ export function requestCovenHealthOverSocket(
     let socket: CovenConnectedSocket;
     let settled = false;
     let connected = false;
+    let endedBeforeRequest = false;
     let received = Buffer.alloc(0);
+    let receivedBeforeRequest = false;
+    let requestSent = false;
     let connectTimer: ReturnType<typeof setTimeout> | undefined;
     let requestTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -861,6 +895,10 @@ export function requestCovenHealthOverSocket(
       try {
         received = Buffer.concat([received, Buffer.from(chunk)]);
         validateReceivedSize(received, limits);
+        if (!requestSent) {
+          receivedBeforeRequest = true;
+          return;
+        }
         const response = completeResponse(received, limits);
         if (response !== undefined) {
           const health = decodeHealth(response);
@@ -874,6 +912,10 @@ export function requestCovenHealthOverSocket(
     };
 
     const onEnd = (): void => {
+      if (!requestSent) {
+        endedBeforeRequest = true;
+        return;
+      }
       try {
         const health = decodeHealth(parseCompletedResponse(received, limits));
         finish(() => {
@@ -890,6 +932,18 @@ export function requestCovenHealthOverSocket(
         clearTimeout(connectTimer);
         connectTimer = undefined;
       }
+      try {
+        socket.pause();
+      } catch {
+        failRequest(
+          ipcError(
+            'connect_failure',
+            'Could not pause the Coven daemon connection for validation.',
+            'revalidate_endpoint',
+          ),
+        );
+        return;
+      }
       requestTimer = setTimeout(() => {
         failRequest(
           ipcError(
@@ -905,9 +959,21 @@ export function requestCovenHealthOverSocket(
           if (settled) {
             return;
           }
+          if (receivedBeforeRequest || endedBeforeRequest) {
+            failRequest(
+              ipcError(
+                'invalid_response',
+                'Coven daemon sent data before request validation completed.',
+                'read_response',
+              ),
+            );
+            return;
+          }
           try {
+            requestSent = true;
             socket.write(HEALTH_REQUEST);
             socket.end();
+            socket.resume();
           } catch {
             failRequest(
               ipcError(
@@ -1025,13 +1091,9 @@ function validateUnixPeerIdentity(
   identity: CovenUnixPeerIdentity,
   expectedUid: number,
 ): void {
-  let device: unknown;
-  let inode: unknown;
-  let ownerUid: unknown;
+  let descriptors: PropertyDescriptorMap;
   try {
-    device = identity.device;
-    inode = identity.inode;
-    ownerUid = identity.ownerUid;
+    descriptors = Object.getOwnPropertyDescriptors(identity);
   } catch {
     throw ipcError(
       'unsafe_endpoint',
@@ -1039,18 +1101,13 @@ function validateUnixPeerIdentity(
       'revalidate_endpoint',
     );
   }
-  if (ownerUid !== expectedUid) {
-    throw ipcError(
-      'owner_mismatch',
-      'Connected Coven Unix peer owner did not match the current user.',
-      'revalidate_endpoint',
-    );
-  }
+  const keys = Reflect.ownKeys(descriptors);
   if (
-    !Number.isSafeInteger(device) ||
-    (device as number) < 0 ||
-    !Number.isSafeInteger(inode) ||
-    (inode as number) <= 0
+    keys.some(
+      (key) =>
+        typeof key !== 'string' ||
+        !['uid', 'gid', 'pid'].includes(key),
+    )
   ) {
     throw ipcError(
       'unsafe_endpoint',
@@ -1058,6 +1115,51 @@ function validateUnixPeerIdentity(
       'revalidate_endpoint',
     );
   }
+  const ownData = (key: 'uid' | 'gid' | 'pid'): unknown => {
+    const descriptor = descriptors[key];
+    return descriptor !== undefined && Object.hasOwn(descriptor, 'value')
+      ? descriptor.value
+      : undefined;
+  };
+  const uid = ownData('uid');
+  const gid = ownData('gid');
+  const pid = ownData('pid');
+  if (
+    typeof uid !== 'number' ||
+    !Number.isSafeInteger(uid) ||
+    uid < 0 ||
+    (gid !== undefined &&
+      (typeof gid !== 'number' || !Number.isSafeInteger(gid) || gid < 0)) ||
+    (pid !== undefined &&
+      (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0))
+  ) {
+    throw ipcError(
+      'unsafe_endpoint',
+      'Connected Coven Unix peer identity was invalid.',
+      'revalidate_endpoint',
+    );
+  }
+  if (uid !== expectedUid) {
+    throw ipcError(
+      'owner_mismatch',
+      'Connected Coven Unix peer owner did not match the current user.',
+      'revalidate_endpoint',
+    );
+  }
+}
+
+function sameUnixPathIdentity(
+  initial: CovenUnixFileIdentity,
+  confirmed: CovenUnixFileIdentity,
+): boolean {
+  return (
+    confirmed.device === initial.device &&
+    confirmed.inode === initial.inode &&
+    confirmed.mode === initial.mode &&
+    confirmed.ownerUid === initial.ownerUid &&
+    confirmed.symbolicLink === initial.symbolicLink &&
+    confirmed.socket === initial.socket
+  );
 }
 
 function defaultUnixConnector(path: string): CovenConnectedSocket {
@@ -1136,38 +1238,31 @@ export function createCovenUnixTransport(
         {
           connect,
           async revalidate(socket) {
-            const [confirmed, connectedPeer] = await Promise.all([
-              Promise.resolve()
-                .then(() => lstat(endpoint.path))
-                .catch(() => {
-                  throw ipcError(
-                    'unsafe_endpoint',
-                    'Coven Unix socket changed during connection.',
-                    'revalidate_endpoint',
-                  );
-                }),
-              Promise.resolve()
-                .then(() => peerIdentity.inspectConnected(socket))
-                .catch(() => {
-                  throw ipcError(
-                    'unsafe_endpoint',
-                    'Connected Coven Unix peer identity could not be established.',
-                    'revalidate_endpoint',
-                  );
-                }),
-            ]);
+            const connectedPeer = await Promise.resolve()
+              .then(() => peerIdentity.inspectConnected(socket))
+              .catch(() => {
+                throw ipcError(
+                  'unsafe_endpoint',
+                  'Connected Coven Unix peer identity could not be established.',
+                  'revalidate_endpoint',
+                );
+              });
+            validateUnixPeerIdentity(connectedPeer, expectedUid);
+            const confirmed = await Promise.resolve()
+              .then(() => lstat(endpoint.path))
+              .catch(() => {
+                throw ipcError(
+                  'unsafe_endpoint',
+                  'Coven Unix socket changed during connection.',
+                  'revalidate_endpoint',
+                );
+              });
             validateUnixIdentity(
               confirmed,
               expectedUid,
               'revalidate_endpoint',
             );
-            validateUnixPeerIdentity(connectedPeer, expectedUid);
-            if (
-              confirmed.device !== initial.device ||
-              confirmed.inode !== initial.inode ||
-              connectedPeer.device !== initial.device ||
-              connectedPeer.inode !== initial.inode
-            ) {
+            if (!sameUnixPathIdentity(initial, confirmed)) {
               throw ipcError(
                 'unsafe_endpoint',
                 'Coven Unix socket changed during connection.',
