@@ -169,6 +169,30 @@ describe('diagnostics bundles', () => {
     expect(Object.keys(bundle.capabilities.cave ?? {})).toEqual(['familiars', 'health']);
   });
 
+  test('keeps a prerelease and build metadata together, and still refuses a credential', () => {
+    expect(
+      createDiagnosticsBundle({
+        packages: {
+          'app-prerelease': '1.0.0-rc.1',
+          'app-build': '1.0.0+20260821',
+          'app-both': '1.0.0-rc.1+sha.5114f85',
+          'app-spec-example': '1.0.0-alpha+001',
+          'app-snapshot': '0.0.0-dev',
+          'app-calendar': '2026.8.21',
+          'app-leaky': 'sk-live-not-a-real-key',
+          'app-tagged': 'v1.2.3',
+        },
+      }).versions.packages,
+    ).toEqual({
+      'app-both': '1.0.0-rc.1+sha.5114f85',
+      'app-build': '1.0.0+20260821',
+      'app-calendar': '2026.8.21',
+      'app-prerelease': '1.0.0-rc.1',
+      'app-snapshot': '0.0.0-dev',
+      'app-spec-example': '1.0.0-alpha+001',
+    });
+  });
+
   test('drops a capability group that survives sanitization empty', () => {
     expect(
       createDiagnosticsBundle({

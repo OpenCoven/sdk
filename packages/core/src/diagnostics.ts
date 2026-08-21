@@ -29,8 +29,14 @@ const PACKAGE_NAME_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$
  * A version must lead with a numeric release. A looser "word characters and
  * dashes" shape accepts `sk-live-...` as a version, which is exactly the value
  * a package map should never carry.
+ *
+ * The prerelease and the build metadata are separate optional groups because
+ * semver allows both at once -- `1.0.0-alpha+001` is the spec's own example,
+ * and `1.0.0-rc.1+sha.5114f85` is what a CI build produces. A single
+ * `[-+]`-led group accepted either and rejected both together, which silently
+ * dropped the package from the bundle: not a wrong version, no version at all.
  */
-const VERSION_PATTERN = /^\d+(?:\.\d+){0,2}(?:[-+][0-9A-Za-z.-]{1,32})?$/;
+const VERSION_PATTERN = /^\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]{1,32})?(?:\+[0-9A-Za-z.-]{1,32})?$/;
 const RUNTIME_PATTERN = /^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$/;
 const LABEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/;
 const OPERATION_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
