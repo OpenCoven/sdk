@@ -1386,6 +1386,84 @@ describe('Coven endpoint discovery', () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
+  test('does not invoke command collaborators when the deadline expires before the first step', async () => {
+    let clockReads = 0;
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => {
+      clockReads += 1;
+      return clockReads < 3 ? 0 : 1;
+    });
+    const spawn = vi.fn(() => undefined);
+    const resolveExecutable = vi.fn(() => Promise.resolve(TRUSTED_UNIX_COVEN));
+    const realpath = vi.fn((path: string) => Promise.resolve(path));
+    const lstat = vi.fn(() => Promise.resolve(discoveryFileIdentity()));
+    const getEffectiveUid = vi.fn(() => 501);
+
+    try {
+      await expect(
+        discoverCovenEndpoint({
+          env: { PATH: '/safe/bin' },
+          platform: 'linux',
+          timeoutMs: 1,
+          dependencies: {
+            execFile: spawn,
+            getEffectiveUid,
+            lstat,
+            openFile: vi.fn(),
+            realpath,
+            resolveExecutable,
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: 'timeout',
+        diagnostics: { phase: 'config_command' },
+      });
+
+      expect(resolveExecutable).not.toHaveBeenCalled();
+      expect(realpath).not.toHaveBeenCalled();
+      expect(lstat).not.toHaveBeenCalled();
+      expect(getEffectiveUid).not.toHaveBeenCalled();
+      expect(spawn).not.toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  test('does not invoke metadata collaborators when the deadline expires before the first step', async () => {
+    let clockReads = 0;
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => {
+      clockReads += 1;
+      return clockReads === 1 ? 0 : 1;
+    });
+    const home = resolve(ownedRoot.rootPath, 'profile');
+    const lstat = vi.fn(() => Promise.resolve(discoveryFileIdentity()));
+    const openFile = vi.fn(() => Promise.resolve(memoryMetadataFile('{}')));
+    const getEffectiveUid = vi.fn(() => 501);
+
+    try {
+      await expect(
+        discoverCovenEndpoint({
+          env: { COVEN_HOME: home },
+          platform: 'linux',
+          timeoutMs: 1,
+          dependencies: {
+            getEffectiveUid,
+            lstat,
+            openFile,
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: 'timeout',
+        diagnostics: { phase: 'read_metadata' },
+      });
+
+      expect(lstat).not.toHaveBeenCalled();
+      expect(openFile).not.toHaveBeenCalled();
+      expect(getEffectiveUid).not.toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   test('rejects a discovery step that settles at its 1ms absolute deadline', async () => {
     vi.useFakeTimers();
     let now = 0;

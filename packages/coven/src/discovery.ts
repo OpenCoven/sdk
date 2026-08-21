@@ -498,7 +498,10 @@ function awaitDiscoveryStep<T>(
   phase: CovenIpcDiagnostics['phase'],
   onLateResolve?: (value: T) => void | Promise<void>,
 ): Promise<T> {
-  const pending = Promise.resolve().then(operation);
+  const remainingMs = remainingDiscoveryTime(deadline);
+  if (remainingMs <= 0) {
+    return Promise.reject(discoveryTimeout(phase));
+  }
   return new Promise((resolvePromise, reject) => {
     let settled = false;
     const timeout: { timer?: ReturnType<typeof setTimeout> } = {};
@@ -513,6 +516,18 @@ function awaitDiscoveryStep<T>(
       action();
     };
 
+    timeout.timer = setTimeout(() => {
+      finish(() => {
+        reject(discoveryTimeout(phase));
+      });
+    }, remainingMs);
+
+    const pending = Promise.resolve().then(() => {
+      if (remainingDiscoveryTime(deadline) <= 0) {
+        throw discoveryTimeout(phase);
+      }
+      return operation();
+    });
     pending.then(
       (value) => {
         const expired = remainingDiscoveryTime(deadline) <= 0;
@@ -549,20 +564,15 @@ function awaitDiscoveryStep<T>(
         });
       },
     );
-
-    const remainingMs = remainingDiscoveryTime(deadline);
-    if (remainingMs <= 0) {
-      finish(() => {
-        reject(discoveryTimeout(phase));
-      });
-      return;
-    }
-    timeout.timer = setTimeout(() => {
-      finish(() => {
-        reject(discoveryTimeout(phase));
-      });
-    }, remainingMs);
   });
+}
+
+function startBestEffortCleanup(
+  operation: () => void | Promise<void>,
+): Promise<void> {
+  const pending = Promise.resolve().then(operation);
+  void pending.catch(() => undefined);
+  return pending;
 }
 
 function validateSafeFileIdentity(
@@ -825,9 +835,11 @@ async function readOptionalDaemonStatus(
         );
   }
 
+  // Cleanup must start even when the deadline blocks further discovery work.
+  const close = startBestEffortCleanup(() => handle.close());
   try {
     await awaitDiscoveryStep(
-      () => handle.close(),
+      () => close,
       deadline,
       'read_metadata',
     );
