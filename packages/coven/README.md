@@ -71,10 +71,41 @@ frames, or socket handles.
   validates the current owner before connection and the connected pipe
   identity afterward.
 
-Direct `createCovenUnixTransport()` construction likewise requires an explicit
-`security` provider. Supplying the wrong platform provider, omitting a
-provider, or returning unverifiable connected-peer data is rejected rather
-than downgraded to pathname validation.
+Direct transport construction uses the same discriminated security providers
+as discovered clients:
+
+```ts
+import {
+  createCovenUnixTransport,
+  createCovenWindowsTransport,
+  type CovenDiscoveredEndpoint,
+  type CovenUnixPeerIdentityAdapter,
+  type CovenWindowsPipeOwnershipAdapter,
+} from '@opencoven/coven-client';
+
+declare const unixEndpoint: CovenDiscoveredEndpoint;
+declare const windowsEndpoint: CovenDiscoveredEndpoint;
+declare const nativeUnixPeerIdentity: CovenUnixPeerIdentityAdapter;
+declare const nativeWindowsPipeOwnership: CovenWindowsPipeOwnershipAdapter;
+
+const unixTransport = createCovenUnixTransport(unixEndpoint, {
+  security: {
+    platform: 'unix',
+    peerIdentity: nativeUnixPeerIdentity,
+  },
+});
+
+const windowsTransport = createCovenWindowsTransport(windowsEndpoint, {
+  security: {
+    platform: 'windows',
+    ownership: nativeWindowsPipeOwnership,
+  },
+});
+```
+
+Supplying the wrong platform provider, omitting `security`, using a bare
+Windows `ownership` property, or returning unverifiable connected-peer data
+is rejected rather than downgraded to pathname validation.
 
 Connect and request timeouts, HTTP headers, response bodies, and framing are
 bounded. The health response must contain boolean `sessions`, `events`, and

@@ -45,7 +45,7 @@ export interface CovenWindowsTransportDependencies {
 export interface CovenWindowsTransportOptions
   extends CovenHealthTransportLimits {
   dependencies?: CovenWindowsTransportDependencies;
-  ownership: CovenWindowsPipeOwnershipAdapter;
+  security: CovenWindowsTransportSecurityProvider;
 }
 
 function unsafe(
@@ -162,7 +162,19 @@ export function createCovenWindowsTransport(
   options: CovenWindowsTransportOptions,
 ): CovenTransport {
   const endpoint = validWindowsEndpoint(discovered);
+  if (
+    options?.security?.platform !== 'windows' ||
+    typeof options.security.ownership?.currentUserIdentity !== 'function' ||
+    typeof options.security.ownership.inspect !== 'function' ||
+    typeof options.security.ownership.inspectConnected !== 'function'
+  ) {
+    throw unsafe(
+      'Coven Windows named-pipe security is required.',
+      'validate_endpoint',
+    );
+  }
   const connect = options.dependencies?.connect ?? defaultWindowsConnector;
+  const ownership = options.security.ownership;
 
   return {
     async health(context) {
@@ -170,8 +182,8 @@ export function createCovenWindowsTransport(
         async () => {
           try {
             return await Promise.all([
-              options.ownership.currentUserIdentity(),
-              options.ownership.inspect(endpoint.path),
+              ownership.currentUserIdentity(),
+              ownership.inspect(endpoint.path),
             ]);
           } catch {
             throw unsafe(
@@ -204,7 +216,7 @@ export function createCovenWindowsTransport(
           async revalidate(socket) {
             let connected: CovenWindowsPipeIdentity;
             try {
-              connected = await options.ownership.inspectConnected(
+              connected = await ownership.inspectConnected(
                 endpoint.path,
                 socket,
               );

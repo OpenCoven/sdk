@@ -14,7 +14,10 @@ import {
   type DiscoverCovenEndpointOptions,
 } from './discovery.js';
 import { COVEN_DAEMON_PROTOCOL, type CovenHealth, type CovenHealthResponse } from './schemas.js';
-import type { CovenTransport } from './transport.js';
+import type {
+  CovenTransport,
+  CovenTransportSecurityProvider,
+} from './transport.js';
 import {
   createCovenUnixTransport,
   isCovenDaemonResponseError,
@@ -47,7 +50,7 @@ export type CovenDiscoveredUnixTransportOptions = Omit<
 
 export type CovenDiscoveredWindowsTransportOptions = Omit<
   CovenWindowsTransportOptions,
-  'ownership'
+  'security'
 >;
 
 export interface CovenDiscoveredUnixClientOptions
@@ -226,9 +229,11 @@ export function createCovenClient(options: CovenClientOptions): CovenClient {
 export async function createDiscoveredCovenClient(
   options: CovenDiscoveredClientOptions,
 ): Promise<CovenClient> {
+  const transportSecurity: CovenTransportSecurityProvider | undefined =
+    options?.transportSecurity;
   if (
-    options?.transportSecurity?.platform !== 'unix' &&
-    options?.transportSecurity?.platform !== 'windows'
+    transportSecurity?.platform !== 'unix' &&
+    transportSecurity?.platform !== 'windows'
   ) {
     throw new CovenIpcError(
       'unsafe_endpoint',
@@ -240,7 +245,7 @@ export async function createDiscoveredCovenClient(
   let transport: CovenTransport;
 
   if (endpoint.endpoint.kind === 'unix') {
-    if (options.transportSecurity.platform !== 'unix') {
+    if (transportSecurity.platform !== 'unix') {
       throw new CovenIpcError(
         'unsafe_endpoint',
         'Unix transport security is required for the discovered endpoint.',
@@ -249,10 +254,10 @@ export async function createDiscoveredCovenClient(
     }
     transport = createCovenUnixTransport(endpoint, {
       ...options.unix,
-      security: options.transportSecurity,
+      security: transportSecurity,
     });
   } else {
-    if (options.transportSecurity.platform !== 'windows') {
+    if (transportSecurity.platform !== 'windows') {
       throw new CovenIpcError(
         'unsafe_endpoint',
         'Windows transport security is required for the discovered endpoint.',
@@ -261,7 +266,7 @@ export async function createDiscoveredCovenClient(
     }
     transport = createCovenWindowsTransport(endpoint, {
       ...options.windows,
-      ownership: options.transportSecurity.ownership,
+      security: transportSecurity,
     });
   }
 

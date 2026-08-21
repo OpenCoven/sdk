@@ -34,7 +34,10 @@ export type {
 } from './discovery.js';
 export { COVEN_DAEMON_PROTOCOL } from './schemas.js';
 export type { CovenHealth, CovenHealthResponse } from './schemas.js';
-export type { CovenTransport } from './transport.js';
+export type {
+  CovenTransport,
+  CovenTransportSecurityProvider,
+} from './transport.js';
 export {
   CovenDaemonResponseError,
   createCovenUnixTransport,

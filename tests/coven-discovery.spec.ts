@@ -9,7 +9,7 @@ import {
   CovenDaemonResponseError,
   CovenIpcError,
   createCovenUnixTransport as createRawCovenUnixTransport,
-  createCovenWindowsTransport,
+  createCovenWindowsTransport as createRawCovenWindowsTransport,
   createDiscoveredCovenClient,
   discoverCovenEndpoint,
   isCovenDaemonResponseError,
@@ -22,6 +22,8 @@ import {
   type CovenUnixFileIdentity,
   type CovenUnixTransportOptions,
   type CovenWindowsPipeIdentity,
+  type CovenWindowsPipeOwnershipAdapter,
+  type CovenWindowsTransportOptions,
 } from '@opencoven/coven-client';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
@@ -242,6 +244,31 @@ function windowsIdentity(
     processCreationTime: '100',
     ...overrides,
   };
+}
+
+interface TestWindowsTransportOptions
+  extends Omit<CovenWindowsTransportOptions, 'security'> {
+  ownership?: CovenWindowsPipeOwnershipAdapter;
+}
+
+function createCovenWindowsTransport(
+  discovered: CovenDiscoveredEndpoint,
+  options: TestWindowsTransportOptions = {},
+) {
+  const { ownership, ...transportOptions } = options;
+  return createRawCovenWindowsTransport(discovered, {
+    ...transportOptions,
+    security: {
+      platform: 'windows',
+      ownership:
+        ownership ??
+        {
+          currentUserIdentity: () => Promise.resolve('S-1-5-21-current-user'),
+          inspect: () => Promise.resolve(windowsIdentity()),
+          inspectConnected: () => Promise.resolve(windowsIdentity()),
+        },
+    },
+  });
 }
 
 let ownedRoot: ReturnType<typeof createOwnedTempDirectory>;
@@ -1062,6 +1089,43 @@ describe('Unix owner-local health transport', () => {
     }));
   });
 
+  test('constructs directly with Unix security', () => {
+    expect(() => {
+      createRawCovenUnixTransport(
+        unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+        {
+          security: {
+            platform: 'unix',
+            peerIdentity: {
+              inspectConnected: () => Promise.resolve(unixPeerIdentity()),
+            },
+          },
+        },
+      );
+    }).not.toThrow();
+  });
+
+  test('fails closed at construction with Windows security', () => {
+    expect(() => {
+      Reflect.apply(createRawCovenUnixTransport, undefined, [
+        unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+        {
+          security: {
+            platform: 'windows',
+            ownership: {
+              currentUserIdentity: () => Promise.resolve('S-1-5-21-current-user'),
+              inspect: () => Promise.resolve(windowsIdentity()),
+              inspectConnected: () => Promise.resolve(windowsIdentity()),
+            },
+          },
+        },
+      ]);
+    }).toThrow(expect.objectContaining({
+      code: 'unsafe_endpoint',
+      diagnostics: { phase: 'validate_endpoint' },
+    }));
+  });
+
   test('sanitizes synchronous Unix connected-peer inspection failures', async () => {
     const socket = new FakeSocket();
     const transport = createCovenUnixTransport(
@@ -1708,6 +1772,56 @@ describe('Unix owner-local health transport', () => {
 });
 
 describe('Windows owner-local health transport', () => {
+  test('constructs directly with Windows security', () => {
+    expect(() => {
+      createRawCovenWindowsTransport(windowsEndpoint(), {
+        security: {
+          platform: 'windows',
+          ownership: {
+            currentUserIdentity: () => Promise.resolve('S-1-5-21-current-user'),
+            inspect: () => Promise.resolve(windowsIdentity()),
+            inspectConnected: () => Promise.resolve(windowsIdentity()),
+          },
+        },
+      });
+    }).not.toThrow();
+  });
+
+  test.each([
+    ['missing security', {}],
+    [
+      'a bare ownership adapter',
+      {
+        ownership: {
+          currentUserIdentity: () => Promise.resolve('S-1-5-21-current-user'),
+          inspect: () => Promise.resolve(windowsIdentity()),
+          inspectConnected: () => Promise.resolve(windowsIdentity()),
+        },
+      },
+    ],
+    [
+      'Unix security',
+      {
+        security: {
+          platform: 'unix',
+          peerIdentity: {
+            inspectConnected: () => Promise.resolve(unixPeerIdentity()),
+          },
+        },
+      },
+    ],
+  ])('fails closed at construction with %s', (_label, options) => {
+    expect(() => {
+      Reflect.apply(createRawCovenWindowsTransport, undefined, [
+        windowsEndpoint(),
+        options,
+      ]);
+    }).toThrow(expect.objectContaining({
+      code: 'unsafe_endpoint',
+      diagnostics: { phase: 'validate_endpoint' },
+    }));
+  });
+
   test.each([
     '\\\\server\\pipe\\coven',
     '\\\\?\\pipe\\coven',
