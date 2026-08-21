@@ -90,12 +90,19 @@ async function findConflicts(
   return conflicts;
 }
 
+function errorCode(error: unknown): unknown {
+  return typeof error === 'object' && error !== null
+    ? (error as { code?: unknown }).code
+    : undefined;
+}
+
 function isMissingFileError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: unknown }).code === 'ENOENT'
-  );
+  return errorCode(error) === 'ENOENT';
+}
+
+/** The error `wx` raises for a file that already exists. */
+function isExistingFileError(error: unknown): boolean {
+  return errorCode(error) === 'EEXIST';
 }
 
 export interface WrittenScaffold {
@@ -124,6 +131,33 @@ async function removeWrittenFiles(directory: string, written: readonly string[])
       continue;
     }
   }
+}
+
+/**
+ * The paths a rollback is allowed to delete.
+ *
+ * The file that was being written when the failure arrived is included, because
+ * `wx` creates the file and then writes to it: a failure between those two
+ * steps -- a full disk, an I/O error -- leaves a truncated file that is not yet
+ * on the written list, so nothing would remove it. The next run would then
+ * refuse to overwrite the wreckage of the last one, which is the exact failure
+ * the rollback exists to prevent.
+ *
+ * It is excluded when the write was refused because the file already existed.
+ * That is the race `wx` is there to catch: the file appeared between the
+ * conflict check and the write, so it belongs to whoever created it, and
+ * deleting it would destroy the work the refusal exists to protect.
+ */
+function rollbackPaths(
+  written: readonly string[],
+  inFlight: string | undefined,
+  error: unknown,
+): string[] {
+  if (inFlight === undefined || isExistingFileError(error)) {
+    return [...written];
+  }
+
+  return [...written, inFlight];
 }
 
 /**
@@ -161,6 +195,7 @@ export async function writeScaffoldFiles(
 
   const { mkdir, writeFile } = await import('node:fs/promises');
   const written: string[] = [];
+  let inFlight: string | undefined;
 
   await mkdir(directory, { recursive: true });
 
@@ -168,16 +203,18 @@ export async function writeScaffoldFiles(
     for (const file of files) {
       const destination = join(directory, file.path);
 
+      inFlight = file.path;
       await mkdir(dirname(destination), { recursive: true });
       await writeFile(destination, file.contents, {
         encoding: 'utf8',
         flag: refusesOverwrite ? 'wx' : 'w',
       });
       written.push(file.path);
+      inFlight = undefined;
     }
   } catch (error) {
     if (refusesOverwrite) {
-      await removeWrittenFiles(directory, written);
+      await removeWrittenFiles(directory, rollbackPaths(written, inFlight, error));
     }
 
     throw error;
