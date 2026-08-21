@@ -143,7 +143,6 @@ export interface CovenDiscoveryDependencies {
 }
 
 export interface DiscoverCovenEndpointOptions {
-  command?: string;
   cwd?: string;
   dependencies?: CovenDiscoveryDependencies;
   env?: Readonly<NodeJS.ProcessEnv>;
@@ -515,7 +514,6 @@ function outputDiagnostics(
 }
 
 function executeConfigPaths(
-  command: string,
   cwd: string,
   execFile: CovenExecFile,
   environment: Readonly<NodeJS.ProcessEnv>,
@@ -615,7 +613,7 @@ function executeConfigPaths(
 
     try {
       child = execFile(
-        command,
+        'coven',
         COVEN_COMMAND_ARGS,
         {
           cwd,
@@ -798,7 +796,6 @@ function resolvedSurfacePath(
 
 async function discoverFromCommand(
   options: {
-    command: string;
     cwd: string;
     environment: Readonly<NodeJS.ProcessEnv>;
     execFile: CovenExecFile;
@@ -810,7 +807,6 @@ async function discoverFromCommand(
   },
 ): Promise<CovenDiscoveredEndpoint> {
   const serialized = await executeConfigPaths(
-    options.command,
     options.cwd,
     options.execFile,
     options.environment,
@@ -895,7 +891,6 @@ export async function discoverCovenEndpoint(
   }
 
   return discoverFromCommand({
-    command: options.command ?? 'coven',
     cwd,
     environment,
     execFile,

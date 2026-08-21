@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { chmodSync } from 'node:fs';
+import { lstat } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 
@@ -7,8 +8,9 @@ import {
   COVEN_DAEMON_PROTOCOL,
   CovenClient,
   CovenClientError,
+  CovenDaemonResponseError,
   CovenIpcError,
-  createCovenUnixTransport,
+  createCovenUnixTransport as createRawCovenUnixTransport,
   createCovenWindowsTransport,
   createDiscoveredCovenClient,
   discoverCovenEndpoint,
@@ -158,6 +160,47 @@ function unixIdentity(
   };
 }
 
+interface TestUnixPeerIdentity {
+  device: number;
+  inode: number;
+  ownerUid: number;
+}
+
+interface TestUnixTransportOptions
+  extends NonNullable<Parameters<typeof createRawCovenUnixTransport>[1]> {
+  peerIdentity?: {
+    inspectConnected(
+      path: string,
+      socket: CovenSocket,
+    ): Promise<TestUnixPeerIdentity>;
+  };
+}
+
+function unixPeerIdentity(
+  overrides: Partial<TestUnixPeerIdentity> = {},
+): TestUnixPeerIdentity {
+  return {
+    device: 7,
+    inode: 11,
+    ownerUid: 501,
+    ...overrides,
+  };
+}
+
+function createCovenUnixTransport(
+  discovered: CovenDiscoveredEndpoint,
+  options: TestUnixTransportOptions = {},
+) {
+  return createRawCovenUnixTransport(discovered, {
+    ...options,
+    peerIdentity:
+      options.peerIdentity ??
+      {
+        inspectConnected: () => Promise.resolve(unixPeerIdentity()),
+      },
+  });
+}
+
 function unixEndpoint(path: string): CovenDiscoveredEndpoint {
   return {
     version: 1,
@@ -305,6 +348,29 @@ describe('Coven endpoint discovery', () => {
       HOME: ownedRoot.rootPath,
       PATH: '/safe/bin',
     });
+  });
+
+  test('does not allow callers to override the Coven executable', async () => {
+    const socketPath = resolve(ownedRoot.rootPath, 'coven.sock');
+    const metadataPath = resolve(ownedRoot.rootPath, 'daemon.json');
+    const execFile = execResult(configPathsReport(socketPath, metadataPath));
+
+    await discoverCovenEndpoint({
+      command: 'attacker-controlled-coven',
+      env: { PATH: '/safe/bin' },
+      dependencies: {
+        execFile,
+        readFile: () =>
+          Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
+      },
+    } as Parameters<typeof discoverCovenEndpoint>[0]);
+
+    expect(execFile).toHaveBeenCalledWith(
+      'coven',
+      ['config', 'paths', '--json'],
+      expect.objectContaining({ shell: false }),
+      expect.any(Function),
+    );
   });
 
   test.each([
@@ -909,6 +975,137 @@ describe('Unix owner-local health transport', () => {
     expect(socket.destroyed).toBe(true);
   });
 
+  test('rejects replacement-connect-restore attacks using connected peer identity', async () => {
+    const original = unixIdentity();
+    const replacement = unixIdentity({ inode: 12 });
+    let currentPathIdentity = original;
+    const socket = connectedSocket(httpResponse(HEALTH_BODY));
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect: () => {
+            currentPathIdentity = replacement;
+            queueMicrotask(() => {
+              currentPathIdentity = original;
+              socket.emit('connect');
+            });
+            return socket;
+          },
+          getEffectiveUid: () => 501,
+          lstat: () => Promise.resolve(currentPathIdentity),
+        },
+        peerIdentity: {
+          inspectConnected: () =>
+            Promise.resolve(unixPeerIdentity({ inode: replacement.inode })),
+        },
+      },
+    );
+
+    await expect(transport.health()).rejects.toMatchObject({
+      code: 'unsafe_endpoint',
+      diagnostics: { phase: 'revalidate_endpoint' },
+    });
+    expect(socket.writes).toEqual([]);
+    expect(socket.destroyed).toBe(true);
+  });
+
+  test('rejects a connected Unix peer owned by another effective user', async () => {
+    const socket = new FakeSocket();
+    socket.onWrite = () => {
+      queueMicrotask(() => {
+        socket.emit('data', httpResponse(HEALTH_BODY));
+        socket.emit('end');
+      });
+    };
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect: () => {
+            queueMicrotask(() => {
+              socket.emit('connect');
+            });
+            return socket;
+          },
+          getEffectiveUid: () => 501,
+          lstat: () => Promise.resolve(unixIdentity()),
+        },
+        peerIdentity: {
+          inspectConnected: () =>
+            Promise.resolve(unixPeerIdentity({ ownerUid: 502 })),
+        },
+      },
+    );
+
+    await expect(transport.health()).rejects.toMatchObject({
+      code: 'owner_mismatch',
+      diagnostics: { phase: 'revalidate_endpoint' },
+    });
+    expect(socket.writes).toEqual([]);
+    expect(socket.destroyed).toBe(true);
+  });
+
+  test('fails closed when no Unix connected-peer identity adapter is available', async () => {
+    const socket = new FakeSocket();
+    const transport = createRawCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect: () => {
+            queueMicrotask(() => {
+              socket.emit('connect');
+            });
+            return socket;
+          },
+          getEffectiveUid: () => 501,
+          lstat: () => Promise.resolve(unixIdentity()),
+        },
+      },
+    );
+
+    await expect(transport.health()).rejects.toMatchObject({
+      code: 'unsafe_endpoint',
+      diagnostics: { phase: 'revalidate_endpoint' },
+    });
+    expect(socket.writes).toEqual([]);
+    expect(socket.destroyed).toBe(true);
+  });
+
+  test('sanitizes synchronous Unix connected-peer inspection failures', async () => {
+    const socket = new FakeSocket();
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect: () => {
+            queueMicrotask(() => {
+              socket.emit('connect');
+            });
+            return socket;
+          },
+          getEffectiveUid: () => 501,
+          lstat: () => Promise.resolve(unixIdentity()),
+        },
+        peerIdentity: {
+          inspectConnected: () => {
+            throw new Error('private native peer detail');
+          },
+        },
+      },
+    );
+
+    const error: unknown = await transport.health().catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      code: 'unsafe_endpoint',
+      diagnostics: { phase: 'revalidate_endpoint' },
+    });
+    expect(String(error)).not.toContain('private native peer detail');
+    expect(socket.writes).toEqual([]);
+    expect(socket.destroyed).toBe(true);
+  });
+
   test('reports connection failure with deterministic cleanup', async () => {
     const socket = new FakeSocket();
     const transport = createCovenUnixTransport(
@@ -1026,6 +1223,117 @@ describe('Unix owner-local health transport', () => {
     });
   });
 
+  test.each([
+    {
+      label: 'deep object',
+      details: Array.from({ length: 20 }).reduce<unknown>(
+        (nested) => ({ safe: nested }),
+        { token: 'deep-object-secret' },
+      ),
+      secret: 'deep-object-secret',
+    },
+    {
+      label: 'deep array',
+      details: Array.from({ length: 20 }).reduce<unknown>(
+        (nested) => [nested],
+        { authorizationHeader: 'deep-array-secret' },
+      ),
+      secret: 'deep-array-secret',
+    },
+  ])('rejects $label daemon details beyond the sanitization depth', async ({
+    details,
+    secret,
+  }) => {
+    const body = JSON.stringify({
+      error: {
+        code: 'daemon.failure',
+        message: 'Failure',
+        details,
+      },
+    });
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect: () => connectedSocket(httpResponse(body, 500)),
+          getEffectiveUid: () => 501,
+          lstat: () => Promise.resolve(unixIdentity()),
+        },
+      },
+    );
+
+    const error: unknown = await transport.health().catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: 'invalid_response' });
+    expect(JSON.stringify(error)).not.toContain(secret);
+  });
+
+  test('rejects daemon details that exceed the structured-data size limit', async () => {
+    const body = JSON.stringify({
+      error: {
+        code: 'daemon.failure',
+        message: 'Failure',
+        details: Array.from({ length: 1_100 }, (_, index) => index),
+      },
+    });
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect: () => connectedSocket(httpResponse(body, 500)),
+          getEffectiveUid: () => 501,
+          lstat: () => Promise.resolve(unixIdentity()),
+        },
+      },
+    );
+
+    await expect(transport.health()).rejects.toMatchObject({
+      code: 'invalid_response',
+    });
+  });
+
+  test('rejects cyclic daemon details without retaining the original subtree', () => {
+    const details: Record<string, unknown> = {};
+    details.self = details;
+
+    expect(
+      () =>
+        new CovenDaemonResponseError(
+          {
+            code: 'daemon.failure',
+            message: 'Failure',
+            details,
+          },
+          500,
+        ),
+    ).toThrow(expect.objectContaining({ code: 'invalid_response' }));
+  });
+
+  test('rejects accessor-backed daemon details without invoking getters', () => {
+    let getterCalls = 0;
+    const details = {};
+    Object.defineProperty(details, 'authorizationHeader', {
+      enumerable: true,
+      get() {
+        getterCalls += 1;
+        return 'getter-secret';
+      },
+    });
+
+    expect(
+      () =>
+        new CovenDaemonResponseError(
+          {
+            code: 'daemon.failure',
+            message: 'Failure',
+            details,
+          },
+          500,
+        ),
+    ).toThrow(expect.objectContaining({ code: 'invalid_response' }));
+    expect(getterCalls).toBe(0);
+  });
+
   test('handles LF-delimited HTTP health framing', async () => {
     const response = Buffer.from(
       `HTTP/1.1 200 OK\nContent-Length: ${Buffer.byteLength(HEALTH_BODY)}\n\n${HEALTH_BODY}`,
@@ -1104,6 +1412,109 @@ describe('Unix owner-local health transport', () => {
     expect(socket.destroyed).toBe(true);
   });
 
+  test('applies the operation deadline to Unix pre-connect validation', async () => {
+    vi.useFakeTimers();
+    const connect = vi.fn(() => connectedSocket(httpResponse(HEALTH_BODY)));
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect,
+          getEffectiveUid: () => 501,
+          lstat: () => new Promise(() => undefined),
+        },
+      },
+    );
+    let outcome: unknown = 'pending';
+    void transport
+      .health({
+        signal: new AbortController().signal,
+        deadline: performance.now() + 10,
+      })
+      .then(
+        (value) => {
+          outcome = value;
+        },
+        (error: unknown) => {
+          outcome = error;
+        },
+      );
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(outcome).toMatchObject({
+      code: 'timeout',
+      diagnostics: { phase: 'validate_endpoint' },
+    });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  test('absorbs a late Unix validator rejection after the operation deadline', async () => {
+    vi.useFakeTimers();
+    let rejectInspection: ((error: Error) => void) | undefined;
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          getEffectiveUid: () => 501,
+          lstat: () =>
+            new Promise((_resolve, reject) => {
+              rejectInspection = reject;
+            }),
+        },
+      },
+    );
+    const result = transport
+      .health({
+        signal: new AbortController().signal,
+        deadline: performance.now() + 10,
+      })
+      .catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(result).resolves.toMatchObject({ code: 'timeout' });
+
+    rejectInspection?.(new Error('private late Unix rejection'));
+    await Promise.resolve();
+  });
+
+  test('applies the operation deadline to Unix connected-peer validation', async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const inspectConnected = vi.fn(
+      () => new Promise<TestUnixPeerIdentity>(() => undefined),
+    );
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect: () => {
+            queueMicrotask(() => {
+              socket.emit('connect');
+            });
+            return socket;
+          },
+          getEffectiveUid: () => 501,
+          lstat: () => Promise.resolve(unixIdentity()),
+        },
+        peerIdentity: { inspectConnected },
+      },
+    );
+    const result = transport
+      .health({
+        signal: new AbortController().signal,
+        deadline: performance.now() + 10,
+      })
+      .catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(await result).toMatchObject({ code: 'timeout' });
+    expect(inspectConnected).toHaveBeenCalledOnce();
+    expect(socket.writes).toEqual([]);
+    expect(socket.destroyed).toBe(true);
+  });
+
   test('rejects invalid UTF-8 response bodies', async () => {
     const body = Buffer.from([0xff]);
     const response = Buffer.concat([
@@ -1158,6 +1569,7 @@ describe('Unix owner-local health transport', () => {
       },
     );
     const aborted = abortTransport.health({ signal: controller.signal, deadline: undefined });
+    await vi.advanceTimersByTimeAsync(0);
     controller.abort(new Error('stop'));
     await expect(aborted).rejects.toThrow('stop');
     expect(abortSocket.destroyed).toBe(true);
@@ -1209,6 +1621,17 @@ describe('Unix owner-local health transport', () => {
           source: 'coven_home',
           endpoint: { kind: 'unix', path: socketPath },
           owner: { kind: 'unix', uid },
+        }, {
+          peerIdentity: {
+            async inspectConnected() {
+              const stats = await lstat(socketPath);
+              return {
+                device: stats.dev,
+                inode: stats.ino,
+                ownerUid: stats.uid,
+              };
+            },
+          },
         });
 
         await expect(transport.health()).resolves.toEqual(JSON.parse(HEALTH_BODY));
@@ -1474,6 +1897,105 @@ describe('Windows owner-local health transport', () => {
     });
   });
 
+  test('applies the operation deadline to Windows pre-connect validation', async () => {
+    vi.useFakeTimers();
+    const connect = vi.fn(() => connectedSocket(httpResponse(HEALTH_BODY)));
+    const transport = createCovenWindowsTransport(windowsEndpoint(), {
+      dependencies: { connect },
+      ownership: {
+        currentUserIdentity: () =>
+          new Promise<string>(() => undefined),
+        inspect: () => Promise.resolve(windowsIdentity()),
+        inspectConnected: () => Promise.resolve(windowsIdentity()),
+      },
+    });
+    let outcome: unknown = 'pending';
+    void transport
+      .health({
+        signal: new AbortController().signal,
+        deadline: performance.now() + 10,
+      })
+      .then(
+        (value) => {
+          outcome = value;
+        },
+        (error: unknown) => {
+          outcome = error;
+        },
+      );
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(outcome).toMatchObject({
+      code: 'timeout',
+      diagnostics: { phase: 'validate_endpoint' },
+    });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  test('absorbs a late Windows validator rejection after the operation deadline', async () => {
+    vi.useFakeTimers();
+    let rejectInspection: ((error: Error) => void) | undefined;
+    const transport = createCovenWindowsTransport(windowsEndpoint(), {
+      ownership: {
+        currentUserIdentity: () => Promise.resolve('S-1-5-21-current-user'),
+        inspect: () =>
+          new Promise((_resolve, reject) => {
+            rejectInspection = reject;
+          }),
+        inspectConnected: () => Promise.resolve(windowsIdentity()),
+      },
+    });
+    const result = transport
+      .health({
+        signal: new AbortController().signal,
+        deadline: performance.now() + 10,
+      })
+      .catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(result).resolves.toMatchObject({ code: 'timeout' });
+
+    rejectInspection?.(new Error('private late Windows rejection'));
+    await Promise.resolve();
+  });
+
+  test('applies the operation deadline to Windows connected-pipe validation', async () => {
+    vi.useFakeTimers();
+    const socket = new FakeSocket();
+    const inspectConnected = vi.fn(
+      () => new Promise<CovenWindowsPipeIdentity>(() => undefined),
+    );
+    const transport = createCovenWindowsTransport(windowsEndpoint(), {
+      dependencies: {
+        connect: () => {
+          queueMicrotask(() => {
+            socket.emit('connect');
+          });
+          return socket;
+        },
+      },
+      ownership: {
+        currentUserIdentity: () => Promise.resolve('S-1-5-21-current-user'),
+        inspect: () => Promise.resolve(windowsIdentity()),
+        inspectConnected,
+      },
+    });
+    const result = transport
+      .health({
+        signal: new AbortController().signal,
+        deadline: performance.now() + 10,
+      })
+      .catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(await result).toMatchObject({ code: 'timeout' });
+    expect(inspectConnected).toHaveBeenCalledOnce();
+    expect(socket.writes).toEqual([]);
+    expect(socket.destroyed).toBe(true);
+  });
+
   test('shares frame limits and structured daemon errors with Unix', async () => {
     const ownership = {
       currentUserIdentity: () => Promise.resolve('S-1-5-21-current-user'),
@@ -1538,6 +2060,9 @@ describe('structured client behavior', () => {
           connect: () => connectedSocket(httpResponse(HEALTH_BODY)),
           getEffectiveUid: () => 501,
           lstat: () => Promise.resolve(unixIdentity()),
+        },
+        peerIdentity: {
+          inspectConnected: () => Promise.resolve(unixPeerIdentity()),
         },
       },
     });

@@ -18,6 +18,9 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 2_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_HEADER_BYTES = 64 * 1024;
 const DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024;
+const MAX_DAEMON_ERROR_DEPTH = 16;
+const MAX_DAEMON_ERROR_NODES = 1_024;
+const MAX_DAEMON_ERROR_STRING_BYTES = 64 * 1024;
 const HEALTH_REQUEST = Buffer.from(
   'GET /api/v1/health HTTP/1.1\r\n' +
     'Host: coven\r\n' +
@@ -27,7 +30,7 @@ const HEALTH_REQUEST = Buffer.from(
   'utf8',
 );
 const SENSITIVE_FIELD_PATTERN =
-  /(?:authorization|bearer|cookie|credential|password|secret|token)/iu;
+  /(?:api[-_]?key|authorization|bearer|cookie|credential|header|password|secret|token)/iu;
 const COVEN_DAEMON_RESPONSE_ERROR_BRAND = Symbol.for(
   '@opencoven/coven-client/CovenDaemonResponseError',
 );
@@ -52,6 +55,19 @@ export interface CovenUnixFileIdentity {
   socket: boolean;
 }
 
+export interface CovenUnixPeerIdentity {
+  device: number;
+  inode: number;
+  ownerUid: number;
+}
+
+export interface CovenUnixPeerIdentityAdapter {
+  inspectConnected(
+    path: string,
+    socket: CovenSocket,
+  ): Promise<CovenUnixPeerIdentity>;
+}
+
 export interface CovenDaemonFailure {
   code: string;
   message: string;
@@ -62,14 +78,18 @@ export class CovenDaemonResponseError extends Error {
   readonly retryable = false;
   readonly code: string;
   readonly statusCode: number;
+  readonly daemon: CovenDaemonFailure;
 
   constructor(
-    readonly daemon: CovenDaemonFailure,
+    daemon: CovenDaemonFailure,
     statusCode: number,
   ) {
-    super(`Coven daemon rejected the health request with ${daemon.code}.`);
+    super('Coven daemon returned an unsafe error response.');
+    const sanitized = sanitizeDaemonFailure(daemon);
+    this.message = `Coven daemon rejected the health request with ${sanitized.code}.`;
     this.name = 'CovenDaemonResponseError';
-    this.code = daemon.code;
+    this.daemon = sanitized;
+    this.code = sanitized.code;
     this.statusCode = statusCode;
     Object.defineProperty(this, COVEN_DAEMON_RESPONSE_ERROR_BRAND, {
       value: true,
@@ -106,6 +126,7 @@ export interface CovenUnixTransportDependencies {
 
 export interface CovenUnixTransportOptions extends CovenHealthTransportLimits {
   dependencies?: CovenUnixTransportDependencies;
+  peerIdentity?: CovenUnixPeerIdentityAdapter;
 }
 
 interface FramedHttpResponse {
@@ -185,29 +206,207 @@ function safeDestroy(socket: CovenSocket): void {
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
-  );
-}
-
-function containsSensitiveField(value: unknown, depth = 0): boolean {
-  if (depth > 16 || value === null || typeof value !== 'object') {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false;
   }
-  if (Array.isArray(value)) {
-    return value.some((entry) => containsSensitiveField(entry, depth + 1));
+  try {
+    const prototype = Reflect.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  } catch {
+    return false;
   }
-  if (!isPlainObject(value)) {
-    return true;
+}
+
+class UnsafeDaemonValueError extends Error {}
+
+interface DaemonSanitizationState {
+  readonly seen: WeakSet<object>;
+  nodes: number;
+  stringBytes: number;
+}
+
+function unsafeDaemonValue(): never {
+  throw new UnsafeDaemonValueError();
+}
+
+function countDaemonString(
+  value: string,
+  state: DaemonSanitizationState,
+): string {
+  state.stringBytes += Buffer.byteLength(value, 'utf8');
+  if (state.stringBytes > MAX_DAEMON_ERROR_STRING_BYTES) {
+    return unsafeDaemonValue();
   }
-  return Object.entries(value).some(
-    ([key, entry]) =>
-      SENSITIVE_FIELD_PATTERN.test(key) ||
-      containsSensitiveField(entry, depth + 1),
-  );
+  return value;
+}
+
+function dataDescriptors(value: object): PropertyDescriptorMap {
+  try {
+    return Object.getOwnPropertyDescriptors(value);
+  } catch {
+    return unsafeDaemonValue();
+  }
+}
+
+function descriptorFromMap(
+  descriptors: PropertyDescriptorMap,
+  key: PropertyKey,
+): PropertyDescriptor | undefined {
+  return Reflect.getOwnPropertyDescriptor(descriptors, key)?.value;
+}
+
+function sanitizeDaemonValue(
+  value: unknown,
+  state: DaemonSanitizationState,
+  depth: number,
+): unknown {
+  state.nodes += 1;
+  if (
+    state.nodes > MAX_DAEMON_ERROR_NODES ||
+    depth > MAX_DAEMON_ERROR_DEPTH
+  ) {
+    return unsafeDaemonValue();
+  }
+
+  if (
+    value === null ||
+    typeof value === 'boolean'
+  ) {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : unsafeDaemonValue();
+  }
+  if (typeof value === 'string') {
+    return countDaemonString(value, state);
+  }
+  if (typeof value !== 'object') {
+    return unsafeDaemonValue();
+  }
+
+  if (state.seen.has(value)) {
+    return unsafeDaemonValue();
+  }
+  state.seen.add(value);
+
+  let array: boolean;
+  let prototype: object | null;
+  try {
+    array = Array.isArray(value);
+    prototype = Reflect.getPrototypeOf(value);
+  } catch {
+    return unsafeDaemonValue();
+  }
+
+  const descriptors = dataDescriptors(value);
+  const keys = Reflect.ownKeys(descriptors);
+  if (keys.some((key) => typeof key === 'symbol')) {
+    return unsafeDaemonValue();
+  }
+
+  if (array) {
+    if (prototype !== Array.prototype) {
+      return unsafeDaemonValue();
+    }
+    const length: unknown = descriptorFromMap(descriptors, 'length')?.value;
+    if (!Number.isSafeInteger(length) || (length as number) < 0) {
+      return unsafeDaemonValue();
+    }
+    const entries = keys.filter((key) => key !== 'length');
+    if (entries.length !== length) {
+      return unsafeDaemonValue();
+    }
+    const sanitized: unknown[] = [];
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = descriptorFromMap(descriptors, String(index));
+      if (
+        descriptor === undefined ||
+        !Object.hasOwn(descriptor, 'value') ||
+        descriptor.enumerable !== true
+      ) {
+        return unsafeDaemonValue();
+      }
+      sanitized.push(sanitizeDaemonValue(descriptor.value, state, depth + 1));
+    }
+    return sanitized;
+  }
+
+  if (prototype !== Object.prototype && prototype !== null) {
+    return unsafeDaemonValue();
+  }
+  const sanitized: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (typeof key !== 'string' || SENSITIVE_FIELD_PATTERN.test(key)) {
+      return unsafeDaemonValue();
+    }
+    countDaemonString(key, state);
+    const descriptor = descriptorFromMap(descriptors, key);
+    if (
+      descriptor === undefined ||
+      !Object.hasOwn(descriptor, 'value') ||
+      descriptor.enumerable !== true
+    ) {
+      return unsafeDaemonValue();
+    }
+    Object.defineProperty(sanitized, key, {
+      configurable: true,
+      enumerable: true,
+      value: sanitizeDaemonValue(descriptor.value, state, depth + 1),
+      writable: true,
+    });
+  }
+  return sanitized;
+}
+
+function sanitizeDaemonFailure(value: unknown): CovenDaemonFailure {
+  let sanitized: unknown;
+  try {
+    sanitized = sanitizeDaemonValue(
+      value,
+      {
+        seen: new WeakSet(),
+        nodes: 0,
+        stringBytes: 0,
+      },
+      0,
+    );
+  } catch {
+    throw ipcError(
+      'invalid_response',
+      'Coven daemon returned an unsafe error response.',
+      'read_response',
+    );
+  }
+
+  if (!isPlainObject(sanitized)) {
+    throw ipcError(
+      'invalid_response',
+      'Coven daemon returned an unsafe error response.',
+      'read_response',
+    );
+  }
+  const fields = Object.keys(sanitized);
+  if (
+    fields.length !== 3 ||
+    fields.some((field) => !['code', 'message', 'details'].includes(field)) ||
+    typeof sanitized.code !== 'string' ||
+    sanitized.code.length === 0 ||
+    typeof sanitized.message !== 'string' ||
+    sanitized.message.length === 0 ||
+    !Object.hasOwn(sanitized, 'details')
+  ) {
+    throw ipcError(
+      'invalid_response',
+      'Coven daemon returned an unsafe error response.',
+      'read_response',
+    );
+  }
+
+  return {
+    code: sanitized.code,
+    message: sanitized.message,
+    details: sanitized.details,
+  };
 }
 
 function decodeUtf8(bytes: Buffer): string {
@@ -243,31 +442,8 @@ function parseDaemonFailure(
       'read_response',
     );
   }
-  const error = parsed.error;
-  if (
-    Object.keys(error).some(
-      (field) => !['code', 'message', 'details'].includes(field),
-    ) ||
-    typeof error.code !== 'string' ||
-    error.code.length === 0 ||
-    typeof error.message !== 'string' ||
-    error.message.length === 0 ||
-    !Object.hasOwn(error, 'details') ||
-    containsSensitiveField(error)
-  ) {
-    throw ipcError(
-      'invalid_response',
-      'Coven daemon returned an unsafe error response.',
-      'read_response',
-    );
-  }
-
   return new CovenDaemonResponseError(
-    {
-      code: error.code,
-      message: error.message,
-      details: error.details,
-    },
+    parsed.error as unknown as CovenDaemonFailure,
     statusCode,
   );
 }
@@ -489,6 +665,102 @@ function signalReason(signal: AbortSignal): unknown {
   } catch {
     return undefined;
   }
+}
+
+export function awaitOperationStep<T>(
+  operation: () => Promise<T>,
+  context: OperationContext | undefined,
+  phase: CovenIpcDiagnostics['phase'],
+): Promise<T> {
+  const pending = Promise.resolve().then(operation);
+  if (context === undefined) {
+    return pending;
+  }
+
+  return new Promise((resolvePromise, reject) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (action: () => void): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+      context.signal.removeEventListener('abort', onAbort);
+      action();
+    };
+
+    const onAbort = (): void => {
+      const reason = signalReason(context.signal);
+      finish(() => {
+        reject(
+          reason instanceof Error
+            ? reason
+            : ipcError(
+                'connect_failure',
+                'Coven health request was aborted.',
+                phase,
+              ),
+        );
+      });
+    };
+
+    pending.then(
+      (value) => {
+        finish(() => {
+          resolvePromise(value);
+        });
+      },
+      (error: unknown) => {
+        finish(() => {
+          reject(
+            error instanceof Error
+              ? error
+              : ipcError(
+                  'connect_failure',
+                  'Coven health operation failed.',
+                  phase,
+                ),
+          );
+        });
+      },
+    );
+
+    context.signal.addEventListener('abort', onAbort, { once: true });
+    if (context.signal.aborted) {
+      onAbort();
+      return;
+    }
+    if (context.deadline !== undefined) {
+      const remainingMs = context.deadline - performance.now();
+      if (remainingMs <= 0) {
+        finish(() => {
+          reject(
+            ipcError(
+              'timeout',
+              'Coven daemon health operation timed out.',
+              phase,
+            ),
+          );
+        });
+        return;
+      }
+      timer = setTimeout(() => {
+        finish(() => {
+          reject(
+            ipcError(
+              'timeout',
+              'Coven daemon health operation timed out.',
+              phase,
+            ),
+          );
+        });
+      }, remainingMs);
+    }
+  });
 }
 
 export function requestCovenHealthOverSocket(
@@ -742,6 +1014,45 @@ function validateUnixIdentity(
   }
 }
 
+function validateUnixPeerIdentity(
+  identity: CovenUnixPeerIdentity,
+  expectedUid: number,
+): void {
+  let device: unknown;
+  let inode: unknown;
+  let ownerUid: unknown;
+  try {
+    device = identity.device;
+    inode = identity.inode;
+    ownerUid = identity.ownerUid;
+  } catch {
+    throw ipcError(
+      'unsafe_endpoint',
+      'Connected Coven Unix peer identity was invalid.',
+      'revalidate_endpoint',
+    );
+  }
+  if (ownerUid !== expectedUid) {
+    throw ipcError(
+      'owner_mismatch',
+      'Connected Coven Unix peer owner did not match the current user.',
+      'revalidate_endpoint',
+    );
+  }
+  if (
+    !Number.isSafeInteger(device) ||
+    (device as number) < 0 ||
+    !Number.isSafeInteger(inode) ||
+    (inode as number) <= 0
+  ) {
+    throw ipcError(
+      'unsafe_endpoint',
+      'Connected Coven Unix peer identity was invalid.',
+      'revalidate_endpoint',
+    );
+  }
+}
+
 function defaultUnixConnector(path: string): CovenSocket {
   return createConnection({ path });
 }
@@ -753,6 +1064,7 @@ export function createCovenUnixTransport(
   const endpoint = validUnixEndpoint(discovered);
   const connect = options.dependencies?.connect ?? defaultUnixConnector;
   const lstat = options.dependencies?.lstat ?? defaultUnixLstat;
+  const peerIdentity = options.peerIdentity;
   const getEffectiveUid =
     options.dependencies?.getEffectiveUid ??
     (() => process.geteuid?.());
@@ -779,47 +1091,75 @@ export function createCovenUnixTransport(
         );
       }
 
-      let initial: CovenUnixFileIdentity;
-      try {
-        initial = await lstat(endpoint.path);
-      } catch (error) {
-        const notFound =
-          typeof error === 'object' &&
-          error !== null &&
-          Reflect.get(error, 'code') === 'ENOENT';
-        throw ipcError(
-          notFound ? 'not_found' : 'unsafe_endpoint',
-          notFound
-            ? 'Coven Unix socket was not found.'
-            : 'Coven Unix socket could not be inspected safely.',
-          'validate_endpoint',
-        );
-      }
+      const initial = await awaitOperationStep(
+        async () => {
+          try {
+            return await lstat(endpoint.path);
+          } catch (error) {
+            const notFound =
+              typeof error === 'object' &&
+              error !== null &&
+              Reflect.get(error, 'code') === 'ENOENT';
+            throw ipcError(
+              notFound ? 'not_found' : 'unsafe_endpoint',
+              notFound
+                ? 'Coven Unix socket was not found.'
+                : 'Coven Unix socket could not be inspected safely.',
+              'validate_endpoint',
+            );
+          }
+        },
+        context,
+        'validate_endpoint',
+      );
       validateUnixIdentity(initial, expectedUid, 'validate_endpoint');
 
       return requestCovenHealthOverSocket(
         endpoint.path,
         {
           connect,
-          async revalidate() {
-            let confirmed: CovenUnixFileIdentity;
-            try {
-              confirmed = await lstat(endpoint.path);
-            } catch {
-              throw ipcError(
-                'unsafe_endpoint',
-                'Coven Unix socket changed during connection.',
-                'revalidate_endpoint',
-              );
-            }
+          async revalidate(socket) {
+            const [confirmed, connectedPeer] = await Promise.all([
+              Promise.resolve()
+                .then(() => lstat(endpoint.path))
+                .catch(() => {
+                  throw ipcError(
+                    'unsafe_endpoint',
+                    'Coven Unix socket changed during connection.',
+                    'revalidate_endpoint',
+                  );
+                }),
+              peerIdentity === undefined
+                ? Promise.reject(
+                    ipcError(
+                      'unsafe_endpoint',
+                      'Connected Coven Unix peer identity could not be established.',
+                      'revalidate_endpoint',
+                    ),
+                  )
+                : Promise.resolve()
+                    .then(() =>
+                      peerIdentity.inspectConnected(endpoint.path, socket),
+                    )
+                    .catch(() => {
+                      throw ipcError(
+                        'unsafe_endpoint',
+                        'Connected Coven Unix peer identity could not be established.',
+                        'revalidate_endpoint',
+                      );
+                    }),
+            ]);
             validateUnixIdentity(
               confirmed,
               expectedUid,
               'revalidate_endpoint',
             );
+            validateUnixPeerIdentity(connectedPeer, expectedUid);
             if (
               confirmed.device !== initial.device ||
-              confirmed.inode !== initial.inode
+              confirmed.inode !== initial.inode ||
+              connectedPeer.device !== initial.device ||
+              connectedPeer.inode !== initial.inode
             ) {
               throw ipcError(
                 'unsafe_endpoint',

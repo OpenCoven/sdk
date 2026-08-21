@@ -42,6 +42,8 @@ export type {
   CovenSocket,
   CovenSocketConnector,
   CovenUnixFileIdentity,
+  CovenUnixPeerIdentity,
+  CovenUnixPeerIdentityAdapter,
   CovenUnixTransportDependencies,
   CovenUnixTransportOptions,
 } from './transport-unix.js';

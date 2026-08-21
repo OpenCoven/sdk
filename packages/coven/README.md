@@ -13,12 +13,19 @@ prefers a non-empty `COVEN_HOME`: on Unix it derives
 Windows the daemon metadata supplies the profile-specific pipe name. When
 `COVEN_HOME` is empty or absent, discovery executes exactly
 `coven config paths --json` with no shell, a bounded timeout/output buffer, and
-a small allowlisted environment.
+a small allowlisted environment. The executable and argv are not caller
+configurable; tests may replace only the injected `execFile` dependency.
 
 ```ts
-import { createDiscoveredCovenClient } from '@opencoven/coven-client';
+import {
+  createDiscoveredCovenClient,
+  type CovenUnixPeerIdentityAdapter,
+} from '@opencoven/coven-client';
 
-const coven = await createDiscoveredCovenClient();
+declare const nativeUnixPeerIdentity: CovenUnixPeerIdentityAdapter;
+const coven = await createDiscoveredCovenClient({
+  unix: { peerIdentity: nativeUnixPeerIdentity },
+});
 
 await coven.health({ timeoutMs: 5_000 });
 ```
@@ -35,8 +42,12 @@ frames, or socket handles.
 
 - Unix endpoints must be normalized absolute paths. The transport uses
   `lstat`, rejects symlinks and non-sockets, requires the current effective UID
-  and rejects group/world-writable modes, then compares device/inode identity
-  again immediately after connecting.
+  and rejects group/world-writable modes. Because Node has no portable API for
+  connected Unix peer identity, callers must provide a native
+  `peerIdentity.inspectConnected()` adapter. The transport compares that
+  connected peer's owner and device/inode identity to the current effective
+  UID and the prevalidated path, then separately revalidates the current path.
+  Missing or failed peer identity inspection fails closed.
 - Windows endpoints must be canonical local `\\.\pipe\...` names. Node does
   not expose sufficient named-pipe ACL/owner inspection, so Windows callers
   must provide a native, PowerShell-free `ownership` adapter. The adapter
@@ -46,7 +57,8 @@ frames, or socket handles.
 Connect and request timeouts, HTTP headers, response bodies, and framing are
 bounded. The health response must contain boolean `sessions`, `events`, and
 `structuredErrors` capabilities; `eventCursor` remains optional for source
-compatibility.
+compatibility. A health operation deadline covers ownership/path inspection,
+connected-peer revalidation, connect, write, read, and socket cleanup.
 
 ## Errors
 
@@ -59,9 +71,11 @@ filesystem contents, credentials, and socket handles are never copied into
 public errors.
 
 Daemon error envelopes remain structured on `CovenClientError.daemon` instead
-of being flattened to strings. Use `isCovenClientError(error)` and
-`isCovenIpcError(error)` when errors may cross bundles or duplicate package
-installations.
+of being flattened to strings. Their JSON-compatible details are copied
+through bounded, cycle- and accessor-safe validation; sensitive field names,
+excessive depth, or excessive structured size fail closed as
+`invalid_response`. Use `isCovenClientError(error)` and `isCovenIpcError(error)`
+when errors may cross bundles or duplicate package installations.
 
 `health()` accepts an optional signal, timeout, and lifecycle observer.
 Constructor operation defaults remain additive, and zero-argument transports

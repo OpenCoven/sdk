@@ -8,6 +8,7 @@ import {
 } from './discovery.js';
 import type { CovenTransport } from './transport.js';
 import {
+  awaitOperationStep,
   requestCovenHealthOverSocket,
   type CovenHealthTransportLimits,
   type CovenSocket,
@@ -159,19 +160,23 @@ export function createCovenWindowsTransport(
 
   return {
     async health(context) {
-      let currentUserIdentity: string;
-      let initial: CovenWindowsPipeIdentity;
-      try {
-        [currentUserIdentity, initial] = await Promise.all([
-          options.ownership.currentUserIdentity(),
-          options.ownership.inspect(endpoint.path),
-        ]);
-      } catch {
-        throw unsafe(
-          'Coven named pipe ownership could not be validated.',
-          'validate_endpoint',
-        );
-      }
+      const [currentUserIdentity, initial] = await awaitOperationStep(
+        async () => {
+          try {
+            return await Promise.all([
+              options.ownership.currentUserIdentity(),
+              options.ownership.inspect(endpoint.path),
+            ]);
+          } catch {
+            throw unsafe(
+              'Coven named pipe ownership could not be validated.',
+              'validate_endpoint',
+            );
+          }
+        },
+        context,
+        'validate_endpoint',
+      );
       if (
         typeof currentUserIdentity !== 'string' ||
         currentUserIdentity.length === 0
