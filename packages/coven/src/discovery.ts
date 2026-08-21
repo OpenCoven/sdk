@@ -549,18 +549,20 @@ function awaitDiscoveryStep<T>(
         });
       },
       (error: unknown) => {
+        const expired = remainingDiscoveryTime(deadline) <= 0;
+        const failure = expired
+          ? discoveryTimeout(phase)
+          : isCovenIpcError(error)
+            ? error
+            : new CovenIpcError(
+                'command_failed',
+                phase === 'read_metadata'
+                  ? 'Coven daemon metadata operation failed.'
+                  : 'Coven executable validation failed.',
+                { phase },
+              );
         finish(() => {
-          reject(
-            isCovenIpcError(error)
-              ? error
-              : new CovenIpcError(
-                  'command_failed',
-                  phase === 'read_metadata'
-                    ? 'Coven daemon metadata operation failed.'
-                    : 'Coven executable validation failed.',
-                  { phase },
-                ),
-          );
+          reject(failure);
         });
       },
     );

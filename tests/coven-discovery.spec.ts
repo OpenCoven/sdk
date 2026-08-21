@@ -1499,6 +1499,41 @@ describe('Coven endpoint discovery', () => {
     }
   });
 
+  test('prefers the discovery deadline over a delayed rejecting lstat', async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const home = resolve(ownedRoot.rootPath, 'profile');
+    let rejectLstat: ((error: Error) => void) | undefined;
+    const result = discoverCovenEndpoint({
+      env: { COVEN_HOME: home },
+      platform: 'linux',
+      timeoutMs: 1,
+      dependencies: {
+        getEffectiveUid: () => 501,
+        lstat: () =>
+          new Promise<CovenDiscoveryFileIdentity>((_resolve, reject) => {
+            rejectLstat = reject;
+          }),
+        openFile: vi.fn(),
+      },
+    }).catch((error: unknown) => error);
+
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      now = 1;
+      rejectLstat?.(new Error('private late lstat failure'));
+
+      await expect(result).resolves.toMatchObject({
+        code: 'timeout',
+        diagnostics: { phase: 'read_metadata' },
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   test('rejects discovery when final endpoint assembly reaches the deadline', async () => {
     vi.useFakeTimers();
     let now = 0;
@@ -2515,6 +2550,70 @@ describe('Unix owner-local health transport', () => {
     }
   });
 
+  test('prefers the deadline over delayed rejecting Unix pre-connect validation', async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const connect = vi.fn(() => connectedSocket(httpResponse(HEALTH_BODY)));
+    let rejectLstat: ((error: Error) => void) | undefined;
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect,
+          getEffectiveUid: () => 501,
+          lstat: () =>
+            new Promise<CovenUnixFileIdentity>((_resolve, reject) => {
+              rejectLstat = reject;
+            }),
+        },
+      },
+    );
+
+    try {
+      const result = transport
+        .health({
+          signal: new AbortController().signal,
+          deadline: now + 1,
+        })
+        .catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(0);
+      now = 1;
+      rejectLstat?.(new Error('private delayed Unix inspection failure'));
+
+      await expect(result).resolves.toMatchObject({
+        code: 'timeout',
+        diagnostics: { phase: 'validate_endpoint' },
+      });
+      expect(connect).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  test('keeps an immediate Unix pre-connect inspection failure unsafe', async () => {
+    const connect = vi.fn(() => connectedSocket(httpResponse(HEALTH_BODY)));
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect,
+          getEffectiveUid: () => 501,
+          lstat: () =>
+            Promise.reject(new Error('private immediate Unix inspection failure')),
+        },
+      },
+    );
+
+    await expect(transport.health()).rejects.toMatchObject({
+      code: 'unsafe_endpoint',
+      diagnostics: { phase: 'validate_endpoint' },
+    });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
   test('absorbs a late Unix validator rejection after the operation deadline', async () => {
     vi.useFakeTimers();
     let rejectInspection: ((error: Error) => void) | undefined;
@@ -2578,6 +2677,98 @@ describe('Unix owner-local health transport', () => {
 
     expect(await result).toMatchObject({ code: 'timeout' });
     expect(inspectConnected).toHaveBeenCalledOnce();
+    expect(socket.writes).toEqual([]);
+    expect(socket.destroyed).toBe(true);
+  });
+
+  test('prefers the deadline over delayed rejecting Unix post-connect validation', async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const socket = new FakeSocket();
+    let inspection = 0;
+    let rejectRevalidation: ((error: Error) => void) | undefined;
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect: () => {
+            queueMicrotask(() => {
+              socket.emit('connect');
+            });
+            return socket;
+          },
+          getEffectiveUid: () => 501,
+          lstat: () => {
+            inspection += 1;
+            if (inspection === 1) {
+              return Promise.resolve(unixIdentity());
+            }
+            return new Promise<CovenUnixFileIdentity>((_resolve, reject) => {
+              rejectRevalidation = reject;
+            });
+          },
+        },
+      },
+    );
+
+    try {
+      const result = transport
+        .health({
+          signal: new AbortController().signal,
+          deadline: now + 1,
+        })
+        .catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(inspection).toBe(2);
+      now = 1;
+      rejectRevalidation?.(
+        new Error('private delayed Unix revalidation failure'),
+      );
+
+      await expect(result).resolves.toMatchObject({
+        code: 'timeout',
+        diagnostics: { phase: 'revalidate_endpoint' },
+      });
+      expect(socket.writes).toEqual([]);
+      expect(socket.destroyed).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  test('keeps an immediate Unix post-connect inspection failure unsafe', async () => {
+    const socket = new FakeSocket();
+    let inspection = 0;
+    const transport = createCovenUnixTransport(
+      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      {
+        dependencies: {
+          connect: () => {
+            queueMicrotask(() => {
+              socket.emit('connect');
+            });
+            return socket;
+          },
+          getEffectiveUid: () => 501,
+          lstat: () => {
+            inspection += 1;
+            return inspection === 1
+              ? Promise.resolve(unixIdentity())
+              : Promise.reject(
+                  new Error('private immediate Unix revalidation failure'),
+                );
+          },
+        },
+      },
+    );
+
+    await expect(transport.health()).rejects.toMatchObject({
+      code: 'unsafe_endpoint',
+      diagnostics: { phase: 'revalidate_endpoint' },
+    });
     expect(socket.writes).toEqual([]);
     expect(socket.destroyed).toBe(true);
   });
@@ -3269,6 +3460,49 @@ describe('Windows owner-local health transport', () => {
     await Promise.resolve();
   });
 
+  test('prefers the deadline over delayed rejecting Windows pre-connect validation', async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const connect = vi.fn(() => connectedSocket(httpResponse(HEALTH_BODY)));
+    let rejectInspection: ((error: Error) => void) | undefined;
+    const transport = createCovenWindowsTransport(windowsEndpoint(), {
+      dependencies: { connect },
+      ownership: {
+        currentUserIdentity: () => Promise.resolve('S-1-5-21-current-user'),
+        inspect: () =>
+          new Promise<CovenWindowsPipeIdentity>((_resolve, reject) => {
+            rejectInspection = reject;
+          }),
+        inspectConnected: () => Promise.resolve(windowsIdentity()),
+      },
+    });
+
+    try {
+      const result = transport
+        .health({
+          signal: new AbortController().signal,
+          deadline: now + 1,
+        })
+        .catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(0);
+      now = 1;
+      rejectInspection?.(
+        new Error('private delayed Windows ownership failure'),
+      );
+
+      await expect(result).resolves.toMatchObject({
+        code: 'timeout',
+        diagnostics: { phase: 'validate_endpoint' },
+      });
+      expect(connect).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   test('applies the operation deadline to Windows connected-pipe validation', async () => {
     vi.useFakeTimers();
     const socket = new FakeSocket();
@@ -3303,6 +3537,61 @@ describe('Windows owner-local health transport', () => {
     expect(inspectConnected).toHaveBeenCalledOnce();
     expect(socket.writes).toEqual([]);
     expect(socket.destroyed).toBe(true);
+  });
+
+  test('prefers the deadline over delayed rejecting Windows post-connect validation', async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const socket = new FakeSocket();
+    let rejectInspection: ((error: Error) => void) | undefined;
+    const inspectConnected = vi.fn(
+      () =>
+        new Promise<CovenWindowsPipeIdentity>((_resolve, reject) => {
+          rejectInspection = reject;
+        }),
+    );
+    const transport = createCovenWindowsTransport(windowsEndpoint(), {
+      dependencies: {
+        connect: () => {
+          queueMicrotask(() => {
+            socket.emit('connect');
+          });
+          return socket;
+        },
+      },
+      ownership: {
+        currentUserIdentity: () => Promise.resolve('S-1-5-21-current-user'),
+        inspect: () => Promise.resolve(windowsIdentity()),
+        inspectConnected,
+      },
+    });
+
+    try {
+      const result = transport
+        .health({
+          signal: new AbortController().signal,
+          deadline: now + 1,
+        })
+        .catch((error: unknown) => error);
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(inspectConnected).toHaveBeenCalledOnce();
+      now = 1;
+      rejectInspection?.(
+        new Error('private delayed Windows revalidation failure'),
+      );
+
+      await expect(result).resolves.toMatchObject({
+        code: 'timeout',
+        diagnostics: { phase: 'revalidate_endpoint' },
+      });
+      expect(socket.writes).toEqual([]);
+      expect(socket.destroyed).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   test('rejects an expired Windows health budget before starting validation', async () => {

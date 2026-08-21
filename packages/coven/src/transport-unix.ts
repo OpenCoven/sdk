@@ -724,6 +724,26 @@ function signalReason(signal: AbortSignal): unknown {
   }
 }
 
+function operationControlError(
+  context: OperationContext | undefined,
+  phase: CovenIpcDiagnostics['phase'],
+  timeoutMessage?: string,
+): Error | undefined {
+  if (context?.signal.aborted === true) {
+    const reason = signalReason(context.signal);
+    return reason instanceof Error
+      ? reason
+      : ipcError(
+          'connect_failure',
+          'Coven health request was aborted.',
+          phase,
+        );
+  }
+  return deadlineExpired(context)
+    ? healthTimeout(phase, timeoutMessage)
+    : undefined;
+}
+
 export function awaitOperationStep<T>(
   operation: () => Promise<T>,
   context: OperationContext | undefined,
@@ -732,20 +752,9 @@ export function awaitOperationStep<T>(
   if (context === undefined) {
     return Promise.resolve().then(operation);
   }
-  if (context.signal.aborted) {
-    const reason = signalReason(context.signal);
-    return Promise.reject(
-      reason instanceof Error
-        ? reason
-        : ipcError(
-            'connect_failure',
-            'Coven health request was aborted.',
-            phase,
-          ),
-    );
-  }
-  if (deadlineExpired(context)) {
-    return Promise.reject(healthTimeout(phase));
+  const initialControlError = operationControlError(context, phase);
+  if (initialControlError !== undefined) {
+    return Promise.reject(initialControlError);
   }
 
   const pending = Promise.resolve().then(operation);
@@ -793,16 +802,18 @@ export function awaitOperationStep<T>(
         });
       },
       (error: unknown) => {
+        const controlError = operationControlError(context, phase);
+        const failure =
+          controlError ??
+          (error instanceof Error
+            ? error
+            : ipcError(
+                'connect_failure',
+                'Coven health operation failed.',
+                phase,
+              ));
         finish(() => {
-          reject(
-            error instanceof Error
-              ? error
-              : ipcError(
-                  'connect_failure',
-                  'Coven health operation failed.',
-                  phase,
-                ),
-          );
+          reject(failure);
         });
       },
     );
@@ -1086,7 +1097,14 @@ export function requestCovenHealthOverSocket(
             );
           }
         })
-        .catch(failRequest);
+        .catch((error: unknown) => {
+          if (settled) {
+            return;
+          }
+          failRequest(
+            operationControlError(context, 'revalidate_endpoint') ?? error,
+          );
+        });
     };
 
     try {
