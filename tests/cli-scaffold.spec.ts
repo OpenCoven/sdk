@@ -300,6 +300,35 @@ describe('opencoven scaffold command', () => {
     });
   });
 
+  /**
+   * A target whose parent is a file. Whether the refusal arrives from the
+   * conflict check or from `mkdir` differs per platform, so this pins the
+   * outcome the caller sees rather than the errno that produced it.
+   */
+  test('reports a filesystem refusal as a failure instead of rejecting', async () => {
+    const blocker = targetPath('blocker');
+
+    writeFileSync(blocker, 'not a directory\n');
+
+    const result = await runCli(['--json', 'scaffold', 'cave-chat', resolve(blocker, 'app')]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toBe('');
+
+    const payload = JSON.parse(result.stdout) as {
+      command: string;
+      error: { code: string; message: string };
+      ok: boolean;
+    };
+
+    expect(payload).toMatchObject({
+      command: 'scaffold',
+      error: { code: 'scaffold_failed' },
+      ok: false,
+    });
+    expect(payload.error.message).toContain('Could not write the cave-chat scaffold');
+  });
+
   test('requires a target directory rather than guessing one', async () => {
     const result = await runCli(['--json', 'scaffold', 'cave-chat']);
 

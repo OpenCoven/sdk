@@ -63,6 +63,12 @@ appears between the check and the write is refused by the kernel rather than
 clobbered, and a template path that is not a plain relative path is rejected
 before anything is created.
 
+Every refusal is a normal exit-code-`1` result with a stable error code:
+`missing_template`, `unknown_template`, `missing_directory`,
+`scaffold_conflict`, `invalid_scaffold_path`, or `scaffold_failed` for anything
+the filesystem refuses — a target under a file, a directory you cannot write, a
+full disk. `--json` stays machine-readable on every one of them.
+
 The SDK packages are unpublished, so a generated scaffold installs them from
 packed tarballs — its README says how. `pnpm verify:package` proves this end to
 end: it generates every scaffold, installs the freshly packed tarballs into it

@@ -106,6 +106,19 @@ function runDiagnostics(format: CliFormat): CliRunResult {
   );
 }
 
+/**
+ * Describe a failure the scaffold writer did not classify.
+ *
+ * The underlying message is kept because a filesystem error names the path it
+ * failed on, which is the whole of what the reader needs; the template is
+ * named in front of it so the line stands on its own in a shell transcript.
+ */
+function describeFailure(template: string, error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error);
+
+  return `Could not write the ${template} scaffold: ${detail}`;
+}
+
 async function runScaffold(
   argv: readonly string[],
   force: boolean,
@@ -174,7 +187,12 @@ async function runScaffold(
       return failure('scaffold', 'invalid_scaffold_path', error.message, format);
     }
 
-    throw error;
+    // Everything else here is the filesystem answering: a target under a file,
+    // a directory the user cannot write, a full disk. Rethrowing made the top
+    // level await in `bin.ts` reject, which prints a raw Node stack and emits
+    // no JSON at all -- breaking the one thing `--json` promises, on the paths
+    // a caller is most likely to script around.
+    return failure('scaffold', 'scaffold_failed', describeFailure(template, error), format);
   }
 }
 
