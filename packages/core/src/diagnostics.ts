@@ -302,6 +302,18 @@ export function sanitizeDiagnosticsError(error: NormalizedError): DiagnosticsErr
   };
 }
 
+/** Fold one duration into the summary, ignoring anything that is not a number. */
+function recordDuration(summary: DiagnosticsOperationSummary, durationMs: unknown): void {
+  if (typeof durationMs !== 'number' || !Number.isFinite(durationMs)) {
+    return;
+  }
+
+  const rounded = Math.round(durationMs);
+
+  summary.maxDurationMs =
+    summary.maxDurationMs === null ? rounded : Math.max(summary.maxDurationMs, rounded);
+}
+
 function createAccumulator(system: OpenCovenSystem, operation: string): OperationAccumulator {
   return {
     summary: {
@@ -356,14 +368,8 @@ export function summarizeOperationEvents(
       continue;
     }
 
-    if (typeof event.durationMs === 'number' && Number.isFinite(event.durationMs)) {
-      const durationMs = Math.round(event.durationMs);
-
-      summary.maxDurationMs =
-        summary.maxDurationMs === null ? durationMs : Math.max(summary.maxDurationMs, durationMs);
-    }
-
     if (event.phase === 'success') {
+      recordDuration(summary, event.durationMs);
       summary.succeeded += 1;
       continue;
     }
@@ -372,12 +378,26 @@ export function summarizeOperationEvents(
       summary.failed += 1;
     } else if (event.phase === 'timeout') {
       summary.timedOut += 1;
-    } else {
+    } else if (event.phase === 'abort') {
       summary.aborted += 1;
+    } else {
+      // A phase this build does not know is dropped rather than folded into the
+      // nearest counter. An earlier `else` counted it as an abort, which put an
+      // abort that never happened into the one artifact whose entire value is
+      // that its counts are true.
+      continue;
     }
 
-    if (matches(event.error.code, CODE_PATTERN)) {
-      accumulator.codes.add(event.error.code);
+    recordDuration(summary, event.durationMs);
+
+    // `error` is required on these phases by the type, so a missing one means
+    // the event did not come from this SDK. Reading it unguarded threw a
+    // TypeError out of `createDiagnosticsBundle`, losing the whole bundle over
+    // one malformed event -- the opposite of what a support bundle is for.
+    const error: unknown = event.error;
+
+    if (isObject(error) && matches(error.code, CODE_PATTERN)) {
+      accumulator.codes.add(error.code);
     }
   }
 

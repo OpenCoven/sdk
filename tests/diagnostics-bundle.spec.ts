@@ -342,6 +342,69 @@ describe('operation summaries', () => {
     ).toEqual([]);
   });
 
+  test('keeps counting when a terminal event arrives without its error', () => {
+    expect(
+      summarizeOperationEvents([
+        { phase: 'failure', system: 'cave', operation: 'health', durationMs: 7 },
+        {
+          phase: 'failure',
+          system: 'cave',
+          operation: 'health',
+          durationMs: 8,
+          error: { system: 'cave', code: 'unavailable', retryable: true, operation: 'health' },
+        },
+      ] as unknown as OperationEvent[]),
+    ).toEqual([
+      {
+        system: 'cave',
+        operation: 'health',
+        started: 0,
+        succeeded: 0,
+        failed: 2,
+        timedOut: 0,
+        aborted: 0,
+        maxDurationMs: 8,
+        codes: ['unavailable'],
+      },
+    ]);
+  });
+
+  test('survives a malformed event rather than losing the whole bundle', () => {
+    expect(
+      createDiagnosticsBundle({
+        packages: { '@opencoven/sdk-core': '0.1.0' },
+        events: [{ phase: 'timeout', system: 'cave', operation: 'health', durationMs: 3 }],
+      } as unknown as DiagnosticsInput).versions.packages,
+    ).toEqual({ '@opencoven/sdk-core': '0.1.0' });
+  });
+
+  test('drops a phase it does not recognize instead of calling it an abort', () => {
+    expect(
+      summarizeOperationEvents([
+        {
+          phase: 'cancelled',
+          system: 'cave',
+          operation: 'health',
+          durationMs: 400,
+          error: { system: 'cave', code: 'aborted', retryable: false, operation: 'health' },
+        },
+        { phase: 'start', system: 'cave', operation: 'health' },
+      ] as unknown as OperationEvent[]),
+    ).toEqual([
+      {
+        system: 'cave',
+        operation: 'health',
+        started: 1,
+        succeeded: 0,
+        failed: 0,
+        timedOut: 0,
+        aborted: 0,
+        maxDurationMs: null,
+        codes: [],
+      },
+    ]);
+  });
+
   test('leaves the slowest duration unset when no event reported one', () => {
     expect(
       summarizeOperationEvents([
