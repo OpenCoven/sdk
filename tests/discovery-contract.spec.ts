@@ -1,5 +1,5 @@
 import * as core from '@opencoven/sdk-core';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 type DiscoveryEndpoint =
   | { kind: 'http'; url: string }
@@ -24,6 +24,37 @@ type DiscoveryErrorCode =
 
 type EndpointParser = (value: unknown) => DiscoveryEndpoint;
 type RecordParser = (value: unknown) => DiscoveryRecord;
+
+const ASCII_CONTROL_CHARACTERS = [
+  ...Array.from({ length: 0x20 }, (_, codePoint) => ({
+    character: String.fromCodePoint(codePoint),
+    label: `U+${codePoint.toString(16).padStart(4, '0').toUpperCase()}`,
+  })),
+  { character: '\u007F', label: 'U+007F' },
+] as const;
+
+function createPrototypeBackedObject(
+  ownFields: Record<string, unknown>,
+  inheritedField: string,
+  inheritedValue: unknown,
+): Record<string, unknown> {
+  const prototype = Object.create(Object.prototype) as Record<string, unknown>;
+  Object.defineProperty(prototype, inheritedField, {
+    configurable: true,
+    enumerable: true,
+    value: inheritedValue,
+    writable: true,
+  });
+
+  const target = Object.assign(
+    Object.create(prototype) as Record<string, unknown>,
+    ownFields,
+  );
+
+  return new Proxy(target, {
+    getPrototypeOf: () => Object.prototype,
+  });
+}
 
 function getEndpointParser(): EndpointParser {
   const parser = (
@@ -74,6 +105,10 @@ function expectDiscoveryError(
   });
 }
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('discovery endpoint contract', () => {
   test.each([
     'http://127.0.0.1:4111',
@@ -108,6 +143,35 @@ describe('discovery endpoint contract', () => {
       'invalid_discovery_endpoint',
     );
   });
+
+  test.each(
+    ASCII_CONTROL_CHARACTERS.flatMap(({ character, label }) => [
+      {
+        addressFamily: 'IPv4',
+        label,
+        url: `http://127.0.${character}0.1:4111/`,
+      },
+      {
+        addressFamily: 'IPv6',
+        label,
+        url: `http://[${character}::1]:4111/`,
+      },
+    ]),
+  )(
+    'rejects raw $label controls in $addressFamily URLs before WHATWG parsing',
+    ({ url }) => {
+      const urlConstructor = vi.fn(function urlConstructor() {
+        throw new Error('URL constructor must not be called');
+      });
+      vi.stubGlobal('URL', urlConstructor);
+
+      expectDiscoveryError(
+        () => getEndpointParser()({ kind: 'http', url }),
+        'invalid_discovery_endpoint',
+      );
+      expect(urlConstructor).not.toHaveBeenCalled();
+    },
+  );
 
   test.each([
     '/var/run/opencoven/coven.sock',
@@ -183,6 +247,51 @@ describe('discovery endpoint contract', () => {
           token: 'must-not-be-accepted',
         }),
       'unexpected_discovery_field',
+    );
+  });
+
+  test.each([
+    {
+      field: 'kind',
+      inheritedValue: 'http',
+      ownFields: { url: 'http://127.0.0.1:4111/' },
+    },
+    {
+      field: 'url',
+      inheritedValue: 'http://127.0.0.1:4111/',
+      ownFields: { kind: 'http' },
+    },
+    {
+      field: 'path',
+      inheritedValue: '/var/run/opencoven/coven.sock',
+      ownFields: { kind: 'unix' },
+    },
+  ])('rejects an inherited endpoint.$field field', ({
+    field,
+    inheritedValue,
+    ownFields,
+  }) => {
+    expectDiscoveryError(
+      () =>
+        getEndpointParser()(
+          createPrototypeBackedObject(ownFields, field, inheritedValue),
+        ),
+      'invalid_discovery_value',
+    );
+  });
+
+  test('rejects endpoint objects with a custom prototype', () => {
+    const endpoint = Object.assign(
+      Object.create({ polluted: true }) as Record<string, unknown>,
+      {
+        kind: 'unix',
+        path: '/var/run/opencoven/coven.sock',
+      },
+    );
+
+    expectDiscoveryError(
+      () => getEndpointParser()(endpoint),
+      'invalid_discovery_value',
     );
   });
 });
@@ -321,6 +430,61 @@ describe('versioned discovery record contract', () => {
 
     expectDiscoveryError(
       () => getRecordParser()(accessorRecord),
+      'invalid_discovery_value',
+    );
+  });
+
+  test.each([
+    { field: 'version', inheritedValue: 1 },
+    { field: 'protocol', inheritedValue: 'opencoven.discovery.v1' },
+    { field: 'profile', inheritedValue: 'coven' },
+    {
+      field: 'endpoint',
+      inheritedValue: {
+        kind: 'unix',
+        path: '/var/run/opencoven/coven.sock',
+      },
+    },
+  ])('rejects an inherited record.$field field', ({
+    field,
+    inheritedValue,
+  }) => {
+    const ownFields: Record<string, unknown> = {
+      version: 1,
+      protocol: 'opencoven.discovery.v1',
+      profile: 'coven',
+      endpoint: {
+        kind: 'unix',
+        path: '/var/run/opencoven/coven.sock',
+      },
+    };
+    delete ownFields[field];
+
+    expectDiscoveryError(
+      () =>
+        getRecordParser()(
+          createPrototypeBackedObject(ownFields, field, inheritedValue),
+        ),
+      'invalid_discovery_value',
+    );
+  });
+
+  test('rejects record objects with a custom prototype', () => {
+    const record = Object.assign(
+      Object.create({ polluted: true }) as Record<string, unknown>,
+      {
+        version: 1,
+        protocol: 'opencoven.discovery.v1',
+        profile: 'coven',
+        endpoint: {
+          kind: 'unix',
+          path: '/var/run/opencoven/coven.sock',
+        },
+      },
+    );
+
+    expectDiscoveryError(
+      () => getRecordParser()(record),
       'invalid_discovery_value',
     );
   });

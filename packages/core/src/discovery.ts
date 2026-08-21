@@ -84,11 +84,23 @@ function expectString(value: unknown, path: string): string {
 }
 
 function getField(object: JsonObject, key: string, path: string): unknown {
+  let descriptor: PropertyDescriptor | undefined;
+
   try {
-    return Reflect.get(object, key);
+    descriptor = Object.getOwnPropertyDescriptor(object, key);
   } catch {
-    return invalidValue(`${path}.${key} could not be read.`);
+    return invalidValue(`${path}.${key} could not be inspected.`);
   }
+
+  if (
+    descriptor === undefined ||
+    descriptor.enumerable !== true ||
+    !Object.hasOwn(descriptor, 'value')
+  ) {
+    return invalidValue(`${path}.${key} must be a JSON-safe data field.`);
+  }
+
+  return descriptor.value;
 }
 
 function expectOnlyFields(
@@ -149,12 +161,31 @@ function isIpv4Loopback(host: string): boolean {
   );
 }
 
+function containsAsciiControl(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+
+    if (
+      codePoint !== undefined &&
+      (codePoint <= 0x1F || codePoint === 0x7F)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function parseHttpEndpoint(value: JsonObject): DiscoveryEndpoint {
   expectOnlyFields(value, ['kind', 'url'], 'endpoint');
   const url = expectString(getField(value, 'url', 'endpoint'), 'endpoint.url');
   const match = HTTP_ENDPOINT_PATTERN.exec(url);
 
-  if (match === null || ENCODED_SEPARATOR_PATTERN.test(url)) {
+  if (
+    containsAsciiControl(url) ||
+    match === null ||
+    ENCODED_SEPARATOR_PATTERN.test(url)
+  ) {
     return invalidEndpoint('endpoint.url must be a plain loopback HTTP URL with an explicit port.');
   }
 
