@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { constants as fsConstants } from 'node:fs';
 import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { resolve } from 'node:path';
@@ -223,6 +224,7 @@ function memoryMetadataFile(
   options: {
     close?: () => Promise<void>;
     read?: CovenMetadataFileHandle['read'];
+    stat?: () => Promise<CovenDiscoveryFileIdentity>;
   } = {},
 ): CovenMetadataFileHandle {
   let position = 0;
@@ -239,6 +241,15 @@ function memoryMetadataFile(
         }
         return Promise.resolve({ bytesRead });
       }),
+    stat:
+      options.stat ??
+      (() =>
+        Promise.resolve(
+          discoveryFileIdentity({
+            mode: 0o100600,
+            size: bytes.length,
+          }),
+        )),
   };
 }
 
@@ -538,6 +549,37 @@ describe('Coven endpoint discovery', () => {
       HOME: ownedRoot.rootPath,
       PATH: '/safe/bin',
     });
+  });
+
+  test('passes an integer timeout to Node execFile', async () => {
+    const socketPath = resolve(ownedRoot.rootPath, 'coven.sock');
+    const metadataPath = resolve(ownedRoot.rootPath, 'daemon.json');
+    const report = configPathsReport(socketPath, metadataPath);
+    const timeouts: number[] = [];
+    const execFile: CovenExecFile = (_file, _args, options, callback) => {
+      timeouts.push(options.timeout);
+      if (!Number.isInteger(options.timeout)) {
+        throw new TypeError('execFile timeout must be an integer');
+      }
+      queueMicrotask(() => {
+        callback(null, report, '');
+      });
+      return undefined;
+    };
+
+    await expect(
+      discoverCovenEndpoint({
+        cwd: ownedRoot.rootPath,
+        env: { PATH: '/safe/bin' },
+        platform: 'linux',
+        timeoutMs: 100.75,
+        dependencies: trustedCommandDependencies(execFile),
+      }),
+    ).resolves.toMatchObject({
+      endpoint: { kind: 'unix', path: socketPath },
+    });
+    expect(timeouts).toHaveLength(1);
+    expect(Number.isInteger(timeouts[0])).toBe(true);
   });
 
   test('does not allow callers to override the Coven executable', async () => {
@@ -1128,7 +1170,104 @@ describe('Coven endpoint discovery', () => {
     expect(read.mock.calls[0]?.[2]).toBe(16 * 1024 + 1);
   });
 
-  test.each(['lstat', 'open', 'read', 'close'])(
+  test('rejects metadata path replacement after open and closes the handle', async () => {
+    const home = resolve(ownedRoot.rootPath, 'profile');
+    const metadataPath = resolve(home, 'daemon.json');
+    const metadata = JSON.stringify({
+      pid: 42,
+      startedAt: '2026-08-21T06:00:00Z',
+      socket: resolve(home, 'coven.sock'),
+    });
+    const close = vi.fn(() => Promise.resolve());
+    const read = vi.fn<CovenMetadataFileHandle['read']>(() =>
+      Promise.resolve({ bytesRead: 0 }),
+    );
+
+    await expect(
+      discoverCovenEndpoint({
+        env: { COVEN_HOME: home },
+        platform: 'linux',
+        dependencies: metadataDependencies(metadataPath, metadata, {
+          openFile: () =>
+            Promise.resolve(
+              memoryMetadataFile(metadata, {
+                close,
+                read,
+                stat: () =>
+                  Promise.resolve(
+                    discoveryFileIdentity({
+                      inode: 12,
+                      mode: 0o100600,
+                      size: Buffer.byteLength(metadata),
+                    }),
+                  ),
+              }),
+            ),
+        }),
+      }),
+    ).rejects.toMatchObject({
+      code: 'unsafe_endpoint',
+      diagnostics: { phase: 'read_metadata' },
+    });
+    expect(read).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  test('uses safe nonblocking flags and rejects a FIFO opened after lstat', async () => {
+    const home = resolve(ownedRoot.rootPath, 'profile');
+    const metadataPath = resolve(home, 'daemon.json');
+    const metadata = JSON.stringify({
+      pid: 42,
+      startedAt: '2026-08-21T06:00:00Z',
+      socket: resolve(home, 'coven.sock'),
+    });
+    let openFlags: number | undefined;
+    const close = vi.fn(() => Promise.resolve());
+    const openFile = vi.fn((_path: string, flags?: number) => {
+      openFlags = flags;
+      return Promise.resolve(
+        memoryMetadataFile(metadata, {
+          close,
+          stat: () =>
+            Promise.resolve(
+              discoveryFileIdentity({
+                mode: 0o010600,
+                regularFile: false,
+                size: 0,
+              }),
+            ),
+        }),
+      );
+    });
+
+    await expect(
+      discoverCovenEndpoint({
+        env: { COVEN_HOME: home },
+        platform: 'linux',
+        dependencies: metadataDependencies(metadataPath, metadata, {
+          openFile,
+        }),
+      }),
+    ).rejects.toMatchObject({
+      code: 'unsafe_endpoint',
+      diagnostics: { phase: 'read_metadata' },
+    });
+    expect(openFlags).toBeTypeOf('number');
+    expect((openFlags as number) & fsConstants.O_NONBLOCK).toBe(
+      fsConstants.O_NONBLOCK,
+    );
+    if (typeof fsConstants.O_NOFOLLOW === 'number') {
+      expect((openFlags as number) & fsConstants.O_NOFOLLOW).toBe(
+        fsConstants.O_NOFOLLOW,
+      );
+    }
+    expect(
+      (openFlags as number) & (fsConstants.O_WRONLY | fsConstants.O_RDWR),
+    ).toBe(0);
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  test.each(['lstat', 'open', 'stat', 'read', 'close'])(
     'applies the discovery deadline to a stalled metadata %s',
     async (stage) => {
       vi.useFakeTimers();
@@ -1157,6 +1296,7 @@ describe('Coven endpoint discovery', () => {
             : () =>
                 Promise.resolve(
                   memoryMetadataFile(metadata, {
+                    ...(stage === 'stat' ? { stat: never } : {}),
                     ...(stage === 'read' ? { read: never } : {}),
                     ...(stage === 'close' ? { close: never } : {}),
                   }),
@@ -1177,6 +1317,44 @@ describe('Coven endpoint discovery', () => {
       });
     },
   );
+
+  test('closes a metadata handle after fstat timeout and absorbs late rejection', async () => {
+    vi.useFakeTimers();
+    const home = resolve(ownedRoot.rootPath, 'profile');
+    const metadataPath = resolve(home, 'daemon.json');
+    const metadata = JSON.stringify({
+      pid: 42,
+      startedAt: '2026-08-21T06:00:00Z',
+      socket: resolve(home, 'coven.sock'),
+    });
+    const close = vi.fn(() => Promise.resolve());
+    let rejectStat: ((error: Error) => void) | undefined;
+    const stat = vi.fn(
+      () =>
+        new Promise<CovenDiscoveryFileIdentity>((_resolve, reject) => {
+          rejectStat = reject;
+        }),
+    );
+    const result = discoverCovenEndpoint({
+      env: { COVEN_HOME: home },
+      platform: 'linux',
+      timeoutMs: 10,
+      dependencies: metadataDependencies(metadataPath, metadata, {
+        openFile: () =>
+          Promise.resolve(memoryMetadataFile(metadata, { close, stat })),
+      }),
+    }).catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(result).resolves.toMatchObject({
+      code: 'timeout',
+      diagnostics: { phase: 'read_metadata' },
+    });
+    expect(close).toHaveBeenCalledOnce();
+
+    rejectStat?.(new Error('late private fstat failure'));
+    await vi.advanceTimersByTimeAsync(0);
+  });
 
   test('closes a metadata handle that opens after the discovery deadline', async () => {
     vi.useFakeTimers();
@@ -1858,6 +2036,79 @@ describe('Unix owner-local health transport', () => {
     await expect(transport.health()).rejects.toMatchObject({
       code: 'invalid_response',
     });
+  });
+
+  test('rejects a huge daemon details array before bulk descriptor allocation', () => {
+    const details = new Array<null>(100_000).fill(null);
+    const bulkDescriptors = vi.spyOn(Object, 'getOwnPropertyDescriptors');
+    const singleDescriptor = vi.spyOn(Object, 'getOwnPropertyDescriptor');
+    let error: unknown;
+    let bulkCalls: number;
+    let singleCalls: number;
+
+    try {
+      new CovenDaemonResponseError(
+        {
+          code: 'daemon.failure',
+          message: 'Failure',
+          details,
+        },
+        500,
+      );
+    } catch (caught) {
+      error = caught;
+    } finally {
+      bulkCalls = bulkDescriptors.mock.calls.filter(
+        ([value]) => value === details,
+      ).length;
+      singleCalls = singleDescriptor.mock.calls.filter(
+        ([value]) => value === details,
+      ).length;
+      bulkDescriptors.mockRestore();
+      singleDescriptor.mockRestore();
+    }
+
+    expect(error).toMatchObject({ code: 'invalid_response' });
+    expect(bulkCalls).toBe(0);
+    expect(singleCalls).toBe(1);
+  });
+
+  test('caps huge daemon details object inspection without a descriptor map', () => {
+    const details: Record<string, number> = {};
+    for (let index = 0; index < 50_000; index += 1) {
+      details[`field${index}`] = index;
+    }
+    const bulkDescriptors = vi.spyOn(Object, 'getOwnPropertyDescriptors');
+    const singleDescriptor = vi.spyOn(Object, 'getOwnPropertyDescriptor');
+    let error: unknown;
+    let bulkCalls: number;
+    let singleCalls: number;
+
+    try {
+      new CovenDaemonResponseError(
+        {
+          code: 'daemon.failure',
+          message: 'Failure',
+          details,
+        },
+        500,
+      );
+    } catch (caught) {
+      error = caught;
+    } finally {
+      bulkCalls = bulkDescriptors.mock.calls.filter(
+        ([value]) => value === details,
+      ).length;
+      singleCalls = singleDescriptor.mock.calls.filter(
+        ([value]) => value === details,
+      ).length;
+      bulkDescriptors.mockRestore();
+      singleDescriptor.mockRestore();
+    }
+
+    expect(error).toMatchObject({ code: 'invalid_response' });
+    expect(bulkCalls).toBe(0);
+    expect(singleCalls).toBeLessThanOrEqual(1_024);
   });
 
   test('rejects cyclic daemon details without retaining the original subtree', () => {

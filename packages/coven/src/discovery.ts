@@ -1,4 +1,5 @@
 import { execFile as nodeExecFile } from 'node:child_process';
+import { constants as fsConstants, type Stats } from 'node:fs';
 import {
   lstat as nodeLstat,
   open as nodeOpen,
@@ -165,6 +166,7 @@ export interface CovenMetadataFileHandle {
     position: number | null,
   ): Promise<{ bytesRead: number }>;
   close(): Promise<void>;
+  stat(): Promise<CovenDiscoveryFileIdentity>;
 }
 
 export type CovenExecutableResolver = () => string | Promise<string>;
@@ -180,7 +182,10 @@ export interface CovenDiscoveryDependencies {
   execFile?: CovenExecFile;
   getEffectiveUid?: () => number | undefined;
   lstat?: (path: string) => Promise<CovenDiscoveryFileIdentity>;
-  openFile?: (path: string) => Promise<CovenMetadataFileHandle>;
+  openFile?: (
+    path: string,
+    flags: number,
+  ) => Promise<CovenMetadataFileHandle>;
   realpath?: (path: string) => Promise<string>;
   resolveExecutable?: CovenExecutableResolver;
   windowsFileTrust?: CovenWindowsFileTrustValidator;
@@ -465,7 +470,10 @@ interface DiscoveryDeadline {
 interface DiscoveryFileDependencies {
   getEffectiveUid: () => number | undefined;
   lstat: (path: string) => Promise<CovenDiscoveryFileIdentity>;
-  openFile: (path: string) => Promise<CovenMetadataFileHandle>;
+  openFile: (
+    path: string,
+    flags: number,
+  ) => Promise<CovenMetadataFileHandle>;
   platform: NodeJS.Platform;
   windowsFileTrust: CovenWindowsFileTrustValidator | undefined;
 }
@@ -597,6 +605,59 @@ function validateSafeFileIdentity(
   }
 }
 
+function validateWindowsMetadataIdentity(
+  identity: CovenDiscoveryFileIdentity,
+): void {
+  if (
+    !Number.isSafeInteger(identity.device) ||
+    identity.device < 0 ||
+    !Number.isSafeInteger(identity.inode) ||
+    identity.inode < 0 ||
+    !Number.isSafeInteger(identity.mode) ||
+    identity.mode < 0 ||
+    !Number.isSafeInteger(identity.ownerUid) ||
+    identity.ownerUid < 0 ||
+    !Number.isSafeInteger(identity.size) ||
+    identity.size < 0 ||
+    identity.symbolicLink ||
+    !identity.regularFile
+  ) {
+    return fail(
+      'unsafe_endpoint',
+      'Coven daemon metadata was not an owner-safe regular file.',
+      { phase: 'read_metadata' },
+    );
+  }
+}
+
+function validateMetadataIdentity(
+  identity: CovenDiscoveryFileIdentity,
+  dependencies: DiscoveryFileDependencies,
+): void {
+  if (dependencies.platform === 'win32') {
+    validateWindowsMetadataIdentity(identity);
+    return;
+  }
+  validateSafeFileIdentity(identity, {
+    expectedUid: dependencies.getEffectiveUid(),
+    phase: 'read_metadata',
+    requireExecutable: false,
+  });
+}
+
+function metadataOpenFlags(platform: NodeJS.Platform): number {
+  let flags = fsConstants.O_RDONLY;
+  if (platform !== 'win32') {
+    if (typeof fsConstants.O_NOFOLLOW === 'number') {
+      flags |= fsConstants.O_NOFOLLOW;
+    }
+    if (typeof fsConstants.O_NONBLOCK === 'number') {
+      flags |= fsConstants.O_NONBLOCK;
+    }
+  }
+  return flags;
+}
+
 async function validateWindowsFile(
   path: string,
   purpose: 'executable' | 'metadata',
@@ -660,19 +721,8 @@ async function readOptionalDaemonStatus(
     return undefined;
   }
 
+  validateMetadataIdentity(identity, dependencies);
   if (dependencies.platform === 'win32') {
-    if (
-      identity.symbolicLink ||
-      !identity.regularFile ||
-      !Number.isSafeInteger(identity.size) ||
-      identity.size < 0
-    ) {
-      return fail(
-        'unsafe_endpoint',
-        'Coven daemon metadata was not an owner-safe regular file.',
-        { phase: 'read_metadata' },
-      );
-    }
     await validateWindowsFile(
       path,
       'metadata',
@@ -680,12 +730,6 @@ async function readOptionalDaemonStatus(
       deadline,
       'read_metadata',
     );
-  } else {
-    validateSafeFileIdentity(identity, {
-      expectedUid: dependencies.getEffectiveUid(),
-      phase: 'read_metadata',
-      requireExecutable: false,
-    });
   }
 
   if (identity.size > MAX_DAEMON_STATUS_BYTES) {
@@ -696,7 +740,7 @@ async function readOptionalDaemonStatus(
   }
 
   const handle = await awaitDiscoveryStep(
-    () => dependencies.openFile(path),
+    () => dependencies.openFile(path, metadataOpenFlags(dependencies.platform)),
     deadline,
     'read_metadata',
     (lateHandle) => lateHandle.close(),
@@ -704,6 +748,32 @@ async function readOptionalDaemonStatus(
   let serialized: string | undefined;
   let primaryError: CovenIpcError | undefined;
   try {
+    const openedIdentity = await awaitDiscoveryStep(
+      () => handle.stat(),
+      deadline,
+      'read_metadata',
+    );
+    validateMetadataIdentity(openedIdentity, dependencies);
+    if (
+      openedIdentity.device !== identity.device ||
+      openedIdentity.inode !== identity.inode
+    ) {
+      return fail(
+        'unsafe_endpoint',
+        'Coven daemon metadata changed while it was being opened.',
+        { phase: 'read_metadata' },
+      );
+    }
+    if (openedIdentity.size > MAX_DAEMON_STATUS_BYTES) {
+      return fail(
+        'body_limit',
+        'Coven daemon metadata exceeded its size limit.',
+        {
+          phase: 'read_metadata',
+          limitBytes: MAX_DAEMON_STATUS_BYTES,
+        },
+      );
+    }
     const buffer = Buffer.alloc(MAX_DAEMON_STATUS_BYTES + 1);
     let offset = 0;
     while (offset < buffer.length) {
@@ -1221,7 +1291,10 @@ async function discoverFromCommand(
     getEffectiveUid: () => number | undefined;
     lstat: (path: string) => Promise<CovenDiscoveryFileIdentity>;
     maxOutputBytes: number;
-    openFile: (path: string) => Promise<CovenMetadataFileHandle>;
+    openFile: (
+      path: string,
+      flags: number,
+    ) => Promise<CovenMetadataFileHandle>;
     platform: NodeJS.Platform;
     realpath: (path: string) => Promise<string>;
     resolveExecutable: CovenExecutableResolver | undefined;
@@ -1232,7 +1305,9 @@ async function discoverFromCommand(
   const executable = await resolveTrustedExecutable(options);
   const commandTimeoutMs = Math.max(
     1,
-    Math.min(options.timeoutMs, remainingDiscoveryTime(options.deadline)),
+    Math.floor(
+      Math.min(options.timeoutMs, remainingDiscoveryTime(options.deadline)),
+    ),
   );
   const serialized = await awaitDiscoveryStep(
     () =>
@@ -1311,6 +1386,12 @@ async function defaultDiscoveryLstat(
   path: string,
 ): Promise<CovenDiscoveryFileIdentity> {
   const stats = await nodeLstat(path);
+  return discoveryFileIdentityFromStats(stats);
+}
+
+function discoveryFileIdentityFromStats(
+  stats: Stats,
+): CovenDiscoveryFileIdentity {
   return {
     device: stats.dev,
     inode: stats.ino,
@@ -1322,8 +1403,18 @@ async function defaultDiscoveryLstat(
   };
 }
 
-async function defaultOpenFile(path: string): Promise<CovenMetadataFileHandle> {
-  return nodeOpen(path, 'r');
+async function defaultOpenFile(
+  path: string,
+  flags: number,
+): Promise<CovenMetadataFileHandle> {
+  const handle = await nodeOpen(path, flags);
+  return {
+    close: () => handle.close(),
+    read: (buffer, offset, length, position) =>
+      handle.read(buffer, offset, length, position),
+    stat: async () =>
+      discoveryFileIdentityFromStats(await handle.stat()),
+  };
 }
 
 export async function discoverCovenEndpoint(

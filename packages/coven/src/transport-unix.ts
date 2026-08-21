@@ -273,19 +273,15 @@ function countDaemonString(
   return value;
 }
 
-function dataDescriptors(value: object): PropertyDescriptorMap {
+function ownDescriptor(
+  value: object,
+  key: PropertyKey,
+): PropertyDescriptor | undefined {
   try {
-    return Object.getOwnPropertyDescriptors(value);
+    return Object.getOwnPropertyDescriptor(value, key);
   } catch {
     return unsafeDaemonValue();
   }
-}
-
-function descriptorFromMap(
-  descriptors: PropertyDescriptorMap,
-  key: PropertyKey,
-): PropertyDescriptor | undefined {
-  return Reflect.getOwnPropertyDescriptor(descriptors, key)?.value;
 }
 
 function sanitizeDaemonValue(
@@ -331,27 +327,24 @@ function sanitizeDaemonValue(
     return unsafeDaemonValue();
   }
 
-  const descriptors = dataDescriptors(value);
-  const keys = Reflect.ownKeys(descriptors);
-  if (keys.some((key) => typeof key === 'symbol')) {
-    return unsafeDaemonValue();
-  }
-
   if (array) {
     if (prototype !== Array.prototype) {
       return unsafeDaemonValue();
     }
-    const length: unknown = descriptorFromMap(descriptors, 'length')?.value;
-    if (!Number.isSafeInteger(length) || (length as number) < 0) {
-      return unsafeDaemonValue();
-    }
-    const entries = keys.filter((key) => key !== 'length');
-    if (entries.length !== length) {
+    const lengthDescriptor = ownDescriptor(value, 'length');
+    const length: unknown = lengthDescriptor?.value;
+    if (
+      lengthDescriptor === undefined ||
+      !Object.hasOwn(lengthDescriptor, 'value') ||
+      !Number.isSafeInteger(length) ||
+      (length as number) < 0 ||
+      (length as number) > MAX_DAEMON_ERROR_NODES - state.nodes
+    ) {
       return unsafeDaemonValue();
     }
     const sanitized: unknown[] = [];
-    for (let index = 0; index < length; index += 1) {
-      const descriptor = descriptorFromMap(descriptors, String(index));
+    for (let index = 0; index < (length as number); index += 1) {
+      const descriptor = ownDescriptor(value, String(index));
       if (
         descriptor === undefined ||
         !Object.hasOwn(descriptor, 'value') ||
@@ -359,7 +352,9 @@ function sanitizeDaemonValue(
       ) {
         return unsafeDaemonValue();
       }
-      sanitized.push(sanitizeDaemonValue(descriptor.value, state, depth + 1));
+      sanitized.push(
+        sanitizeDaemonValue(descriptor.value, state, depth + 1),
+      );
     }
     return sanitized;
   }
@@ -368,25 +363,37 @@ function sanitizeDaemonValue(
     return unsafeDaemonValue();
   }
   const sanitized: Record<string, unknown> = {};
-  for (const key of keys) {
-    if (typeof key !== 'string' || SENSITIVE_FIELD_PATTERN.test(key)) {
-      return unsafeDaemonValue();
+  let inspectedKeys = 0;
+  try {
+    for (const key in value) {
+      inspectedKeys += 1;
+      if (
+        inspectedKeys > MAX_DAEMON_ERROR_NODES ||
+        state.nodes >= MAX_DAEMON_ERROR_NODES
+      ) {
+        return unsafeDaemonValue();
+      }
+      const descriptor = ownDescriptor(value, key);
+      if (descriptor === undefined) {
+        continue;
+      }
+      if (
+        SENSITIVE_FIELD_PATTERN.test(key) ||
+        !Object.hasOwn(descriptor, 'value') ||
+        descriptor.enumerable !== true
+      ) {
+        return unsafeDaemonValue();
+      }
+      countDaemonString(key, state);
+      Object.defineProperty(sanitized, key, {
+        configurable: true,
+        enumerable: true,
+        value: sanitizeDaemonValue(descriptor.value, state, depth + 1),
+        writable: true,
+      });
     }
-    countDaemonString(key, state);
-    const descriptor = descriptorFromMap(descriptors, key);
-    if (
-      descriptor === undefined ||
-      !Object.hasOwn(descriptor, 'value') ||
-      descriptor.enumerable !== true
-    ) {
-      return unsafeDaemonValue();
-    }
-    Object.defineProperty(sanitized, key, {
-      configurable: true,
-      enumerable: true,
-      value: sanitizeDaemonValue(descriptor.value, state, depth + 1),
-      writable: true,
-    });
+  } catch {
+    return unsafeDaemonValue();
   }
   return sanitized;
 }
