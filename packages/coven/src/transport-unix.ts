@@ -227,7 +227,19 @@ function remainingTimeout(
   if (context?.deadline === undefined) {
     return configuredMs;
   }
-  return Math.max(1, Math.min(configuredMs, context.deadline - performance.now()));
+  return Math.min(configuredMs, context.deadline - performance.now());
+}
+
+function deadlineExpired(context: OperationContext | undefined): boolean {
+  return context?.deadline !== undefined &&
+    context.deadline - performance.now() <= 0;
+}
+
+function healthTimeout(
+  phase: CovenIpcDiagnostics['phase'],
+  message = 'Coven daemon health operation timed out.',
+): CovenIpcError {
+  return ipcError('timeout', message, phase);
 }
 
 function safeDestroy(socket: CovenSocket): void {
@@ -717,11 +729,26 @@ export function awaitOperationStep<T>(
   context: OperationContext | undefined,
   phase: CovenIpcDiagnostics['phase'],
 ): Promise<T> {
-  const pending = Promise.resolve().then(operation);
   if (context === undefined) {
-    return pending;
+    return Promise.resolve().then(operation);
+  }
+  if (context.signal.aborted) {
+    const reason = signalReason(context.signal);
+    return Promise.reject(
+      reason instanceof Error
+        ? reason
+        : ipcError(
+            'connect_failure',
+            'Coven health request was aborted.',
+            phase,
+          ),
+    );
+  }
+  if (deadlineExpired(context)) {
+    return Promise.reject(healthTimeout(phase));
   }
 
+  const pending = Promise.resolve().then(operation);
   return new Promise((resolvePromise, reject) => {
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -755,6 +782,12 @@ export function awaitOperationStep<T>(
 
     pending.then(
       (value) => {
+        if (deadlineExpired(context)) {
+          finish(() => {
+            reject(healthTimeout(phase));
+          });
+          return;
+        }
         finish(() => {
           resolvePromise(value);
         });
@@ -783,25 +816,13 @@ export function awaitOperationStep<T>(
       const remainingMs = context.deadline - performance.now();
       if (remainingMs <= 0) {
         finish(() => {
-          reject(
-            ipcError(
-              'timeout',
-              'Coven daemon health operation timed out.',
-              phase,
-            ),
-          );
+          reject(healthTimeout(phase));
         });
         return;
       }
       timer = setTimeout(() => {
         finish(() => {
-          reject(
-            ipcError(
-              'timeout',
-              'Coven daemon health operation timed out.',
-              phase,
-            ),
-          );
+          reject(healthTimeout(phase));
         });
       }, remainingMs);
     }
@@ -815,6 +836,15 @@ export function requestCovenHealthOverSocket(
   configuredLimits: CovenHealthTransportLimits,
 ): Promise<CovenHealthResponse> {
   const limits = healthRequestOptions(configuredLimits);
+  const initialConnectTimeout = remainingTimeout(
+    limits.connectTimeoutMs,
+    context,
+  );
+  if (initialConnectTimeout <= 0) {
+    return Promise.reject(
+      healthTimeout('connect', 'Coven daemon connection timed out.'),
+    );
+  }
 
   return new Promise((resolvePromise, reject) => {
     let socket: CovenConnectedSocket;
@@ -863,6 +893,31 @@ export function requestCovenHealthOverSocket(
       });
     };
 
+    const failIfDeadlineExpired = (
+      phase: CovenIpcDiagnostics['phase'],
+      message: string,
+    ): boolean => {
+      if (!deadlineExpired(context)) {
+        return false;
+      }
+      failRequest(healthTimeout(phase, message));
+      return true;
+    };
+
+    const resolveHealth = (health: CovenHealthResponse): void => {
+      if (
+        failIfDeadlineExpired(
+          'read_response',
+          'Coven daemon health request timed out.',
+        )
+      ) {
+        return;
+      }
+      finish(() => {
+        resolvePromise(health);
+      });
+    };
+
     const onAbort = (): void => {
       const reason =
         context === undefined ? undefined : signalReason(context.signal);
@@ -889,6 +944,14 @@ export function requestCovenHealthOverSocket(
     };
 
     const onData = (chunk: unknown): void => {
+      if (
+        failIfDeadlineExpired(
+          'read_response',
+          'Coven daemon health request timed out.',
+        )
+      ) {
+        return;
+      }
       if (!(chunk instanceof Uint8Array)) {
         failRequest(
           ipcError(
@@ -909,9 +972,7 @@ export function requestCovenHealthOverSocket(
         const response = completeResponse(received, limits);
         if (response !== undefined) {
           const health = decodeHealth(response);
-          finish(() => {
-            resolvePromise(health);
-          });
+          resolveHealth(health);
         }
       } catch (error) {
         failRequest(error);
@@ -919,15 +980,21 @@ export function requestCovenHealthOverSocket(
     };
 
     const onEnd = (): void => {
+      if (
+        failIfDeadlineExpired(
+          'read_response',
+          'Coven daemon health request timed out.',
+        )
+      ) {
+        return;
+      }
       if (!requestSent) {
         endedBeforeRequest = true;
         return;
       }
       try {
         const health = decodeHealth(parseCompletedResponse(received, limits));
-        finish(() => {
-          resolvePromise(health);
-        });
+        resolveHealth(health);
       } catch (error) {
         failRequest(error);
       }
@@ -935,6 +1002,14 @@ export function requestCovenHealthOverSocket(
 
     const onConnect = (): void => {
       connected = true;
+      if (
+        failIfDeadlineExpired(
+          'connect',
+          'Coven daemon connection timed out.',
+        )
+      ) {
+        return;
+      }
       if (connectTimer !== undefined) {
         clearTimeout(connectTimer);
         connectTimer = undefined;
@@ -951,19 +1026,39 @@ export function requestCovenHealthOverSocket(
         );
         return;
       }
-      requestTimer = setTimeout(() => {
+      const requestTimeout = remainingTimeout(
+        limits.requestTimeoutMs,
+        context,
+      );
+      if (requestTimeout <= 0) {
         failRequest(
-          ipcError(
-            'timeout',
-            'Coven daemon health request timed out.',
+          healthTimeout(
             'read_response',
+            'Coven daemon health request timed out.',
           ),
         );
-      }, remainingTimeout(limits.requestTimeoutMs, context));
+        return;
+      }
+      requestTimer = setTimeout(() => {
+        failRequest(
+          healthTimeout(
+            'read_response',
+            'Coven daemon health request timed out.',
+          ),
+        );
+      }, requestTimeout);
       void hooks
         .revalidate(socket)
         .then(() => {
           if (settled) {
+            return;
+          }
+          if (
+            failIfDeadlineExpired(
+              'write_request',
+              'Coven daemon health request timed out.',
+            )
+          ) {
             return;
           }
           if (receivedBeforeRequest || endedBeforeRequest) {
@@ -1007,6 +1102,14 @@ export function requestCovenHealthOverSocket(
       return;
     }
 
+    const connectTimeout = remainingTimeout(limits.connectTimeoutMs, context);
+    if (connectTimeout <= 0) {
+      safeDestroy(socket);
+      reject(
+        healthTimeout('connect', 'Coven daemon connection timed out.'),
+      );
+      return;
+    }
     socket.once('connect', onConnect);
     socket.on('data', onData);
     socket.once('end', onEnd);
@@ -1018,13 +1121,12 @@ export function requestCovenHealthOverSocket(
     }
     connectTimer = setTimeout(() => {
       failRequest(
-        ipcError(
-          'timeout',
-          'Coven daemon connection timed out.',
+        healthTimeout(
           'connect',
+          'Coven daemon connection timed out.',
         ),
       );
-    }, remainingTimeout(limits.connectTimeoutMs, context));
+    }, connectTimeout);
   });
 }
 

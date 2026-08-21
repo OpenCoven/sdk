@@ -515,11 +515,17 @@ function awaitDiscoveryStep<T>(
 
     pending.then(
       (value) => {
-        if (settled) {
+        const expired = remainingDiscoveryTime(deadline) <= 0;
+        if (settled || expired) {
           if (onLateResolve !== undefined) {
             void Promise.resolve()
               .then(() => onLateResolve(value))
               .catch(() => undefined);
+          }
+          if (expired) {
+            finish(() => {
+              reject(discoveryTimeout(phase));
+            });
           }
           return;
         }
@@ -1439,35 +1445,36 @@ export async function discoverCovenEndpoint(
     expiresAt: performance.now() + timeoutMs,
   };
 
-  if (
+  const result =
     platform !== 'win32' &&
     covenHome !== undefined &&
     covenHome.length > 0
-  ) {
-    return discoverFromHome(covenHome, {
-      cwd,
-      deadline,
-      platform,
-      getEffectiveUid,
-      lstat,
-      openFile,
-      windowsFileTrust,
-    });
+      ? await discoverFromHome(covenHome, {
+          cwd,
+          deadline,
+          platform,
+          getEffectiveUid,
+          lstat,
+          openFile,
+          windowsFileTrust,
+        })
+      : await discoverFromCommand({
+          cwd,
+          deadline,
+          environment,
+          execFile,
+          getEffectiveUid,
+          lstat,
+          maxOutputBytes,
+          openFile,
+          platform,
+          realpath,
+          resolveExecutable,
+          timeoutMs,
+          windowsFileTrust,
+        });
+  if (remainingDiscoveryTime(deadline) <= 0) {
+    throw discoveryTimeout('validate_endpoint');
   }
-
-  return discoverFromCommand({
-    cwd,
-    deadline,
-    environment,
-    execFile,
-    getEffectiveUid,
-    lstat,
-    maxOutputBytes,
-    openFile,
-    platform,
-    realpath,
-    resolveExecutable,
-    timeoutMs,
-    windowsFileTrust,
-  });
+  return result;
 }
