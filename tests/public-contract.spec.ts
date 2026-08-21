@@ -49,6 +49,52 @@ describe('public package entry points', () => {
     expect(hasFunction(cli, 'runCli')).toBe(true);
   });
 
+  test('exports the diagnostics, completion, and scaffold surfaces', () => {
+    expect(hasFunction(core, 'createDiagnosticsBundle')).toBe(true);
+    expect(hasFunction(core, 'summarizeDiagnosticsEndpoint')).toBe(true);
+    expect(hasFunction(core, 'summarizeOperationEvents')).toBe(true);
+    expect(hasFunction(core, 'sanitizeDiagnosticsError')).toBe(true);
+    expect(core.DIAGNOSTICS_SCHEMA).toBe('opencoven.diagnostics.v1');
+    expect(hasFunction(sdk, 'collectOpenCovenDiagnostics')).toBe(true);
+    expect(hasFunction(sdk, 'describeSdkCapabilities')).toBe(true);
+    expect(hasFunction(cli, 'createCliDiagnostics')).toBe(true);
+    expect(hasFunction(cli, 'renderCliDiagnostics')).toBe(true);
+    expect(hasFunction(cli, 'renderCompletionScript')).toBe(true);
+    expect(hasFunction(cli, 'createScaffoldFiles')).toBe(true);
+    expect(hasFunction(cli, 'writeScaffoldFiles')).toBe(true);
+    expect([...cli.COMPLETION_SHELLS]).toEqual(['bash', 'zsh', 'fish', 'powershell']);
+    expect([...cli.SCAFFOLD_TEMPLATES]).toEqual([
+      'cave-chat',
+      'coven-observer',
+      'unified-status',
+    ]);
+  });
+
+  test('reports transport-derived capabilities from both clients', () => {
+    const caveClient = new cave.CaveClient({
+      transport: { health: () => Promise.resolve({ data: { status: 'ok' as const } }) },
+    });
+    const covenClient = new coven.CovenClient({
+      transport: {
+        health: () =>
+          Promise.resolve({
+            ok: true as const,
+            apiVersion: coven.COVEN_DAEMON_PROTOCOL,
+            covenVersion: '0.1.0',
+            capabilities: { sessions: true, events: true, structuredErrors: true },
+          }),
+      },
+    });
+
+    expect(caveClient.capabilities()).toEqual({
+      health: true,
+      familiars: false,
+      familiarContract: false,
+      familiarAnalytics: false,
+    });
+    expect(covenClient.capabilities()).toEqual({ health: true });
+  });
+
   test('exposes additive unified health reporting', () => {
     const instance = sdk.createOpenCovenSdk({});
 

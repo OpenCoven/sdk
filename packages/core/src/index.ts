@@ -9,6 +9,26 @@ export { assessCompatibility } from './compatibility.js';
 export type { CompatibilityAssessment } from './compatibility.js';
 
 export {
+  createDiagnosticsBundle,
+  DIAGNOSTICS_SCHEMA,
+  REDACTED_HOST,
+  sanitizeDiagnosticsError,
+  summarizeDiagnosticsEndpoint,
+  summarizeOperationEvents,
+} from './diagnostics.js';
+export type {
+  DiagnosticsBundle,
+  DiagnosticsCapabilities,
+  DiagnosticsEndpoint,
+  DiagnosticsEndpointInput,
+  DiagnosticsError,
+  DiagnosticsInput,
+  DiagnosticsOperationSummary,
+  DiagnosticsRuntime,
+  DiagnosticsVersions,
+} from './diagnostics.js';
+
+export {
   createOperationScope,
   isOperationAbortedError,
   isOperationTimeoutError,

@@ -114,6 +114,52 @@ Do not serialize or log `cause` blindly: it may contain caller or transport
 data. Observer events exclude causes, stacks, transport messages, and response
 payloads.
 
+## Diagnostics
+
+`sdk.diagnostics()` runs the same concurrent health check as `healthReport()`
+and reduces it to a support bundle: package versions, per-client capabilities,
+endpoint shapes, operation counts, and normalized error codes. `opencoven
+diagnostics` prints the same shape for the installed CLI, which contacts
+nothing.
+
+Bundles are assembled from an allowlist and **exclude prompts, tokens,
+attachments, and event payloads**. An error contributes its normalized `code`
+rather than its message, and an endpoint is reduced to its shape: a loopback
+host survives, every other host is reported as `redacted`, and a credential in
+the URL is reported as a boolean rather than repeated. Two consequences worth
+knowing: a bundle is safe to paste into an issue, and it will not tell you which
+host you were pointed at.
+
+Capabilities come from the configured transports, never from the network, so an
+unconfigured client contributes no group at all — a different claim from a group
+of falses.
+
+## Developer CLI
+
+```bash
+opencoven diagnostics --json
+opencoven completions bash            # also zsh, fish, powershell
+opencoven scaffold unified-status ./my-status
+```
+
+Completion scripts are generated from the same command and template lists the
+CLI dispatches on, so they cannot offer a command the binary rejects.
+
+Scaffolds are supported TypeScript starting points — `cave-chat`,
+`coven-observer`, and `unified-status`. A scaffold **refuses to overwrite an
+existing file** unless `--force` is given, and its dependencies are the packed
+SDK tarballs, because these packages are not published. `pnpm verify:package`
+generates every scaffold, installs the freshly packed tarballs into it offline,
+compiles it, and runs it.
+
+## Browser applications
+
+A browser cannot connect to Cave or Coven directly in v1. Both clients take a
+caller-supplied transport and never discover an endpoint or a credential, so a
+browser would have to hold the credential itself and reach an origin the daemons
+do not serve. Run the SDK in a server-side runtime you control and let the
+browser talk to that.
+
 ## Runtime control errors
 
 | Code | Meaning | Retryable |

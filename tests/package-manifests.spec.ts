@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 import { CAVE_CLIENT_VERSION } from '@opencoven/cave-client';
+import { COVEN_CLIENT_VERSION } from '@opencoven/coven-client';
 import { DEV_CLI_VERSION } from '@opencoven/dev-cli';
+import { OPENCOVEN_SDK_VERSION } from '@opencoven/sdk';
 
 import {
   CANONICAL_REPOSITORY_URL,
@@ -182,15 +184,23 @@ describe('public package manifests', () => {
   });
 
   test('derives exported runtime versions from package manifests', () => {
-    const caveManifest = JSON.parse(
-      readFileSync(resolve(workspaceRoot, 'packages/cave/package.json'), 'utf8'),
-    ) as { version: string };
-    const cliManifest = JSON.parse(
-      readFileSync(resolve(workspaceRoot, 'packages/cli/package.json'), 'utf8'),
-    ) as { version: string };
+    const manifestVersion = (workspaceDirectory: string): string =>
+      (
+        JSON.parse(
+          readFileSync(
+            resolve(workspaceRoot, 'packages', workspaceDirectory, 'package.json'),
+            'utf8',
+          ),
+        ) as { version: string }
+      ).version;
 
-    expect(CAVE_CLIENT_VERSION).toBe(caveManifest.version);
-    expect(DEV_CLI_VERSION).toBe(cliManifest.version);
+    // Diagnostics report these, so a hand-edited constant would report a version
+    // the package does not have -- in the one artifact opened to establish which
+    // version is installed.
+    expect(CAVE_CLIENT_VERSION).toBe(manifestVersion('cave'));
+    expect(COVEN_CLIENT_VERSION).toBe(manifestVersion('coven'));
+    expect(OPENCOVEN_SDK_VERSION).toBe(manifestVersion('sdk'));
+    expect(DEV_CLI_VERSION).toBe(manifestVersion('cli'));
   });
 
   test('uses the exact approved license components in every package selector', () => {

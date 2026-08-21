@@ -16,10 +16,16 @@ import {
   createOperationScope,
   isOperationAbortedError,
   isOperationTimeoutError,
+  type DiagnosticsBundle,
   type OperationObserver,
   type OperationOptions,
   type OperationScope,
 } from '@opencoven/sdk-core';
+
+import {
+  collectOpenCovenDiagnostics,
+  type OpenCovenDiagnosticsOptions,
+} from './diagnostics.js';
 
 export interface OpenCovenSdkOptions {
   cave?: CaveClient;
@@ -282,6 +288,18 @@ export class OpenCovenSdk {
     } finally {
       globalScope.dispose();
     }
+  }
+
+  /**
+   * A sanitized support bundle for the configured clients.
+   *
+   * Runs the same concurrent health check as `healthReport()` and reduces it to
+   * versions, capabilities, endpoint shapes, operation counts, and normalized
+   * error codes. Prompts, tokens, attachments, and event payloads never reach
+   * the result.
+   */
+  async diagnostics(options: OpenCovenDiagnosticsOptions = {}): Promise<DiagnosticsBundle> {
+    return collectOpenCovenDiagnostics(this, options);
   }
 
   async healthReport(options: OpenCovenHealthOptions = {}): Promise<OpenCovenHealthReport> {
