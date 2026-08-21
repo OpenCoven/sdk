@@ -4,6 +4,20 @@ export const CANONICAL_REPOSITORY_URL = 'git+https://github.com/OpenCoven/sdk.gi
 export const APPROVED_PACKAGE_LICENSE_EXPRESSION = 'AGPL-3.0-only OR MIT';
 export const APPROVED_PACKAGE_LICENSE_COMPONENTS = Object.freeze(['AGPL-3.0-only', 'MIT']);
 
+/**
+ * The scaffolds `opencoven scaffold` can generate.
+ *
+ * Duplicated here, in the plain-JavaScript layer the verifier can import,
+ * rather than read out of the TypeScript CLI at verification time. A test
+ * asserts this list equals the CLI's own, so the duplication cannot drift
+ * without failing.
+ */
+export const SCAFFOLD_TEMPLATES = Object.freeze([
+  'cave-chat',
+  'coven-observer',
+  'unified-status',
+]);
+
 export const PUBLIC_PACKAGES = [
   {
     packageName: '@opencoven/sdk-core',

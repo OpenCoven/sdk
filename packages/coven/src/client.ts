@@ -18,6 +18,17 @@ export interface CovenClientOptions {
   operation?: OperationDefaults;
 }
 
+/**
+ * Which Coven operations this client can actually perform.
+ *
+ * Derived from the caller-supplied transport, never from the daemon. Coven's
+ * wire capabilities travel on the health response and are validated there; this
+ * is the client-side half, answerable without contacting anything.
+ */
+export interface CovenCapabilities {
+  health: boolean;
+}
+
 export function normalizeCovenError(error: unknown, operation: string): NormalizedError {
   return normalizeError(error, {
     system: 'coven',
@@ -108,6 +119,13 @@ export class CovenClient {
   constructor(options: CovenClientOptions) {
     this.#transport = options.transport;
     this.#operation = options.operation;
+  }
+
+  /** Transport-derived capabilities. Performs no I/O. */
+  capabilities(): CovenCapabilities {
+    return {
+      health: typeof this.#transport.health === 'function',
+    };
   }
 
   async health(options: OperationOptions = {}): Promise<CovenHealth> {

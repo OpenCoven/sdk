@@ -36,6 +36,21 @@ export interface CaveFamiliarAnalyticsOptions extends OperationOptions {
   recentLimit?: number;
 }
 
+/**
+ * Which Cave operations this client can actually perform.
+ *
+ * Derived from the caller-supplied transport, never from the network. The
+ * familiar operations are optional on `CaveTransport`, so "supported" here
+ * means "this transport implements it" -- the same question the client answers
+ * at call time with `unsupported_operation`, asked before the call.
+ */
+export interface CaveCapabilities {
+  health: boolean;
+  familiars: boolean;
+  familiarContract: boolean;
+  familiarAnalytics: boolean;
+}
+
 export function normalizeCaveError(error: unknown, operation: string): NormalizedError {
   return normalizeError(error, {
     system: 'cave',
@@ -351,6 +366,16 @@ export class CaveClient {
   constructor(options: CaveClientOptions) {
     this.#transport = options.transport;
     this.#operation = options.operation;
+  }
+
+  /** Transport-derived capabilities. Performs no I/O. */
+  capabilities(): CaveCapabilities {
+    return {
+      health: typeof this.#transport.health === 'function',
+      familiars: typeof this.#transport.familiars === 'function',
+      familiarContract: typeof this.#transport.familiarContract === 'function',
+      familiarAnalytics: typeof this.#transport.familiarAnalytics === 'function',
+    };
   }
 
   async #execute<T>(

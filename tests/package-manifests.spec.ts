@@ -5,7 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 import { CAVE_CLIENT_VERSION } from '@opencoven/cave-client';
-import { DEV_CLI_VERSION } from '@opencoven/dev-cli';
+import { COVEN_CLIENT_VERSION } from '@opencoven/coven-client';
+import {
+  DEV_CLI_VERSION,
+  SCAFFOLD_TEMPLATES,
+  createScaffoldFiles,
+} from '@opencoven/dev-cli';
+import { OPENCOVEN_SDK_VERSION } from '@opencoven/sdk';
 
 import {
   CANONICAL_REPOSITORY_URL,
@@ -84,6 +90,34 @@ describe('public package manifests', () => {
     expect(rootManifest.engines?.node, 'engines.node must span exactly one major').toMatch(
       new RegExp(`^>=${major}\\.\\d+\\.\\d+ <${Number(major) + 1}$`),
     );
+  });
+
+  /**
+   * A scaffold ships its own copy of the tooling pins, and the argument above
+   * applies to that copy verbatim: typings a major ahead of `engines.node`
+   * typecheck cleanly in a generated project and fail at runtime on the
+   * version this SDK says it supports. The guard above reaches only the root
+   * manifest, so without this one the scaffold could sit a major behind or
+   * ahead of the workspace indefinitely -- in the artifact users actually
+   * build on, and the only one nobody here compiles by hand.
+   */
+  test('pins scaffold tooling to the versions this workspace builds with', () => {
+    for (const template of SCAFFOLD_TEMPLATES) {
+      const manifest = JSON.parse(
+        createScaffoldFiles(template).find((file) => file.path === 'package.json')?.contents ??
+          '{}',
+      ) as { devDependencies?: Record<string, string> };
+      const tooling = manifest.devDependencies ?? {};
+
+      expect(Object.keys(tooling).sort(), `${template} scaffold tooling`).toEqual([
+        '@types/node',
+        'typescript',
+      ]);
+      expect(tooling['@types/node']).toMatch(EXACT_VERSION);
+      expect(tooling.typescript).toMatch(EXACT_VERSION);
+      expect(tooling['@types/node']).toBe(rootManifest.devDependencies?.['@types/node']);
+      expect(tooling.typescript).toBe(rootManifest.devDependencies?.typescript);
+    }
   });
 
   test('runs deterministic multi-seed operation stress verification', () => {
@@ -182,15 +216,23 @@ describe('public package manifests', () => {
   });
 
   test('derives exported runtime versions from package manifests', () => {
-    const caveManifest = JSON.parse(
-      readFileSync(resolve(workspaceRoot, 'packages/cave/package.json'), 'utf8'),
-    ) as { version: string };
-    const cliManifest = JSON.parse(
-      readFileSync(resolve(workspaceRoot, 'packages/cli/package.json'), 'utf8'),
-    ) as { version: string };
+    const manifestVersion = (workspaceDirectory: string): string =>
+      (
+        JSON.parse(
+          readFileSync(
+            resolve(workspaceRoot, 'packages', workspaceDirectory, 'package.json'),
+            'utf8',
+          ),
+        ) as { version: string }
+      ).version;
 
-    expect(CAVE_CLIENT_VERSION).toBe(caveManifest.version);
-    expect(DEV_CLI_VERSION).toBe(cliManifest.version);
+    // Diagnostics report these, so a hand-edited constant would report a version
+    // the package does not have -- in the one artifact opened to establish which
+    // version is installed.
+    expect(CAVE_CLIENT_VERSION).toBe(manifestVersion('cave'));
+    expect(COVEN_CLIENT_VERSION).toBe(manifestVersion('coven'));
+    expect(OPENCOVEN_SDK_VERSION).toBe(manifestVersion('sdk'));
+    expect(DEV_CLI_VERSION).toBe(manifestVersion('cli'));
   });
 
   test('uses the exact approved license components in every package selector', () => {

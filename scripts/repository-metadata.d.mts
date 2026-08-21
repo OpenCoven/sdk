@@ -18,6 +18,7 @@ export interface PublicPackageMetadata {
 
 export const CANONICAL_REPOSITORY_URL: 'git+https://github.com/OpenCoven/sdk.git';
 export const PUBLIC_PACKAGES: readonly PublicPackageMetadata[];
+export const SCAFFOLD_TEMPLATES: readonly ['cave-chat', 'coven-observer', 'unified-status'];
 
 export function assertCanonicalRepository(
   manifest: PackageManifest,

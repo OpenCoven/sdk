@@ -11,7 +11,11 @@ export {
   parseVerifiedCaveContractFixture,
   verifyCaveContractFixtureDigest,
 } from './contract-fixture.js';
-export type { CaveClientOptions, CaveFamiliarAnalyticsOptions } from './client.js';
+export type {
+  CaveCapabilities,
+  CaveClientOptions,
+  CaveFamiliarAnalyticsOptions,
+} from './client.js';
 export type { CaveContractFixture } from './contract-fixture.js';
 export { CAVE_ANALYTICS_WINDOWS, CAVE_FAMILIAR_PROPERTIES } from './schemas.js';
 export type {

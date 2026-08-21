@@ -22,11 +22,29 @@ describe('opencoven CLI output', () => {
         '',
         'Usage:',
         '  opencoven [--help] [--version] [--json]',
+        '  opencoven diagnostics [--json]',
+        '  opencoven completions <bash|zsh|fish|powershell>',
+        '  opencoven scaffold <cave-chat|coven-observer|unified-status> <directory> [--force]',
         '',
         'This CLI owns the opencoven binary.',
         '',
+        'Diagnostics report versions and capabilities only. They exclude prompts,',
+        'tokens, attachments, and event payloads.',
+        '',
+        'Scaffolds refuse to overwrite existing files unless --force is given.',
+        'Browser applications cannot connect to Cave or Coven directly in v1; run a',
+        'scaffold in a server-side runtime and let the browser talk to that.',
+        '',
       ].join('\n'),
     });
+  });
+
+  test('states the v1 browser limitation where the CLI is used, not only in a README', async () => {
+    const help = await runCli(['--help']);
+
+    expect(help.stdout).toContain(
+      'Browser applications cannot connect to Cave or Coven directly in v1',
+    );
   });
 
   test('returns stable JSON help', async () => {

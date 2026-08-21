@@ -28,6 +28,39 @@ and `abort` events. An `onEvent` failure is sent to `onObserverError` without
 changing the operation result. If `onObserverError` also throws, that error
 propagates because no safe reporting sink remains.
 
+## Diagnostics
+
+`createDiagnosticsBundle(input)` reduces versions, capabilities, endpoints,
+operation events, and normalized errors to a bundle that is safe to paste into
+an issue. Every field is copied through an allowlist rather than filtered
+through a denylist, so a new field on an input type is absent from the bundle
+until someone adds it deliberately.
+
+It **excludes prompts, tokens, attachments, and event payloads**. Two
+consequences worth knowing before reading a bundle:
+
+- An error contributes its normalized `code`, not its `message`. The
+  SDK-authored message is derivable from `system` and `operation`, so keeping it
+  would add nothing while creating a field a hand-built error could fill with
+  anything.
+- An endpoint is reduced to its shape. A loopback host survives verbatim;
+  every other host is reported as `redacted`, because a tailnet host or an
+  internal DNS record discloses infrastructure for no diagnostic gain. A
+  credential in the URL is reported as `credentialsInUrl: true` rather than
+  repeated.
+- An error keeps its `code`, its `requestId`, and its HTTP `statusCode`. `code`
+  and `requestId` are the two fields a bundle carries verbatim from outside this
+  SDK: `normalizeError` takes a thrown object's own `code` when it has one, and
+  copies `requestId` the same way. Each is checked for shape and nothing else,
+  because a code is what every count here is grouped by and a request id is what
+  a support thread is opened to quote — filtering either down to a vocabulary
+  this SDK already knows would throw away the transport's own diagnosis. **A
+  transport that puts a credential in `code` or `requestId` puts that credential
+  in the bundle**, so treat neither as a general-purpose carrier.
+
+`summarizeOperationEvents(events)` counts phases and collects normalized codes
+per operation without retaining a single event.
+
 ## Secrets
 
 `createMemorySecretStore()` creates an isolated asynchronous store. Values

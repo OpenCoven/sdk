@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, test } from 'vitest';
 
-import { PUBLIC_PACKAGES } from '../scripts/repository-metadata.mjs';
+import { SCAFFOLD_TEMPLATES as CLI_SCAFFOLD_TEMPLATES } from '@opencoven/dev-cli';
+
+import { PUBLIC_PACKAGES, SCAFFOLD_TEMPLATES } from '../scripts/repository-metadata.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -87,12 +89,49 @@ describe('packed package verifier contract', () => {
     );
   });
 
+  test('compiles and runs every scaffold against the packed tarballs', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(SCAFFOLD_TEMPLATES).toEqual(CLI_SCAFFOLD_TEMPLATES);
+    expect(verifier).toContain('createPackedScaffolds({');
+    expect(verifier).toContain(
+      '...SCAFFOLD_TEMPLATES.map((template) => resolve(scaffoldRoot, template)),',
+    );
+    expect(verifier).toContain('for (const template of SCAFFOLD_TEMPLATES) {');
+    expect(verifier).toContain("runPnpm(['--ignore-workspace', 'run', 'build'], destinationDirectory);");
+    expect(verifier).toContain("runPnpm(['--ignore-workspace', 'run', 'start'], destinationDirectory);");
+    expect(verifier).toContain('assertPackedCliScaffold(binary, fixtureRoot, referenceRoot);');
+  });
+
+  test('proves the packed binary generates the same scaffold and still refuses to overwrite', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    // The set of files compared is read off the pristine reference tree rather
+    // than listed here, so a template that grows a file cannot quietly fall out
+    // of the byte comparison.
+    expect(verifier).toContain('const generatedPaths = scaffoldFilePaths(destination);');
+    expect(verifier).toContain(
+      'const referencePaths = scaffoldFilePaths(referenceDirectory);',
+    );
+    expect(verifier).toContain('referencePaths.length === 0');
+    expect(verifier).toContain('!isDeepStrictEqual(generatedPaths, referencePaths)');
+    expect(verifier).toContain('for (const relativePath of referencePaths) {');
+    expect(verifier).toContain(
+      "does not match the workspace CLI output",
+    );
+    expect(verifier).toContain("refused.status !== 1");
+    expect(verifier).toContain(
+      "!refused.stderr.startsWith('Refusing to overwrite existing files:')",
+    );
+    expect(verifier).toContain('did not refuse an unsafe overwrite');
+  });
+
   test('applies a hard deadline and clear diagnostics to every packed CLI probe', () => {
     const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
     const probeCalls = verifier.match(/runPackedCliProbe\(/g);
 
     expect(verifier).toContain('const packedCliTimeoutMs = 5_000;');
-    expect(probeCalls).toHaveLength(4);
+    expect(probeCalls).toHaveLength(6);
     expect(verifier).toContain('timeout: packedCliTimeoutMs');
     expect(verifier).toContain("killSignal: 'SIGKILL'");
     expect(verifier).toContain("result.error?.code === 'ETIMEDOUT'");
