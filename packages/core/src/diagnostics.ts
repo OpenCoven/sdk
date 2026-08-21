@@ -95,7 +95,16 @@ export interface DiagnosticsOperationSummary {
   codes: string[];
 }
 
-/** A normalized error reduced to its non-prose fields. */
+/**
+ * A normalized error reduced to its non-prose fields.
+ *
+ * `requestId` is the one value here that this SDK does not author: it is copied
+ * off the error the caller's transport threw, and only its shape is checked.
+ * That is deliberate -- a request id is the thing a support thread is opened to
+ * quote -- but it means a transport that puts a credential in `requestId` puts
+ * that credential in the bundle. Nothing else in this module carries a value
+ * from outside the SDK verbatim.
+ */
 export interface DiagnosticsError {
   system: OpenCovenSystem;
   operation: string;

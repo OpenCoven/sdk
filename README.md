@@ -130,6 +130,11 @@ the URL is reported as a boolean rather than repeated. Two consequences worth
 knowing: a bundle is safe to paste into an issue, and it will not tell you which
 host you were pointed at.
 
+One field is passed through rather than authored here: an error's `requestId`,
+copied off whatever your transport threw and checked only for shape, because a
+request id is what a support thread is opened to quote. A transport that puts a
+credential there puts it in the bundle.
+
 Capabilities come from the configured transports, never from the network, so an
 unconfigured client contributes no group at all — a different claim from a group
 of falses.

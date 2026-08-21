@@ -48,6 +48,12 @@ consequences worth knowing before reading a bundle:
   internal DNS record discloses infrastructure for no diagnostic gain. A
   credential in the URL is reported as `credentialsInUrl: true` rather than
   repeated.
+- An error keeps its `requestId` and its HTTP `statusCode`. `requestId` is the
+  one field a bundle carries verbatim from outside this SDK: it is copied off
+  the error your transport threw, and only its shape is checked, because a
+  request id is precisely what a support thread is opened to quote. **A
+  transport that puts a credential in `requestId` puts that credential in the
+  bundle**, so do not use that field as a general carrier.
 
 `summarizeOperationEvents(events)` counts phases and collects normalized codes
 per operation without retaining a single event.
