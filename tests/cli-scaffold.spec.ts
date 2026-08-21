@@ -77,7 +77,10 @@ describe('scaffold templates', () => {
       expect(range).toBe('0.1.0');
     }
 
-    expect(manifest.devDependencies.typescript).toBe('6.0.3');
+    // Which versions those are is asserted against the root manifest in
+    // package-manifests.spec.ts, so a workspace bump does not fail a test here
+    // that has no opinion about the new number.
+    expect(Object.keys(manifest.devDependencies).sort()).toEqual(['@types/node', 'typescript']);
     expect(describeScaffoldTemplate(template).length).toBeGreaterThan(0);
   });
 

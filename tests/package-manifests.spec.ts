@@ -6,7 +6,11 @@ import { describe, expect, test } from 'vitest';
 
 import { CAVE_CLIENT_VERSION } from '@opencoven/cave-client';
 import { COVEN_CLIENT_VERSION } from '@opencoven/coven-client';
-import { DEV_CLI_VERSION } from '@opencoven/dev-cli';
+import {
+  DEV_CLI_VERSION,
+  SCAFFOLD_TEMPLATES,
+  createScaffoldFiles,
+} from '@opencoven/dev-cli';
 import { OPENCOVEN_SDK_VERSION } from '@opencoven/sdk';
 
 import {
@@ -86,6 +90,34 @@ describe('public package manifests', () => {
     expect(rootManifest.engines?.node, 'engines.node must span exactly one major').toMatch(
       new RegExp(`^>=${major}\\.\\d+\\.\\d+ <${Number(major) + 1}$`),
     );
+  });
+
+  /**
+   * A scaffold ships its own copy of the tooling pins, and the argument above
+   * applies to that copy verbatim: typings a major ahead of `engines.node`
+   * typecheck cleanly in a generated project and fail at runtime on the
+   * version this SDK says it supports. The guard above reaches only the root
+   * manifest, so without this one the scaffold could sit a major behind or
+   * ahead of the workspace indefinitely -- in the artifact users actually
+   * build on, and the only one nobody here compiles by hand.
+   */
+  test('pins scaffold tooling to the versions this workspace builds with', () => {
+    for (const template of SCAFFOLD_TEMPLATES) {
+      const manifest = JSON.parse(
+        createScaffoldFiles(template).find((file) => file.path === 'package.json')?.contents ??
+          '{}',
+      ) as { devDependencies?: Record<string, string> };
+      const tooling = manifest.devDependencies ?? {};
+
+      expect(Object.keys(tooling).sort(), `${template} scaffold tooling`).toEqual([
+        '@types/node',
+        'typescript',
+      ]);
+      expect(tooling['@types/node']).toMatch(EXACT_VERSION);
+      expect(tooling.typescript).toMatch(EXACT_VERSION);
+      expect(tooling['@types/node']).toBe(rootManifest.devDependencies?.['@types/node']);
+      expect(tooling.typescript).toBe(rootManifest.devDependencies?.typescript);
+    }
   });
 
   test('runs deterministic multi-seed operation stress verification', () => {
