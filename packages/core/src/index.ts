@@ -28,9 +28,29 @@ export type {
 export type { OperationEvent, OperationObserver } from './operation-events.js';
 
 export {
+  DISCOVERY_PROFILES,
+  DISCOVERY_PROTOCOL,
+  DISCOVERY_RECORD_VERSION,
+  DiscoveryContractError,
+  parseDiscoveryEndpoint,
+  parseDiscoveryRecord,
+} from './discovery.js';
+export type {
+  DiscoveryDiagnosticCode,
+  DiscoveryEndpoint,
+  DiscoveryProfile,
+  DiscoveryRecord,
+} from './discovery.js';
+
+export {
   createManagedMemorySecretStore,
   createMemorySecretStore,
+  createSecretStoreReference,
   InvalidSecretKeyError,
   SecretStoreDisposedError,
 } from './secret-store.js';
-export type { ManagedSecretStore, SecretStore } from './secret-store.js';
+export type {
+  ManagedSecretStore,
+  SecretStore,
+  SecretStoreReference,
+} from './secret-store.js';

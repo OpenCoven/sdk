@@ -51,7 +51,46 @@ describe('workspace entrypoints', () => {
       }));
       vi.stubGlobal('fetch', unexpectedIo);
 
-      await expect(import(entrypoint)).resolves.toBeDefined();
+      const imported: unknown = await import(entrypoint);
+
+      expect(imported).toBeDefined();
+
+      if (entrypoint === '@opencoven/sdk-core') {
+        const discovery = imported as {
+          parseDiscoveryEndpoint?: (value: unknown) => unknown;
+          parseDiscoveryRecord?: (value: unknown) => unknown;
+        };
+
+        expect(
+          discovery.parseDiscoveryEndpoint?.({
+            kind: 'unix',
+            path: '/var/run/opencoven/coven.sock',
+          }),
+        ).toEqual({
+          kind: 'unix',
+          path: '/var/run/opencoven/coven.sock',
+        });
+        expect(
+          discovery.parseDiscoveryRecord?.({
+            version: 1,
+            protocol: 'opencoven.discovery.v1',
+            profile: 'coven',
+            endpoint: {
+              kind: 'windowsNamedPipe',
+              path: '\\\\.\\pipe\\opencoven-coven',
+            },
+          }),
+        ).toEqual({
+          version: 1,
+          protocol: 'opencoven.discovery.v1',
+          profile: 'coven',
+          endpoint: {
+            kind: 'windowsNamedPipe',
+            path: '\\\\.\\pipe\\opencoven-coven',
+          },
+        });
+      }
+
       expect(unexpectedIo).not.toHaveBeenCalled();
     });
   }

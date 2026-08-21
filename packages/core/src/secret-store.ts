@@ -10,7 +10,14 @@ export interface ManagedSecretStore extends SecretStore {
   dispose(): Promise<void>;
 }
 
+export interface SecretStoreReference {
+  readonly key: string;
+}
+
 export class InvalidSecretKeyError extends TypeError {
+  readonly code = 'invalid_secret_key';
+  readonly retryable = false;
+
   constructor() {
     super('Secret keys must contain non-whitespace characters and be at most 256 characters');
     this.name = 'InvalidSecretKeyError';
@@ -18,10 +25,25 @@ export class InvalidSecretKeyError extends TypeError {
 }
 
 export class SecretStoreDisposedError extends Error {
+  readonly code = 'secret_store_disposed';
+  readonly retryable = false;
+
   constructor() {
     super('Secret store has been disposed');
     this.name = 'SecretStoreDisposedError';
   }
+}
+
+function isValidSecretKey(key: string): boolean {
+  return key.trim().length > 0 && key.length <= 256;
+}
+
+export function createSecretStoreReference(key: string): SecretStoreReference {
+  if (!isValidSecretKey(key)) {
+    throw new InvalidSecretKeyError();
+  }
+
+  return Object.freeze({ key });
 }
 
 class MemorySecretStore implements SecretStore {
@@ -96,7 +118,7 @@ class ManagedMemorySecretStore implements ManagedSecretStore {
       return new SecretStoreDisposedError();
     }
 
-    if (key.trim().length === 0 || key.length > 256) {
+    if (!isValidSecretKey(key)) {
       return new InvalidSecretKeyError();
     }
 
