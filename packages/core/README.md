@@ -48,12 +48,15 @@ consequences worth knowing before reading a bundle:
   internal DNS record discloses infrastructure for no diagnostic gain. A
   credential in the URL is reported as `credentialsInUrl: true` rather than
   repeated.
-- An error keeps its `requestId` and its HTTP `statusCode`. `requestId` is the
-  one field a bundle carries verbatim from outside this SDK: it is copied off
-  the error your transport threw, and only its shape is checked, because a
-  request id is precisely what a support thread is opened to quote. **A
-  transport that puts a credential in `requestId` puts that credential in the
-  bundle**, so do not use that field as a general carrier.
+- An error keeps its `code`, its `requestId`, and its HTTP `statusCode`. `code`
+  and `requestId` are the two fields a bundle carries verbatim from outside this
+  SDK: `normalizeError` takes a thrown object's own `code` when it has one, and
+  copies `requestId` the same way. Each is checked for shape and nothing else,
+  because a code is what every count here is grouped by and a request id is what
+  a support thread is opened to quote — filtering either down to a vocabulary
+  this SDK already knows would throw away the transport's own diagnosis. **A
+  transport that puts a credential in `code` or `requestId` puts that credential
+  in the bundle**, so treat neither as a general-purpose carrier.
 
 `summarizeOperationEvents(events)` counts phases and collects normalized codes
 per operation without retaining a single event.

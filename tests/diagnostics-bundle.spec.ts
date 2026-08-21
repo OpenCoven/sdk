@@ -2,6 +2,7 @@ import {
   DIAGNOSTICS_SCHEMA,
   REDACTED_HOST,
   createDiagnosticsBundle,
+  normalizeError,
   sanitizeDiagnosticsError,
   summarizeDiagnosticsEndpoint,
   summarizeOperationEvents,
@@ -82,6 +83,29 @@ describe('diagnostics bundles', () => {
     for (const key of ['prompt', 'attachments', 'authorization', 'message', 'token']) {
       expect(serialized).not.toContain(key);
     }
+  });
+
+  /**
+   * The boundary of the test above, pinned so it cannot be read as wider than
+   * it is. `poisonedInput` puts a clean `unauthorized` in every `code` slot, so
+   * that spec says nothing about a code -- and a code is not authored here:
+   * `normalizeError` takes a thrown object's own, and only the shape is
+   * checked. Both slots the bundle carries a code into are covered, because
+   * `codes` on an operation summary is a second copy of the same value.
+   */
+  test('carries a transport-authored code as far as the bundle, unfiltered', () => {
+    const thrown = { code: 'transport.tls_handshake-1', requestId: 'req.9-a' };
+    const error = normalizeError(thrown, { system: 'cave', operation: 'health' });
+
+    expect(error.code).toBe(thrown.code);
+
+    const bundle = createDiagnosticsBundle({
+      errors: [error],
+      events: [{ phase: 'failure', system: 'cave', operation: 'health', durationMs: 5, error }],
+    });
+
+    expect(bundle.errors[0]).toMatchObject({ code: thrown.code, requestId: thrown.requestId });
+    expect(bundle.operations[0]?.codes).toEqual([thrown.code]);
   });
 
   test('keeps exactly the allowlisted fields from a poisoned input', () => {

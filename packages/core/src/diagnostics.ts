@@ -98,12 +98,21 @@ export interface DiagnosticsOperationSummary {
 /**
  * A normalized error reduced to its non-prose fields.
  *
- * `requestId` is the one value here that this SDK does not author: it is copied
- * off the error the caller's transport threw, and only its shape is checked.
- * That is deliberate -- a request id is the thing a support thread is opened to
- * quote -- but it means a transport that puts a credential in `requestId` puts
- * that credential in the bundle. Nothing else in this module carries a value
- * from outside the SDK verbatim.
+ * Two of these values this SDK does not author. `requestId` is copied off the
+ * error the caller's transport threw, and so is `code`: `normalizeError` takes
+ * a thrown object's own `code` verbatim whenever it is a non-empty string, and
+ * only falls back to a code of its own when there is none. Each is checked for
+ * shape and nothing else, and neither shape can be told apart from a
+ * credential's -- `CODE_PATTERN` admits `sk-live-...` exactly as
+ * `REQUEST_ID_PATTERN` does.
+ *
+ * Both are kept deliberately. A code is what every count in this bundle is
+ * grouped by, and a request id is the thing a support thread is opened to
+ * quote; filtering either to a vocabulary this SDK knows would drop the
+ * transport's own diagnosis, which is usually the useful half. The consequence
+ * is that a transport putting a credential in either field puts it in the
+ * bundle, so both are named in the READMEs. Every other value here is authored
+ * by this SDK.
  */
 export interface DiagnosticsError {
   system: OpenCovenSystem;
