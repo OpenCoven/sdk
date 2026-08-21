@@ -1,7 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { chmodSync } from 'node:fs';
-import { lstat } from 'node:fs/promises';
-import { createServer } from 'node:net';
+import { createConnection, createServer, type Socket } from 'node:net';
 import { resolve } from 'node:path';
 
 import {
@@ -16,11 +14,13 @@ import {
   discoverCovenEndpoint,
   isCovenDaemonResponseError,
   isCovenIpcError,
+  type CovenConnectedSocket,
   type CovenDiscoveredEndpoint,
   type CovenExecFile,
   type CovenExecFileError,
   type CovenSocket,
   type CovenUnixFileIdentity,
+  type CovenUnixTransportOptions,
   type CovenWindowsPipeIdentity,
 } from '@opencoven/coven-client';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -110,6 +110,7 @@ function execResult(
 
 class FakeSocket extends EventEmitter implements CovenSocket {
   readonly writes: Buffer[] = [];
+  connecting = false;
   destroyed = false;
   ended = false;
   onWrite: ((request: Buffer) => void) | undefined;
@@ -167,12 +168,9 @@ interface TestUnixPeerIdentity {
 }
 
 interface TestUnixTransportOptions
-  extends NonNullable<Parameters<typeof createRawCovenUnixTransport>[1]> {
+  extends Omit<CovenUnixTransportOptions, 'security'> {
   peerIdentity?: {
-    inspectConnected(
-      path: string,
-      socket: CovenSocket,
-    ): Promise<TestUnixPeerIdentity>;
+    inspectConnected(socket: CovenConnectedSocket): Promise<TestUnixPeerIdentity>;
   };
 }
 
@@ -191,13 +189,17 @@ function createCovenUnixTransport(
   discovered: CovenDiscoveredEndpoint,
   options: TestUnixTransportOptions = {},
 ) {
+  const { peerIdentity, ...transportOptions } = options;
   return createRawCovenUnixTransport(discovered, {
-    ...options,
-    peerIdentity:
-      options.peerIdentity ??
-      {
-        inspectConnected: () => Promise.resolve(unixPeerIdentity()),
-      },
+    ...transportOptions,
+    security: {
+      platform: 'unix',
+      peerIdentity:
+        peerIdentity ??
+        {
+          inspectConnected: () => Promise.resolve(unixPeerIdentity()),
+        },
+    },
   });
 }
 
@@ -1032,8 +1034,10 @@ describe('Unix owner-local health transport', () => {
           lstat: () => Promise.resolve(unixIdentity()),
         },
         peerIdentity: {
-          inspectConnected: () =>
-            Promise.resolve(unixPeerIdentity({ ownerUid: 502 })),
+          inspectConnected: (connected) => {
+            expect(connected).toBe(socket);
+            return Promise.resolve(unixPeerIdentity({ ownerUid: 502 }));
+          },
         },
       },
     );
@@ -1046,30 +1050,16 @@ describe('Unix owner-local health transport', () => {
     expect(socket.destroyed).toBe(true);
   });
 
-  test('fails closed when no Unix connected-peer identity adapter is available', async () => {
-    const socket = new FakeSocket();
-    const transport = createRawCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
-      {
-        dependencies: {
-          connect: () => {
-            queueMicrotask(() => {
-              socket.emit('connect');
-            });
-            return socket;
-          },
-          getEffectiveUid: () => 501,
-          lstat: () => Promise.resolve(unixIdentity()),
-        },
-      },
-    );
-
-    await expect(transport.health()).rejects.toMatchObject({
+  test('fails closed at construction when Unix peer security is unavailable', () => {
+    expect(() => {
+      Reflect.apply(createRawCovenUnixTransport, undefined, [
+        unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+        {},
+      ]);
+    }).toThrow(expect.objectContaining({
       code: 'unsafe_endpoint',
-      diagnostics: { phase: 'revalidate_endpoint' },
-    });
-    expect(socket.writes).toEqual([]);
-    expect(socket.destroyed).toBe(true);
+      diagnostics: { phase: 'validate_endpoint' },
+    }));
   });
 
   test('sanitizes synchronous Unix connected-peer inspection failures', async () => {
@@ -1481,9 +1471,10 @@ describe('Unix owner-local health transport', () => {
   test('applies the operation deadline to Unix connected-peer validation', async () => {
     vi.useFakeTimers();
     const socket = new FakeSocket();
-    const inspectConnected = vi.fn(
-      () => new Promise<TestUnixPeerIdentity>(() => undefined),
-    );
+    const inspectConnected = vi.fn((connected: CovenSocket) => {
+      expect(connected).toBe(socket);
+      return new Promise<TestUnixPeerIdentity>(() => undefined);
+    });
     const transport = createCovenUnixTransport(
       unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
       {
@@ -1595,10 +1586,15 @@ describe('Unix owner-local health transport', () => {
   });
 
   test.runIf(process.platform !== 'win32')(
-    'uses the real Node Unix socket connector with owner-only validation',
+    'passes the exact live connected Unix socket to peer validation',
     async () => {
       const shortRoot = createOwnedTempDirectory({ prefix: 'c' });
       const socketPath = resolve(shortRoot.rootPath, 's');
+      let clientSocket: Socket | undefined;
+      const peerIdentityBySocket = new WeakMap<
+        Socket,
+        TestUnixPeerIdentity
+      >();
       const server = createServer((socket) => {
         socket.once('data', () => {
           socket.end(httpResponse(HEALTH_BODY));
@@ -1608,13 +1604,14 @@ describe('Unix owner-local health transport', () => {
         server.once('error', reject);
         server.listen(socketPath, resolvePromise);
       });
-      chmodSync(socketPath, 0o600);
 
       try {
         const uid = process.geteuid?.();
         if (uid === undefined) {
           throw new Error('Expected effective UID on Unix.');
         }
+        const endpointIdentity = unixIdentity({ ownerUid: uid });
+        const connectedIdentity = unixPeerIdentity({ ownerUid: uid });
         const transport = createCovenUnixTransport({
           version: 1,
           protocol: COVEN_DAEMON_PROTOCOL,
@@ -1622,14 +1619,25 @@ describe('Unix owner-local health transport', () => {
           endpoint: { kind: 'unix', path: socketPath },
           owner: { kind: 'unix', uid },
         }, {
+          dependencies: {
+            connect(path) {
+              clientSocket = createConnection({ path });
+              peerIdentityBySocket.set(clientSocket, connectedIdentity);
+              return clientSocket;
+            },
+            getEffectiveUid: () => uid,
+            lstat: () => Promise.resolve(endpointIdentity),
+          },
           peerIdentity: {
-            async inspectConnected() {
-              const stats = await lstat(socketPath);
-              return {
-                device: stats.dev,
-                inode: stats.ino,
-                ownerUid: stats.uid,
-              };
+            inspectConnected(socket) {
+              expect(socket).toBe(clientSocket);
+              expect(socket.connecting).toBe(false);
+              expect(socket.destroyed).toBe(false);
+              const identity = peerIdentityBySocket.get(socket as Socket);
+              if (identity === undefined) {
+                throw new Error('Missing native peer credentials.');
+              }
+              return Promise.resolve(identity);
             },
           },
         });
@@ -2045,6 +2053,12 @@ describe('structured client behavior', () => {
     const socketPath = resolve(ownedRoot.rootPath, 'coven.sock');
     const metadataPath = resolve(ownedRoot.rootPath, 'daemon.json');
     const client = await createDiscoveredCovenClient({
+      transportSecurity: {
+        platform: 'unix',
+        peerIdentity: {
+          inspectConnected: () => Promise.resolve(unixPeerIdentity()),
+        },
+      },
       discovery: {
         env: { PATH: '/safe/bin' },
         platform: 'linux',
@@ -2061,35 +2075,48 @@ describe('structured client behavior', () => {
           getEffectiveUid: () => 501,
           lstat: () => Promise.resolve(unixIdentity()),
         },
-        peerIdentity: {
-          inspectConnected: () => Promise.resolve(unixPeerIdentity()),
-        },
       },
     });
 
     await expect(client.health()).resolves.toEqual({ status: 'ok' });
   });
 
-  test('requires a Windows ownership adapter for discovered clients', async () => {
+  test('rejects a transport-security provider for the wrong discovered platform', async () => {
     await expect(
       createDiscoveredCovenClient({
+        transportSecurity: {
+          platform: 'windows',
+          ownership: {
+            currentUserIdentity: () => Promise.resolve('S-1-5-21-current-user'),
+            inspect: () => Promise.resolve(windowsIdentity()),
+            inspectConnected: () => Promise.resolve(windowsIdentity()),
+          },
+        },
         discovery: {
-          cwd: 'C:\\workspace',
-          env: { COVEN_HOME: 'C:\\profiles\\coven' },
-          platform: 'win32',
+          env: { PATH: '/safe/bin' },
+          platform: 'linux',
           dependencies: {
-            readFile: () =>
-              Promise.resolve(
-                JSON.stringify({
-                  pid: 42,
-                  startedAt: '2026-08-21T06:00:00Z',
-                  socket: 'coven-daemon-v2-deadbeef.sock',
-                  processCreationTime: '100',
-                }),
+            execFile: execResult(
+              configPathsReport(
+                resolve(ownedRoot.rootPath, 'coven.sock'),
+                resolve(ownedRoot.rootPath, 'daemon.json'),
               ),
+            ),
+            getEffectiveUid: () => 501,
+            readFile: () =>
+              Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
           },
         },
       }),
+    ).rejects.toMatchObject({
+      code: 'unsafe_endpoint',
+      diagnostics: { phase: 'validate_endpoint' },
+    });
+  });
+
+  test('fails closed before discovery when transport security is missing at runtime', async () => {
+    await expect(
+      Reflect.apply(createDiscoveredCovenClient, undefined, [{}]),
     ).rejects.toMatchObject({ code: 'unsafe_endpoint' });
   });
 

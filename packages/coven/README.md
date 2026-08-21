@@ -6,8 +6,9 @@ checks happen only through explicit runtime calls.
 
 ## Discover and check health
 
-`createDiscoveredCovenClient()` resolves the current daemon, selects the
-platform transport, and returns the existing typed `CovenClient`. Discovery
+`createDiscoveredCovenClient(options)` resolves the current daemon, verifies
+that the supplied transport-security provider matches that endpoint's
+platform, and returns the existing typed `CovenClient`. Discovery
 prefers a non-empty `COVEN_HOME`: on Unix it derives
 `<COVEN_HOME>/coven.sock` and reads `<COVEN_HOME>/daemon.json` when present; on
 Windows the daemon metadata supplies the profile-specific pipe name. When
@@ -19,20 +20,32 @@ configurable; tests may replace only the injected `execFile` dependency.
 ```ts
 import {
   createDiscoveredCovenClient,
+  discoverCovenEndpoint,
   type CovenUnixPeerIdentityAdapter,
 } from '@opencoven/coven-client';
 
 declare const nativeUnixPeerIdentity: CovenUnixPeerIdentityAdapter;
 const coven = await createDiscoveredCovenClient({
-  unix: { peerIdentity: nativeUnixPeerIdentity },
+  transportSecurity: {
+    platform: 'unix',
+    peerIdentity: nativeUnixPeerIdentity,
+  },
 });
 
 await coven.health({ timeoutMs: 5_000 });
 ```
 
-Use `discoverCovenEndpoint()` separately when an application needs to inspect
-the typed endpoint and its available owner/freshness metadata before creating a
-transport.
+The SDK intentionally does not bundle a peer-credential implementation.
+The embedding CLI or runtime must inject a reviewed native provider for its
+current platform. There is no pathname-only approximation, shell or `lsof`
+fallback, private Node-internals fallback, or permissive default.
+
+`discoverCovenEndpoint()` remains zero-config when an application only needs
+to inspect the typed endpoint and its available owner/freshness metadata:
+
+```ts
+const endpoint = await discoverCovenEndpoint();
+```
 
 ## Same-user IPC
 
@@ -44,15 +57,24 @@ frames, or socket handles.
   `lstat`, rejects symlinks and non-sockets, requires the current effective UID
   and rejects group/world-writable modes. Because Node has no portable API for
   connected Unix peer identity, callers must provide a native
-  `peerIdentity.inspectConnected()` adapter. The transport compares that
-  connected peer's owner and device/inode identity to the current effective
-  UID and the prevalidated path, then separately revalidates the current path.
-  Missing or failed peer identity inspection fails closed.
+  `peerIdentity.inspectConnected(socket)` adapter through a discriminated
+  `{ platform: 'unix' }` security provider. The adapter receives the exact live
+  connected socket, not its pathname, and must derive the peer credentials
+  from that socket. The transport compares the returned owner and device/inode
+  identity to the current effective UID and the prevalidated endpoint, then
+  separately revalidates the current path. Adapter errors, identity mismatch,
+  and validation timeout fail closed.
 - Windows endpoints must be canonical local `\\.\pipe\...` names. Node does
   not expose sufficient named-pipe ACL/owner inspection, so Windows callers
-  must provide a native, PowerShell-free `ownership` adapter. The adapter
+  must provide a native, PowerShell-free `ownership` adapter through a
+  discriminated `{ platform: 'windows' }` security provider. The adapter
   validates the current owner before connection and the connected pipe
   identity afterward.
+
+Direct `createCovenUnixTransport()` construction likewise requires an explicit
+`security` provider. Supplying the wrong platform provider, omitting a
+provider, or returning unverifiable connected-peer data is rejected rather
+than downgraded to pathname validation.
 
 Connect and request timeouts, HTTP headers, response bodies, and framing are
 bounded. The health response must contain boolean `sessions`, `events`, and

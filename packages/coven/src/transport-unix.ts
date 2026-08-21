@@ -44,7 +44,12 @@ export interface CovenSocket {
   destroy(): this;
 }
 
-export type CovenSocketConnector = (path: string) => CovenSocket;
+export interface CovenConnectedSocket extends CovenSocket {
+  readonly connecting: boolean;
+  readonly destroyed: boolean;
+}
+
+export type CovenSocketConnector = (path: string) => CovenConnectedSocket;
 
 export interface CovenUnixFileIdentity {
   device: number;
@@ -62,10 +67,12 @@ export interface CovenUnixPeerIdentity {
 }
 
 export interface CovenUnixPeerIdentityAdapter {
-  inspectConnected(
-    path: string,
-    socket: CovenSocket,
-  ): Promise<CovenUnixPeerIdentity>;
+  inspectConnected(socket: CovenConnectedSocket): Promise<CovenUnixPeerIdentity>;
+}
+
+export interface CovenUnixTransportSecurityProvider {
+  readonly platform: 'unix';
+  readonly peerIdentity: CovenUnixPeerIdentityAdapter;
 }
 
 export interface CovenDaemonFailure {
@@ -126,7 +133,7 @@ export interface CovenUnixTransportDependencies {
 
 export interface CovenUnixTransportOptions extends CovenHealthTransportLimits {
   dependencies?: CovenUnixTransportDependencies;
-  peerIdentity?: CovenUnixPeerIdentityAdapter;
+  security: CovenUnixTransportSecurityProvider;
 }
 
 interface FramedHttpResponse {
@@ -143,7 +150,7 @@ interface HealthRequestOptions {
 
 interface SocketRequestHooks {
   connect: CovenSocketConnector;
-  revalidate(socket: CovenSocket): Promise<void>;
+  revalidate(socket: CovenConnectedSocket): Promise<void>;
 }
 
 function ipcError(
@@ -772,7 +779,7 @@ export function requestCovenHealthOverSocket(
   const limits = healthRequestOptions(configuredLimits);
 
   return new Promise((resolvePromise, reject) => {
-    let socket: CovenSocket;
+    let socket: CovenConnectedSocket;
     let settled = false;
     let connected = false;
     let received = Buffer.alloc(0);
@@ -1053,18 +1060,28 @@ function validateUnixPeerIdentity(
   }
 }
 
-function defaultUnixConnector(path: string): CovenSocket {
+function defaultUnixConnector(path: string): CovenConnectedSocket {
   return createConnection({ path });
 }
 
 export function createCovenUnixTransport(
   discovered: CovenDiscoveredEndpoint,
-  options: CovenUnixTransportOptions = {},
+  options: CovenUnixTransportOptions,
 ): CovenTransport {
   const endpoint = validUnixEndpoint(discovered);
+  if (
+    options?.security?.platform !== 'unix' ||
+    typeof options.security.peerIdentity?.inspectConnected !== 'function'
+  ) {
+    throw ipcError(
+      'unsafe_endpoint',
+      'Coven Unix connected-peer security is required.',
+      'validate_endpoint',
+    );
+  }
   const connect = options.dependencies?.connect ?? defaultUnixConnector;
   const lstat = options.dependencies?.lstat ?? defaultUnixLstat;
-  const peerIdentity = options.peerIdentity;
+  const peerIdentity = options.security.peerIdentity;
   const getEffectiveUid =
     options.dependencies?.getEffectiveUid ??
     (() => process.geteuid?.());
@@ -1129,25 +1146,15 @@ export function createCovenUnixTransport(
                     'revalidate_endpoint',
                   );
                 }),
-              peerIdentity === undefined
-                ? Promise.reject(
-                    ipcError(
-                      'unsafe_endpoint',
-                      'Connected Coven Unix peer identity could not be established.',
-                      'revalidate_endpoint',
-                    ),
-                  )
-                : Promise.resolve()
-                    .then(() =>
-                      peerIdentity.inspectConnected(endpoint.path, socket),
-                    )
-                    .catch(() => {
-                      throw ipcError(
-                        'unsafe_endpoint',
-                        'Connected Coven Unix peer identity could not be established.',
-                        'revalidate_endpoint',
-                      );
-                    }),
+              Promise.resolve()
+                .then(() => peerIdentity.inspectConnected(socket))
+                .catch(() => {
+                  throw ipcError(
+                    'unsafe_endpoint',
+                    'Connected Coven Unix peer identity could not be established.',
+                    'revalidate_endpoint',
+                  );
+                }),
             ]);
             validateUnixIdentity(
               confirmed,

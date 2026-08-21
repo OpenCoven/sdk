@@ -10,6 +10,7 @@ import type { CovenTransport } from './transport.js';
 import {
   awaitOperationStep,
   requestCovenHealthOverSocket,
+  type CovenConnectedSocket,
   type CovenHealthTransportLimits,
   type CovenSocket,
   type CovenSocketConnector,
@@ -30,6 +31,11 @@ export interface CovenWindowsPipeOwnershipAdapter {
     path: string,
     socket: CovenSocket,
   ): Promise<CovenWindowsPipeIdentity>;
+}
+
+export interface CovenWindowsTransportSecurityProvider {
+  readonly platform: 'windows';
+  readonly ownership: CovenWindowsPipeOwnershipAdapter;
 }
 
 export interface CovenWindowsTransportDependencies {
@@ -147,7 +153,7 @@ function matchesDiscoveredFreshness(
   );
 }
 
-function defaultWindowsConnector(path: string): CovenSocket {
+function defaultWindowsConnector(path: string): CovenConnectedSocket {
   return createConnection({ path });
 }
 

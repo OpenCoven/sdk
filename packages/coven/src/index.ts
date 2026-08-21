@@ -9,6 +9,10 @@ export {
 export type {
   CovenClientOptions,
   CovenDiscoveredClientOptions,
+  CovenDiscoveredUnixClientOptions,
+  CovenDiscoveredUnixTransportOptions,
+  CovenDiscoveredWindowsClientOptions,
+  CovenDiscoveredWindowsTransportOptions,
 } from './client.js';
 export {
   CovenIpcError,
@@ -38,6 +42,7 @@ export {
 } from './transport-unix.js';
 export type {
   CovenDaemonFailure,
+  CovenConnectedSocket,
   CovenHealthTransportLimits,
   CovenSocket,
   CovenSocketConnector,
@@ -46,6 +51,7 @@ export type {
   CovenUnixPeerIdentityAdapter,
   CovenUnixTransportDependencies,
   CovenUnixTransportOptions,
+  CovenUnixTransportSecurityProvider,
 } from './transport-unix.js';
 export { createCovenWindowsTransport } from './transport-windows.js';
 export type {
@@ -53,4 +59,5 @@ export type {
   CovenWindowsPipeOwnershipAdapter,
   CovenWindowsTransportDependencies,
   CovenWindowsTransportOptions,
+  CovenWindowsTransportSecurityProvider,
 } from './transport-windows.js';

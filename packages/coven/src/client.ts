@@ -19,10 +19,12 @@ import {
   createCovenUnixTransport,
   isCovenDaemonResponseError,
   type CovenDaemonFailure,
+  type CovenUnixTransportSecurityProvider,
   type CovenUnixTransportOptions,
 } from './transport-unix.js';
 import {
   createCovenWindowsTransport,
+  type CovenWindowsTransportSecurityProvider,
   type CovenWindowsTransportOptions,
 } from './transport-windows.js';
 
@@ -33,12 +35,38 @@ export interface CovenClientOptions {
   operation?: OperationDefaults;
 }
 
-export interface CovenDiscoveredClientOptions {
+interface CovenDiscoveredClientBaseOptions {
   discovery?: DiscoverCovenEndpointOptions;
   operation?: OperationDefaults;
-  unix?: CovenUnixTransportOptions;
-  windows?: CovenWindowsTransportOptions;
 }
+
+export type CovenDiscoveredUnixTransportOptions = Omit<
+  CovenUnixTransportOptions,
+  'security'
+>;
+
+export type CovenDiscoveredWindowsTransportOptions = Omit<
+  CovenWindowsTransportOptions,
+  'ownership'
+>;
+
+export interface CovenDiscoveredUnixClientOptions
+  extends CovenDiscoveredClientBaseOptions {
+  transportSecurity: CovenUnixTransportSecurityProvider;
+  unix?: CovenDiscoveredUnixTransportOptions;
+  windows?: never;
+}
+
+export interface CovenDiscoveredWindowsClientOptions
+  extends CovenDiscoveredClientBaseOptions {
+  transportSecurity: CovenWindowsTransportSecurityProvider;
+  unix?: never;
+  windows?: CovenDiscoveredWindowsTransportOptions;
+}
+
+export type CovenDiscoveredClientOptions =
+  | CovenDiscoveredUnixClientOptions
+  | CovenDiscoveredWindowsClientOptions;
 
 export function normalizeCovenError(error: unknown, operation: string): NormalizedError {
   return normalizeError(error, {
@@ -196,22 +224,45 @@ export function createCovenClient(options: CovenClientOptions): CovenClient {
 }
 
 export async function createDiscoveredCovenClient(
-  options: CovenDiscoveredClientOptions = {},
+  options: CovenDiscoveredClientOptions,
 ): Promise<CovenClient> {
+  if (
+    options?.transportSecurity?.platform !== 'unix' &&
+    options?.transportSecurity?.platform !== 'windows'
+  ) {
+    throw new CovenIpcError(
+      'unsafe_endpoint',
+      'Platform transport security is required.',
+      { phase: 'validate_endpoint' },
+    );
+  }
   const endpoint = await discoverCovenEndpoint(options.discovery);
   let transport: CovenTransport;
 
   if (endpoint.endpoint.kind === 'unix') {
-    transport = createCovenUnixTransport(endpoint, options.unix);
-  } else {
-    if (options.windows === undefined) {
+    if (options.transportSecurity.platform !== 'unix') {
       throw new CovenIpcError(
         'unsafe_endpoint',
-        'Windows named-pipe ownership validation is required.',
+        'Unix transport security is required for the discovered endpoint.',
         { phase: 'validate_endpoint' },
       );
     }
-    transport = createCovenWindowsTransport(endpoint, options.windows);
+    transport = createCovenUnixTransport(endpoint, {
+      ...options.unix,
+      security: options.transportSecurity,
+    });
+  } else {
+    if (options.transportSecurity.platform !== 'windows') {
+      throw new CovenIpcError(
+        'unsafe_endpoint',
+        'Windows transport security is required for the discovered endpoint.',
+        { phase: 'validate_endpoint' },
+      );
+    }
+    transport = createCovenWindowsTransport(endpoint, {
+      ...options.windows,
+      ownership: options.transportSecurity.ownership,
+    });
   }
 
   return new CovenClient({
