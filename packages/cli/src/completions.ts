@@ -28,6 +28,39 @@ const COMMAND_DESCRIPTIONS: Record<(typeof CLI_COMMANDS)[number], string> = {
   scaffold: 'Create a supported TypeScript project',
 };
 
+interface FlagCompletion {
+  /** What the shell shows beside the flag. */
+  description: string;
+  /** The subcommand the flag belongs to; omitted when it applies everywhere. */
+  subcommand?: (typeof CLI_COMMANDS)[number];
+}
+
+/**
+ * What each flag means, and where it applies.
+ *
+ * Fish is the only shell here whose script says both, and saying them by hand
+ * was the one place a list in this file was not derived from `CLI_FLAGS`: a
+ * fifth flag would have reached bash, zsh and PowerShell and silently missed
+ * fish, which is exactly the drift the note above claims cannot happen. The
+ * `Record` is exhaustive over `CLI_FLAGS`, so the next flag does not compile
+ * until someone says what it does and what it belongs to.
+ */
+const FLAG_COMPLETIONS: Record<(typeof CLI_FLAGS)[number], FlagCompletion> = {
+  '--force': { description: 'Overwrite existing files', subcommand: 'scaffold' },
+  '--help': { description: 'Show usage' },
+  '--json': { description: 'Emit machine-readable JSON' },
+  '--version': { description: 'Show the CLI version' },
+};
+
+/** `--force` in fish's own spelling: a long flag is named without its dashes. */
+function fishFlagLine(flag: (typeof CLI_FLAGS)[number]): string {
+  const { description, subcommand } = FLAG_COMPLETIONS[flag];
+  const scope =
+    subcommand === undefined ? '' : `-n '__fish_seen_subcommand_from ${subcommand}' `;
+
+  return `complete -c opencoven ${scope}-l ${flag.slice(2)} -d '${description}'`;
+}
+
 const commands = CLI_COMMANDS.join(' ');
 const flags = CLI_FLAGS.join(' ');
 const shells = COMPLETION_SHELLS.join(' ');
@@ -109,17 +142,21 @@ function fishScript(): string {
     (command) =>
       `complete -c opencoven -n __fish_use_subcommand -a ${command} -d '${COMMAND_DESCRIPTIONS[command]}'`,
   ).join('\n');
+  const flagLines = CLI_FLAGS.filter(
+    (flag) => FLAG_COMPLETIONS[flag].subcommand === undefined,
+  ).map(fishFlagLine);
+  const scopedFlagLines = CLI_FLAGS.filter(
+    (flag) => FLAG_COMPLETIONS[flag].subcommand !== undefined,
+  ).map(fishFlagLine);
 
   return `# opencoven fish completion
 # Load with: opencoven completions fish > ~/.config/fish/completions/opencoven.fish
 complete -c opencoven -f
-complete -c opencoven -l help -d 'Show usage'
-complete -c opencoven -l version -d 'Show the CLI version'
-complete -c opencoven -l json -d 'Emit machine-readable JSON'
+${flagLines.join('\n')}
 ${commandLines}
 complete -c opencoven -n '__fish_seen_subcommand_from completions' -a '${shells}'
 complete -c opencoven -n '__fish_seen_subcommand_from scaffold' -a '${templates}'
-complete -c opencoven -n '__fish_seen_subcommand_from scaffold' -l force -d 'Overwrite existing files'
+${scopedFlagLines.join('\n')}
 `;
 }
 

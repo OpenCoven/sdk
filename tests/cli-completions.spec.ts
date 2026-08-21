@@ -1,5 +1,6 @@
 import {
   CLI_COMMANDS,
+  CLI_FLAGS,
   COMPLETION_SHELLS,
   DEV_CLI_VERSION,
   isCompletionShell,
@@ -33,6 +34,22 @@ describe('opencoven completions', () => {
     }
 
     expect(script.endsWith('\n')).toBe(true);
+  });
+
+  /**
+   * Fish names a long flag without its dashes, so a `toContain('--force')`
+   * sweep reports every flag missing there and passes trivially everywhere
+   * else. Each shell is checked in its own spelling, which is the only way this
+   * catches a generator that stops iterating `CLI_FLAGS`.
+   */
+  test.each(COMPLETION_SHELLS)('offers every flag in %s', (shell) => {
+    const script = renderCompletionScript(shell);
+
+    for (const flag of CLI_FLAGS) {
+      expect(script, `${shell} completion is missing ${flag}`).toContain(
+        shell === 'fish' ? `-l ${flag.slice(2)} ` : flag,
+      );
+    }
   });
 
   test('emits the registration each shell actually loads', () => {
