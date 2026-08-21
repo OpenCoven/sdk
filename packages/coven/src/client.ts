@@ -8,14 +8,36 @@ import {
   type OperationOptions,
 } from '@opencoven/sdk-core';
 
+import {
+  CovenIpcError,
+  discoverCovenEndpoint,
+  type DiscoverCovenEndpointOptions,
+} from './discovery.js';
 import { COVEN_DAEMON_PROTOCOL, type CovenHealth, type CovenHealthResponse } from './schemas.js';
 import type { CovenTransport } from './transport.js';
+import {
+  createCovenUnixTransport,
+  isCovenDaemonResponseError,
+  type CovenDaemonFailure,
+  type CovenUnixTransportOptions,
+} from './transport-unix.js';
+import {
+  createCovenWindowsTransport,
+  type CovenWindowsTransportOptions,
+} from './transport-windows.js';
 
 const COVEN_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/coven-client/CovenClientError');
 
 export interface CovenClientOptions {
   transport: CovenTransport;
   operation?: OperationDefaults;
+}
+
+export interface CovenDiscoveredClientOptions {
+  discovery?: DiscoverCovenEndpointOptions;
+  operation?: OperationDefaults;
+  unix?: CovenUnixTransportOptions;
+  windows?: CovenWindowsTransportOptions;
 }
 
 export function normalizeCovenError(error: unknown, operation: string): NormalizedError {
@@ -32,6 +54,7 @@ export class CovenClientError extends Error {
   readonly retryable: boolean;
   readonly requestId: string | undefined;
   readonly statusCode: number | undefined;
+  readonly daemon: CovenDaemonFailure | undefined;
 
   constructor(normalized: NormalizedError, options?: ErrorOptions) {
     super(`${normalized.system}.${normalized.operation}: ${normalized.code}`, options);
@@ -41,6 +64,9 @@ export class CovenClientError extends Error {
     this.retryable = normalized.retryable;
     this.requestId = normalized.requestId;
     this.statusCode = normalized.statusCode;
+    this.daemon = isCovenDaemonResponseError(options?.cause)
+      ? options.cause.daemon
+      : undefined;
     Object.defineProperty(this, COVEN_CLIENT_ERROR_BRAND, { value: true });
   }
 }
@@ -167,4 +193,29 @@ export class CovenClient {
 
 export function createCovenClient(options: CovenClientOptions): CovenClient {
   return new CovenClient(options);
+}
+
+export async function createDiscoveredCovenClient(
+  options: CovenDiscoveredClientOptions = {},
+): Promise<CovenClient> {
+  const endpoint = await discoverCovenEndpoint(options.discovery);
+  let transport: CovenTransport;
+
+  if (endpoint.endpoint.kind === 'unix') {
+    transport = createCovenUnixTransport(endpoint, options.unix);
+  } else {
+    if (options.windows === undefined) {
+      throw new CovenIpcError(
+        'unsafe_endpoint',
+        'Windows named-pipe ownership validation is required.',
+        { phase: 'validate_endpoint' },
+      );
+    }
+    transport = createCovenWindowsTransport(endpoint, options.windows);
+  }
+
+  return new CovenClient({
+    transport,
+    ...(options.operation === undefined ? {} : { operation: options.operation }),
+  });
 }

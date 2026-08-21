@@ -45,6 +45,10 @@ describe('public package entry points', () => {
     expect(hasFunction(cave, 'normalizeCaveError')).toBe(true);
     expect(hasFunction(cave, 'isCaveClientError')).toBe(true);
     expect(hasFunction(coven, 'CovenClient')).toBe(true);
+    expect(hasFunction(coven, 'discoverCovenEndpoint')).toBe(true);
+    expect(hasFunction(coven, 'createCovenUnixTransport')).toBe(true);
+    expect(hasFunction(coven, 'createCovenWindowsTransport')).toBe(true);
+    expect(hasFunction(coven, 'createDiscoveredCovenClient')).toBe(true);
     expect(hasFunction(coven, 'normalizeCovenError')).toBe(true);
     expect(hasFunction(coven, 'isCovenClientError')).toBe(true);
     expect(hasFunction(sdk, 'OpenCovenSdk')).toBe(true);

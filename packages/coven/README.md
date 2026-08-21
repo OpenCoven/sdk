@@ -1,45 +1,76 @@
 # @opencoven/coven-client
 
-A constrained Coven health client. Consumers provide the transport; this
-package does not perform daemon discovery or connection at import time, and it
-normalizes malformed health responses to a stable SDK error. Valid health
-capabilities require boolean `sessions`, `events`, and `structuredErrors`
-fields.
+A constrained, owner-local Coven health client. Importing the package performs
+no filesystem, process, network, socket, or daemon I/O. Discovery and health
+checks happen only through explicit runtime calls.
+
+## Discover and check health
+
+`createDiscoveredCovenClient()` resolves the current daemon, selects the
+platform transport, and returns the existing typed `CovenClient`. Discovery
+prefers a non-empty `COVEN_HOME`: on Unix it derives
+`<COVEN_HOME>/coven.sock` and reads `<COVEN_HOME>/daemon.json` when present; on
+Windows the daemon metadata supplies the profile-specific pipe name. When
+`COVEN_HOME` is empty or absent, discovery executes exactly
+`coven config paths --json` with no shell, a bounded timeout/output buffer, and
+a small allowlisted environment.
 
 ```ts
-import { COVEN_DAEMON_PROTOCOL, CovenClient } from '@opencoven/coven-client';
+import { createDiscoveredCovenClient } from '@opencoven/coven-client';
 
-const coven = new CovenClient({
-  transport: {
-    health: async (context) => ({
-      ok: true,
-      apiVersion: COVEN_DAEMON_PROTOCOL,
-      covenVersion: '0.1.0',
-      capabilities: {
-        sessions: true,
-        events: true,
-        eventCursor: 'sequence',
-        structuredErrors: true,
-      },
-    }),
-  },
-});
+const coven = await createDiscoveredCovenClient();
 
 await coven.health({ timeoutMs: 5_000 });
 ```
 
-`eventCursor` is optional and accepts any string for source compatibility.
-Malformed responses and unsupported daemon protocols reject with
-`CovenClientError`; transport failures remain available through `error.cause`.
-Use `isCovenClientError(error)` when errors may cross bundles or duplicate
-package installations.
+Use `discoverCovenEndpoint()` separately when an application needs to inspect
+the typed endpoint and its available owner/freshness metadata before creating a
+transport.
+
+## Same-user IPC
+
+The built-in transports support only `GET /api/v1/health` for the exact
+`coven.daemon.v1` protocol. They do not expose arbitrary request methods,
+frames, or socket handles.
+
+- Unix endpoints must be normalized absolute paths. The transport uses
+  `lstat`, rejects symlinks and non-sockets, requires the current effective UID
+  and rejects group/world-writable modes, then compares device/inode identity
+  again immediately after connecting.
+- Windows endpoints must be canonical local `\\.\pipe\...` names. Node does
+  not expose sufficient named-pipe ACL/owner inspection, so Windows callers
+  must provide a native, PowerShell-free `ownership` adapter. The adapter
+  validates the current owner before connection and the connected pipe
+  identity afterward.
+
+Connect and request timeouts, HTTP headers, response bodies, and framing are
+bounded. The health response must contain boolean `sessions`, `events`, and
+`structuredErrors` capabilities; `eventCursor` remains optional for source
+compatibility.
+
+## Errors
+
+Discovery and built-in transport failures use `CovenIpcError` with stable
+codes: `not_found`, `command_failed`, `malformed_config`, `unsafe_endpoint`,
+`owner_mismatch`, `connect_failure`, `timeout`, `body_limit`, `frame_limit`,
+and `invalid_response`. Diagnostics contain only allowlisted scalar metadata,
+such as phase, exit status, signal, and byte counts. Command output,
+filesystem contents, credentials, and socket handles are never copied into
+public errors.
+
+Daemon error envelopes remain structured on `CovenClientError.daemon` instead
+of being flattened to strings. Use `isCovenClientError(error)` and
+`isCovenIpcError(error)` when errors may cross bundles or duplicate package
+installations.
 
 `health()` accepts an optional signal, timeout, and lifecycle observer.
 Constructor operation defaults remain additive, and zero-argument transports
 remain compatible. There is no default timeout. Timeout rejects promptly for
 non-cooperative transports, while stopping underlying daemon I/O requires the
-transport to honor its context signal. Causes may contain transport data and
-must not be logged blindly.
+transport to honor its context signal.
+
+The owner-local Coven daemon contract does not use bearer tokens, API keys,
+cookies, or credential files. This package neither discovers nor sends them.
 
 ## License
 

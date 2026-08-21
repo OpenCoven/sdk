@@ -1,0 +1,837 @@
+import { lstat as nodeLstat } from 'node:fs/promises';
+import { createConnection } from 'node:net';
+
+import {
+  parseDiscoveryEndpoint,
+  type OperationContext,
+} from '@opencoven/sdk-core';
+
+import {
+  CovenIpcError,
+  type CovenDiscoveredEndpoint,
+  type CovenIpcDiagnostics,
+} from './discovery.js';
+import type { CovenHealthResponse } from './schemas.js';
+import type { CovenTransport } from './transport.js';
+
+const DEFAULT_CONNECT_TIMEOUT_MS = 2_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
+const DEFAULT_MAX_HEADER_BYTES = 64 * 1024;
+const DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024;
+const HEALTH_REQUEST = Buffer.from(
+  'GET /api/v1/health HTTP/1.1\r\n' +
+    'Host: coven\r\n' +
+    'Accept: application/json\r\n' +
+    'Connection: close\r\n' +
+    'Content-Length: 0\r\n\r\n',
+  'utf8',
+);
+const SENSITIVE_FIELD_PATTERN =
+  /(?:authorization|bearer|cookie|credential|password|secret|token)/iu;
+const COVEN_DAEMON_RESPONSE_ERROR_BRAND = Symbol.for(
+  '@opencoven/coven-client/CovenDaemonResponseError',
+);
+
+export interface CovenSocket {
+  on(event: string, listener: (...args: unknown[]) => void): this;
+  once(event: string, listener: (...args: unknown[]) => void): this;
+  removeListener(event: string, listener: (...args: unknown[]) => void): this;
+  write(data: Uint8Array | string): boolean;
+  end(): this;
+  destroy(): this;
+}
+
+export type CovenSocketConnector = (path: string) => CovenSocket;
+
+export interface CovenUnixFileIdentity {
+  device: number;
+  inode: number;
+  mode: number;
+  ownerUid: number;
+  symbolicLink: boolean;
+  socket: boolean;
+}
+
+export interface CovenDaemonFailure {
+  code: string;
+  message: string;
+  details: unknown;
+}
+
+export class CovenDaemonResponseError extends Error {
+  readonly retryable = false;
+  readonly code: string;
+  readonly statusCode: number;
+
+  constructor(
+    readonly daemon: CovenDaemonFailure,
+    statusCode: number,
+  ) {
+    super(`Coven daemon rejected the health request with ${daemon.code}.`);
+    this.name = 'CovenDaemonResponseError';
+    this.code = daemon.code;
+    this.statusCode = statusCode;
+    Object.defineProperty(this, COVEN_DAEMON_RESPONSE_ERROR_BRAND, {
+      value: true,
+    });
+  }
+}
+
+export function isCovenDaemonResponseError(
+  error: unknown,
+): error is CovenDaemonResponseError {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  try {
+    return Reflect.get(error, COVEN_DAEMON_RESPONSE_ERROR_BRAND) === true;
+  } catch {
+    return false;
+  }
+}
+
+export interface CovenHealthTransportLimits {
+  connectTimeoutMs?: number;
+  maxBodyBytes?: number;
+  maxHeaderBytes?: number;
+  requestTimeoutMs?: number;
+}
+
+export interface CovenUnixTransportDependencies {
+  connect?: CovenSocketConnector;
+  getEffectiveUid?: () => number | undefined;
+  lstat?: (path: string) => Promise<CovenUnixFileIdentity>;
+}
+
+export interface CovenUnixTransportOptions extends CovenHealthTransportLimits {
+  dependencies?: CovenUnixTransportDependencies;
+}
+
+interface FramedHttpResponse {
+  statusCode: number;
+  body: Buffer;
+}
+
+interface HealthRequestOptions {
+  connectTimeoutMs: number;
+  maxBodyBytes: number;
+  maxHeaderBytes: number;
+  requestTimeoutMs: number;
+}
+
+interface SocketRequestHooks {
+  connect: CovenSocketConnector;
+  revalidate(socket: CovenSocket): Promise<void>;
+}
+
+function ipcError(
+  code: ConstructorParameters<typeof CovenIpcError>[0],
+  message: string,
+  phase: CovenIpcDiagnostics['phase'],
+  extra: Omit<CovenIpcDiagnostics, 'phase'> = {},
+): CovenIpcError {
+  return new CovenIpcError(code, message, { phase, ...extra });
+}
+
+function validLimit(value: number | undefined, fallback: number): number {
+  if (
+    value === undefined ||
+    !Number.isSafeInteger(value) ||
+    value <= 0 ||
+    value > 2_147_483_647
+  ) {
+    return fallback;
+  }
+  return value;
+}
+
+function healthRequestOptions(
+  options: CovenHealthTransportLimits,
+): HealthRequestOptions {
+  return {
+    connectTimeoutMs: validLimit(
+      options.connectTimeoutMs,
+      DEFAULT_CONNECT_TIMEOUT_MS,
+    ),
+    maxBodyBytes: validLimit(options.maxBodyBytes, DEFAULT_MAX_BODY_BYTES),
+    maxHeaderBytes: validLimit(
+      options.maxHeaderBytes,
+      DEFAULT_MAX_HEADER_BYTES,
+    ),
+    requestTimeoutMs: validLimit(
+      options.requestTimeoutMs,
+      DEFAULT_REQUEST_TIMEOUT_MS,
+    ),
+  };
+}
+
+function remainingTimeout(
+  configuredMs: number,
+  context: OperationContext | undefined,
+): number {
+  if (context?.deadline === undefined) {
+    return configuredMs;
+  }
+  return Math.max(1, Math.min(configuredMs, context.deadline - performance.now()));
+}
+
+function safeDestroy(socket: CovenSocket): void {
+  try {
+    socket.destroy();
+  } catch {
+    // Cleanup is best effort and must never replace the primary error.
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+function containsSensitiveField(value: unknown, depth = 0): boolean {
+  if (depth > 16 || value === null || typeof value !== 'object') {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((entry) => containsSensitiveField(entry, depth + 1));
+  }
+  if (!isPlainObject(value)) {
+    return true;
+  }
+  return Object.entries(value).some(
+    ([key, entry]) =>
+      SENSITIVE_FIELD_PATTERN.test(key) ||
+      containsSensitiveField(entry, depth + 1),
+  );
+}
+
+function decodeUtf8(bytes: Buffer): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    throw ipcError(
+      'invalid_response',
+      'Coven daemon response body was not UTF-8.',
+      'read_response',
+    );
+  }
+}
+
+function parseDaemonFailure(
+  body: Buffer,
+  statusCode: number,
+): CovenDaemonResponseError {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(decodeUtf8(body)) as unknown;
+  } catch {
+    throw ipcError(
+      'invalid_response',
+      'Coven daemon returned an invalid error response.',
+      'read_response',
+    );
+  }
+  if (!isPlainObject(parsed) || !isPlainObject(parsed.error)) {
+    throw ipcError(
+      'invalid_response',
+      'Coven daemon returned an invalid error response.',
+      'read_response',
+    );
+  }
+  const error = parsed.error;
+  if (
+    Object.keys(error).some(
+      (field) => !['code', 'message', 'details'].includes(field),
+    ) ||
+    typeof error.code !== 'string' ||
+    error.code.length === 0 ||
+    typeof error.message !== 'string' ||
+    error.message.length === 0 ||
+    !Object.hasOwn(error, 'details') ||
+    containsSensitiveField(error)
+  ) {
+    throw ipcError(
+      'invalid_response',
+      'Coven daemon returned an unsafe error response.',
+      'read_response',
+    );
+  }
+
+  return new CovenDaemonResponseError(
+    {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+    },
+    statusCode,
+  );
+}
+
+function headerBoundary(
+  bytes: Buffer,
+): { headerEnd: number; bodyStart: number } | undefined {
+  const crlf = bytes.indexOf('\r\n\r\n');
+  if (crlf >= 0) {
+    return { headerEnd: crlf, bodyStart: crlf + 4 };
+  }
+  const lf = bytes.indexOf('\n\n');
+  return lf >= 0 ? { headerEnd: lf, bodyStart: lf + 2 } : undefined;
+}
+
+function parseHeaders(
+  bytes: Buffer,
+): { statusCode: number; contentLength: number } {
+  let serialized: string;
+  try {
+    serialized = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    throw ipcError(
+      'invalid_response',
+      'Coven daemon response headers were not UTF-8.',
+      'read_response',
+    );
+  }
+  const lines = serialized.split(/\r?\n/u);
+  const statusLine = lines.shift();
+  const match =
+    statusLine === undefined
+      ? null
+      : /^HTTP\/1\.[01] ([1-5][0-9]{2})(?: .*)?$/u.exec(statusLine);
+  if (match?.[1] === undefined) {
+    throw ipcError(
+      'invalid_response',
+      'Coven daemon response was missing a valid HTTP status.',
+      'read_response',
+    );
+  }
+
+  let contentLength: number | undefined;
+  for (const line of lines) {
+    const separator = line.indexOf(':');
+    if (separator <= 0) {
+      throw ipcError(
+        'invalid_response',
+        'Coven daemon response contained a malformed header.',
+        'read_response',
+      );
+    }
+    const rawName = line.slice(0, separator);
+    if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u.test(rawName)) {
+      throw ipcError(
+        'invalid_response',
+        'Coven daemon response contained a malformed header.',
+        'read_response',
+      );
+    }
+    const name = rawName.toLowerCase();
+    const value = line.slice(separator + 1).trim();
+    if (name === 'transfer-encoding') {
+      throw ipcError(
+        'invalid_response',
+        'Coven daemon response used unsupported transfer encoding.',
+        'read_response',
+      );
+    }
+    if (name === 'content-length') {
+      if (contentLength !== undefined || !/^(?:0|[1-9][0-9]*)$/u.test(value)) {
+        throw ipcError(
+          'invalid_response',
+          'Coven daemon response had an invalid Content-Length.',
+          'read_response',
+        );
+      }
+      contentLength = Number(value);
+      if (!Number.isSafeInteger(contentLength)) {
+        throw ipcError(
+          'invalid_response',
+          'Coven daemon response had an invalid Content-Length.',
+          'read_response',
+        );
+      }
+    }
+  }
+  if (contentLength === undefined) {
+    throw ipcError(
+      'invalid_response',
+      'Coven daemon response omitted Content-Length.',
+      'read_response',
+    );
+  }
+  return { statusCode: Number(match[1]), contentLength };
+}
+
+function parseCompletedResponse(
+  received: Buffer,
+  limits: HealthRequestOptions,
+): FramedHttpResponse {
+  const boundary = headerBoundary(received);
+  if (boundary === undefined) {
+    throw ipcError(
+      'invalid_response',
+      'Coven daemon closed before response headers completed.',
+      'read_response',
+    );
+  }
+  if (boundary.headerEnd > limits.maxHeaderBytes) {
+    throw ipcError(
+      'frame_limit',
+      'Coven daemon response headers exceeded their size limit.',
+      'read_response',
+      { limitBytes: limits.maxHeaderBytes },
+    );
+  }
+  const { statusCode, contentLength } = parseHeaders(
+    received.subarray(0, boundary.headerEnd),
+  );
+  if (contentLength > limits.maxBodyBytes) {
+    throw ipcError(
+      'body_limit',
+      'Coven daemon response body exceeded its size limit.',
+      'read_response',
+      { limitBytes: limits.maxBodyBytes },
+    );
+  }
+  const body = received.subarray(boundary.bodyStart);
+  if (body.length !== contentLength) {
+    throw ipcError(
+      body.length > contentLength ? 'frame_limit' : 'invalid_response',
+      body.length > contentLength
+        ? 'Coven daemon response contained trailing frame bytes.'
+        : 'Coven daemon closed before its response body completed.',
+      'read_response',
+    );
+  }
+  return { statusCode, body };
+}
+
+function validateReceivedSize(
+  received: Buffer,
+  limits: HealthRequestOptions,
+): void {
+  const boundary = headerBoundary(received);
+  if (boundary === undefined) {
+    if (received.length > limits.maxHeaderBytes) {
+      throw ipcError(
+        'frame_limit',
+        'Coven daemon response headers exceeded their size limit.',
+        'read_response',
+        { limitBytes: limits.maxHeaderBytes },
+      );
+    }
+    return;
+  }
+  if (boundary.headerEnd > limits.maxHeaderBytes) {
+    throw ipcError(
+      'frame_limit',
+      'Coven daemon response headers exceeded their size limit.',
+      'read_response',
+      { limitBytes: limits.maxHeaderBytes },
+    );
+  }
+  const { contentLength } = parseHeaders(received.subarray(0, boundary.headerEnd));
+  if (contentLength > limits.maxBodyBytes) {
+    throw ipcError(
+      'body_limit',
+      'Coven daemon response body exceeded its size limit.',
+      'read_response',
+      { limitBytes: limits.maxBodyBytes },
+    );
+  }
+  if (received.length - boundary.bodyStart > contentLength) {
+    throw ipcError(
+      'frame_limit',
+      'Coven daemon response contained trailing frame bytes.',
+      'read_response',
+    );
+  }
+}
+
+function decodeHealth(response: FramedHttpResponse): CovenHealthResponse {
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw parseDaemonFailure(response.body, response.statusCode);
+  }
+
+  try {
+    return JSON.parse(decodeUtf8(response.body)) as CovenHealthResponse;
+  } catch {
+    throw ipcError(
+      'invalid_response',
+      'Coven daemon health response was not valid JSON.',
+      'read_response',
+    );
+  }
+}
+
+function completeResponse(
+  received: Buffer,
+  limits: HealthRequestOptions,
+): FramedHttpResponse | undefined {
+  const boundary = headerBoundary(received);
+  if (boundary === undefined) {
+    return undefined;
+  }
+  const { contentLength } = parseHeaders(
+    received.subarray(0, boundary.headerEnd),
+  );
+  return received.length - boundary.bodyStart === contentLength
+    ? parseCompletedResponse(received, limits)
+    : undefined;
+}
+
+function signalReason(signal: AbortSignal): unknown {
+  try {
+    return signal.reason;
+  } catch {
+    return undefined;
+  }
+}
+
+export function requestCovenHealthOverSocket(
+  path: string,
+  hooks: SocketRequestHooks,
+  context: OperationContext | undefined,
+  configuredLimits: CovenHealthTransportLimits,
+): Promise<CovenHealthResponse> {
+  const limits = healthRequestOptions(configuredLimits);
+
+  return new Promise((resolvePromise, reject) => {
+    let socket: CovenSocket;
+    let settled = false;
+    let connected = false;
+    let received = Buffer.alloc(0);
+    let connectTimer: ReturnType<typeof setTimeout> | undefined;
+    let requestTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (
+      action: () => void,
+    ): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (connectTimer !== undefined) {
+        clearTimeout(connectTimer);
+      }
+      if (requestTimer !== undefined) {
+        clearTimeout(requestTimer);
+      }
+      context?.signal.removeEventListener('abort', onAbort);
+      socket.removeListener('connect', onConnect);
+      socket.removeListener('data', onData);
+      socket.removeListener('end', onEnd);
+      socket.removeListener('error', onError);
+      safeDestroy(socket);
+      action();
+    };
+
+    const failRequest = (error: unknown): void => {
+      finish(() => {
+        reject(
+          error instanceof Error
+            ? error
+            : ipcError(
+                'connect_failure',
+                'Coven daemon health request failed.',
+                connected ? 'read_response' : 'connect',
+              ),
+        );
+      });
+    };
+
+    const onAbort = (): void => {
+      const reason =
+        context === undefined ? undefined : signalReason(context.signal);
+      failRequest(
+        (reason instanceof Error ? reason : undefined) ??
+          ipcError(
+            'connect_failure',
+            'Coven health request was aborted.',
+            connected ? 'read_response' : 'connect',
+          ),
+      );
+    };
+
+    const onError = (): void => {
+      failRequest(
+        ipcError(
+          'connect_failure',
+          connected
+            ? 'Coven daemon connection failed during health.'
+            : 'Could not connect to the Coven daemon.',
+          connected ? 'read_response' : 'connect',
+        ),
+      );
+    };
+
+    const onData = (chunk: unknown): void => {
+      if (!(chunk instanceof Uint8Array)) {
+        failRequest(
+          ipcError(
+            'invalid_response',
+            'Coven daemon emitted a non-byte response.',
+            'read_response',
+          ),
+        );
+        return;
+      }
+      try {
+        received = Buffer.concat([received, Buffer.from(chunk)]);
+        validateReceivedSize(received, limits);
+        const response = completeResponse(received, limits);
+        if (response !== undefined) {
+          const health = decodeHealth(response);
+          finish(() => {
+            resolvePromise(health);
+          });
+        }
+      } catch (error) {
+        failRequest(error);
+      }
+    };
+
+    const onEnd = (): void => {
+      try {
+        const health = decodeHealth(parseCompletedResponse(received, limits));
+        finish(() => {
+          resolvePromise(health);
+        });
+      } catch (error) {
+        failRequest(error);
+      }
+    };
+
+    const onConnect = (): void => {
+      connected = true;
+      if (connectTimer !== undefined) {
+        clearTimeout(connectTimer);
+        connectTimer = undefined;
+      }
+      requestTimer = setTimeout(() => {
+        failRequest(
+          ipcError(
+            'timeout',
+            'Coven daemon health request timed out.',
+            'read_response',
+          ),
+        );
+      }, remainingTimeout(limits.requestTimeoutMs, context));
+      void hooks
+        .revalidate(socket)
+        .then(() => {
+          if (settled) {
+            return;
+          }
+          try {
+            socket.write(HEALTH_REQUEST);
+            socket.end();
+          } catch {
+            failRequest(
+              ipcError(
+                'connect_failure',
+                'Could not write the Coven daemon health request.',
+                'write_request',
+              ),
+            );
+          }
+        })
+        .catch(failRequest);
+    };
+
+    try {
+      socket = hooks.connect(path);
+    } catch {
+      reject(
+        ipcError(
+          'connect_failure',
+          'Could not connect to the Coven daemon.',
+          'connect',
+        ),
+      );
+      return;
+    }
+
+    socket.once('connect', onConnect);
+    socket.on('data', onData);
+    socket.once('end', onEnd);
+    socket.once('error', onError);
+    context?.signal.addEventListener('abort', onAbort, { once: true });
+    if (context?.signal.aborted === true) {
+      onAbort();
+      return;
+    }
+    connectTimer = setTimeout(() => {
+      failRequest(
+        ipcError(
+          'timeout',
+          'Coven daemon connection timed out.',
+          'connect',
+        ),
+      );
+    }, remainingTimeout(limits.connectTimeoutMs, context));
+  });
+}
+
+function validUnixEndpoint(
+  discovered: CovenDiscoveredEndpoint,
+): Extract<CovenDiscoveredEndpoint['endpoint'], { kind: 'unix' }> {
+  if (
+    discovered.version !== 1 ||
+    discovered.protocol !== 'coven.daemon.v1' ||
+    discovered.endpoint.kind !== 'unix'
+  ) {
+    throw ipcError(
+      'unsafe_endpoint',
+      'Coven Unix transport requires a reviewed Unix endpoint.',
+      'validate_endpoint',
+    );
+  }
+  try {
+    const endpoint = parseDiscoveryEndpoint(discovered.endpoint);
+    if (endpoint.kind !== 'unix') {
+      throw new TypeError('not a Unix endpoint');
+    }
+    return endpoint;
+  } catch {
+    throw ipcError(
+      'unsafe_endpoint',
+      'Coven Unix transport received an unsafe endpoint.',
+      'validate_endpoint',
+    );
+  }
+}
+
+async function defaultUnixLstat(path: string): Promise<CovenUnixFileIdentity> {
+  const stats = await nodeLstat(path);
+  return {
+    device: stats.dev,
+    inode: stats.ino,
+    mode: stats.mode,
+    ownerUid: stats.uid,
+    symbolicLink: stats.isSymbolicLink(),
+    socket: stats.isSocket(),
+  };
+}
+
+function validateUnixIdentity(
+  identity: CovenUnixFileIdentity,
+  expectedUid: number,
+  phase: 'validate_endpoint' | 'revalidate_endpoint',
+): void {
+  if (identity.ownerUid !== expectedUid) {
+    throw ipcError(
+      'owner_mismatch',
+      'Coven Unix socket owner did not match the current user.',
+      phase,
+    );
+  }
+  if (
+    identity.symbolicLink ||
+    !identity.socket ||
+    (identity.mode & 0o022) !== 0
+  ) {
+    throw ipcError(
+      'unsafe_endpoint',
+      'Coven Unix socket was writable by another user.',
+      phase,
+    );
+  }
+}
+
+function defaultUnixConnector(path: string): CovenSocket {
+  return createConnection({ path });
+}
+
+export function createCovenUnixTransport(
+  discovered: CovenDiscoveredEndpoint,
+  options: CovenUnixTransportOptions = {},
+): CovenTransport {
+  const endpoint = validUnixEndpoint(discovered);
+  const connect = options.dependencies?.connect ?? defaultUnixConnector;
+  const lstat = options.dependencies?.lstat ?? defaultUnixLstat;
+  const getEffectiveUid =
+    options.dependencies?.getEffectiveUid ??
+    (() => process.geteuid?.());
+
+  return {
+    async health(context) {
+      const effectiveUid = getEffectiveUid();
+      if (!Number.isSafeInteger(effectiveUid) || (effectiveUid as number) < 0) {
+        throw ipcError(
+          'owner_mismatch',
+          'The current effective user could not be identified.',
+          'validate_endpoint',
+        );
+      }
+      const expectedUid = effectiveUid as number;
+      if (
+        discovered.owner?.kind === 'unix' &&
+        discovered.owner.uid !== expectedUid
+      ) {
+        throw ipcError(
+          'owner_mismatch',
+          'Discovered Coven owner did not match the current user.',
+          'validate_endpoint',
+        );
+      }
+
+      let initial: CovenUnixFileIdentity;
+      try {
+        initial = await lstat(endpoint.path);
+      } catch (error) {
+        const notFound =
+          typeof error === 'object' &&
+          error !== null &&
+          Reflect.get(error, 'code') === 'ENOENT';
+        throw ipcError(
+          notFound ? 'not_found' : 'unsafe_endpoint',
+          notFound
+            ? 'Coven Unix socket was not found.'
+            : 'Coven Unix socket could not be inspected safely.',
+          'validate_endpoint',
+        );
+      }
+      validateUnixIdentity(initial, expectedUid, 'validate_endpoint');
+
+      return requestCovenHealthOverSocket(
+        endpoint.path,
+        {
+          connect,
+          async revalidate() {
+            let confirmed: CovenUnixFileIdentity;
+            try {
+              confirmed = await lstat(endpoint.path);
+            } catch {
+              throw ipcError(
+                'unsafe_endpoint',
+                'Coven Unix socket changed during connection.',
+                'revalidate_endpoint',
+              );
+            }
+            validateUnixIdentity(
+              confirmed,
+              expectedUid,
+              'revalidate_endpoint',
+            );
+            if (
+              confirmed.device !== initial.device ||
+              confirmed.inode !== initial.inode
+            ) {
+              throw ipcError(
+                'unsafe_endpoint',
+                'Coven Unix socket changed during connection.',
+                'revalidate_endpoint',
+              );
+            }
+          },
+        },
+        context,
+        options,
+      );
+    },
+  };
+}

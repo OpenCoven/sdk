@@ -31,6 +31,7 @@ describe('workspace entrypoints', () => {
         statSync: unexpectedIo,
       }));
       vi.doMock('node:fs/promises', () => ({
+        lstat: unexpectedIo,
         readFile: unexpectedIo,
         readdir: unexpectedIo,
         stat: unexpectedIo,
