@@ -210,7 +210,8 @@ function parseHttpEndpoint(value: JsonObject): DiscoveryEndpoint {
     return invalidEndpoint('endpoint.url must be a valid HTTP URL.');
   }
 
-  const isIpv6Loopback = rawHost.startsWith('[') && parsed.hostname === '::1';
+  const isIpv6Loopback =
+    rawHost.startsWith('[') && parsed.hostname.replace(/^\[|\]$/g, '') === '::1';
 
   if (
     parsed.protocol !== 'http:' ||
