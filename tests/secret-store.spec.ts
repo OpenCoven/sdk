@@ -10,6 +10,25 @@ interface SecretStore {
 type StoreFactory = () => SecretStore;
 
 describe('memory secret store', () => {
+  test('creates validated secret-free references for later pairing metadata', () => {
+    const createSecretStoreReference = (
+      core as {
+        createSecretStoreReference?: (key: string) => { key: string };
+      }
+    ).createSecretStoreReference;
+
+    expect(createSecretStoreReference).toBeTypeOf('function');
+    expect(createSecretStoreReference?.('coven-pairing-token')).toEqual({
+      key: 'coven-pairing-token',
+    });
+    expect(() => createSecretStoreReference?.('   ')).toThrowError(
+      expect.objectContaining({
+        name: 'InvalidSecretKeyError',
+        code: 'invalid_secret_key',
+      }),
+    );
+  });
+
   test('keeps a caller-provided secret in memory until explicitly deleted', async () => {
     const createMemorySecretStore = (core as { createMemorySecretStore?: StoreFactory }).createMemorySecretStore;
     const store = createMemorySecretStore?.();

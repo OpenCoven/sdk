@@ -23,8 +23,12 @@ describe('public package entry points', () => {
   test('exports the supported public SDK surfaces', () => {
     expect(hasFunction(core, 'createMemorySecretStore')).toBe(true);
     expect(hasFunction(core, 'createManagedMemorySecretStore')).toBe(true);
+    expect(hasFunction(core, 'createSecretStoreReference')).toBe(true);
     expect(hasFunction(core, 'InvalidSecretKeyError')).toBe(true);
     expect(hasFunction(core, 'SecretStoreDisposedError')).toBe(true);
+    expect(hasFunction(core, 'parseDiscoveryEndpoint')).toBe(true);
+    expect(hasFunction(core, 'parseDiscoveryRecord')).toBe(true);
+    expect(hasFunction(core, 'DiscoveryContractError')).toBe(true);
     expect(hasFunction(core, 'normalizeError')).toBe(true);
     expect(hasFunction(core, 'assessCompatibility')).toBe(true);
     expect(hasFunction(core, 'createOperationScope')).toBe(true);
@@ -41,6 +45,10 @@ describe('public package entry points', () => {
     expect(hasFunction(cave, 'normalizeCaveError')).toBe(true);
     expect(hasFunction(cave, 'isCaveClientError')).toBe(true);
     expect(hasFunction(coven, 'CovenClient')).toBe(true);
+    expect(hasFunction(coven, 'discoverCovenEndpoint')).toBe(true);
+    expect(hasFunction(coven, 'createCovenUnixTransport')).toBe(true);
+    expect(hasFunction(coven, 'createCovenWindowsTransport')).toBe(true);
+    expect(hasFunction(coven, 'createDiscoveredCovenClient')).toBe(true);
     expect(hasFunction(coven, 'normalizeCovenError')).toBe(true);
     expect(hasFunction(coven, 'isCovenClientError')).toBe(true);
     expect(hasFunction(sdk, 'OpenCovenSdk')).toBe(true);
