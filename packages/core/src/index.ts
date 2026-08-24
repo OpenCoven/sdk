@@ -27,6 +27,14 @@ export type {
 } from './operation-control.js';
 export type { OperationEvent, OperationObserver } from './operation-events.js';
 
+export { iteratePages, normalizePageOptions } from './pagination.js';
+export type {
+  BoundedPageOptions,
+  Page,
+  PageCursor,
+  PageOptions,
+} from './pagination.js';
+
 export {
   DISCOVERY_PROFILES,
   DISCOVERY_PROTOCOL,
