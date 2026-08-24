@@ -69,10 +69,22 @@ const DISCOVERY_STARTED_AT = '2026-08-24T02:03:51.419Z';
 const DISCOVERY_PID = 4_321;
 const DISCOVERY_NONCE = '018f4f1a-77c2-7a31-8a15-55a25aaba003';
 const DISCOVERY_FILE_NAME = 'client-v1-discovery.json';
-const DISCOVERY_TEST_TIMEOUT_MS = 500;
+const DISCOVERY_TEST_TIMEOUT_MS = 1_000;
 const DEFAULT_DISCOVERY_ENDPOINT = 'http://127.0.0.1:3020';
 const DEFAULT_UID = process.geteuid?.() ?? 501;
 const createdRoots = new Set<string>();
+
+function requestUrl(input: string | URL | Request): string {
+  if (typeof input === 'string') {
+    return input;
+  }
+
+  if (input instanceof URL) {
+    return input.toString();
+  }
+
+  return input.url;
+}
 
 function caveHealth() {
   return {
@@ -196,18 +208,6 @@ async function replaceDiscoveryRecord(
 function queuedFetch(
   handlers: Array<(url: string, init: RequestInit | undefined) => Response | Promise<Response>>,
 ) {
-  const requestUrl = (input: string | URL | Request): string => {
-    if (typeof input === 'string') {
-      return input;
-    }
-
-    if (input instanceof URL) {
-      return input.toString();
-    }
-
-    return input.url;
-  };
-
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const handler = handlers.shift();
     if (handler === undefined) {
@@ -1018,6 +1018,126 @@ describe('discovered Cave pairing helpers', () => {
     expect(fetchImplementation).toHaveBeenCalledTimes(1);
   });
 
+  test('keeps the pairing secret ready after a retryable poll failure', async () => {
+    const root = createScratchRoot('pairing-poll-retryable-failure');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const requestId = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
+    const expiresAt = 1_755_731_112_617;
+    const credential = {
+      id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'] as const,
+      createdAt: 1_755_730_812_617,
+      lastUsedAt: null,
+      revokedAt: null,
+      revocationReason: null,
+    };
+    const fetchImplementation = queuedFetch([
+      () =>
+        jsonResponse(
+          201,
+          successEnvelope({
+            requestId,
+            secret: PAIRING_SECRET,
+            expiresAt,
+          }),
+        ),
+      (url, init) => {
+        expect(url).toBe(`http://127.0.0.1:3020/api/client/v1/pairing/requests/${requestId}`);
+        expect(init?.method).toBe('GET');
+        expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+        return jsonResponse(503, errorEnvelope('service_unavailable', 503, true));
+      },
+      (url, init) => {
+        expect(url).toBe(
+          `http://127.0.0.1:3020/api/client/v1/pairing/requests/${requestId}/exchange`,
+        );
+        expect(init?.method).toBe('POST');
+        expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+        return jsonResponse(
+          200,
+          successEnvelope({
+            bearer: BEARER,
+            credential,
+          }),
+        );
+      },
+    ]);
+    const { client, credentials } = discoveredClient(root, fetchImplementation);
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await expect(session.poll()).rejects.toMatchObject({
+      normalized: {
+        code: 'service_unavailable',
+        retryable: true,
+        operation: 'pairingPoll',
+        statusCode: 503,
+      },
+    });
+    await expect(session.exchange()).resolves.toEqual(credential);
+    await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
+    expect(fetchImplementation).toHaveBeenCalledTimes(3);
+  });
+
+  test('spends the pairing secret after a terminal poll status', async () => {
+    const root = createScratchRoot('pairing-poll-denied');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const requestId = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
+    const expiresAt = 1_755_731_112_617;
+    const fetchImplementation = queuedFetch([
+      () =>
+        jsonResponse(
+          201,
+          successEnvelope({
+            requestId,
+            secret: PAIRING_SECRET,
+            expiresAt,
+          }),
+        ),
+      (url, init) => {
+        expect(url).toBe(`http://127.0.0.1:3020/api/client/v1/pairing/requests/${requestId}`);
+        expect(init?.method).toBe('GET');
+        expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+        return jsonResponse(
+          200,
+          successEnvelope({
+            id: requestId,
+            status: 'denied',
+            expiresAt,
+          }),
+        );
+      },
+    ]);
+    const { client } = discoveredClient(root, fetchImplementation);
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await expect(session.poll()).resolves.toEqual({
+      id: requestId,
+      status: 'denied',
+      expiresAt,
+    });
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: {
+        code: 'conflict',
+        retryable: false,
+        operation: 'pairingExchange',
+      },
+      details: {
+        reason: 'pairing_replayed',
+      },
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  });
+
   test('allows retry after a pre-send authority mismatch without replaying the secret', async () => {
     const root = createScratchRoot('pairing-pre-send-authority-mismatch');
     await writeDiscoveryRecord(root, discoveryRecord());
@@ -1079,6 +1199,413 @@ describe('discovered Cave pairing helpers', () => {
     await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
     expect(fetchImplementation).toHaveBeenCalledTimes(2);
   });
+
+  test('keeps a successful poll ready for one later exchange', async () => {
+    const root = createScratchRoot('pairing-poll-then-exchange');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const requestId = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
+    const expiresAt = 1_755_731_112_617;
+    const credential = {
+      id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'] as const,
+      createdAt: 1_755_730_812_617,
+      lastUsedAt: null,
+      revokedAt: null,
+      revocationReason: null,
+    };
+    const fetchImplementation = queuedFetch([
+      (url, init) => {
+        expect(url).toBe('http://127.0.0.1:3020/api/client/v1/pairing/requests');
+        expect(init?.method).toBe('POST');
+        expect(header(init, 'x-coven-pairing-secret')).toBeNull();
+        return jsonResponse(
+          201,
+          successEnvelope({
+            requestId,
+            secret: PAIRING_SECRET,
+            expiresAt,
+          }),
+        );
+      },
+      (url, init) => {
+        expect(url).toBe(`http://127.0.0.1:3020/api/client/v1/pairing/requests/${requestId}`);
+        expect(init?.method).toBe('GET');
+        expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+        return jsonResponse(
+          200,
+          successEnvelope({
+            id: requestId,
+            status: 'approved',
+            expiresAt,
+          }),
+        );
+      },
+      (url, init) => {
+        expect(url).toBe(
+          `http://127.0.0.1:3020/api/client/v1/pairing/requests/${requestId}/exchange`,
+        );
+        expect(init?.method).toBe('POST');
+        expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+        return jsonResponse(
+          200,
+          successEnvelope({
+            bearer: BEARER,
+            credential,
+          }),
+        );
+      },
+    ]);
+    const { client, credentials } = discoveredClient(root, fetchImplementation);
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await expect(session.poll()).resolves.toEqual({
+      id: requestId,
+      status: 'approved',
+      expiresAt,
+    });
+    await expect(session.exchange()).resolves.toEqual(credential);
+    await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
+    expect(fetchImplementation).toHaveBeenCalledTimes(3);
+  });
+
+  test('fails exchange locally while a poll is already using the pairing secret', async () => {
+    const root = createScratchRoot('pairing-poll-exchange-concurrent');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const requestId = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
+    const expiresAt = 1_755_731_112_617;
+    const credential = {
+      id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'] as const,
+      createdAt: 1_755_730_812_617,
+      lastUsedAt: null,
+      revokedAt: null,
+      revocationReason: null,
+    };
+    let resolvePoll: ((response: Response) => void) | undefined;
+    let signalPollStarted: (() => void) | undefined;
+    const pollStarted = new Promise<void>((resolve) => {
+      signalPollStarted = resolve;
+    });
+    const fetchImplementation = queuedFetch([
+      () =>
+        jsonResponse(
+          201,
+          successEnvelope({
+            requestId,
+            secret: PAIRING_SECRET,
+            expiresAt,
+          }),
+        ),
+      (url, init) => {
+        expect(url).toBe(`http://127.0.0.1:3020/api/client/v1/pairing/requests/${requestId}`);
+        expect(init?.method).toBe('GET');
+        expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+        signalPollStarted?.();
+        return new Promise<Response>((resolve) => {
+          resolvePoll = resolve;
+        });
+      },
+      (url, init) => {
+        expect(url).toBe(
+          `http://127.0.0.1:3020/api/client/v1/pairing/requests/${requestId}/exchange`,
+        );
+        expect(init?.method).toBe('POST');
+        expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+        return jsonResponse(
+          200,
+          successEnvelope({
+            bearer: BEARER,
+            credential,
+          }),
+        );
+      },
+    ]);
+    const { client, credentials } = discoveredClient(root, fetchImplementation);
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    const poll = session.poll();
+    await pollStarted;
+
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: {
+        code: 'operation_in_progress',
+        retryable: true,
+        operation: 'pairingExchange',
+      },
+      details: {
+        reason: 'pairing_poll_in_progress',
+      },
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+
+    expect(resolvePoll).toBeDefined();
+    resolvePoll?.(
+      jsonResponse(
+        200,
+        successEnvelope({
+          id: requestId,
+          status: 'approved',
+          expiresAt,
+        }),
+      ),
+    );
+
+    await expect(poll).resolves.toEqual({
+      id: requestId,
+      status: 'approved',
+      expiresAt,
+    });
+    await expect(session.exchange()).resolves.toEqual(credential);
+    await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
+    expect(fetchImplementation).toHaveBeenCalledTimes(3);
+  });
+
+  test('fails concurrent polls locally without a second transport send', async () => {
+    const root = createScratchRoot('pairing-concurrent-polls');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const requestId = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
+    const expiresAt = 1_755_731_112_617;
+    let resolveFirstPoll: ((response: Response) => void) | undefined;
+    let signalFirstPollStarted: (() => void) | undefined;
+    const firstPollStarted = new Promise<void>((resolve) => {
+      signalFirstPollStarted = resolve;
+    });
+    let pollAttempts = 0;
+    const fetchImplementation = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url === 'http://127.0.0.1:3020/api/client/v1/pairing/requests') {
+        return jsonResponse(
+          201,
+          successEnvelope({
+            requestId,
+            secret: PAIRING_SECRET,
+            expiresAt,
+          }),
+        );
+      }
+
+      if (url === `http://127.0.0.1:3020/api/client/v1/pairing/requests/${requestId}`) {
+        expect(init?.method).toBe('GET');
+        expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+        pollAttempts += 1;
+        if (pollAttempts === 1) {
+          signalFirstPollStarted?.();
+          return await new Promise<Response>((resolve) => {
+            resolveFirstPoll = resolve;
+          });
+        }
+
+        if (pollAttempts === 2) {
+          return jsonResponse(
+            200,
+            successEnvelope({
+              id: requestId,
+              status: 'approved',
+              expiresAt,
+            }),
+          );
+        }
+      }
+
+      throw new Error(`Unexpected fetch for ${url}`);
+    });
+    const { client } = discoveredClient(root, fetchImplementation);
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    const firstPoll = session.poll();
+    await firstPollStarted;
+
+    await expect(session.poll()).rejects.toMatchObject({
+      normalized: {
+        code: 'operation_in_progress',
+        retryable: true,
+        operation: 'pairingPoll',
+      },
+      details: {
+        reason: 'pairing_poll_in_progress',
+      },
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(pollAttempts).toBe(1);
+
+    expect(resolveFirstPoll).toBeDefined();
+    resolveFirstPoll?.(
+      jsonResponse(
+        200,
+        successEnvelope({
+          id: requestId,
+          status: 'approved',
+          expiresAt,
+        }),
+      ),
+    );
+
+    await expect(firstPoll).resolves.toEqual({
+      id: requestId,
+      status: 'approved',
+      expiresAt,
+    });
+    await expect(session.poll()).resolves.toEqual({
+      id: requestId,
+      status: 'approved',
+      expiresAt,
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(3);
+    expect(pollAttempts).toBe(2);
+  });
+
+  test.each([
+    ['abort', 'aborted', false] as const,
+    ['timeout', 'timeout', true] as const,
+  ])(
+    'releases the poll gate after %s and ignores stale completions',
+    async (mode, expectedCode, expectedRetryable) => {
+      const root = createScratchRoot(`pairing-poll-${mode}-release`);
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const requestId = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
+      const expiresAt = 1_755_731_112_617;
+      const credential = {
+        id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+        appName: 'OpenCoven Chat',
+        installationId: 'chat-install-1',
+        scopes: ['chat:read'] as const,
+        createdAt: 1_755_730_812_617,
+        lastUsedAt: null,
+        revokedAt: null,
+        revocationReason: null,
+      };
+      let resolveFirstPoll: ((response: Response) => void) | undefined;
+      let signalFirstPollStarted: (() => void) | undefined;
+      const firstPollStarted = new Promise<void>((resolve) => {
+        signalFirstPollStarted = resolve;
+      });
+      const fetchImplementation = queuedFetch([
+        () =>
+          jsonResponse(
+            201,
+            successEnvelope({
+              requestId,
+              secret: PAIRING_SECRET,
+              expiresAt,
+            }),
+          ),
+        (url, init) => {
+          expect(url).toBe(`http://127.0.0.1:3020/api/client/v1/pairing/requests/${requestId}`);
+          expect(init?.method).toBe('GET');
+          expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+          signalFirstPollStarted?.();
+          return new Promise<Response>((resolve) => {
+            resolveFirstPoll = resolve;
+          });
+        },
+        (url, init) => {
+          expect(url).toBe(
+            `http://127.0.0.1:3020/api/client/v1/pairing/requests/${requestId}/exchange`,
+          );
+          expect(init?.method).toBe('POST');
+          expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+          return jsonResponse(
+            200,
+            successEnvelope({
+              bearer: BEARER,
+              credential,
+            }),
+          );
+        },
+      ]);
+      const { client, credentials } = discoveredClient(root, fetchImplementation);
+      const session = await client.createPairing({
+        appName: 'OpenCoven Chat',
+        installationId: 'chat-install-1',
+        scopes: ['chat:read'],
+      });
+      const controller = new AbortController();
+
+      if (mode === 'timeout') {
+        vi.useFakeTimers();
+      }
+
+      const firstPoll = session
+        .poll(mode === 'abort' ? { signal: controller.signal } : { timeoutMs: 10 })
+        .catch((error: unknown) => error);
+      await firstPollStarted;
+
+      await expect(session.poll()).rejects.toMatchObject({
+        normalized: {
+          code: 'operation_in_progress',
+          retryable: true,
+          operation: 'pairingPoll',
+        },
+        details: {
+          reason: 'pairing_poll_in_progress',
+        },
+      });
+      expect(fetchImplementation).toHaveBeenCalledTimes(2);
+
+      if (mode === 'abort') {
+        controller.abort(new Error('stop'));
+      } else {
+        await vi.advanceTimersByTimeAsync(10);
+      }
+
+      await expect(firstPoll).resolves.toMatchObject({
+        normalized: {
+          code: expectedCode,
+          retryable: expectedRetryable,
+          operation: 'pairingPoll',
+        },
+        cause: {
+          code: expectedCode,
+        },
+      });
+
+      await expect(session.exchange()).resolves.toEqual(credential);
+      await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
+      expect(fetchImplementation).toHaveBeenCalledTimes(3);
+
+      expect(resolveFirstPoll).toBeDefined();
+      resolveFirstPoll?.(
+        jsonResponse(
+          200,
+          successEnvelope({
+            id: requestId,
+            status: 'approved',
+            expiresAt,
+          }),
+        ),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await expect(session.exchange()).rejects.toMatchObject({
+        normalized: {
+          code: 'conflict',
+          retryable: false,
+          operation: 'pairingExchange',
+        },
+        details: {
+          reason: 'pairing_replayed',
+        },
+      });
+      expect(fetchImplementation).toHaveBeenCalledTimes(3);
+    },
+  );
 
   test('clears a restarted stored credential before familiars can send its bearer', async () => {
     const root = createScratchRoot('pairing-stored-credential-restarted');

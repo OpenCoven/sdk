@@ -112,8 +112,12 @@ helper currently owns Client v1 `health`, `pairing`, `credentialStatus`, and
 `familiars`; custom transports can continue to provide the familiar contract
 and analytics routes independently. `session.exchange()` requires an injected
 credential store; the client never falls back to implicit in-memory storage.
-Once an exchange attempt begins, later `poll()`/`exchange()` calls fail
-locally unless the attempt failed before any transport send.
+A successful `session.poll()` keeps the session ready for one later
+`session.exchange()`. While a poll is in flight, later `poll()`/`exchange()`
+calls fail locally with retryable `operation_in_progress` instead of sending
+the pairing secret twice. Once an exchange attempt begins, later
+`poll()`/`exchange()` calls fail locally unless the attempt failed before any
+transport send.
 
 Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,

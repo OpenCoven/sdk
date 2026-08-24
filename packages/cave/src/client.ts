@@ -319,6 +319,16 @@ function replayedPairing(operation: string): CaveClientError {
   );
 }
 
+function pairingOperationInProgress(operation: string): CaveClientError {
+  const cause = {
+    code: 'operation_in_progress',
+    retryable: true,
+    details: { reason: 'pairing_poll_in_progress' },
+  };
+
+  return new CaveClientError(normalizeCaveError(cause, operation), undefined, { cause });
+}
+
 /**
  * A Cave route that answers `{ ok: false, error }` has failed in a way the
  * caller should hear about in the same shape as a transport failure. Left
@@ -1064,23 +1074,46 @@ export class CaveClient {
     );
 
     let pairingSecret: string | undefined = created.secret;
-    let pairingSecretState: 'ready' | 'exchange_pending' | 'spent' = 'ready';
-    // Poll can reuse the secret while ready. exchange() takes it synchronously
-    // so later poll()/exchange() calls fail locally unless a marked pre-send
-    // failure proves the secret never left the process.
+    let pairingSecretState: 'ready' | 'poll_pending' | 'exchange_pending' | 'spent' = 'ready';
+    let nextPollAttempt = 0;
+    let activePollAttempt: number | undefined;
+    // Polls borrow the secret without consuming it. The current poll attempt
+    // owns a revocable gate, and only that attempt may reopen the ready state.
     const clearPairingSecret = (): void => {
       pairingSecret = undefined;
       pairingSecretState = 'spent';
+      activePollAttempt = undefined;
     };
     const restorePairingSecret = (secret: string): void => {
       pairingSecret = secret;
       pairingSecretState = 'ready';
     };
     const requirePairingSecret = (operation: string): string => {
+      if (pairingSecretState === 'poll_pending') {
+        throw pairingOperationInProgress(operation);
+      }
       if (pairingSecretState !== 'ready' || pairingSecret === undefined) {
         throw replayedPairing(operation);
       }
       return pairingSecret;
+    };
+    const beginPairingPoll = (): { attempt: number; release: () => void; secret: string } => {
+      const secret = requirePairingSecret('pairingPoll');
+      pairingSecretState = 'poll_pending';
+      const attempt = ++nextPollAttempt;
+      activePollAttempt = attempt;
+      const release = (): void => {
+        if (activePollAttempt !== attempt) {
+          return;
+        }
+
+        activePollAttempt = undefined;
+        if (pairingSecretState === 'poll_pending') {
+          pairingSecretState = 'ready';
+        }
+      };
+
+      return { attempt, release, secret };
     };
     const beginPairingExchange = (): string => {
       const secret = requirePairingSecret('pairingExchange');
@@ -1094,29 +1127,41 @@ export class CaveClient {
       expiresAt: created.expiresAt,
       poll: async (pollOptions = {}) =>
         this.#execute('pairingPoll', pollOptions, async (context) => {
+          const { attempt, release, secret } = beginPairingPoll();
+          const releaseOnAbort = (): void => {
+            release();
+          };
+          context.signal.addEventListener('abort', releaseOnAbort, { once: true });
+
           let status: CavePairingStatus;
           try {
-            status = await this.#runPairingPoll(
-              created.requestId,
-              requirePairingSecret('pairingPoll'),
-              context,
-            );
+            status = await this.#runPairingPoll(created.requestId, secret, context);
           } catch (error) {
-            if (
-              isCaveClientError(error) &&
-              (
-                error.code === 'pairing_denied' ||
-                error.code === 'pairing_expired' ||
-                error.code === 'conflict' ||
-                error.code === 'reconcile_required'
-              )
-            ) {
-              clearPairingSecret();
+            if (activePollAttempt === attempt) {
+              if (
+                isCaveClientError(error) &&
+                (
+                  error.code === 'pairing_denied' ||
+                  error.code === 'pairing_expired' ||
+                  error.code === 'conflict' ||
+                  error.code === 'reconcile_required'
+                )
+              ) {
+                clearPairingSecret();
+              } else {
+                release();
+              }
             }
             throw error;
+          } finally {
+            context.signal.removeEventListener('abort', releaseOnAbort);
           }
-          if (status.status === 'denied' || status.status === 'expired') {
-            clearPairingSecret();
+          if (activePollAttempt === attempt) {
+            if (status.status === 'denied' || status.status === 'expired') {
+              clearPairingSecret();
+            } else {
+              release();
+            }
           }
           return status;
         }),
