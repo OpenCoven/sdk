@@ -9,7 +9,11 @@ import {
 } from '@opencoven/sdk-core';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { caveAuthorityBindingFromDiscoveredEndpoint } from '../packages/cave/src/authority-binding.js';
+import {
+  caveAuthorityBindingFromDiscoveredEndpoint,
+  discardPairingExchangeBearer,
+  parseCaveAuthorityBinding,
+} from '../packages/cave/src/authority-binding.js';
 import {
   forgetStoredCredential,
   inspectStoredCredentialMaterial,
@@ -51,6 +55,9 @@ const BINDING_KEY_PREFIX = 'opencoven.cave.credential-binding.v1.';
 const STAGING_KEY_PREFIX = 'opencoven.cave.credential-binding.staging.v1.';
 const FAILURE_KEY_PREFIX = 'opencoven.cave.credential-binding.failure.v1.';
 const OWNER_KEY_PREFIX = 'opencoven.cave.credential-binding.owner.v1.';
+const FNV_OFFSET_BASIS_64 = 0xcbf29ce484222325n;
+const FNV_PRIME_64 = 0x100000001b3n;
+const textEncoder = new TextEncoder();
 const authorityBinding = caveAuthorityBindingFromDiscoveredEndpoint(discovered);
 
 type DuplicateCredentialBindingModule = typeof CredentialBindingModule;
@@ -202,12 +209,34 @@ function memoryHandle(
   };
 }
 
-function storedKeyWithPrefix(store: MutableStore, prefix: string): string {
-  const key = [...store.values.keys()].find((candidate) => candidate.startsWith(prefix));
-  if (key === undefined) {
-    throw new Error(`Expected stored key for ${prefix}.`);
+function hashCredentialReferenceKey(key: string): string {
+  const bytes = textEncoder.encode(key);
+  let hash = FNV_OFFSET_BASIS_64;
+
+  for (const byte of bytes) {
+    hash ^= BigInt(byte);
+    hash = BigInt.asUintN(64, hash * FNV_PRIME_64);
   }
-  return key;
+
+  return hash.toString(16).padStart(16, '0');
+}
+
+function legacyCredentialKey(prefix: string, referenceKey: string): string {
+  return `${prefix}${hashCredentialReferenceKey(referenceKey)}`;
+}
+
+async function storedCredentialValue(
+  referenceKey: string,
+  bearer = 'bearer',
+) {
+  const reference = createSecretStoreReference(referenceKey);
+  const seeded = storeWithState();
+  await storeBoundCredential(seeded, reference, bearer, authorityBinding);
+  const value = seeded.values.get(reference.key);
+  if (typeof value !== 'string') {
+    throw new Error(`Expected a serialized credential record for ${reference.key}.`);
+  }
+  return value;
 }
 
 function discoveryRecord(
@@ -228,25 +257,32 @@ afterEach(() => {
 });
 
 describe('Cave credential binding helpers', () => {
-  test('stores, loads, invalidates, and forgets bound credentials', async () => {
+  test('stores, loads, invalidates, and forgets one atomic credential record', async () => {
     const reference = createSecretStoreReference('chat.cave');
     const store = storeWithState();
 
     await storeBoundCredential(store, reference, 'bearer', authorityBinding);
-    const metadataKey = storedKeyWithPrefix(store, BINDING_KEY_PREFIX);
 
-    expect(String(store.values.get(metadataKey))).toContain('"state":"bound"');
+    expect(store.values.size).toBe(1);
+    expect(JSON.parse(String(store.values.get(reference.key)))).toEqual({
+      version: 1,
+      bearer: 'bearer',
+      authorityBinding,
+    });
     await expect(
       loadBoundCredential(store, reference, discovered, (value) => value === 'bearer'),
     ).resolves.toEqual({
       status: 'ready',
       bearer: 'bearer',
     });
+    await expect(
+      inspectStoredCredentialMaterial(store, reference, (value) => value === 'bearer'),
+    ).resolves.toEqual({ status: 'present' });
 
     await expect(forgetStoredCredential(store, reference)).resolves.toBe(true);
     expect(store.values.size).toBe(0);
 
-    await storeBoundCredential(store, reference, 'bearer', authorityBinding);
+    await storeBoundCredential(store, reference, 'bearer-next', authorityBinding);
     await expect(invalidateStoredCredential(store, reference)).resolves.toBeUndefined();
     expect(store.values.size).toBe(0);
   });
@@ -256,22 +292,21 @@ describe('Cave credential binding helpers', () => {
     const store = storeWithState();
 
     await storeBoundCredential(store, reference, 'bearer', authorityBinding);
-    const metadataKey = storedKeyWithPrefix(store, BINDING_KEY_PREFIX);
-    const serialized = String(store.values.get(metadataKey));
+    const serialized = String(store.values.get(reference.key));
 
     expect(serialized).toContain('"identity":"sha256:');
     expect(serialized).not.toContain(discovered.record.path);
     expect(serialized).not.toContain('"path"');
   });
 
-  test('reports invalid bound-credential states and reconciliation reasons', async () => {
+  test('reports malformed, invalid, and mismatched atomic records conservatively', async () => {
     const reference = createSecretStoreReference('chat.cave.status');
-    const seeded = storeWithState();
-    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
-    const metadataKey = storedKeyWithPrefix(seeded, BINDING_KEY_PREFIX);
-    const failureKey = `${FAILURE_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-    const ownerKey = `${OWNER_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-    const stagingKey = `${STAGING_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+    const validSerialized = await storedCredentialValue(reference.key);
+    const invalidBearerSerialized = JSON.stringify({
+      version: 1,
+      bearer: 'not-a-bearer',
+      authorityBinding,
+    });
 
     await expect(
       loadBoundCredential(storeWithState(), reference, discovered, () => true),
@@ -284,7 +319,10 @@ describe('Cave credential binding helpers', () => {
         discovered,
         (value) => value === 'bearer',
       ),
-    ).resolves.toEqual({ status: 'invalid_bearer' });
+    ).resolves.toEqual({
+      status: 'invalid',
+      reason: 'authority_binding_invalid',
+    });
 
     await expect(
       loadBoundCredential(
@@ -295,38 +333,12 @@ describe('Cave credential binding helpers', () => {
       ),
     ).resolves.toEqual({
       status: 'invalid',
-      reason: 'authority_binding_missing',
+      reason: 'authority_binding_invalid',
     });
 
     await expect(
       loadBoundCredential(
-        storeWithState([[metadataKey, seeded.values.get(metadataKey)]]),
-        reference,
-        discovered,
-        (value) => value === 'bearer',
-      ),
-    ).resolves.toEqual({
-      status: 'invalid',
-      reason: 'authority_binding_incomplete',
-    });
-
-    await expect(
-      loadBoundCredential(
-        storeWithState([
-          [failureKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.failure.v1', transactionId: 'tx-1' })],
-        ]),
-        reference,
-        discovered,
-        (value) => value === 'bearer',
-      ),
-    ).resolves.toEqual({
-      status: 'invalid',
-      reason: 'authority_binding_incomplete',
-    });
-
-    await expect(
-      loadBoundCredential(
-        storeWithState([[failureKey, '{bad-json']]),
+        storeWithState([[reference.key, '{bad-json']]),
         reference,
         discovered,
         (value) => value === 'bearer',
@@ -334,151 +346,36 @@ describe('Cave credential binding helpers', () => {
     ).resolves.toEqual({
       status: 'invalid',
       reason: 'authority_binding_invalid',
-    });
-
-    await expect(
-      loadBoundCredential(
-        storeWithState([
-          [stagingKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.staging.v1', transactionId: 'tx-1' })],
-        ]),
-        reference,
-        discovered,
-        (value) => value === 'bearer',
-      ),
-    ).resolves.toEqual({ status: 'update_in_progress' });
-
-    await expect(
-      loadBoundCredential(
-        storeWithState([[stagingKey, '{bad-json']]),
-        reference,
-        discovered,
-        (value) => value === 'bearer',
-      ),
-    ).resolves.toEqual({
-      status: 'invalid',
-      reason: 'authority_binding_invalid',
-    });
-
-    await expect(
-      loadBoundCredential(
-        storeWithState([
-          [reference.key, 'bearer'],
-          [metadataKey, seeded.values.get(metadataKey)],
-          [ownerKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.owner.v1', transactionId: 'tx-other' })],
-        ]),
-        reference,
-        discovered,
-        (value) => value === 'bearer',
-      ),
-    ).resolves.toEqual({
-      status: 'invalid',
-      reason: 'authority_binding_incomplete',
     });
 
     await expect(
       inspectStoredCredentialMaterial(
-        storeWithState([
-          [failureKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.failure.v1', transactionId: 'tx-2' })],
-        ]),
+        storeWithState([[reference.key, '{bad-json']]),
         reference,
         (value) => value === 'bearer',
       ),
     ).resolves.toEqual({ status: 'incomplete' });
 
     await expect(
-      inspectStoredCredentialMaterial(
-        storeWithState([[reference.key, 'not-a-bearer']]),
+      loadBoundCredential(
+        storeWithState([[reference.key, invalidBearerSerialized]]),
         reference,
+        discovered,
         (value) => value === 'bearer',
       ),
     ).resolves.toEqual({ status: 'invalid_bearer' });
 
     await expect(
       inspectStoredCredentialMaterial(
-        storeWithState([
-          [stagingKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.staging.v1', transactionId: 'tx-2' })],
-        ]),
+        storeWithState([[reference.key, invalidBearerSerialized]]),
         reference,
         (value) => value === 'bearer',
       ),
-    ).resolves.toEqual({ status: 'update_in_progress' });
-
-    await expect(
-      inspectStoredCredentialMaterial(
-        storeWithState([
-          [reference.key, 'bearer'],
-          [metadataKey, seeded.values.get(metadataKey)],
-          [ownerKey, '{bad-json'],
-        ]),
-        reference,
-        (value) => value === 'bearer',
-      ),
-    ).resolves.toEqual({ status: 'incomplete' });
+    ).resolves.toEqual({ status: 'invalid_bearer' });
 
     await expect(
       loadBoundCredential(
-        storeWithState([
-          [reference.key, 'bearer'],
-          [metadataKey, 123],
-        ]),
-        reference,
-        discovered,
-        (value) => value === 'bearer',
-      ),
-    ).resolves.toEqual({
-      status: 'invalid',
-      reason: 'authority_binding_invalid',
-    });
-
-    await expect(
-      loadBoundCredential(
-        storeWithState([
-          [reference.key, 'bearer'],
-          [metadataKey, '{not-json'],
-        ]),
-        reference,
-        discovered,
-        (value) => value === 'bearer',
-      ),
-    ).resolves.toEqual({
-      status: 'invalid',
-      reason: 'authority_binding_invalid',
-    });
-
-    await expect(
-      loadBoundCredential(
-        storeWithState([
-          [reference.key, 'bearer'],
-          [metadataKey, String(seeded.values.get(metadataKey)).replace('"bound"', '"pending"')],
-        ]),
-        reference,
-        discovered,
-        (value) => value === 'bearer',
-      ),
-    ).resolves.toEqual({
-      status: 'invalid',
-      reason: 'authority_binding_incomplete',
-    });
-
-    await expect(
-      loadBoundCredential(
-        storeWithState([
-          [reference.key, 'bearer'],
-          [metadataKey, String(seeded.values.get(metadataKey)).replace('"bound"', '"pending"')],
-          [ownerKey, seeded.values.get(ownerKey)],
-        ]),
-        reference,
-        discovered,
-        (value) => value === 'bearer',
-      ),
-    ).resolves.toEqual({
-      status: 'invalid',
-      reason: 'authority_binding_incomplete',
-    });
-
-    await expect(
-      loadBoundCredential(
-        storeWithState(seeded.values),
+        storeWithState([[reference.key, validSerialized]]),
         reference,
         {
           ...discovered,
@@ -496,7 +393,7 @@ describe('Cave credential binding helpers', () => {
 
     await expect(
       loadBoundCredential(
-        storeWithState(seeded.values),
+        storeWithState([[reference.key, validSerialized]]),
         reference,
         {
           ...discovered,
@@ -514,7 +411,7 @@ describe('Cave credential binding helpers', () => {
 
     await expect(
       loadBoundCredential(
-        storeWithState(seeded.values),
+        storeWithState([[reference.key, validSerialized]]),
         reference,
         {
           ...discovered,
@@ -531,166 +428,210 @@ describe('Cave credential binding helpers', () => {
     });
   });
 
-  test('preserves a newer committed credential when stale failed markers linger', async () => {
-    const reference = createSecretStoreReference('chat.cave.stale.failure');
+  test('rejects oversized and exact-schema-violating stored records', async () => {
+    const reference = createSecretStoreReference('chat.cave.strict-schema');
+    const cases = [
+      JSON.stringify({
+        version: 1,
+        bearer: 'bearer',
+        authorityBinding,
+        extra: true,
+      }),
+      JSON.stringify({
+        version: 1,
+        bearer: 'bearer',
+        authorityBinding: {
+          ...authorityBinding,
+          extra: true,
+        },
+      }),
+      JSON.stringify({
+        version: 1,
+        bearer: 'b'.repeat(4_097),
+        authorityBinding,
+      }),
+      JSON.stringify({
+        version: 1,
+        bearer: 'bearer',
+        authorityBinding: {
+          ...authorityBinding,
+          freshness: {
+            ...authorityBinding.freshness,
+            nonce: '',
+          },
+        },
+      }),
+    ];
+
+    for (const serialized of cases) {
+      await expect(
+        loadBoundCredential(
+          storeWithState([[reference.key, serialized]]),
+          reference,
+          discovered,
+          (value) => value === 'bearer',
+        ),
+      ).resolves.toEqual({
+        status: 'invalid',
+        reason: 'authority_binding_invalid',
+      });
+      await expect(
+        inspectStoredCredentialMaterial(
+          storeWithState([[reference.key, serialized]]),
+          reference,
+          (value) => value === 'bearer',
+        ),
+      ).resolves.toEqual({ status: 'incomplete' });
+    }
+  });
+
+  test('rejects invalid authority bindings before any write begins', async () => {
+    const reference = createSecretStoreReference('chat.cave.invalid-binding-write');
     const store = storeWithState();
-
-    await storeBoundCredential(store, reference, 'bearer-current', authorityBinding);
-    const metadataKey = storedKeyWithPrefix(store, BINDING_KEY_PREFIX);
-    const failureKey = `${FAILURE_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-    const stagingKey = `${STAGING_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-
-    store.values.set(
-      failureKey,
-      JSON.stringify({ schema: 'opencoven.cave.credential-binding.failure.v1', transactionId: 'tx-old' }),
-    );
-    store.values.set(
-      stagingKey,
-      JSON.stringify({ schema: 'opencoven.cave.credential-binding.staging.v1', transactionId: 'tx-old' }),
-    );
+    const invalidBinding = {
+      ...authorityBinding,
+      endpoint: {
+        kind: 'https',
+        url: authorityBinding.endpoint.url,
+      },
+    } as unknown as typeof authorityBinding;
 
     await expect(
-      loadBoundCredential(
-        store,
-        reference,
-        discovered,
-        (value) => value === 'bearer-current',
-      ),
-    ).resolves.toEqual({
-      status: 'ready',
-      bearer: 'bearer-current',
-    });
-    await expect(
-      inspectStoredCredentialMaterial(
-        store,
-        reference,
-        (value) => value === 'bearer-current',
-      ),
-    ).resolves.toEqual({ status: 'present' });
-  });
-
-  test('cleans orphaned owned partial state when ownership is still provable', async () => {
-    const reference = createSecretStoreReference('chat.cave.orphaned.partial');
-    const seeded = storeWithState();
-
-    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
-    const metadataKey = storedKeyWithPrefix(seeded, BINDING_KEY_PREFIX);
-    const ownerKey = `${OWNER_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-    const orphaned = storeWithState([
-      [metadataKey, seeded.values.get(metadataKey)],
-      [ownerKey, seeded.values.get(ownerKey)],
-    ]);
-
-    await expect(invalidateStoredCredential(orphaned, reference)).resolves.toBeUndefined();
-    await expect(
-      loadBoundCredential(orphaned, reference, discovered, (value) => value === 'bearer'),
-    ).resolves.toEqual({ status: 'missing' });
-    expect(orphaned.values.size).toBe(0);
-  });
-
-  test('cleans metadata-only orphaned state when no owner or bearer remains', async () => {
-    const reference = createSecretStoreReference('chat.cave.metadata.only');
-    const seeded = storeWithState();
-
-    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
-    const metadataKey = storedKeyWithPrefix(seeded, BINDING_KEY_PREFIX);
-    const metadataOnly = storeWithState([[metadataKey, seeded.values.get(metadataKey)]]);
-
-    await expect(invalidateStoredCredential(metadataOnly, reference)).resolves.toBeUndefined();
-    await expect(
-      loadBoundCredential(metadataOnly, reference, discovered, (value) => value === 'bearer'),
-    ).resolves.toEqual({ status: 'missing' });
-    expect(metadataOnly.values.size).toBe(0);
-  });
-
-  test('leaves active staging and structurally invalid snapshots untouched during automatic invalidation', async () => {
-    const reference = createSecretStoreReference('chat.cave.invalidate.noop');
-    const seeded = storeWithState();
-
-    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
-    const metadataKey = storedKeyWithPrefix(seeded, BINDING_KEY_PREFIX);
-    const ownerKey = `${OWNER_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-    const stagingKey = `${STAGING_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-    const active = storeWithState([
-      [reference.key, 'bearer'],
-      [metadataKey, seeded.values.get(metadataKey)],
-      [ownerKey, seeded.values.get(ownerKey)],
-      [stagingKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.staging.v1', transactionId: 'tx-active' })],
-    ]);
-    const invalid = storeWithState([[stagingKey, '{bad-json']]);
-
-    await expect(invalidateStoredCredential(active, reference)).resolves.toBeUndefined();
-    await expect(invalidateStoredCredential(invalid, reference)).resolves.toBeUndefined();
-
-    expect(active.values.size).toBe(4);
-    expect(invalid.values.size).toBe(1);
-  });
-
-  test('clears stale failed markers alongside a newer owned invalidation target', async () => {
-    const reference = createSecretStoreReference('chat.cave.invalidate.stale-failure');
-    const store = storeWithState();
-
-    await storeBoundCredential(store, reference, 'bearer', authorityBinding);
-    const metadataKey = storedKeyWithPrefix(store, BINDING_KEY_PREFIX);
-    const failureKey = `${FAILURE_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-    const stagingKey = `${STAGING_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-    store.values.set(
-      failureKey,
-      JSON.stringify({ schema: 'opencoven.cave.credential-binding.failure.v1', transactionId: 'tx-old' }),
-    );
-    store.values.set(
-      stagingKey,
-      JSON.stringify({ schema: 'opencoven.cave.credential-binding.staging.v1', transactionId: 'tx-old' }),
-    );
-
-    await expect(invalidateStoredCredential(store, reference)).resolves.toBeUndefined();
+      storeBoundCredential(store, reference, 'bearer', invalidBinding),
+    ).rejects.toBeInstanceOf(TypeError);
     expect(store.values.size).toBe(0);
   });
 
-  test('cleans a failed staged transaction when binding ownership still matches', async () => {
-    const reference = createSecretStoreReference('chat.cave.invalidate.failed-staging');
-    const seeded = storeWithState();
-
-    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
-    const metadataKey = storedKeyWithPrefix(seeded, BINDING_KEY_PREFIX);
-    const failureKey = `${FAILURE_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-    const stagingKey = `${STAGING_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-    const transactionId = (
-      JSON.parse(String(seeded.values.get(metadataKey))) as { transactionId: string }
-    ).transactionId;
-    const failed = storeWithState([
-      [reference.key, 'bearer'],
-      [metadataKey, seeded.values.get(metadataKey)],
-      [failureKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.failure.v1', transactionId })],
-      [stagingKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.staging.v1', transactionId })],
-    ]);
-
-    await expect(invalidateStoredCredential(failed, reference)).resolves.toBeUndefined();
-    expect(failed.values.size).toBe(0);
-  });
-
-  test('swallows invalidation delete failures and reports whether any credential material was forgotten', async () => {
-    const reference = createSecretStoreReference('chat.cave.delete');
-    const first = storeWithState();
-    await storeBoundCredential(first, reference, 'bearer', authorityBinding);
-    const metadataKey = storedKeyWithPrefix(first, BINDING_KEY_PREFIX);
-
-    const bearerDeleteFailure: SecretStore = {
+  test('fails before writing when the operation context is already aborted or timed out', async () => {
+    const reference = createSecretStoreReference('chat.cave.inactive-context');
+    const set = vi.fn(async () => undefined);
+    const store: SecretStore = {
       async get() {
         return undefined;
       },
-      async set() {
-        return undefined;
-      },
-      async delete(key) {
-        if (key === reference.key) {
-          throw new Error('bearer delete failed');
-        }
+      set,
+      async delete() {
         return false;
       },
     };
+    const aborted = new AbortController();
+    const abortedReason = new Error('stop');
+    aborted.abort(abortedReason);
 
-    const metadataDeleteFailure: SecretStore = {
+    await expect(
+      storeBoundCredential(store, reference, 'bearer', authorityBinding, {
+        context: {
+          signal: aborted.signal,
+          deadline: undefined,
+        },
+      }),
+    ).rejects.toBe(abortedReason);
+    await expect(
+      storeBoundCredential(store, reference, 'bearer', authorityBinding, {
+        context: {
+          signal: new AbortController().signal,
+          deadline: performance.now() - 1,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'timeout',
+      retryable: true,
+    });
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  test('ignores legacy split-key state on read and clears it on forget or invalidate', async () => {
+    const reference = createSecretStoreReference('chat.cave.legacy');
+    const currentSerialized = await storedCredentialValue(reference.key);
+    const legacyEntries: Array<readonly [string, string]> = [
+      [legacyCredentialKey(BINDING_KEY_PREFIX, reference.key), '{legacy-binding}'],
+      [legacyCredentialKey(STAGING_KEY_PREFIX, reference.key), '{legacy-staging}'],
+      [legacyCredentialKey(FAILURE_KEY_PREFIX, reference.key), '{legacy-failure}'],
+      [legacyCredentialKey(OWNER_KEY_PREFIX, reference.key), '{legacy-owner}'],
+    ];
+
+    await expect(
+      loadBoundCredential(
+        storeWithState(legacyEntries),
+        reference,
+        discovered,
+        (value) => value === 'bearer',
+      ),
+    ).resolves.toEqual({ status: 'missing' });
+
+    const legacyOnly = storeWithState(legacyEntries);
+    await expect(forgetStoredCredential(legacyOnly, reference)).resolves.toBe(true);
+    expect(legacyOnly.values.size).toBe(0);
+
+    const currentAndLegacy = storeWithState([
+      [reference.key, currentSerialized],
+      ...legacyEntries,
+    ]);
+    await expect(
+      loadBoundCredential(
+        currentAndLegacy,
+        reference,
+        discovered,
+        (value) => value === 'bearer',
+      ),
+    ).resolves.toEqual({
+      status: 'ready',
+      bearer: 'bearer',
+    });
+    await expect(invalidateStoredCredential(currentAndLegacy, reference)).resolves.toBeUndefined();
+    expect(currentAndLegacy.values.size).toBe(0);
+  });
+
+  test('prefers a late set rejection over timeout when the write settles within grace', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const reference = createSecretStoreReference('chat.cave.timeout.rejected-write');
+      const setError = new Error('set failed');
+      let rejectTermination!: (reason?: unknown) => void;
+      const termination = new Promise<never>((_resolve, reject) => {
+        rejectTermination = reject;
+      });
+      void termination.catch(() => undefined);
+      const store: SecretStore = {
+        async get() {
+          return undefined;
+        },
+        async set() {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 20);
+          });
+          throw setError;
+        },
+        async delete() {
+          return false;
+        },
+      };
+
+      const storing = storeBoundCredential(
+        store,
+        reference,
+        'bearer',
+        authorityBinding,
+        {
+          mutationGraceMs: 50,
+          termination,
+        },
+      ).catch((error: unknown) => error);
+
+      rejectTermination(new OperationTimeoutError({ system: 'cave', operation: 'pairingExchange' }, 1));
+      await vi.advanceTimersByTimeAsync(25);
+
+      await expect(storing).resolves.toBe(setError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('swallows legacy cleanup failures and keeps no-current forget conservative', async () => {
+    const reference = createSecretStoreReference('chat.cave.legacy.delete-failure');
+    const deleted: string[] = [];
+    const store: SecretStore = {
       async get() {
         return undefined;
       },
@@ -698,29 +639,54 @@ describe('Cave credential binding helpers', () => {
         return undefined;
       },
       async delete(key) {
-        if (key === reference.key) {
-          return true;
-        }
-        throw new Error('metadata delete failed');
+        deleted.push(key);
+        throw new Error('legacy delete failed');
       },
     };
 
-    await expect(invalidateStoredCredential(bearerDeleteFailure, reference)).resolves.toBeUndefined();
-    await expect(invalidateStoredCredential(metadataDeleteFailure, reference)).resolves.toBeUndefined();
-
-    const bindingOnlyStore = storeWithState([[metadataKey, first.values.get(metadataKey)]]);
-    await expect(forgetStoredCredential(bindingOnlyStore, reference)).resolves.toBe(true);
-    await expect(forgetStoredCredential(storeWithState(), reference)).resolves.toBe(false);
+    await expect(forgetStoredCredential(store, reference)).resolves.toBe(false);
+    await expect(invalidateStoredCredential(store, reference)).resolves.toBeUndefined();
+    expect(deleted).toHaveLength(8);
   });
 
-  test('returns false when explicit forget cannot delete the observed snapshot', async () => {
-    const reference = createSecretStoreReference('chat.cave.forget.failure');
-    const seeded = storeWithState();
-
-    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
-    const failingStore: SecretStore = {
-      async get(key) {
-        return seeded.values.get(key) as string | undefined;
+  test('swallows invalidate and forget read/delete failures conservatively', async () => {
+    const reference = createSecretStoreReference('chat.cave.failure-branches');
+    const invalidateReadFailure: SecretStore = {
+      async get() {
+        throw new Error('read failed');
+      },
+      async set() {
+        return undefined;
+      },
+      async delete() {
+        return false;
+      },
+    };
+    const invalidateDeleteFailure: SecretStore = {
+      async get() {
+        return '{bad-json';
+      },
+      async set() {
+        return undefined;
+      },
+      async delete() {
+        throw new Error('delete failed');
+      },
+    };
+    const forgetReadFailure: SecretStore = {
+      async get() {
+        throw new Error('read failed');
+      },
+      async set() {
+        return undefined;
+      },
+      async delete() {
+        return false;
+      },
+    };
+    const forgetDeleteFailure: SecretStore = {
+      async get() {
+        return '{bad-json';
       },
       async set() {
         return undefined;
@@ -730,54 +696,182 @@ describe('Cave credential binding helpers', () => {
       },
     };
 
-    await expect(forgetStoredCredential(failingStore, reference)).resolves.toBe(false);
-  });
-
-  test('returns false when explicit forget cannot re-read the observed snapshot', async () => {
-    const reference = createSecretStoreReference('chat.cave.forget.reread');
-    const seeded = storeWithState();
-
-    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
-    let reads = 0;
-    const failingRereadStore: SecretStore = {
-      async get(key) {
-        reads += 1;
-        if (reads > 5) {
-          throw new Error('read failed');
-        }
-        return seeded.values.get(key) as string | undefined;
-      },
-      async set() {
-        return undefined;
-      },
-      async delete(key) {
-        return seeded.values.delete(key);
-      },
-    };
-
-    await expect(forgetStoredCredential(failingRereadStore, reference)).resolves.toBe(false);
-  });
-
-  test('reports stable metadata without a matching owner as incomplete material', async () => {
-    const reference = createSecretStoreReference('chat.cave.inspect.incomplete');
-    const seeded = storeWithState();
-
-    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
-    const metadataKey = storedKeyWithPrefix(seeded, BINDING_KEY_PREFIX);
-
+    await expect(invalidateStoredCredential(invalidateReadFailure, reference)).resolves.toBeUndefined();
+    await expect(invalidateStoredCredential(invalidateDeleteFailure, reference)).resolves.toBeUndefined();
+    await expect(forgetStoredCredential(forgetReadFailure, reference)).resolves.toBe(false);
+    await expect(forgetStoredCredential(forgetDeleteFailure, reference)).resolves.toBe(false);
     await expect(
       inspectStoredCredentialMaterial(
-        storeWithState([
-          [reference.key, 'bearer'],
-          [metadataKey, seeded.values.get(metadataKey)],
-        ]),
+        storeWithState([[reference.key, 99]]),
         reference,
-        (value) => value === 'bearer',
+        () => true,
       ),
     ).resolves.toEqual({ status: 'incomplete' });
   });
 
-  test('treats duplicate-module reads during staging as update-in-progress and preserves the commit', async () => {
+  test('returns delayed read results that settle within the termination grace window', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const reference = createSecretStoreReference('chat.cave.read.grace');
+      const serialized = await storedCredentialValue(reference.key);
+      let rejectTermination!: (reason?: unknown) => void;
+      const termination = new Promise<never>((_resolve, reject) => {
+        rejectTermination = reject;
+      });
+      void termination.catch(() => undefined);
+      const store: SecretStore = {
+        async get() {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 20);
+          });
+          return serialized;
+        },
+        async set() {
+          return undefined;
+        },
+        async delete() {
+          return false;
+        },
+      };
+
+      const inspected = inspectStoredCredentialMaterial(
+        store,
+        reference,
+        (value) => value === 'bearer',
+        {
+          mutationGraceMs: 50,
+          termination,
+        },
+      );
+
+      rejectTermination(new OperationTimeoutError({ system: 'cave', operation: 'status' }, 1));
+      await vi.advanceTimersByTimeAsync(25);
+
+      await expect(inspected).resolves.toEqual({ status: 'present' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('propagates timeout when a delayed read outlives the termination grace window', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const reference = createSecretStoreReference('chat.cave.read.timeout');
+      let rejectTermination!: (reason?: unknown) => void;
+      const termination = new Promise<never>((_resolve, reject) => {
+        rejectTermination = reject;
+      });
+      void termination.catch(() => undefined);
+      const store: SecretStore = {
+        async get() {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 20);
+          });
+          return undefined;
+        },
+        async set() {
+          return undefined;
+        },
+        async delete() {
+          return false;
+        },
+      };
+
+      const inspected = inspectStoredCredentialMaterial(store, reference, () => true, {
+        mutationGraceMs: 1,
+        termination,
+      });
+      const inspectedExpectation = expect(inspected).rejects.toBeInstanceOf(OperationTimeoutError);
+
+      rejectTermination(new OperationTimeoutError({ system: 'cave', operation: 'status' }, 1));
+      await vi.advanceTimersByTimeAsync(5);
+
+      await inspectedExpectation;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('ignores late rejected writes after timeout without scheduling cleanup deletes', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const reference = createSecretStoreReference('chat.cave.write.late-reject');
+      let rejectTermination!: (reason?: unknown) => void;
+      const termination = new Promise<never>((_resolve, reject) => {
+        rejectTermination = reject;
+      });
+      void termination.catch(() => undefined);
+      const setError = new Error('late set failed');
+      const store = {
+        get: vi.fn(async () => undefined),
+        set: vi.fn(async () => {
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 20);
+          });
+          throw setError;
+        }),
+        delete: vi.fn(async () => false),
+      } satisfies SecretStore;
+
+      const storing = storeBoundCredential(
+        store,
+        reference,
+        'bearer',
+        authorityBinding,
+        {
+          mutationGraceMs: 1,
+          termination,
+        },
+      ).catch((error: unknown) => error);
+
+      rejectTermination(new OperationTimeoutError({ system: 'cave', operation: 'pairingExchange' }, 1));
+      await vi.advanceTimersByTimeAsync(5);
+
+      await expect(storing).resolves.toBeInstanceOf(OperationTimeoutError);
+      await vi.advanceTimersByTimeAsync(25);
+      await Promise.resolve();
+
+      expect(store.delete).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('returns false when forget loses exact-value ownership before delete', async () => {
+    const reference = createSecretStoreReference('chat.cave.forget.exact-match');
+    const currentSerialized = await storedCredentialValue(reference.key, 'bearer-current');
+    const newerSerialized = await storedCredentialValue(reference.key, 'bearer-newer');
+    const values = new Map<string, string>([[reference.key, currentSerialized]]);
+    let reads = 0;
+
+    const store: SecretStore = {
+      async get(key) {
+        reads += 1;
+        if (reads === 2) {
+          values.set(key, newerSerialized);
+        }
+        return values.get(key);
+      },
+      async set(key, value) {
+        values.set(key, value);
+      },
+      async delete(key) {
+        return values.delete(key);
+      },
+    };
+
+    await expect(forgetStoredCredential(store, reference)).resolves.toBe(false);
+    await expect(loadBoundCredential(store, reference, discovered, (value) => value === 'bearer-newer'))
+      .resolves.toEqual({
+        status: 'ready',
+        bearer: 'bearer-newer',
+      });
+  });
+
+  test('keeps duplicate-module concurrent writers coherent and atomic', async () => {
     const duplicateModuleUrl = new URL(
       `../packages/cave/src/credential-binding.ts?duplicate=${Date.now()}`,
       import.meta.url,
@@ -785,91 +879,108 @@ describe('Cave credential binding helpers', () => {
     const duplicateModule = (await import(
       /* @vite-ignore */ duplicateModuleUrl
     )) as DuplicateCredentialBindingModule;
-    const reference = createSecretStoreReference('chat.cave.duplicate.reader');
-    const controlled = createControlledMutationStore([2]);
+    const reference = createSecretStoreReference('chat.cave.concurrent.writer');
+    const controlled = createControlledMutationStore([1, 2]);
 
-    const storing = storeBoundCredential(
+    const first = storeBoundCredential(
       controlled.store,
       reference,
-      'bearer-current',
+      'bearer-first',
+      authorityBinding,
+    );
+    await controlled.waitForMutationStart(1);
+
+    const second = duplicateModule.storeBoundCredential(
+      controlled.store,
+      reference,
+      'bearer-second',
       authorityBinding,
     );
     await controlled.waitForMutationStart(2);
 
-    await expect(
-      duplicateModule.loadBoundCredential(
-        controlled.store,
-        reference,
-        discovered,
-        (value) => value === 'bearer-current',
-      ),
-    ).resolves.toEqual({ status: 'update_in_progress' });
-
+    controlled.unblockMutation(1);
+    await Promise.resolve();
     controlled.unblockMutation(2);
 
-    await expect(storing).resolves.toBeUndefined();
+    await expect(first).resolves.toBeUndefined();
+    await expect(second).resolves.toBeUndefined();
     await expect(
       loadBoundCredential(
         controlled.store,
         reference,
         discovered,
-        (value) => value === 'bearer-current',
+        (value) => value.startsWith('bearer-'),
       ),
     ).resolves.toEqual({
       status: 'ready',
-      bearer: 'bearer-current',
+      bearer: 'bearer-second',
     });
-  });
-
-  test('returns false for a duplicate-module forget during active staging and preserves the newer commit', async () => {
-    const duplicateModuleUrl = new URL(
-      `../packages/cave/src/credential-binding.ts?duplicate=${Date.now() + 1}`,
-      import.meta.url,
-    ).href;
-    const duplicateModule = (await import(
-      /* @vite-ignore */ duplicateModuleUrl
-    )) as DuplicateCredentialBindingModule;
-    const reference = createSecretStoreReference('chat.cave.duplicate.forget');
-    const controlled = createControlledMutationStore([2]);
-
-    const storing = storeBoundCredential(
-      controlled.store,
-      reference,
-      'bearer-committed',
+    expect(JSON.parse(String(controlled.values.get(reference.key)))).toEqual({
+      version: 1,
+      bearer: 'bearer-second',
       authorityBinding,
-    );
-    await controlled.waitForMutationStart(2);
-
-    await expect(
-      duplicateModule.forgetStoredCredential(controlled.store, reference),
-    ).resolves.toBe(false);
-
-    controlled.unblockMutation(2);
-
-    await expect(storing).resolves.toBeUndefined();
-    await expect(
-      loadBoundCredential(
-        controlled.store,
-        reference,
-        discovered,
-        (value) => value === 'bearer-committed',
-      ),
-    ).resolves.toEqual({
-      status: 'ready',
-      bearer: 'bearer-committed',
     });
   });
 
-  test('preserves a later concurrent credential store after an earlier timeout rollback', async () => {
+  test('cleans a late timed-out write if its exact value lands after prompt timeout', async () => {
     vi.useFakeTimers();
 
     try {
-      const reference = createSecretStoreReference('chat.cave.concurrent.store');
-      const controlled = createControlledMutationStore([5]);
+      const reference = createSecretStoreReference('chat.cave.timeout.cleanup');
+      const controlled = createControlledMutationStore([1]);
       let rejectTermination!: (reason?: unknown) => void;
-      const termination = new Promise<never>((_, reject) => {
+      const termination = new Promise<never>((_resolve, reject) => {
         rejectTermination = reject;
       });
+      void termination.catch(() => undefined);
+
+      const storing = storeBoundCredential(
+        controlled.store,
+        reference,
+        'bearer-timeout',
+        authorityBinding,
+        {
+          mutationGraceMs: 1,
+          termination,
+        },
+      ).catch((error: unknown) => error);
+
+      await controlled.waitForMutationStart(1);
+      rejectTermination(new OperationTimeoutError({ system: 'cave', operation: 'pairingExchange' }, 1));
+      await vi.advanceTimersByTimeAsync(5);
+
+      const error = await storing;
+      expect(error).toBeInstanceOf(OperationTimeoutError);
+      expect(controlled.values.get(reference.key)).toBeUndefined();
+
+      controlled.unblockMutation(1);
+      await controlled.waitForMutationStart(2);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await expect(controlled.store.get(reference.key)).resolves.toBeUndefined();
+      expect(controlled.log).toEqual([
+        { mutation: 1, method: 'set', key: reference.key, phase: 'start' },
+        { mutation: 1, method: 'set', key: reference.key, phase: 'finish' },
+        { mutation: 2, method: 'delete', key: reference.key, phase: 'start' },
+        { mutation: 2, method: 'delete', key: reference.key, phase: 'finish' },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('preserves a newer successful write against timed-out cleanup by value', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const reference = createSecretStoreReference('chat.cave.timeout.preserve-newer');
+      const controlled = createControlledMutationStore([1, 2]);
+      let rejectTermination!: (reason?: unknown) => void;
+      const termination = new Promise<never>((_resolve, reject) => {
+        rejectTermination = reject;
+      });
+      void termination.catch(() => undefined);
 
       const first = storeBoundCredential(
         controlled.store,
@@ -881,8 +992,11 @@ describe('Cave credential binding helpers', () => {
           termination,
         },
       ).catch((error: unknown) => error);
+      await controlled.waitForMutationStart(1);
 
-      await controlled.waitForMutationStart(5);
+      rejectTermination(new OperationTimeoutError({ system: 'cave', operation: 'pairingExchange' }, 1));
+      await vi.advanceTimersByTimeAsync(5);
+
       const second = storeBoundCredential(
         controlled.store,
         reference,
@@ -890,9 +1004,9 @@ describe('Cave credential binding helpers', () => {
         authorityBinding,
       );
 
-      rejectTermination(new OperationTimeoutError({ system: 'cave', operation: 'pairingExchange' }, 1));
-      await vi.advanceTimersByTimeAsync(5);
-      controlled.unblockMutation(5);
+      controlled.unblockMutation(1);
+      await controlled.waitForMutationStart(2);
+      controlled.unblockMutation(2);
 
       const firstError = await first;
       expect(firstError).toBeInstanceOf(OperationTimeoutError);
@@ -908,15 +1022,68 @@ describe('Cave credential binding helpers', () => {
         status: 'ready',
         bearer: 'bearer-second',
       });
-      await expect(controlled.store.get(reference.key)).resolves.toBe('bearer-second');
     } finally {
       vi.useRealTimers();
     }
   });
 
-  test('serializes concurrent forget and store operations on the same reference', async () => {
+  test('concurrent reads during a write see the old or new coherent record only', async () => {
+    const reference = createSecretStoreReference('chat.cave.concurrent.read');
+    const controlled = createControlledMutationStore([2]);
+
+    await storeBoundCredential(
+      controlled.store,
+      reference,
+      'bearer-old',
+      authorityBinding,
+    );
+
+    const storing = storeBoundCredential(
+      controlled.store,
+      reference,
+      'bearer-new',
+      authorityBinding,
+    );
+    await controlled.waitForMutationStart(2);
+
+    await expect(
+      loadBoundCredential(
+        controlled.store,
+        reference,
+        discovered,
+        (value) => value.startsWith('bearer-'),
+      ),
+    ).resolves.toEqual({
+      status: 'ready',
+      bearer: 'bearer-old',
+    });
+    await expect(
+      inspectStoredCredentialMaterial(
+        controlled.store,
+        reference,
+        (value) => value.startsWith('bearer-'),
+      ),
+    ).resolves.toEqual({ status: 'present' });
+
+    controlled.unblockMutation(2);
+
+    await expect(storing).resolves.toBeUndefined();
+    await expect(
+      loadBoundCredential(
+        controlled.store,
+        reference,
+        discovered,
+        (value) => value.startsWith('bearer-'),
+      ),
+    ).resolves.toEqual({
+      status: 'ready',
+      bearer: 'bearer-new',
+    });
+  });
+
+  test('serializes concurrent same-module forget and store operations on one reference', async () => {
     const reference = createSecretStoreReference('chat.cave.concurrent.forget');
-    const controlled = createControlledMutationStore([4]);
+    const controlled = createControlledMutationStore([1]);
 
     const storePromise = storeBoundCredential(
       controlled.store,
@@ -924,10 +1091,10 @@ describe('Cave credential binding helpers', () => {
       'bearer-store',
       authorityBinding,
     );
-    await controlled.waitForMutationStart(4);
+    await controlled.waitForMutationStart(1);
 
     const forgetPromise = forgetStoredCredential(controlled.store, reference);
-    controlled.unblockMutation(4);
+    controlled.unblockMutation(1);
 
     await expect(storePromise).resolves.toBeUndefined();
     await expect(forgetPromise).resolves.toBe(true);
@@ -941,99 +1108,106 @@ describe('Cave credential binding helpers', () => {
     ).resolves.toEqual({ status: 'missing' });
   });
 
-  test('keeps a newer committed credential when rollback ownership no longer matches', async () => {
-    const reference = createSecretStoreReference('chat.cave.rollback.owner');
-    const committed = storeWithState();
-    await storeBoundCredential(committed, reference, 'bearer-current', authorityBinding);
-    const metadataKey = storedKeyWithPrefix(committed, BINDING_KEY_PREFIX);
-    const ownerKey = `${OWNER_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-    const failureKey = `${FAILURE_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-    const stagingKey = `${STAGING_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
-    const deleted: string[] = [];
-    const values = new Map<string, string>();
-    let writeCount = 0;
-
+  test('lets a new write remain when it races after a forget delete', async () => {
+    const duplicateModuleUrl = new URL(
+      `../packages/cave/src/credential-binding.ts?duplicate=${Date.now() + 1}`,
+      import.meta.url,
+    ).href;
+    const duplicateModule = (await import(
+      /* @vite-ignore */ duplicateModuleUrl
+    )) as DuplicateCredentialBindingModule;
+    const reference = createSecretStoreReference('chat.cave.forget.write-race');
+    const currentSerialized = await storedCredentialValue(reference.key, 'bearer-current');
+    const values = new Map<string, string>([[reference.key, currentSerialized]]);
+    const afterDelete = deferred<void>();
     const store: SecretStore = {
       async get(key) {
         return values.get(key);
       },
       async set(key, value) {
-        writeCount += 1;
-        if (writeCount === 5) {
-          const originalStaging = values.get(stagingKey);
-          values.clear();
-          for (const [entryKey, entryValue] of committed.values) {
-            values.set(entryKey, String(entryValue));
-          }
-          if (originalStaging !== undefined) {
-            values.set(stagingKey, originalStaging);
-          }
-          throw new Error('late bound write failed');
-        }
-
+        await afterDelete.promise;
         values.set(key, value);
       },
       async delete(key) {
-        deleted.push(key);
-        return values.delete(key);
+        const deleted = values.delete(key);
+        afterDelete.resolve();
+        return deleted;
       },
     };
 
-    const error = await storeBoundCredential(
+    const forgetting = forgetStoredCredential(store, reference);
+    const storing = duplicateModule.storeBoundCredential(
       store,
       reference,
-      'bearer-first',
-      authorityBinding,
-    ).catch((caught: unknown) => caught);
-
-    expect(error).toBeInstanceOf(Error);
-    expect(values.get(reference.key)).toBe('bearer-current');
-    expect(values.get(metadataKey)).toBe(committed.values.get(metadataKey));
-    expect(values.get(ownerKey)).toBe(committed.values.get(ownerKey));
-    expect(values.has(failureKey)).toBe(false);
-    expect(values.has(stagingKey)).toBe(false);
-    expect(deleted).toContain(failureKey);
-    expect(deleted).toContain(stagingKey);
-    expect(deleted).not.toContain(reference.key);
-    expect(deleted).not.toContain(metadataKey);
-    expect(deleted).not.toContain(ownerKey);
-  });
-
-  test('allows distinct references to mutate in parallel', async () => {
-    const firstReference = createSecretStoreReference('chat.cave.parallel.first');
-    const secondReference = createSecretStoreReference('chat.cave.parallel.second');
-    const controlled = createControlledMutationStore([1]);
-
-    const first = storeBoundCredential(
-      controlled.store,
-      firstReference,
-      'bearer-first',
+      'bearer-next',
       authorityBinding,
     );
-    await controlled.waitForMutationStart(1);
 
-    let secondSettled = false;
-    const second = storeBoundCredential(
-      controlled.store,
-      secondReference,
-      'bearer-second',
-      authorityBinding,
-    ).then(() => {
-      secondSettled = true;
+    await expect(forgetting).resolves.toBe(true);
+    await expect(storing).resolves.toBeUndefined();
+    await expect(
+      loadBoundCredential(
+        store,
+        reference,
+        discovered,
+        (value) => value.startsWith('bearer-'),
+      ),
+    ).resolves.toEqual({
+      status: 'ready',
+      bearer: 'bearer-next',
     });
-    const secondOutcome = await Promise.race([
-      second.then(() => 'done' as const),
-      new Promise<'pending'>((resolve) => {
-        setTimeout(() => resolve('pending'), 0);
-      }),
-    ]);
-    expect(secondOutcome).toBe('done');
-    expect(secondSettled).toBe(true);
+  });
+});
 
-    controlled.unblockMutation(1);
-    await expect(first).resolves.toBeUndefined();
-    await expect(second).resolves.toBeUndefined();
-    await expect(controlled.store.get(secondReference.key)).resolves.toBe('bearer-second');
+describe('Cave authority binding helpers', () => {
+  test('parses valid authority bindings and rejects malformed shapes', () => {
+    expect(parseCaveAuthorityBinding(authorityBinding)).toEqual(authorityBinding);
+    expect(parseCaveAuthorityBinding({ version: 2 })).toBeUndefined();
+    expect(
+      parseCaveAuthorityBinding({
+        ...authorityBinding,
+        endpoint: {
+          kind: 'https',
+          url: authorityBinding.endpoint.url,
+        },
+      }),
+    ).toBeUndefined();
+    expect(
+      parseCaveAuthorityBinding({
+        ...authorityBinding,
+        record: {
+          ...authorityBinding.record,
+          device: -1,
+        },
+      }),
+    ).toBeUndefined();
+    expect(
+      parseCaveAuthorityBinding({
+        ...authorityBinding,
+        freshness: {
+          ...authorityBinding.freshness,
+          startedAt: '',
+        },
+      }),
+    ).toBeUndefined();
+  });
+
+  test('best-effort clears pairing exchange bearers and ignores setter failures', () => {
+    const exchange = { bearer: 'secret-bearer' };
+    discardPairingExchangeBearer(exchange);
+    expect(exchange.bearer).toBe('');
+
+    expect(() => discardPairingExchangeBearer('secret-bearer')).not.toThrow();
+
+    const throwingSetter = new Proxy(
+      {},
+      {
+        set() {
+          throw new Error('setter failed');
+        },
+      },
+    );
+    expect(() => discardPairingExchangeBearer(throwingSetter)).not.toThrow();
   });
 });
 

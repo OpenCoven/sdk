@@ -1408,7 +1408,7 @@ describe('opencoven CLI output', () => {
 
     try {
       const slowStore = createSlowMutationStore({
-        delayedMutation: 6,
+        delayedMutation: 1,
         delayMs: 50,
       });
       const timedCreateClient = (options: Parameters<typeof createDiscoveredCaveClient>[0]) => {

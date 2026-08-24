@@ -666,15 +666,6 @@ async function requestJson(
       options.context === undefined ? {} : { context: options.context },
     );
     ensureActive(options.context);
-    if (credential.status === 'update_in_progress') {
-      throw transportError(
-        'credential_update_in_progress',
-        'A stored Cave credential update is still in progress.',
-        {
-          retryable: true,
-        },
-      );
-    }
 
     if (credential.status === 'missing' || credential.status === 'invalid_bearer') {
       if (credential.status === 'invalid_bearer') {

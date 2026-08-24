@@ -1427,12 +1427,6 @@ export class CaveClient {
         if (localMaterial.status === 'missing') {
           return { status: 'missing' };
         }
-        if (localMaterial.status === 'update_in_progress') {
-          return {
-            status: 'disconnected',
-            reason: 'credential_update_in_progress',
-          };
-        }
         if (localMaterial.status === 'present') {
           return { status: 'continue' };
         }
@@ -1453,12 +1447,6 @@ export class CaveClient {
 
         if (repaired.status === 'missing') {
           return { status: 'missing' };
-        }
-        if (repaired.status === 'update_in_progress') {
-          return {
-            status: 'disconnected',
-            reason: 'credential_update_in_progress',
-          };
         }
         if (repaired.status === 'present') {
           return { status: 'continue' };

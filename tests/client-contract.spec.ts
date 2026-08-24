@@ -65,6 +65,17 @@ function recordingSecretStore() {
   };
 }
 
+function expectStoredCredentialRecord(serialized: string | undefined): void {
+  expect(serialized).toBeTypeOf('string');
+  expect(JSON.parse(serialized as string)).toMatchObject({
+    version: 1,
+    bearer: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+    authorityBinding: {
+      version: 1,
+    },
+  });
+}
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -184,7 +195,7 @@ describe('constrained client transports', () => {
     });
 
     await expect(session.exchange()).resolves.toEqual(credential);
-    expect(retained.get(reference.key)).toBe('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB');
+    expectStoredCredentialRecord(retained.get(reference.key));
     expect(store.set).toHaveBeenCalled();
   });
 

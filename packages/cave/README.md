@@ -9,8 +9,9 @@ A constrained Cave client with two entry points:
 Importing the package performs no filesystem, network, or credential I/O. The
 discovered helper reads Cave's `client-v1-discovery.json` only when an
 operation is called, validates owner-local discovery metadata, and stores the
-paired bearer plus non-secret authority-binding metadata only through an
-injected `SecretStore`. Pairing sessions pin to the exact discovered authority
+paired bearer together with non-secret authority-binding metadata in one
+versioned `SecretStore` record per credential reference. Pairing sessions pin
+to the exact discovered authority
 record and freshness; if rediscovery shows a restart, record replacement, or
 authority mismatch, `poll()`/`exchange()` fail locally before the pairing
 secret is sent. Stored bearers are rediscovered against the same authority
@@ -111,9 +112,10 @@ and contains a composed signal plus the earliest monotonic deadline. A timeout
 returns promptly even if the transport ignores the signal. If `exchange()`
 times out or is aborted before credential persistence begins, any later
 transport result is discarded before the bearer can be written. Once
-persistence starts, the client still waits for the cancellation-aware rollback
-path to finish before rejecting. Only a cooperative transport stops
-underlying I/O. Do not log `error.cause` blindly.
+persistence starts, the client commits through one atomic credential-record
+write and best-effort exact-value cleanup if that write lands after
+timeout/abort. Only a cooperative transport stops underlying I/O. Do not log
+`error.cause` blindly.
 The same controls apply to `createPairing()`, `session.poll()`,
 `session.exchange()`, `credentialStatus()`, `forgetCredential()`,
 `familiars()`, `familiarContract()`, and `familiarAnalytics()`. The discovered
@@ -136,10 +138,10 @@ transport send. Pre-send pinned-authority failures keep the pairing secret
 ready and surface retryable `reconcile_required`. Discovered fetch/network
 rejections during `session.exchange()` are terminal for that session because
 the client cannot prove whether the request was sent.
-While a credential write is visibly staged in the secret store, authenticated
-calls fail locally with retryable `credential_update_in_progress` and
-`credentialStatus()` reports `disconnected` instead of clearing the newer
-credential that is still being committed.
+Credential reads observe one coherent stored record per reference: the previous
+committed credential, the new committed credential, or no credential at all.
+Malformed or mismatched records fail closed and are invalidated locally before
+their bearer can be sent.
 
 Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,
@@ -151,7 +153,7 @@ Cave Client v1 health accepts additive Cave API updates on major version `1`
 and rejects incompatible API or minimum-client versions with
 `incompatible_version`. There is no default timeout and no automatic retry.
 Retry transient `timeout`, `not_found`, `service_unavailable`, or
-`rate_limited`, or `credential_update_in_progress` failures only after the operator confirms the local runtime is
+`rate_limited` failures only after the operator confirms the local runtime is
 ready; repair `stale_record`, `reconcile_required`, `pairing_denied`,
 `pairing_expired`, or `incompatible_version` before running the operation
 again.

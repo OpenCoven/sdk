@@ -110,6 +110,20 @@ function pairingCredential() {
   };
 }
 
+function expectStoredCredentialRecord(
+  serialized: string | undefined,
+  bearer: string = BEARER,
+): void {
+  expect(serialized).toBeTypeOf('string');
+  expect(JSON.parse(serialized as string)).toMatchObject({
+    version: 1,
+    bearer,
+    authorityBinding: {
+      version: 1,
+    },
+  });
+}
+
 function successEnvelope(data: Record<string, unknown>) {
   return {
     ...CURRENT_HEALTH_ENVELOPE,
@@ -865,7 +879,7 @@ describe('discovered Cave pairing helpers', () => {
       expiresAt: 1_755_731_112_617,
     });
     await expect(session.exchange()).resolves.toEqual(credential);
-    await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
+    expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
     await expect(client.credentialStatus()).resolves.toEqual({
       status: 'valid',
       access: 'chat:read',
@@ -1179,7 +1193,7 @@ describe('discovered Cave pairing helpers', () => {
       },
     });
     await expect(session.exchange()).resolves.toEqual(credential);
-    await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
+    expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
     expect(fetchImplementation).toHaveBeenCalledTimes(3);
   });
 
@@ -1295,7 +1309,7 @@ describe('discovered Cave pairing helpers', () => {
     await writeDiscoveryRecord(root, discoveryRecord());
 
     await expect(session.exchange()).resolves.toEqual(credential);
-    await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
+    expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
     expect(fetchImplementation).toHaveBeenCalledTimes(2);
   });
 
@@ -1416,7 +1430,7 @@ describe('discovered Cave pairing helpers', () => {
       expiresAt,
     });
     await expect(session.exchange()).resolves.toEqual(credential);
-    await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
+    expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
     expect(fetchImplementation).toHaveBeenCalledTimes(3);
   });
 
@@ -1514,7 +1528,7 @@ describe('discovered Cave pairing helpers', () => {
       expiresAt,
     });
     await expect(session.exchange()).resolves.toEqual(credential);
-    await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
+    expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
     expect(fetchImplementation).toHaveBeenCalledTimes(3);
   });
 
@@ -1722,7 +1736,7 @@ describe('discovered Cave pairing helpers', () => {
       });
 
       await expect(session.exchange()).resolves.toEqual(credential);
-      await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
+      expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
       expect(fetchImplementation).toHaveBeenCalledTimes(3);
 
       expect(resolveFirstPoll).toBeDefined();
@@ -2132,7 +2146,7 @@ describe('discovered Cave pairing helpers', () => {
     );
 
     await expect(firstExchange).resolves.toEqual(credential);
-    await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
+    expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
     expect(fetchImplementation).toHaveBeenCalledTimes(2);
   });
 
@@ -2186,15 +2200,9 @@ describe('discovered Cave pairing helpers', () => {
   });
 
   test.each([
-    ['staging write', 1],
-    ['pending binding write', 2],
-    ['bearer write', 3],
-    ['owner marker write', 4],
-    ['bound binding write', 5],
-    ['failure marker clear', 6],
-    ['staging clear', 7],
+    ['atomic record write', 1],
   ] as const)(
-    'rolls back and stays fail-closed when %s times out',
+    'cleans and stays fail-closed when the %s times out',
     async (_label, delayedMutation) => {
       vi.useFakeTimers();
       const root = createScratchRoot(`pairing-timeout-${delayedMutation}`);
@@ -2279,7 +2287,7 @@ describe('discovered Cave pairing helpers', () => {
     },
   );
 
-  test('reports in-progress credential updates without sending a bearer or wiping the eventual commit', async () => {
+  test('reports old-or-missing credential state during an atomic write without sending a bearer', async () => {
     vi.useFakeTimers();
 
     try {
@@ -2287,7 +2295,7 @@ describe('discovered Cave pairing helpers', () => {
       await writeDiscoveryRecord(root, discoveryRecord());
       const slowStore = createSlowMutationStore({
         delayMs: 50,
-        delayedMutation: 2,
+        delayedMutation: 1,
       });
       const reference = createSecretStoreReference('cave-update-in-progress');
       const fetchImplementation = queuedFetch([
@@ -2335,16 +2343,13 @@ describe('discovered Cave pairing helpers', () => {
       });
 
       const exchange = session.exchange();
-      await slowStore.waitForMutationStart(2);
+      await slowStore.waitForMutationStart(1);
 
-      await expect(client.credentialStatus()).resolves.toEqual({
-        status: 'disconnected',
-        reason: 'credential_update_in_progress',
-      });
+      await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
       await expect(client.familiars()).rejects.toMatchObject({
         normalized: {
-          code: 'credential_update_in_progress',
-          retryable: true,
+          code: 'unauthorized',
+          retryable: false,
           operation: 'familiars',
         },
       });
@@ -2358,7 +2363,7 @@ describe('discovered Cave pairing helpers', () => {
         access: 'chat:read',
         health: caveHealth(),
       });
-      expect(slowStore.retained.get(reference.key)).toBe(BEARER);
+      expectStoredCredentialRecord(slowStore.retained.get(reference.key));
       expect(fetchImplementation).toHaveBeenCalledTimes(4);
     } finally {
       vi.useRealTimers();
@@ -2366,15 +2371,9 @@ describe('discovered Cave pairing helpers', () => {
   });
 
   test.each([
-    ['staging write', 1],
-    ['pending binding write', 2],
-    ['bearer write', 3],
-    ['owner marker write', 4],
-    ['bound binding write', 5],
-    ['failure marker clear', 6],
-    ['staging clear', 7],
+    ['atomic record write', 1],
   ] as const)(
-    'rolls back and stays fail-closed when %s is aborted',
+    'cleans and stays fail-closed when the %s is aborted',
     async (_label, delayedMutation) => {
       vi.useFakeTimers();
       const root = createScratchRoot(`pairing-abort-${delayedMutation}`);
@@ -2461,21 +2460,13 @@ describe('discovered Cave pairing helpers', () => {
     },
   );
 
-  test('marks a partially stored bearer unusable when authority binding storage fails', async () => {
+  test('surfaces a write failure without retaining a partial credential', async () => {
     const root = createScratchRoot('pairing-store-failure');
     await writeDiscoveryRecord(root, discoveryRecord());
     const retained = new Map<string, string>();
-    let writeCount = 0;
     const store = {
       get: vi.fn((key: string) => Promise.resolve(retained.get(key))),
-      set: vi.fn((key: string, value: string) => {
-        writeCount += 1;
-        if (writeCount === 4) {
-          return Promise.reject(new Error('store write failed'));
-        }
-        retained.set(key, value);
-        return Promise.resolve();
-      }),
+      set: vi.fn(() => Promise.reject(new Error('store write failed'))),
       delete: vi.fn((key: string) => Promise.resolve(retained.delete(key))),
     };
     const reference = createSecretStoreReference('cave-store-failure');
@@ -2525,8 +2516,8 @@ describe('discovered Cave pairing helpers', () => {
     const exchange = session.exchange().catch((error: unknown) => error);
     const error = await exchange;
 
-    expect(store.set).toHaveBeenCalledTimes(5);
-    expect(store.delete).toHaveBeenCalledTimes(4);
+    expect(store.set).toHaveBeenCalledTimes(1);
+    expect(store.delete).not.toHaveBeenCalled();
     expect(error).toMatchObject({
       normalized: {
         code: 'secret_store_write_failed',
@@ -2558,36 +2549,21 @@ describe('discovered Cave pairing helpers', () => {
     expect(fetchImplementation).toHaveBeenCalledTimes(2);
   });
 
-  test('surfaces an explicit fail-closed error when rollback cannot finish', async () => {
-    const root = createScratchRoot('pairing-rollback-failure');
+  test('fails closed on malformed stored records without sending a bearer', async () => {
+    const root = createScratchRoot('pairing-malformed-stored-record');
     await writeDiscoveryRecord(root, discoveryRecord());
-    const credential = pairingCredential();
-    const slowStore = createSlowMutationStore({
-      failSetAtMutation: 3,
-      failDeleteAtMutation: 6,
-    });
-    const reference = createSecretStoreReference('cave-rollback-failure');
-    const fetchImplementation = queuedFetch([
-      () =>
-        jsonResponse(
-          201,
-          successEnvelope({
-            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
-            secret: PAIRING_SECRET,
-            expiresAt: 1_755_731_112_617,
-          }),
-        ),
-      () =>
-        jsonResponse(
-          200,
-          successEnvelope({
-            bearer: BEARER,
-            credential,
-          }),
-        ),
-    ]);
+    const retained = new Map<string, string>([['cave-malformed-stored-record', '{bad-json']]);
+    const store = {
+      get: vi.fn((key: string) => Promise.resolve(retained.get(key))),
+      set: vi.fn(() => Promise.resolve()),
+      delete: vi.fn((key: string) => Promise.resolve(retained.delete(key))),
+    };
+    const reference = createSecretStoreReference('cave-malformed-stored-record');
+    const fetchImplementation = vi.fn<typeof fetch>(() =>
+      Promise.reject(new Error('network should not be reached with a malformed stored credential')),
+    );
     const client = createDiscoveredCaveClient({
-      credentials: { store: slowStore.store, reference },
+      credentials: { store, reference },
       discovery: {
         root,
         timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
@@ -2595,26 +2571,7 @@ describe('discovered Cave pairing helpers', () => {
       },
       fetch: fetchImplementation,
     });
-    const session = await client.createPairing({
-      appName: 'OpenCoven Chat',
-      installationId: 'chat-install-1',
-      scopes: ['chat:read'],
-    });
 
-    const error = await session.exchange().catch((caught: unknown) => caught);
-
-    expect(error).toMatchObject({
-      normalized: {
-        code: 'secret_store_rollback_failed',
-        retryable: false,
-        operation: 'pairingExchange',
-      },
-      details: {
-        reason: 'fail_closed',
-      },
-    });
-    expect(String(error)).not.toContain(BEARER);
-    expect(JSON.stringify(error)).not.toContain(BEARER);
     await expect(client.familiars()).rejects.toMatchObject({
       normalized: {
         code: 'reconcile_required',
@@ -2622,11 +2579,12 @@ describe('discovered Cave pairing helpers', () => {
         operation: 'familiars',
       },
       details: {
-        reason: 'authority_binding_incomplete',
+        reason: 'authority_binding_invalid',
       },
     });
     await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
-    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(store.delete).toHaveBeenCalledWith(reference.key);
+    expect(fetchImplementation).not.toHaveBeenCalled();
   });
 
   test('reports revoked stored credentials against the current authority', async () => {

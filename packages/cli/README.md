@@ -39,12 +39,12 @@ opencoven coven health
   exits `1` if either probe fails.
 - `opencoven cave pair [--json]` creates, polls, and exchanges one Cave
   pairing request inside one absolute workflow deadline and stores the bearer
-  plus authority metadata through the native keyring only.
+  together with authority metadata in one versioned native-keyring record.
 - `opencoven cave status [--json]` validates the stored Cave credential against
   the current authority binding and returns `valid`, `missing`, `disconnected`,
-  or `revoked`. Active local credential writes surface retryable
-  `credential_update_in_progress` with a `disconnected` status instead of
-  deleting the eventual committed credential.
+  or `revoked`. Reads see either the previous committed credential, the new
+  committed credential, or no credential at all; malformed records fail closed
+  before any bearer is sent.
 - `opencoven cave forget [--json]` deletes the stored Cave credential and its
   authority metadata; missing credentials are a successful no-op.
 - On Windows, `discover`, `doctor`, `cave pair`, `cave status`, and
@@ -92,7 +92,7 @@ Cave commands honor the reviewed Client v1 compatibility checks and surface
 health accepts only the reviewed exact `coven.daemon.v1` health contract plus
 explicit platform-security proof. The CLI never retries automatically. Retry
 transient `timeout`, `not_found`, `command_failed`, `connect_failure`,
-`service_unavailable`, `rate_limited`, or `credential_update_in_progress`
+`service_unavailable`, `rate_limited`
 failures after repairing or starting the local runtime as needed; do not retry `secure_store_unavailable`,
 `platform_security_unavailable`, `owner_mismatch`, `unsafe_endpoint`,
 `reconcile_required`, or `incompatible_version` until the underlying
