@@ -7,17 +7,20 @@ import type {
 
 import type { CaveCliPairingSession, CliCommandResult, ResolvedCliRuntime } from './main.js';
 import {
+  createCliDeadline,
+  remainingCliTime,
+  runWithinCliDeadline,
+} from './command-timing.js';
+import {
   createCaveCredentialBinding,
   DEFAULT_CAVE_PAIRING_REQUEST,
 } from './credentials.js';
 import { createCliError, normalizeCliError, type CliOutput } from './output.js';
 
-const PAIR_POLL_INTERVAL_MS = 1_000;
-const PAIR_MAX_WAIT_MS = 30_000;
 const PAIR_EXPIRY_GUARD_MS = 250;
 
-function pairDeadline(now: number, expiresAt: number): number {
-  return Math.min(now + PAIR_MAX_WAIT_MS, expiresAt - PAIR_EXPIRY_GUARD_MS);
+function pairDeadline(deadline: number, expiresAt: number): number {
+  return Math.min(deadline, expiresAt - PAIR_EXPIRY_GUARD_MS);
 }
 
 function iso(value: number): string {
@@ -92,16 +95,31 @@ function renderForgetHuman(output: CliOutput): readonly string[] {
   return lines;
 }
 
-async function createCaveClient(runtime: ResolvedCliRuntime) {
-  const store = await runtime.createSecretStore();
+async function createCaveClient(
+  runtime: ResolvedCliRuntime,
+  deadline: number,
+  operation: 'cave pair' | 'cave status' | 'cave forget',
+) {
+  const store = await runWithinCliDeadline(
+    runtime.now,
+    deadline,
+    operation,
+    async () => await runtime.createSecretStore(),
+  );
 
-  return await runtime.cave.createClient({
-    credentials: createCaveCredentialBinding(store, runtime.createSecretStoreReference),
-    ...(runtime.discoveryOptions.cave === undefined
-      ? {}
-      : { discovery: runtime.discoveryOptions.cave }),
-    fetch: runtime.fetch,
-  });
+  return await runWithinCliDeadline(
+    runtime.now,
+    deadline,
+    operation,
+    async () =>
+      await runtime.cave.createClient({
+        credentials: createCaveCredentialBinding(store, runtime.createSecretStoreReference),
+        ...(runtime.discoveryOptions.cave === undefined
+          ? {}
+          : { discovery: runtime.discoveryOptions.cave }),
+        fetch: runtime.fetch,
+      }),
+  );
 }
 
 function pairingData(
@@ -119,9 +137,10 @@ function pairingData(
 }
 
 async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
+  const commandDeadline = createCliDeadline(runtime.now, runtime.timing.cavePairTimeoutMs);
   let client;
   try {
-    client = await createCaveClient(runtime);
+    client = await createCaveClient(runtime, commandDeadline, 'cave pair');
   } catch (error) {
     const normalized = normalizeCliError(error, {
       system: 'secure-store',
@@ -144,10 +163,19 @@ async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
 
   let session: CaveCliPairingSession;
   try {
-    session = await client.createPairing({
-      ...DEFAULT_CAVE_PAIRING_REQUEST,
-      scopes: [...DEFAULT_CAVE_PAIRING_REQUEST.scopes],
-    });
+    session = await runWithinCliDeadline(
+      runtime.now,
+      commandDeadline,
+      'cave pair',
+      async (timeoutMs) =>
+        await client.createPairing(
+          {
+            ...DEFAULT_CAVE_PAIRING_REQUEST,
+            scopes: [...DEFAULT_CAVE_PAIRING_REQUEST.scopes],
+          },
+          { timeoutMs },
+        ),
+    );
   } catch (error) {
     const normalized = normalizeCliError(error, {
       system: 'cave',
@@ -172,7 +200,7 @@ async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
   const expiresAt = session.expiresAt;
   const startedAt = runtime.now();
   let attempts = 0;
-  const deadline = pairDeadline(startedAt, expiresAt);
+  const deadline = pairDeadline(commandDeadline, expiresAt);
 
   if (startedAt >= expiresAt) {
     const error = pairFailureFromStatus('expired');
@@ -226,7 +254,12 @@ async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
     attempts += 1;
 
     try {
-      status = await session.poll();
+      status = await runWithinCliDeadline(
+        runtime.now,
+        deadline,
+        'cave pair',
+        async (timeoutMs) => await session.poll({ timeoutMs }),
+      );
     } catch (error) {
       const normalized = normalizeCliError(error, {
         system: 'cave',
@@ -252,7 +285,12 @@ async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
 
     if (status.status === 'approved') {
       try {
-        const credential: CaveCredentialMetadata = await session.exchange();
+        const credential: CaveCredentialMetadata = await runWithinCliDeadline(
+          runtime.now,
+          deadline,
+          'cave pair',
+          async (timeoutMs) => await session.exchange({ timeoutMs }),
+        );
         const data = {
           ...pairingData(requestId, expiresAt, attempts, 'approved'),
           credential,
@@ -314,12 +352,43 @@ async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
       return { exitCode: 1, output };
     }
 
-    const remaining = deadline - runtime.now();
+    const remaining = remainingCliTime(runtime.now, deadline);
     if (remaining <= 0) {
       break;
     }
 
-    await runtime.sleep(Math.min(PAIR_POLL_INTERVAL_MS, remaining));
+    try {
+      await runWithinCliDeadline(
+        runtime.now,
+        deadline,
+        'cave pair',
+        async (timeoutMs) => {
+          await runtime.sleep(Math.min(runtime.timing.cavePairPollIntervalMs, timeoutMs));
+          return undefined;
+        },
+      );
+    } catch (error) {
+      const normalized = normalizeCliError(error, {
+        system: 'cave',
+        operation: 'pair',
+      });
+      const data = pairingData(requestId, expiresAt, attempts, 'pending');
+      const output: CliOutput = {
+        command: 'cave pair',
+        data,
+        error: normalized,
+        human: renderPairHuman({
+          command: 'cave pair',
+          data,
+          error: normalized,
+          ok: false,
+          version: runtime.version,
+        }),
+        ok: false,
+        version: runtime.version,
+      };
+      return { exitCode: 1, output };
+    }
   }
 
   const error = createCliError(
@@ -349,9 +418,10 @@ async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
 }
 
 async function runStatus(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
+  const deadline = createCliDeadline(runtime.now, runtime.timing.caveStatusTimeoutMs);
   let client;
   try {
-    client = await createCaveClient(runtime);
+    client = await createCaveClient(runtime, deadline, 'cave status');
   } catch (error) {
     const normalized = normalizeCliError(error, {
       system: 'secure-store',
@@ -373,7 +443,12 @@ async function runStatus(runtime: ResolvedCliRuntime): Promise<CliCommandResult>
   }
 
   try {
-    const status: CaveCredentialStatus = await client.credentialStatus();
+    const status: CaveCredentialStatus = await runWithinCliDeadline(
+      runtime.now,
+      deadline,
+      'cave status',
+      async (timeoutMs) => await client.credentialStatus({ timeoutMs }),
+    );
 
     if (status.status === 'missing') {
       const error = createCliError(
@@ -470,9 +545,10 @@ async function runStatus(runtime: ResolvedCliRuntime): Promise<CliCommandResult>
 }
 
 async function runForget(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
+  const deadline = createCliDeadline(runtime.now, runtime.timing.caveForgetTimeoutMs);
   let client;
   try {
-    client = await createCaveClient(runtime);
+    client = await createCaveClient(runtime, deadline, 'cave forget');
   } catch (error) {
     const normalized = normalizeCliError(error, {
       system: 'secure-store',
@@ -494,7 +570,12 @@ async function runForget(runtime: ResolvedCliRuntime): Promise<CliCommandResult>
   }
 
   try {
-    const deleted = await client.forgetCredential();
+    const deleted = await runWithinCliDeadline(
+      runtime.now,
+      deadline,
+      'cave forget',
+      async (timeoutMs) => await client.forgetCredential({ timeoutMs }),
+    );
     const output: CliOutput = {
       command: 'cave forget',
       data: { deleted },

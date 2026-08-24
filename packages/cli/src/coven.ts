@@ -5,7 +5,12 @@ import {
   type CovenDiscoveredEndpoint,
   type CovenHealthResponse,
 } from '@opencoven/coven-client';
+import type { OperationOptions } from '@opencoven/sdk-core';
 
+import {
+  createCliDeadline,
+  runWithinCliDeadline,
+} from './command-timing.js';
 import type { CliCommandResult, ResolvedCliRuntime } from './main.js';
 import { normalizeCliError, type CliOutput } from './output.js';
 
@@ -38,6 +43,7 @@ function windowsIdentity(discovered: CovenDiscoveredEndpoint) {
 
 export async function readDiscoveredCovenHealth(
   discovered: CovenDiscoveredEndpoint,
+  options: OperationOptions = {},
 ): Promise<CovenHealthResponse> {
   const rawTransport =
     discovered.endpoint.kind === 'unix'
@@ -70,7 +76,7 @@ export async function readDiscoveredCovenHealth(
     },
   });
 
-  await client.health();
+  await client.health(options);
 
   if (response === undefined) {
     throw new Error('Coven daemon health response was unavailable.');
@@ -102,10 +108,20 @@ function renderCovenHealthHuman(output: CliOutput): readonly string[] {
 }
 
 export async function runCovenHealth(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
+  const deadline = createCliDeadline(runtime.now, runtime.timing.covenHealthTimeoutMs);
   let discovered: CovenDiscoveredEndpoint;
 
   try {
-    discovered = await runtime.coven.discoverEndpoint(runtime.discoveryOptions.coven);
+    discovered = await runWithinCliDeadline(
+      runtime.now,
+      deadline,
+      'coven health',
+      async (timeoutMs) =>
+        await runtime.coven.discoverEndpoint({
+          ...runtime.discoveryOptions.coven,
+          timeoutMs,
+        }),
+    );
   } catch (error) {
     const output: CliOutput = {
       command: 'coven health',
@@ -130,7 +146,13 @@ export async function runCovenHealth(runtime: ResolvedCliRuntime): Promise<CliCo
   }
 
   try {
-    const response = await runtime.coven.readHealth(discovered);
+    const response = await runWithinCliDeadline(
+      runtime.now,
+      deadline,
+      'coven health',
+      async (timeoutMs) =>
+        await runtime.coven.readHealth(discovered, { timeoutMs }),
+    );
     const output: CliOutput = {
       command: 'coven health',
       data: {

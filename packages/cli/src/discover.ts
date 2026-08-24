@@ -1,5 +1,6 @@
 import type { CaveDiscoveredEndpoint } from '@opencoven/cave-client';
 
+import { runWithCliTimeout } from './command-timing.js';
 import type { CliCommandResult, ResolvedCliRuntime } from './main.js';
 import { createCliError, normalizeCliError, type CliOutput } from './output.js';
 
@@ -51,9 +52,26 @@ function renderDiscoverHuman(output: CliOutput): readonly string[] {
 }
 
 export async function runDiscover(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
+  const timeoutMs = runtime.timing.discoverTimeoutMs;
   const [caveResult, covenResult] = await Promise.allSettled([
-    runtime.cave.discoverEndpoint(runtime.discoveryOptions.cave),
-    runtime.coven.discoverEndpoint(runtime.discoveryOptions.coven),
+    runWithCliTimeout(
+      'discover',
+      timeoutMs,
+      async () =>
+        await runtime.cave.discoverEndpoint({
+          ...runtime.discoveryOptions.cave,
+          timeoutMs,
+        }),
+    ),
+    runWithCliTimeout(
+      'discover',
+      timeoutMs,
+      async () =>
+        await runtime.coven.discoverEndpoint({
+          ...runtime.discoveryOptions.coven,
+          timeoutMs,
+        }),
+    ),
   ]);
 
   const data: Record<string, unknown> = {};

@@ -2,7 +2,7 @@ import type { SecretStore } from '@opencoven/sdk-core';
 
 import { NATIVE_SECRET_STORE_SERVICE } from './credentials.js';
 
-export type SecureStoreUnavailableOperation = 'load' | 'construct' | 'get' | 'set' | 'delete';
+export type SecureStoreUnavailableOperation = 'load' | 'construct' | 'get' | 'set' | 'delete' | 'probe';
 
 interface KeyringEntry {
   getPassword(): string | null | undefined;
@@ -15,6 +15,7 @@ interface KeyringModule {
 }
 
 const NATIVE_SECRET_STORE_BRAND = Symbol.for('@opencoven/dev-cli/native-secret-store');
+const NATIVE_SECRET_STORE_PROBE_ACCOUNT = 'opencoven.cli.secure-store.probe';
 
 export interface NativeSecretStoreOptions {
   loadModule?: () => Promise<KeyringModule>;
@@ -98,6 +99,19 @@ class NativeSecretStore implements SecretStore {
     }
   }
 
+  probe(): Promise<void> {
+    try {
+      this.#entry(NATIVE_SECRET_STORE_PROBE_ACCOUNT).getPassword();
+      return Promise.resolve();
+    } catch (error) {
+      return Promise.reject(
+        error instanceof SecureStoreUnavailableError
+          ? error
+          : secureStoreUnavailable('probe', error),
+      );
+    }
+  }
+
   #entry(key: string): KeyringEntry {
     try {
       return new this.#Entry(this.#service, key);
@@ -132,4 +146,31 @@ export async function createNativeSecretStore(
   }
 
   return new NativeSecretStore(service, Entry);
+}
+
+export async function probeNativeSecretStore(store: SecretStore): Promise<void> {
+  const probe = (
+    typeof store === 'object' &&
+    store !== null &&
+    typeof Reflect.get(store, 'probe') === 'function'
+      ? Reflect.get(store, 'probe')
+      : undefined
+  ) as ((this: SecretStore) => Promise<void>) | undefined;
+
+  if (probe === undefined) {
+    throw secureStoreUnavailable(
+      'probe',
+      new TypeError('Native secure-store probe API was unavailable.'),
+    );
+  }
+
+  try {
+    await probe.call(store);
+  } catch (error) {
+    throw (
+      error instanceof SecureStoreUnavailableError
+        ? error
+        : secureStoreUnavailable('probe', error)
+    );
+  }
 }

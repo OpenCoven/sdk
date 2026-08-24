@@ -177,7 +177,14 @@ function messageForCode(code: string, context: CliErrorContext): string {
       return 'Could not connect to the Coven daemon.';
     case 'timeout':
       if (context.system === 'coven') {
-        return 'The Coven daemon health check timed out.';
+        return context.operation === 'discover'
+          ? 'Coven runtime discovery timed out.'
+          : 'The Coven daemon health check timed out.';
+      }
+      if (context.system === 'secure-store') {
+        return context.operation === 'probe'
+          ? 'The native secure credential storage health check timed out.'
+          : 'The native secure credential storage operation timed out.';
       }
       if (context.system === 'cave') {
         return context.operation === 'discover'

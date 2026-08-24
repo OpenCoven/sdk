@@ -15,9 +15,17 @@ import {
   type CovenHealthResponse,
   type DiscoverCovenEndpointOptions,
 } from '@opencoven/coven-client';
-import { createSecretStoreReference, type SecretStore } from '@opencoven/sdk-core';
+import {
+  createSecretStoreReference,
+  type OperationOptions,
+  type SecretStore,
+} from '@opencoven/sdk-core';
 
 import { runCaveCommand } from './cave.js';
+import {
+  resolveCliCommandTiming,
+  type CliCommandTiming,
+} from './command-timing.js';
 import { runCovenHealth, readDiscoveredCovenHealth } from './coven.js';
 import { runDiscover } from './discover.js';
 import { runDoctor } from './doctor.js';
@@ -62,6 +70,7 @@ export interface CliRuntime {
   fetch?: typeof fetch;
   now?: () => number;
   sleep?: (milliseconds: number) => Promise<void>;
+  timing?: Partial<CliCommandTiming>;
   createSecretStore?: () => Promise<SecretStore> | SecretStore;
   createSecretStoreReference?: typeof createSecretStoreReference;
   cave?: {
@@ -78,6 +87,7 @@ export interface CliRuntime {
     ) => Promise<CovenDiscoveredEndpoint>;
     readHealth?: (
       discovered: CovenDiscoveredEndpoint,
+      options?: OperationOptions,
     ) => Promise<CovenHealthResponse>;
   };
   platform?: NodeJS.Platform;
@@ -103,6 +113,7 @@ export interface ResolvedCliRuntime {
     ) => Promise<CovenDiscoveredEndpoint>;
     readonly readHealth: (
       discovered: CovenDiscoveredEndpoint,
+      options?: OperationOptions,
     ) => Promise<CovenHealthResponse>;
   };
   readonly createSecretStore: () => Promise<SecretStore>;
@@ -117,6 +128,7 @@ export interface ResolvedCliRuntime {
   readonly now: () => number;
   readonly platform: NodeJS.Platform;
   readonly sleep: (milliseconds: number) => Promise<void>;
+  readonly timing: CliCommandTiming;
   readonly version: string;
 }
 
@@ -325,6 +337,7 @@ function resolveRuntime(runtime: CliRuntime = {}): ResolvedCliRuntime {
     now: runtime.now ?? (() => Date.now()),
     platform: runtime.platform ?? process.platform,
     sleep: runtime.sleep ?? delay,
+    timing: resolveCliCommandTiming(runtime.timing),
     version: DEV_CLI_VERSION,
   };
 }

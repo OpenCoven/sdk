@@ -11,6 +11,10 @@ interface KeyringModuleShape {
   Entry: new (service: string, account: string) => EntryShape;
 }
 
+interface ProbeableNativeSecretStore {
+  probe(): Promise<void>;
+}
+
 const SERVICE = 'OpenCoven CLI';
 
 function moduleWithEntry(entry: KeyringModuleShape['Entry']) {
@@ -58,6 +62,51 @@ describe('native secret store', () => {
     await expect(store.delete('cave-credential')).resolves.toBe(true);
     await expect(store.get('cave-credential')).resolves.toBeUndefined();
     expect(loadModule).toHaveBeenCalledTimes(1);
+  });
+
+  test('probes a dedicated native keyring entry without mutating stored credentials', async () => {
+    const calls: Array<{ account: string; method: 'construct' | 'get' | 'set' | 'delete' }> = [];
+    const store = await createNativeSecretStore(
+      moduleWithEntry(
+        class {
+          readonly #account: string;
+
+          constructor(_service: string, account: string) {
+            this.#account = account;
+            calls.push({ account, method: 'construct' });
+          }
+
+          getPassword(): string {
+            calls.push({ account: this.#account, method: 'get' });
+            return this.#account === 'cave-credential' ? 'bearer-value' : 'probe-secret';
+          }
+
+          setPassword(): void {
+            calls.push({ account: this.#account, method: 'set' });
+          }
+
+          deletePassword(): void {
+            calls.push({ account: this.#account, method: 'delete' });
+          }
+        },
+      ),
+    );
+
+    await expect(store.get('cave-credential')).resolves.toBe('bearer-value');
+    calls.length = 0;
+
+    await expect((store as unknown as ProbeableNativeSecretStore).probe()).resolves.toBeUndefined();
+
+    expect(calls).toEqual([
+      {
+        account: 'opencoven.cli.secure-store.probe',
+        method: 'construct',
+      },
+      {
+        account: 'opencoven.cli.secure-store.probe',
+        method: 'get',
+      },
+    ]);
   });
 
   test('wraps module load failures as secure_store_unavailable without leaking service details', async () => {

@@ -1,8 +1,15 @@
 import { createMemorySecretStore } from '@opencoven/sdk-core';
 
+import {
+  createCliDeadline,
+  runWithinCliDeadline,
+} from './command-timing.js';
 import type { CliCommandResult, ResolvedCliRuntime } from './main.js';
 import { createCaveCredentialBinding } from './credentials.js';
+import { probeNativeSecretStore } from './native-secret-store.js';
 import { createCliError, normalizeCliError, type CliCheck, type CliOutput } from './output.js';
+
+const DOCTOR_TIMEOUT_SKIP_SUMMARY = 'Not run because the doctor deadline expired.';
 
 function summarizeChecks(checks: readonly CliCheck[]) {
   return {
@@ -27,12 +34,59 @@ function renderDoctorHuman(checks: readonly CliCheck[]): readonly string[] {
   return lines;
 }
 
+function doctorResult(
+  runtime: ResolvedCliRuntime,
+  checks: readonly CliCheck[],
+): CliCommandResult {
+  const summary = summarizeChecks(checks);
+  const output: CliOutput = {
+    command: 'doctor',
+    data: {
+      checks,
+      summary,
+    },
+    ...(summary.healthy
+      ? {}
+      : {
+          error: createCliError('unhealthy', 'One or more diagnostics failed.'),
+        }),
+    human: renderDoctorHuman(checks),
+    ok: summary.healthy,
+    version: runtime.version,
+  };
+
+  return {
+    exitCode: summary.healthy ? 0 : 1,
+    output,
+  };
+}
+
+function doctorTimedOut(checks: CliCheck[], ...remainingIds: string[]): void {
+  for (const id of remainingIds) {
+    checks.push({
+      id,
+      status: 'skipped',
+      summary: DOCTOR_TIMEOUT_SKIP_SUMMARY,
+    });
+  }
+}
+
 export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
   const checks: CliCheck[] = [];
+  const deadline = createCliDeadline(runtime.now, runtime.timing.doctorTimeoutMs);
 
   let caveDiscovery: Awaited<ReturnType<ResolvedCliRuntime['cave']['discoverEndpoint']>> | undefined;
   try {
-    caveDiscovery = await runtime.cave.discoverEndpoint(runtime.discoveryOptions.cave);
+    caveDiscovery = await runWithinCliDeadline(
+      runtime.now,
+      deadline,
+      'doctor',
+      async (timeoutMs) =>
+        await runtime.cave.discoverEndpoint({
+          ...runtime.discoveryOptions.cave,
+          timeoutMs,
+        }),
+    );
     checks.push({
       id: 'cave.discovery',
       status: 'ok',
@@ -47,15 +101,26 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
       },
     });
   } catch (error) {
+    const normalized = normalizeCliError(error, {
+      system: 'cave',
+      operation: 'discover',
+    });
     checks.push({
       id: 'cave.discovery',
       status: 'error',
       summary: 'Cave runtime discovery failed.',
-      error: normalizeCliError(error, {
-        system: 'cave',
-        operation: 'discover',
-      }),
+      error: normalized,
     });
+    if (normalized.code === 'timeout') {
+      doctorTimedOut(
+        checks,
+        'cave.health',
+        'secure-store',
+        'coven.discovery',
+        'coven.health',
+      );
+      return doctorResult(runtime, checks);
+    }
   }
 
   if (caveDiscovery === undefined) {
@@ -66,17 +131,28 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
     });
   } else {
     try {
-      const client = await runtime.cave.createClient({
-        credentials: createCaveCredentialBinding(
-          createMemorySecretStore(),
-          runtime.createSecretStoreReference,
-        ),
-        ...(runtime.discoveryOptions.cave === undefined
-          ? {}
-          : { discovery: runtime.discoveryOptions.cave }),
-        fetch: runtime.fetch,
-      });
-      const health = await client.health();
+      const client = await runWithinCliDeadline(
+        runtime.now,
+        deadline,
+        'doctor',
+        async () =>
+          await runtime.cave.createClient({
+            credentials: createCaveCredentialBinding(
+              createMemorySecretStore(),
+              runtime.createSecretStoreReference,
+            ),
+            ...(runtime.discoveryOptions.cave === undefined
+              ? {}
+              : { discovery: runtime.discoveryOptions.cave }),
+            fetch: runtime.fetch,
+          }),
+      );
+      const health = await runWithinCliDeadline(
+        runtime.now,
+        deadline,
+        'doctor',
+        async (timeoutMs) => await client.health({ timeoutMs }),
+      );
       checks.push({
         id: 'cave.health',
         status: 'ok',
@@ -84,20 +160,44 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
         data: { ...health },
       });
     } catch (error) {
+      const normalized = normalizeCliError(error, {
+        system: 'cave',
+        operation: 'health',
+      });
       checks.push({
         id: 'cave.health',
         status: 'error',
         summary: 'Cave health check failed.',
-        error: normalizeCliError(error, {
-          system: 'cave',
-          operation: 'health',
-        }),
+        error: normalized,
       });
+      if (normalized.code === 'timeout') {
+        doctorTimedOut(
+          checks,
+          'secure-store',
+          'coven.discovery',
+          'coven.health',
+        );
+        return doctorResult(runtime, checks);
+      }
     }
   }
 
   try {
-    await runtime.createSecretStore();
+    const store = await runWithinCliDeadline(
+      runtime.now,
+      deadline,
+      'doctor',
+      async () => await runtime.createSecretStore(),
+    );
+    await runWithinCliDeadline(
+      runtime.now,
+      deadline,
+      'doctor',
+      async () => {
+        await probeNativeSecretStore(store);
+        return undefined;
+      },
+    );
     checks.push({
       id: 'secure-store',
       status: 'ok',
@@ -107,20 +207,34 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
       },
     });
   } catch (error) {
+    const normalized = normalizeCliError(error, {
+      system: 'secure-store',
+      operation: 'probe',
+    });
     checks.push({
       id: 'secure-store',
       status: 'error',
       summary: 'Native secure credential storage is unavailable.',
-      error: normalizeCliError(error, {
-        system: 'secure-store',
-        operation: 'store',
-      }),
+      error: normalized,
     });
+    if (normalized.code === 'timeout') {
+      doctorTimedOut(checks, 'coven.discovery', 'coven.health');
+      return doctorResult(runtime, checks);
+    }
   }
 
   let covenDiscovery: Awaited<ReturnType<ResolvedCliRuntime['coven']['discoverEndpoint']>> | undefined;
   try {
-    covenDiscovery = await runtime.coven.discoverEndpoint(runtime.discoveryOptions.coven);
+    covenDiscovery = await runWithinCliDeadline(
+      runtime.now,
+      deadline,
+      'doctor',
+      async (timeoutMs) =>
+        await runtime.coven.discoverEndpoint({
+          ...runtime.discoveryOptions.coven,
+          timeoutMs,
+        }),
+    );
     checks.push({
       id: 'coven.discovery',
       status: 'ok',
@@ -128,15 +242,20 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
       data: { ...covenDiscovery },
     });
   } catch (error) {
+    const normalized = normalizeCliError(error, {
+      system: 'coven',
+      operation: 'discover',
+    });
     checks.push({
       id: 'coven.discovery',
       status: 'error',
       summary: 'Coven runtime discovery failed.',
-      error: normalizeCliError(error, {
-        system: 'coven',
-        operation: 'discover',
-      }),
+      error: normalized,
     });
+    if (normalized.code === 'timeout') {
+      doctorTimedOut(checks, 'coven.health');
+      return doctorResult(runtime, checks);
+    }
   }
 
   if (covenDiscovery === undefined) {
@@ -147,7 +266,13 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
     });
   } else {
     try {
-      const response = await runtime.coven.readHealth(covenDiscovery);
+      const response = await runWithinCliDeadline(
+        runtime.now,
+        deadline,
+        'doctor',
+        async (timeoutMs) =>
+          await runtime.coven.readHealth(covenDiscovery, { timeoutMs }),
+      );
       checks.push({
         id: 'coven.health',
         status: 'ok',
@@ -170,25 +295,5 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
     }
   }
 
-  const summary = summarizeChecks(checks);
-  const output: CliOutput = {
-    command: 'doctor',
-    data: {
-      checks,
-      summary,
-    },
-    ...(summary.healthy
-      ? {}
-      : {
-          error: createCliError('unhealthy', 'One or more diagnostics failed.'),
-        }),
-    human: renderDoctorHuman(checks),
-    ok: summary.healthy,
-    version: runtime.version,
-  };
-
-  return {
-    exitCode: summary.healthy ? 0 : 1,
-    output,
-  };
+  return doctorResult(runtime, checks);
 }

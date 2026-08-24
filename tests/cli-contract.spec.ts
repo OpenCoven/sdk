@@ -4,10 +4,16 @@ import { fileURLToPath } from 'node:url';
 
 import { CAVE_PAIRING_SCOPES } from '@opencoven/cave-client';
 import { createMemorySecretStore } from '@opencoven/sdk-core';
-import { formatCliOutput, main, runCli } from '@opencoven/dev-cli';
+import {
+  createNativeSecretStore,
+  formatCliOutput,
+  main,
+  runCli,
+} from '@opencoven/dev-cli';
 import { describe, expect, test, vi } from 'vitest';
 
 const workspaceRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const fakeClockStart = Date.parse('2026-08-24T02:06:12.004Z');
 const cliVersion = (
   JSON.parse(readFileSync(resolve(workspaceRoot, 'packages/cli/package.json'), 'utf8')) as {
     version: string;
@@ -95,6 +101,12 @@ const covenHealth = {
   },
 } as const;
 
+function createProbeableStore(
+  probe: () => Promise<void> = () => Promise.resolve(),
+) {
+  return Object.assign(createMemorySecretStore(), { probe });
+}
+
 function runtime(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const caveOverrides = overrides.cave as Record<string, unknown> | undefined;
   const covenOverrides = overrides.coven as Record<string, unknown> | undefined;
@@ -129,11 +141,61 @@ function runtime(overrides: Record<string, unknown> = {}): Record<string, unknow
       readHealth: () => Promise.resolve(covenHealth),
       ...covenOverrides,
     },
-    createSecretStore: () => createMemorySecretStore(),
+    createSecretStore: () => createProbeableStore(),
     now: () => 1_755_730_000_000,
     sleep: () => Promise.resolve(),
     ...rest,
   };
+}
+
+function never<T>(): Promise<T> {
+  return new Promise(() => undefined);
+}
+
+async function runTimedCli(
+  argv: readonly string[],
+  overrides: Record<string, unknown>,
+  advanceMs: number,
+) {
+  vi.useFakeTimers();
+  vi.setSystemTime(fakeClockStart);
+
+  try {
+    const resultPromise = runCli(
+      argv,
+      runtime({
+        now: () => Date.now(),
+        sleep: (milliseconds: number) =>
+          new Promise((resolve) => setTimeout(resolve, milliseconds)),
+        ...overrides,
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(advanceMs);
+
+    const result = await resultPromise;
+    return {
+      result,
+      json: JSON.parse(result.stdout) as Record<string, unknown>,
+    };
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+interface KeyringEntryShape {
+  getPassword(): string | null | undefined;
+  setPassword(value: string): void;
+  deletePassword(): void;
+}
+
+function nativeStoreWithEntry(
+  entry: new (service: string, account: string) => KeyringEntryShape,
+) {
+  return createNativeSecretStore({
+    loadModule: () => Promise.resolve({ Entry: entry }),
+    service: 'OpenCoven CLI',
+  });
 }
 
 describe('opencoven CLI output', () => {
@@ -340,6 +402,188 @@ describe('opencoven CLI output', () => {
     expect(unhealthy.stderr).toContain('coven.health: error');
     expect(unhealthy.stderr).not.toContain('admin token');
   });
+
+  test('times out a hung doctor check without starting later work', async () => {
+    const createSecretStore = vi.fn(() => createProbeableStore());
+    const { result, json } = await runTimedCli(
+      ['--json', 'doctor'],
+      {
+        cave: {
+          discoverEndpoint: () => never(),
+        },
+        createSecretStore,
+        timing: {
+          doctorTimeoutMs: 25,
+        },
+      },
+      25,
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(json).toEqual({
+      command: 'doctor',
+      data: {
+        checks: [
+          {
+            id: 'cave.discovery',
+            status: 'error',
+            summary: 'Cave runtime discovery failed.',
+            error: {
+              code: 'timeout',
+              message: 'Cave runtime discovery timed out.',
+              retryable: true,
+            },
+          },
+          {
+            id: 'cave.health',
+            status: 'skipped',
+            summary: 'Not run because the doctor deadline expired.',
+          },
+          {
+            id: 'secure-store',
+            status: 'skipped',
+            summary: 'Not run because the doctor deadline expired.',
+          },
+          {
+            id: 'coven.discovery',
+            status: 'skipped',
+            summary: 'Not run because the doctor deadline expired.',
+          },
+          {
+            id: 'coven.health',
+            status: 'skipped',
+            summary: 'Not run because the doctor deadline expired.',
+          },
+        ],
+        summary: {
+          healthy: false,
+          ok: 0,
+          error: 1,
+          skipped: 4,
+        },
+      },
+      error: {
+        code: 'unhealthy',
+        message: 'One or more diagnostics failed.',
+      },
+      ok: false,
+      version: cliVersion,
+    });
+    expect(createSecretStore).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [
+      'constructor',
+      class {
+        constructor(service: string, account: string) {
+          void service;
+          void account;
+          throw new Error('OpenCoven CLI constructor secret should not leak');
+        }
+
+        getPassword(): string | undefined {
+          return undefined;
+        }
+
+        setPassword(): void {
+          throw new Error('unreachable');
+        }
+
+        deletePassword(): void {
+          throw new Error('unreachable');
+        }
+      },
+      'constructor secret',
+    ],
+    [
+      'backend',
+      class {
+        constructor(service: string, account: string) {
+          void service;
+          void account;
+        }
+
+        getPassword(): string | undefined {
+          throw new Error('secret-service bearer should not leak');
+        }
+
+        setPassword(): void {
+          throw new Error('unreachable');
+        }
+
+        deletePassword(): void {
+          throw new Error('unreachable');
+        }
+      },
+      'secret-service bearer',
+    ],
+  ] as const)(
+    'reports %s secure-store probe failures in doctor',
+    async (_label, Entry, leakedText) => {
+      const result = await runCli(
+        ['--json', 'doctor'],
+        runtime({
+          createSecretStore: () => nativeStoreWithEntry(Entry),
+        }),
+      );
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout) as {
+        command: string;
+        data: {
+          summary: {
+            healthy: boolean;
+            error: number;
+          };
+          checks: Array<{
+            id: string;
+            status: string;
+            summary: string;
+            error?: {
+              code: string;
+              message: string;
+              retryable?: boolean;
+              action?: string;
+            };
+          }>;
+        };
+        error: {
+          code: string;
+          message: string;
+        };
+        ok: boolean;
+        version: string;
+      };
+      const secureStoreCheck = output.data.checks.find((check) => check.id === 'secure-store');
+
+      expect(output.command).toBe('doctor');
+      expect(output.data.summary).toEqual({
+        healthy: false,
+        ok: 4,
+        error: 1,
+        skipped: 0,
+      });
+      expect(secureStoreCheck).toEqual({
+        id: 'secure-store',
+        status: 'error',
+        summary: 'Native secure credential storage is unavailable.',
+        error: {
+          code: 'secure_store_unavailable',
+          message: 'Native secure credential storage is unavailable.',
+          retryable: false,
+          action: 'Enable the platform secure-store backend for this user session and retry.',
+        },
+      });
+      expect(output.error).toEqual({
+        code: 'unhealthy',
+        message: 'One or more diagnostics failed.',
+      });
+      expect(output.ok).toBe(false);
+      expect(output.version).toBe(cliVersion);
+      expect(result.stdout).not.toContain(leakedText);
+    },
+  );
 
   test('returns explicit secret-free runtime discovery metadata', async () => {
     const success = await runCli(['discover', '--json'], runtime());
@@ -656,6 +900,268 @@ describe('opencoven CLI output', () => {
     });
     expect(storeError.stdout).not.toContain('OpenCoven CLI');
     expect(storeError.stdout).not.toContain('bearer secret');
+  });
+
+  test('times out hung discover, pair create, pair exchange, status, forget, and Coven health commands', async () => {
+    const discover = await runTimedCli(
+      ['--json', 'discover'],
+      {
+        cave: {
+          discoverEndpoint: () => never(),
+        },
+        timing: {
+          discoverTimeoutMs: 25,
+        },
+      },
+      25,
+    );
+
+    expect(discover.result.exitCode).toBe(1);
+    expect(discover.json).toEqual({
+      command: 'discover',
+      data: {
+        cave: {
+          status: 'error',
+          error: {
+            code: 'timeout',
+            message: 'Cave runtime discovery timed out.',
+            retryable: true,
+          },
+        },
+        coven: {
+          status: 'ok',
+          discovery: covenDiscovery,
+        },
+      },
+      error: {
+        code: 'discovery_failed',
+        message: 'One or more runtime discovery probes failed.',
+      },
+      ok: false,
+      version: cliVersion,
+    });
+
+    const pairCreate = await runTimedCli(
+      ['--json', 'cave', 'pair'],
+      {
+        cave: {
+          createClient: () => ({
+            createPairing: () => never(),
+          }),
+        },
+        timing: {
+          cavePairTimeoutMs: 25,
+        },
+      },
+      25,
+    );
+
+    expect(pairCreate.result.exitCode).toBe(1);
+    expect(pairCreate.json).toEqual({
+      command: 'cave pair',
+      error: {
+        code: 'timeout',
+        message: 'The Cave operation timed out.',
+        retryable: true,
+      },
+      ok: false,
+      version: cliVersion,
+    });
+
+    const pairExchange = await runTimedCli(
+      ['--json', 'cave', 'pair'],
+      {
+        cave: {
+          createClient: () => ({
+            createPairing: () =>
+              Promise.resolve({
+                requestId: 'exchange-request',
+                expiresAt: fakeClockStart + 10_000,
+                poll: () =>
+                  Promise.resolve({
+                    id: 'exchange-request',
+                    status: 'approved',
+                    expiresAt: fakeClockStart + 10_000,
+                  }),
+                exchange: () => never(),
+              }),
+          }),
+        },
+        timing: {
+          cavePairTimeoutMs: 25,
+        },
+      },
+      25,
+    );
+
+    expect(pairExchange.result.exitCode).toBe(1);
+    expect(pairExchange.json).toEqual({
+      command: 'cave pair',
+      data: {
+        attempts: 1,
+        expiresAt: fakeClockStart + 10_000,
+        requestId: 'exchange-request',
+      },
+      error: {
+        code: 'timeout',
+        message: 'The Cave operation timed out.',
+        retryable: true,
+      },
+      ok: false,
+      version: cliVersion,
+    });
+
+    const status = await runTimedCli(
+      ['--json', 'cave', 'status'],
+      {
+        cave: {
+          createClient: () => ({
+            credentialStatus: () => never(),
+          }),
+        },
+        timing: {
+          caveStatusTimeoutMs: 25,
+        },
+      },
+      25,
+    );
+
+    expect(status.result.exitCode).toBe(1);
+    expect(status.json).toEqual({
+      command: 'cave status',
+      error: {
+        code: 'timeout',
+        message: 'The Cave operation timed out.',
+        retryable: true,
+      },
+      ok: false,
+      version: cliVersion,
+    });
+
+    const forget = await runTimedCli(
+      ['--json', 'cave', 'forget'],
+      {
+        cave: {
+          createClient: () => ({
+            forgetCredential: () => never(),
+          }),
+        },
+        timing: {
+          caveForgetTimeoutMs: 25,
+        },
+      },
+      25,
+    );
+
+    expect(forget.result.exitCode).toBe(1);
+    expect(forget.json).toEqual({
+      command: 'cave forget',
+      error: {
+        code: 'timeout',
+        message: 'The Cave operation timed out.',
+        retryable: true,
+      },
+      ok: false,
+      version: cliVersion,
+    });
+
+    const coven = await runTimedCli(
+      ['--json', 'coven', 'health'],
+      {
+        coven: {
+          readHealth: () => never(),
+        },
+        timing: {
+          covenHealthTimeoutMs: 25,
+        },
+      },
+      25,
+    );
+
+    expect(coven.result.exitCode).toBe(1);
+    expect(coven.json).toEqual({
+      command: 'coven health',
+      data: {
+        discovery: covenDiscovery,
+      },
+      error: {
+        code: 'timeout',
+        message: 'The Coven daemon health check timed out.',
+        retryable: true,
+      },
+      ok: false,
+      version: cliVersion,
+    });
+  });
+
+  test('preserves one absolute Cave pairing deadline across polls and stops before exchange', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(fakeClockStart);
+
+    try {
+      const poll = vi
+        .fn()
+        .mockImplementationOnce(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          return {
+            id: 'deadline-request',
+            status: 'pending' as const,
+            expiresAt: fakeClockStart + 10_000,
+          };
+        })
+        .mockImplementationOnce(() => never());
+      const exchange = vi.fn(() => Promise.resolve(caveCredential));
+
+      const resultPromise = runCli(
+        ['--json', 'cave', 'pair'],
+        runtime({
+          now: () => Date.now(),
+          sleep: (milliseconds: number) =>
+            new Promise((resolve) => setTimeout(resolve, milliseconds)),
+          timing: {
+            cavePairTimeoutMs: 50,
+            cavePairPollIntervalMs: 10,
+          },
+          cave: {
+            createClient: () => ({
+              createPairing: () =>
+                Promise.resolve({
+                  requestId: 'deadline-request',
+                  expiresAt: fakeClockStart + 10_000,
+                  poll,
+                  exchange,
+                }),
+            }),
+          },
+        }),
+      );
+
+      await vi.advanceTimersByTimeAsync(50);
+
+      const result = await resultPromise;
+      expect(result.exitCode).toBe(1);
+      expect(JSON.parse(result.stdout)).toEqual({
+        command: 'cave pair',
+        data: {
+          attempts: 2,
+          expiresAt: fakeClockStart + 10_000,
+          requestId: 'deadline-request',
+        },
+        error: {
+          code: 'timeout',
+          message: 'The Cave operation timed out.',
+          retryable: true,
+        },
+        ok: false,
+        version: cliVersion,
+      });
+      expect(poll).toHaveBeenCalledTimes(2);
+      expect(poll.mock.calls[0]?.[0]).toMatchObject({ timeoutMs: 50 });
+      expect(poll.mock.calls[1]?.[0]).toMatchObject({ timeoutMs: 10 });
+      expect(exchange).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('reports stored Cave credential status and forgets credentials deterministically', async () => {
