@@ -107,6 +107,19 @@ function createProbeableStore(
   return Object.assign(createMemorySecretStore(), { probe });
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseObjectJson(serialized: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(serialized);
+  if (!isObject(parsed)) {
+    throw new TypeError('Expected JSON object output.');
+  }
+
+  return parsed;
+}
+
 function runtime(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   const caveOverrides = overrides.cave as Record<string, unknown> | undefined;
   const covenOverrides = overrides.coven as Record<string, unknown> | undefined;
@@ -263,6 +276,27 @@ describe('opencoven CLI output', () => {
       ok: false,
       version: cliVersion,
     });
+
+    for (const argv of [
+      ['--json', 'cave', 'pair', '--bogus'],
+      ['cave', 'pair', '--bogus', '--json'],
+    ] as const) {
+      const invalidJson = await runCli(argv);
+
+      expect(invalidJson.exitCode).toBe(1);
+      expect(invalidJson.stderr).toBe('');
+      expect(JSON.parse(invalidJson.stdout)).toEqual({
+        command: 'cave pair',
+        data: { usage },
+        error: {
+          code: 'invalid_arguments',
+          message: 'Unknown option "--bogus".',
+          action: 'Run `opencoven --help` to review the supported commands.',
+        },
+        ok: false,
+        version: cliVersion,
+      });
+    }
   });
 
   test('redacts nested secret-like fields from JSON output', () => {
@@ -713,6 +747,111 @@ describe('opencoven CLI output', () => {
     expect(sleeps).toEqual([1_000]);
     expect(result.stdout).not.toContain('bearer-value');
   });
+
+  test.each([
+    {
+      argv: ['--json', 'cave', 'pair'] as const,
+      command: 'cave pair',
+      createClient: vi.fn(async (options: Record<string, unknown>) => {
+        const discoverEndpoint = options.discoverEndpoint as
+          | ((value: unknown) => Promise<unknown>)
+          | undefined;
+        expect(await discoverEndpoint?.(options.discovery)).toEqual(caveDiscovery);
+        await expect(discoverEndpoint?.(options.discovery)).rejects.toMatchObject({
+          code: 'reconcile_required',
+          details: {
+            reason: 'authority_restarted',
+          },
+        });
+        return {
+          createPairing: () =>
+            Promise.resolve({
+              requestId: 'injected-pair-request',
+              expiresAt: 1_755_731_112_617,
+              poll: () =>
+                Promise.resolve({
+                  id: 'injected-pair-request',
+                  status: 'approved' as const,
+                  expiresAt: 1_755_731_112_617,
+                }),
+              exchange: () => Promise.resolve(caveCredential),
+            }),
+        };
+      }),
+    },
+    {
+      argv: ['--json', 'cave', 'status'] as const,
+      command: 'cave status',
+      createClient: vi.fn(async (options: Record<string, unknown>) => {
+        const discoverEndpoint = options.discoverEndpoint as
+          | ((value: unknown) => Promise<unknown>)
+          | undefined;
+        expect(await discoverEndpoint?.(options.discovery)).toEqual(caveDiscovery);
+        await expect(discoverEndpoint?.(options.discovery)).rejects.toMatchObject({
+          code: 'reconcile_required',
+          details: {
+            reason: 'authority_restarted',
+          },
+        });
+        return {
+          credentialStatus: () =>
+            Promise.resolve({ status: 'valid' as const, access: 'chat:read', health: caveHealth }),
+        };
+      }),
+    },
+    {
+      argv: ['--json', 'cave', 'forget'] as const,
+      command: 'cave forget',
+      createClient: vi.fn(async (options: Record<string, unknown>) => {
+        const discoverEndpoint = options.discoverEndpoint as
+          | ((value: unknown) => Promise<unknown>)
+          | undefined;
+        expect(await discoverEndpoint?.(options.discovery)).toEqual(caveDiscovery);
+        await expect(discoverEndpoint?.(options.discovery)).rejects.toMatchObject({
+          code: 'reconcile_required',
+          details: {
+            reason: 'authority_restarted',
+          },
+        });
+        return {
+          forgetCredential: () => Promise.resolve(true),
+        };
+      }),
+    },
+  ])(
+    'threads injected Cave discovery into $command client construction',
+    async ({ argv, command, createClient }) => {
+      const discoverEndpoint = vi
+        .fn()
+        .mockResolvedValueOnce(caveDiscovery)
+        .mockResolvedValueOnce({
+          ...caveDiscovery,
+          freshness: {
+            ...caveDiscovery.freshness,
+            nonce: '018f4f1a-77c2-7a31-8a15-55a25aaba199',
+          },
+        });
+
+      const result = await runCli(
+        argv,
+        runtime({
+          cave: {
+            createClient,
+            discoverEndpoint,
+          },
+        }),
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        command,
+        ok: true,
+        version: cliVersion,
+      });
+      expect(createClient).toHaveBeenCalledTimes(1);
+      expect(discoverEndpoint).toHaveBeenCalledTimes(2);
+    },
+  );
 
   test('returns explicit pending, denied, expired, version, and store pairing failures', async () => {
     let now = 1_755_730_000_000;
@@ -1259,6 +1398,59 @@ describe('opencoven CLI output', () => {
     expect(exchange).toHaveBeenCalledTimes(1);
   });
 
+  test('returns timeout when cave pair sleep reaches the absolute deadline after a pending poll', async () => {
+    let now = fakeClockStart;
+    const expiresAt = fakeClockStart + 10_000;
+
+    const result = await runCli(
+      ['--json', 'cave', 'pair'],
+      runtime({
+        now: () => now,
+        timing: {
+          cavePairTimeoutMs: 50,
+          cavePairPollIntervalMs: 50,
+        },
+        cave: {
+          createClient: () => ({
+            createPairing: () =>
+              Promise.resolve({
+                requestId: 'sleep-deadline-request',
+                expiresAt,
+                poll: () =>
+                  Promise.resolve({
+                    id: 'sleep-deadline-request',
+                    status: 'pending' as const,
+                    expiresAt,
+                  }),
+                exchange: () => Promise.resolve(caveCredential),
+              }),
+          }),
+        },
+        sleep: (milliseconds: number) => {
+          now += milliseconds;
+          return Promise.resolve();
+        },
+      }),
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toEqual({
+      command: 'cave pair',
+      data: {
+        attempts: 1,
+        expiresAt,
+        requestId: 'sleep-deadline-request',
+      },
+      error: {
+        code: 'timeout',
+        message: 'The Cave operation timed out.',
+        retryable: true,
+      },
+      ok: false,
+      version: cliVersion,
+    });
+  });
+
   test('preserves one absolute Cave pairing deadline across polls and stops before exchange', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(fakeClockStart);
@@ -1433,6 +1625,75 @@ describe('opencoven CLI output', () => {
       ok: false,
       version: cliVersion,
     });
+  });
+
+  test('pins the doctor Cave health client to the already discovered authority', async () => {
+    const discoverEndpoint = vi
+      .fn()
+      .mockResolvedValueOnce(caveDiscovery)
+      .mockResolvedValueOnce({
+        ...caveDiscovery,
+        freshness: {
+          ...caveDiscovery.freshness,
+          nonce: '018f4f1a-77c2-7a31-8a15-55a25aaba299',
+        },
+      });
+
+    const result = await runCli(
+      ['--json', 'doctor'],
+      runtime({
+        cave: {
+          discoverEndpoint,
+          createClient: (options: Record<string, unknown>) => ({
+            health: async () => {
+              const resolveDiscovery = options.discoverEndpoint as
+                | ((value: unknown) => Promise<unknown>)
+                | undefined;
+              await resolveDiscovery?.(options.discovery);
+              return caveHealth;
+            },
+          }),
+        },
+      }),
+    );
+
+    expect(result.exitCode).toBe(1);
+    const output = parseObjectJson(result.stdout);
+    const data = output.data;
+    if (!isObject(data)) {
+      throw new TypeError('Doctor output data was not an object.');
+    }
+    const checksValue = data.checks;
+    if (!Array.isArray(checksValue)) {
+      throw new TypeError('Doctor checks were not an array.');
+    }
+    const checks = checksValue.filter(isObject);
+
+    expect(output).toMatchObject({
+      command: 'doctor',
+      ok: false,
+      version: cliVersion,
+    });
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'cave.discovery',
+          status: 'ok',
+        }),
+      ]),
+    );
+    const caveHealthCheck = checks.find((check) => check.id === 'cave.health');
+    expect(caveHealthCheck).toMatchObject({
+      id: 'cave.health',
+      status: 'error',
+      error: {
+        code: 'reconcile_required',
+        details: {
+          reason: 'authority_restarted',
+        },
+      },
+    });
+    expect(discoverEndpoint).toHaveBeenCalledTimes(2);
   });
 
   test('returns Coven health through the merged discovery and health helpers', async () => {

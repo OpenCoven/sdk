@@ -12,6 +12,9 @@ import {
   runWithinCliDeadline,
 } from './command-timing.js';
 import {
+  createPinnedCliCaveDiscoverEndpoint,
+} from './cave-discovery.js';
+import {
   createCaveCredentialBinding,
   DEFAULT_CAVE_PAIRING_REQUEST,
 } from './credentials.js';
@@ -138,6 +141,7 @@ async function createCaveClient(
     async () =>
       await runtime.cave.createClient({
         credentials: createCaveCredentialBinding(store, runtime.createSecretStoreReference),
+        discoverEndpoint: createPinnedCliCaveDiscoverEndpoint(runtime),
         ...(runtime.discoveryOptions.cave === undefined
           ? {}
           : { discovery: runtime.discoveryOptions.cave }),
@@ -420,6 +424,29 @@ async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
       };
       return { exitCode: 1, output };
     }
+  }
+
+  if (runtime.now() >= commandDeadline) {
+    const normalized = normalizeCliError(pairTimeoutError(), {
+      system: 'cave',
+      operation: 'pair',
+    });
+    const data = pairingData(requestId, expiresAt, attempts);
+    const output: CliOutput = {
+      command: 'cave pair',
+      data,
+      error: normalized,
+      human: renderPairHuman({
+        command: 'cave pair',
+        data,
+        error: normalized,
+        ok: false,
+        version: runtime.version,
+      }),
+      ok: false,
+      version: runtime.version,
+    };
+    return { exitCode: 1, output };
   }
 
   const error = createCliError(

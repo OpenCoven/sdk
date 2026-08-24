@@ -235,14 +235,13 @@ function invalidArguments(
 }
 
 function parseArguments(argv: readonly string[]): ParsedArguments | InvalidArguments {
-  let format: 'human' | 'json' = 'human';
+  const format: 'human' | 'json' = argv.includes('--json') ? 'json' : 'human';
   let wantsHelp = false;
   let wantsVersion = false;
   const positionals: string[] = [];
 
   for (const argument of argv) {
     if (argument === '--json') {
-      format = 'json';
       continue;
     }
     if (argument === '--help') {

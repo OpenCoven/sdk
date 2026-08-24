@@ -1735,4 +1735,54 @@ describe('discovered Cave pairing helpers', () => {
       },
     });
   });
+
+  test('uses an injected discovery resolver instead of ambient discovery state', async () => {
+    const missingRoot = '/Users/example/.coven/cave/missing-runtime';
+    const discoverEndpoint = vi.fn(() => Promise.resolve({
+      version: 1 as const,
+      endpoint: {
+        kind: 'http' as const,
+        url: DEFAULT_DISCOVERY_ENDPOINT,
+      },
+      freshness: {
+        pid: DISCOVERY_PID,
+        nonce: DISCOVERY_NONCE,
+        startedAt: DISCOVERY_STARTED_AT,
+      },
+      record: {
+        path: join(missingRoot, DISCOVERY_FILE_NAME),
+        device: 7,
+        inode: 9,
+      },
+    }));
+    const fetchImplementation = queuedFetch([
+      (url, init) => {
+        expect(url).toBe(`${DEFAULT_DISCOVERY_ENDPOINT}/api/client/v1/health`);
+        expect(init?.method).toBe('GET');
+        return jsonResponse(200, CURRENT_HEALTH_ENVELOPE);
+      },
+    ]);
+    const client = createDiscoveredCaveClient({
+      credentials: {
+        store: createMemorySecretStore(),
+        reference: createSecretStoreReference('cave-injected-discovery'),
+      },
+      discoverEndpoint,
+      discovery: {
+        root: missingRoot,
+        timeoutMs: 100,
+        dependencies: discoveryDependencies(),
+      },
+      fetch: fetchImplementation,
+    });
+
+    await expect(client.health()).resolves.toEqual(caveHealth());
+    expect(discoverEndpoint).toHaveBeenCalledTimes(1);
+    expect(discoverEndpoint).toHaveBeenCalledWith(
+      expect.objectContaining({
+        root: missingRoot,
+        timeoutMs: 100,
+      }),
+    );
+  });
 });

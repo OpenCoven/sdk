@@ -1,6 +1,9 @@
 import { createMemorySecretStore } from '@opencoven/sdk-core';
 
 import {
+  createPinnedCliCaveDiscoverEndpoint,
+} from './cave-discovery.js';
+import {
   createCliDeadline,
   runWithinCliDeadline,
 } from './command-timing.js';
@@ -141,6 +144,7 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
               createMemorySecretStore(),
               runtime.createSecretStoreReference,
             ),
+            discoverEndpoint: createPinnedCliCaveDiscoverEndpoint(runtime, caveDiscovery),
             ...(runtime.discoveryOptions.cave === undefined
               ? {}
               : { discovery: runtime.discoveryOptions.cave }),

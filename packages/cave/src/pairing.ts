@@ -64,6 +64,9 @@ export interface CaveCredentialBinding {
 
 export interface CaveDiscoveredClientOptions {
   credentials: CaveCredentialBinding;
+  discoverEndpoint?: (
+    options?: DiscoverCaveEndpointOptions,
+  ) => Promise<CaveDiscoveredEndpoint>;
   discovery?: DiscoverCaveEndpointOptions;
   fetch?: typeof fetch;
   maxResponseBytes?: number;
@@ -72,6 +75,9 @@ export interface CaveDiscoveredClientOptions {
 
 interface DiscoveredTransportOptions {
   credentials: CaveCredentialBinding;
+  discoverEndpoint: (
+    options?: DiscoverCaveEndpointOptions,
+  ) => Promise<CaveDiscoveredEndpoint>;
   discovery: DiscoverCaveEndpointOptions | undefined;
   fetchImplementation: typeof fetch;
   maxResponseBytes: number;
@@ -602,6 +608,9 @@ async function requestJson(
     body?: string;
     context?: OperationContext;
     credentials?: CaveCredentialBinding;
+    discoverEndpoint: (
+      options?: DiscoverCaveEndpointOptions,
+    ) => Promise<CaveDiscoveredEndpoint>;
     discovery: DiscoverCaveEndpointOptions | undefined;
     fetchImplementation: typeof fetch;
     headers?: Record<string, string>;
@@ -614,7 +623,7 @@ async function requestJson(
   let discovered: CaveDiscoveredEndpoint;
 
   try {
-    discovered = await discoverCaveEndpoint({
+    discovered = await options.discoverEndpoint({
       ...(options.discovery ?? {}),
       ...(options.context?.signal === undefined ? {} : { signal: options.context.signal }),
       ...(options.context?.deadline === undefined ? {} : { deadline: options.context.deadline }),
@@ -733,6 +742,7 @@ function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTra
     async health(context) {
       const { payload } = await requestJson('GET', '/api/client/v1/health', {
         ...(context === undefined ? {} : { context }),
+        discoverEndpoint: options.discoverEndpoint,
         discovery: options.discovery,
         fetchImplementation: options.fetchImplementation,
         maxResponseBytes: options.maxResponseBytes,
@@ -743,6 +753,7 @@ function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTra
       const { payload, discovered } = await requestJson('POST', '/api/client/v1/pairing/requests', {
         body: stringifyJsonBody(request),
         ...(context === undefined ? {} : { context }),
+        discoverEndpoint: options.discoverEndpoint,
         discovery: options.discovery,
         fetchImplementation: options.fetchImplementation,
         headers: {
@@ -760,6 +771,7 @@ function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTra
         `/api/client/v1/pairing/requests/${requestId}`,
         {
           ...(context === undefined ? {} : { context }),
+          discoverEndpoint: options.discoverEndpoint,
           discovery: options.discovery,
           fetchImplementation: options.fetchImplementation,
           headers: {
@@ -782,6 +794,7 @@ function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTra
         {
           body: '',
           ...(context === undefined ? {} : { context }),
+          discoverEndpoint: options.discoverEndpoint,
           discovery: options.discovery,
           fetchImplementation: options.fetchImplementation,
           headers: {
@@ -802,6 +815,7 @@ function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTra
       const { payload } = await requestJson('GET', '/api/client/v1/familiars', {
         ...(context === undefined ? {} : { context }),
         credentials: options.credentials,
+        discoverEndpoint: options.discoverEndpoint,
         discovery: options.discovery,
         fetchImplementation: options.fetchImplementation,
         maxResponseBytes: options.maxResponseBytes,
@@ -827,6 +841,7 @@ export function createDiscoveredCaveClient(
     ...(options.operation === undefined ? {} : { operation: options.operation }),
     transport: createDiscoveredTransport({
       credentials: options.credentials,
+      discoverEndpoint: options.discoverEndpoint ?? discoverCaveEndpoint,
       discovery: options.discovery,
       fetchImplementation,
       maxResponseBytes: options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
