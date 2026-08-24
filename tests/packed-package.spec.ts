@@ -7,6 +7,7 @@ import {
 } from 'node:fs';
 import { delimiter, resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, test } from 'vitest';
 
@@ -21,7 +22,15 @@ import {
   installIsolatedOfflineAfterWarming,
   isolatedInstallArgs,
 } from '../scripts/package-artifacts.mjs';
+import * as packageArtifacts from '../scripts/package-artifacts.mjs';
 import { cleanupOwnedTempRoot, createOwnedTempDirectory } from '../scripts/owned-temp-directory.mjs';
+
+const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
+
+const packageArtifactHelpers = packageArtifacts as unknown as {
+  findTarball(directory: string): string;
+  runPnpm(args: string[], cwd: string): void;
+};
 
 function readTarballFile(tarball: string, path: string): string {
   return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
@@ -198,6 +207,29 @@ if (existsSync(rootModules) || existsSync(nestedModules) || !existsSync(lockfile
       cleanupOwnedTempRoot(artifactContext);
     }
   });
+
+  test('packs the CLI native keyring dependency as a direct dependency', () => {
+    const artifactContext = createOwnedTempDirectory({
+      prefix: 'opencoven-packed-cli-keyring-spec',
+      childSegments: ['cli'],
+    });
+    const destination = resolve(artifactContext.rootPath, 'cli');
+
+    try {
+      packageArtifactHelpers.runPnpm(['pack', '--pack-destination', destination], resolve(root, 'packages', 'cli'));
+
+      const tarball = packageArtifactHelpers.findTarball(destination);
+      const manifest = JSON.parse(readTarballFile(tarball, 'package.json')) as {
+        dependencies?: Record<string, string>;
+        optionalDependencies?: Record<string, string>;
+      };
+
+      expect(manifest.dependencies?.['@napi-rs/keyring']).toBe('1.3.0');
+      expect(manifest.optionalDependencies?.['@napi-rs/keyring']).toBeUndefined();
+    } finally {
+      cleanupOwnedTempRoot(artifactContext);
+    }
+  }, 30_000);
 
   test.each(['warm', 'offline'] as const)(
     'waits for every parallel %s install before propagating a child failure',

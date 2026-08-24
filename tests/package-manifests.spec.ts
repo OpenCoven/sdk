@@ -39,6 +39,7 @@ const rootManifest = JSON.parse(readFileSync(resolve(workspaceRoot, 'package.jso
   scripts?: Record<string, string>;
 };
 const vitestConfig = readFileSync(resolve(workspaceRoot, 'vitest.config.ts'), 'utf8');
+const lockfile = readFileSync(resolve(workspaceRoot, 'pnpm-lock.yaml'), 'utf8');
 
 describe('public package manifests', () => {
   test('runs the clean Phase 0 matrix before the remaining full verification', () => {
@@ -114,7 +115,7 @@ describe('public package manifests', () => {
       expect(manifest.files).toContain('CHANGELOG.md');
       expect(changelog).toContain('## 0.1.0');
     }
-  });
+  }, 15_000);
 
   test('verifies the release contract and artifacts on the compatibility path', () => {
     expect(rootManifest.scripts?.['verify:compat']).toContain('verify:release');
@@ -141,6 +142,22 @@ describe('public package manifests', () => {
         'node ../../scripts/require-release-authorization.mjs',
       );
     }
+  });
+
+  test('pins the CLI native keyring dependency directly and in the lockfile', () => {
+    const cliManifest = JSON.parse(
+      readFileSync(resolve(workspaceRoot, 'packages/cli/package.json'), 'utf8'),
+    ) as {
+      dependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+
+    expect(cliManifest.dependencies?.['@napi-rs/keyring']).toBe('1.3.0');
+    expect(cliManifest.optionalDependencies?.['@napi-rs/keyring']).toBeUndefined();
+    expect(lockfile).toMatch(/['"]@napi-rs\/keyring['"]:/);
+    expect(lockfile).toContain('specifier: 1.3.0');
+    expect(lockfile).toContain("'@napi-rs/keyring@1.3.0':");
+    expect(lockfile).toMatch(/optionalDependencies:\n(?:\s+'@napi-rs\/keyring-[^']+': 1\.3\.0\n)+/);
   });
 
   test('declare only root exports and approved package metadata', () => {

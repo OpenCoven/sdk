@@ -25,6 +25,15 @@ import {
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const packedCliTimeoutMs = 5_000;
+const usage = [
+  'opencoven [--help] [--version] [--json]',
+  'opencoven doctor [--json]',
+  'opencoven discover [--json]',
+  'opencoven cave pair [--json]',
+  'opencoven cave status [--json]',
+  'opencoven cave forget [--json]',
+  'opencoven coven health [--json]',
+];
 const installedPackageNames = {
   core: 'sdk-core',
   cave: 'cave-client',
@@ -91,7 +100,7 @@ function assertPackedCliJsonHelp(binary, cwd, expectedVersion) {
 
   const expectedOutput = {
     command: 'help',
-    data: { name: 'opencoven' },
+    data: { name: 'opencoven', usage },
     ok: true,
     version: expectedVersion,
   };
@@ -115,7 +124,8 @@ function assertPackedCliFailurePaths(binary, cwd) {
     humanFailure.error !== undefined ||
     humanFailure.status !== 1 ||
     humanFailure.stdout !== '' ||
-    humanFailure.stderr !== 'This command is reserved for a future operational task.\n'
+    !humanFailure.stderr.includes('Unknown or incomplete command.') ||
+    !humanFailure.stderr.includes('Usage:')
   ) {
     throw new Error(
       `Packed opencoven human failure output is incorrect: ${summarizeCliResult(humanFailure)}.`,
@@ -138,13 +148,39 @@ function assertPackedCliFailurePaths(binary, cwd) {
     jsonFailure.error !== undefined ||
     jsonFailure.status !== 1 ||
     jsonFailure.stderr !== '' ||
-    jsonOutput?.error?.code !== 'not_implemented' ||
+    jsonOutput?.error?.code !== 'invalid_arguments' ||
     jsonOutput?.command !== 'status' ||
+    !Array.isArray(jsonOutput?.data?.usage) ||
     jsonOutput?.ok !== false
   ) {
     throw new Error(
       `Packed opencoven JSON failure output is incorrect: ${summarizeCliResult(jsonFailure)}.`,
     );
+  }
+}
+
+
+function assertPackedCliNativeDependency(fixtureRoot, tarballs) {
+  const cliManifest = JSON.parse(readTarballFile(tarballs.cli, 'package.json'));
+  if (cliManifest.dependencies?.['@napi-rs/keyring'] !== '1.3.0') {
+    throw new Error('Packed @opencoven/dev-cli must depend directly on @napi-rs/keyring 1.3.0.');
+  }
+
+  const cliPackageRoot = resolve(fixtureRoot, 'node_modules', '@opencoven', 'dev-cli');
+  const keyringManifest = JSON.parse(
+    readFileSync(
+      resolve(cliPackageRoot, 'node_modules', '@napi-rs', 'keyring', 'package.json'),
+      'utf8',
+    ),
+  );
+
+  if (
+    keyringManifest.name !== '@napi-rs/keyring' ||
+    keyringManifest.version !== '1.3.0' ||
+    Object.keys(keyringManifest.optionalDependencies ?? {}).length === 0 ||
+    !Object.values(keyringManifest.optionalDependencies).every((version) => version === '1.3.0')
+  ) {
+    throw new Error('Packed @opencoven/dev-cli keyring dependency metadata is incomplete.');
   }
 }
 
@@ -536,6 +572,7 @@ try {
   const binary = resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven');
   const packedCliVersion = JSON.parse(readTarballFile(tarballs.cli, 'package.json')).version;
   assertPackedCliJsonHelp(binary, fixtureRoot, packedCliVersion);
+  assertPackedCliNativeDependency(fixtureRoot, tarballs);
   assertPackedCliFailurePaths(binary, fixtureRoot);
   process.stdout.write('Packed package verification passed.\n');
 } finally {

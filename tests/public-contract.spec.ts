@@ -55,6 +55,8 @@ describe('public package entry points', () => {
     expect(hasFunction(coven, 'isCovenClientError')).toBe(true);
     expect(hasFunction(sdk, 'OpenCovenSdk')).toBe(true);
     expect(hasFunction(sdk, 'createOpenCovenSdk')).toBe(true);
+    expect(hasFunction(cli, 'createNativeSecretStore')).toBe(true);
+    expect(hasFunction(cli, 'SecureStoreUnavailableError')).toBe(true);
     expect(hasFunction(cli, 'formatCliOutput')).toBe(true);
     expect(hasFunction(cli, 'runCli')).toBe(true);
   });

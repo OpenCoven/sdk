@@ -50,6 +50,11 @@ describe('workspace entrypoints', () => {
         execFile: unexpectedIo,
         spawn: unexpectedIo,
       }));
+      if (entrypoint === '@opencoven/dev-cli') {
+        vi.doMock('@napi-rs/keyring', () => {
+          throw new Error('unexpected keyring import');
+        });
+      }
       vi.stubGlobal('fetch', unexpectedIo);
 
       const imported: unknown = await import(entrypoint);
