@@ -556,6 +556,12 @@ function parseErrorPayload(
 ): Error {
   const payload = expectObject(value, 'error response');
   if (payload.ok === false && typeof payload.error === 'string') {
+    if (canonicalRequirements !== undefined) {
+      throw transportError('invalid_response', 'Cave response used a legacy proxy envelope.', {
+        details: { field: 'response' },
+        statusCode: status,
+      });
+    }
     return parseProxyFailure(status, payload);
   }
 

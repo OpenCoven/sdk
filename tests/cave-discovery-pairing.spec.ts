@@ -1582,6 +1582,56 @@ describe('discovered Cave pairing helpers', () => {
       },
     );
 
+    test.each(
+      routeInventories.map((route, index) => ({
+        ...route,
+        status: [401, 403, 500, 401, 500][index] as 401 | 403 | 500,
+      })),
+    )(
+      'rejects a $clientOperation legacy proxy envelope at HTTP $status without retrying or invalidating credentials',
+      async ({ clientOperation, invoke, status }) => {
+        const root = createScratchRoot(
+          `canonical-legacy-proxy-${clientOperation}-${status}`,
+        );
+        await writeDiscoveryRecord(root, discoveryRecord());
+        const fetchImplementation = queuedFetch([
+          ...successfulPairingHandlers(),
+          () =>
+            jsonResponse(status, {
+              ok: false,
+              error: 'Legacy proxy rejection.',
+            }),
+        ]);
+        const { client, credentials } = discoveredClient(
+          root,
+          fetchImplementation,
+        );
+
+        await pairDiscoveredClient(client);
+        const storedBeforeRead = await credentials.store.get(
+          credentials.reference.key,
+        );
+
+        await expect(invoke(client)).rejects.toMatchObject({
+          normalized: {
+            code: 'invalid_response',
+            operation: clientOperation,
+            retryable: false,
+            statusCode: status,
+          },
+          details: { field: 'response' },
+        });
+        await expect(
+          credentials.store.get(credentials.reference.key),
+        ).resolves.toBe(storedBeforeRead);
+        const authenticatedRequests = fetchImplementation.mock.calls.filter(
+          ([, init]) => header(init, 'authorization') !== null,
+        );
+        expect(authenticatedRequests).toHaveLength(1);
+        expect(fetchImplementation).toHaveBeenCalledTimes(6);
+      },
+    );
+
     test.each(['1.1', '2.0'] as const)(
       'rejects discovered canonical HTTP error apiVersion %s as invalid_response',
       async (apiVersion) => {
@@ -1739,6 +1789,29 @@ describe('discovered Cave pairing helpers', () => {
         },
       });
       expect(fetchImplementation).toHaveBeenCalledTimes(6);
+    });
+
+    test('preserves legacy proxy error normalization for noncanonical requests', async () => {
+      const root = createScratchRoot('legacy-proxy-error');
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const fetchImplementation = queuedFetch([
+        () =>
+          jsonResponse(403, {
+            ok: false,
+            error: 'Legacy proxy rejection.',
+          }),
+      ], { automaticHealth: false });
+      const { client } = discoveredClient(root, fetchImplementation);
+
+      await expect(client.health()).rejects.toMatchObject({
+        normalized: {
+          code: 'unauthorized',
+          operation: 'health',
+          retryable: false,
+          statusCode: 403,
+        },
+      });
+      expect(fetchImplementation).toHaveBeenCalledOnce();
     });
 
     test('bounds oversized canonical responses', async () => {

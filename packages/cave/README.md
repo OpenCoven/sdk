@@ -64,7 +64,13 @@ import {
 
 const canonicalMetadata = {
   apiVersion: '1.0',
-  capabilities: ['canonical-reads'],
+  capabilities: [
+    'familiars',
+    'projects',
+    'conversations',
+    'conversation-messages',
+    'cursors',
+  ],
   minimumClientVersion: CAVE_CLIENT_VERSION,
   operations: [
     'familiars.list',
