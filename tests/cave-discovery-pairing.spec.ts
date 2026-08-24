@@ -217,7 +217,10 @@ function errorEnvelope(
   details?: Record<string, string>,
 ) {
   return {
-    ...CURRENT_HEALTH_ENVELOPE,
+    apiVersion: CURRENT_HEALTH_ENVELOPE.apiVersion,
+    minimumClientVersion: CURRENT_HEALTH_ENVELOPE.minimumClientVersion,
+    capabilities: CURRENT_HEALTH_ENVELOPE.capabilities,
+    operations: CURRENT_HEALTH_ENVELOPE.operations,
     requestId: `request-${status}-${code}`,
     error: {
       code,

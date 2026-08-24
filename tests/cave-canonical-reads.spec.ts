@@ -1,5 +1,6 @@
 import {
   CaveClient,
+  createDiscoveredCaveClient,
   isCaveClientError,
   type CaveConversation,
   type CaveConversationMessage,
@@ -123,6 +124,15 @@ function errorEnvelope(
     },
     ...replacement,
   };
+}
+
+function detailEntries(
+  count: number,
+  value: string = 'detail',
+): Record<string, string> {
+  return Object.fromEntries(
+    Array.from({ length: count }, (_, index) => [`detail${index}`, value]),
+  );
 }
 
 function clientWith(
@@ -1328,6 +1338,223 @@ describe('Cave caller-supplied canonical reads', () => {
       retryable: false,
     });
     expect(error.details).toEqual({ field });
+  });
+
+  test.each([
+    [
+      'success empty capabilities',
+      'capabilities',
+      {
+        ...successEnvelope({ projects: [PROJECT] }),
+        capabilities: [],
+      },
+    ],
+    [
+      'error empty capabilities',
+      'capabilities',
+      errorEnvelope({ capabilities: [] }),
+    ],
+    [
+      'unknown error code',
+      'error.code',
+      errorEnvelope({
+        error: {
+          code: 'future_error',
+          message: 'Unsupported error.',
+          retryable: false,
+        },
+      }),
+    ],
+    [
+      'empty request id',
+      'requestId',
+      errorEnvelope({ requestId: '' }),
+    ],
+    [
+      '65-character request id',
+      'requestId',
+      errorEnvelope({ requestId: 'r'.repeat(65) }),
+    ],
+    [
+      'empty error message',
+      'error.message',
+      errorEnvelope({
+        error: {
+          code: 'reconcile_required',
+          message: '',
+          retryable: false,
+        },
+      }),
+    ],
+    [
+      '257-character error message',
+      'error.message',
+      errorEnvelope({
+        error: {
+          code: 'reconcile_required',
+          message: 'm'.repeat(257),
+          retryable: false,
+        },
+      }),
+    ],
+    [
+      '17 error detail entries',
+      'error.details',
+      errorEnvelope({
+        error: {
+          code: 'reconcile_required',
+          message: 'Reload canonical state.',
+          retryable: false,
+          details: detailEntries(17),
+        },
+      }),
+    ],
+    [
+      '257-character error detail value',
+      'error.details.reason',
+      errorEnvelope({
+        error: {
+          code: 'reconcile_required',
+          message: 'Reload canonical state.',
+          retryable: false,
+          details: { reason: 'd'.repeat(257) },
+        },
+      }),
+    ],
+    [
+      'non-string error detail value',
+      'error.details.reason',
+      errorEnvelope({
+        error: {
+          code: 'reconcile_required',
+          message: 'Reload canonical state.',
+          retryable: false,
+          details: { reason: 1 },
+        },
+      }),
+    ],
+    [
+      'mixed data and error branches',
+      'response',
+      errorEnvelope({ data: { projects: [PROJECT] } }),
+    ],
+    [
+      'neither data nor error branch',
+      'data',
+      {
+        apiVersion: '1.0',
+        minimumClientVersion: '0.1.0',
+        capabilities: ['canonical-reads'],
+        operations: CANONICAL_OPERATIONS,
+      },
+    ],
+  ])('rejects hostile canonical envelope: %s', async (
+    _label,
+    field,
+    response,
+  ) => {
+    const listProjects = vi.fn(() => Promise.resolve(response));
+    const { client } = clientWith({ listProjects });
+
+    const error = await caveErrorOf(() => client.listProjects());
+
+    expect(error.normalized).toMatchObject({
+      code: 'invalid_response',
+      operation: 'listProjects',
+      retryable: false,
+    });
+    expect(error.details).toEqual({ field });
+    expect(listProjects).toHaveBeenCalledOnce();
+  });
+
+  test('preserves explicit reconcile_required at every envelope limit without retrying', async () => {
+    const requestId = 'r'.repeat(64);
+    const message = 'm'.repeat(256);
+    const details = detailEntries(16, 'd'.repeat(256));
+    const listProjects = vi.fn(() =>
+      Promise.resolve(
+        errorEnvelope({
+          requestId,
+          error: {
+            code: 'reconcile_required',
+            message,
+            retryable: false,
+            details,
+          },
+        }),
+      ),
+    );
+    const { client } = clientWith({ listProjects });
+
+    const error = await caveErrorOf(() => client.listProjects());
+
+    expect(error.normalized).toMatchObject({
+      code: 'reconcile_required',
+      operation: 'listProjects',
+      requestId,
+      retryable: false,
+    });
+    expect(error.details).toEqual(details);
+    expect(listProjects).toHaveBeenCalledOnce();
+  });
+
+  test('rejects oversized details from a discovered HTTP error envelope', async () => {
+    const fetchImplementation = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify(
+            errorEnvelope({
+              error: {
+                code: 'conflict',
+                message: 'Conflict.',
+                retryable: false,
+                details: detailEntries(17),
+              },
+            }),
+          ),
+          {
+            status: 409,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      ),
+    );
+    const client = createDiscoveredCaveClient({
+      credentials: {
+        store: createMemorySecretStore(),
+        reference: createSecretStoreReference('canonical-http-error'),
+      },
+      discoverEndpoint: () =>
+        Promise.resolve({
+          version: 1,
+          endpoint: {
+            kind: 'http',
+            url: 'http://127.0.0.1:3020',
+          },
+          freshness: {
+            pid: 4321,
+            nonce: '018f4f1a-77c2-7a31-8a15-55a25aaba003',
+            startedAt: '2026-08-24T02:03:51.419Z',
+          },
+          record: {
+            path: '/Users/example/.coven/cave/client-v1-discovery.json',
+            device: 7,
+            inode: 9,
+          },
+        }),
+      fetch: fetchImplementation,
+    });
+
+    const error = await caveErrorOf(() => client.health());
+
+    expect(error.normalized).toMatchObject({
+      code: 'invalid_response',
+      operation: 'health',
+      retryable: false,
+      statusCode: 409,
+    });
+    expect(error.details).toEqual({ field: 'error.details' });
+    expect(fetchImplementation).toHaveBeenCalledOnce();
   });
 
   test.each([

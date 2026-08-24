@@ -12,11 +12,14 @@ import type {
   CaveConversationMessage,
   CaveProject,
 } from './schemas.js';
+import {
+  CAVE_CONTRACT_API_VERSION,
+  CAVE_CONTRACT_LIMITS,
+  isCaveContractErrorCode,
+} from './contract-constraints.js';
 import { CAVE_CLIENT_VERSION } from './version.js';
 
-const CAVE_API_VERSION = '1.0';
 const DECLARATION_ID_PATTERN = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/u;
-const DECLARATION_ID_MAX_CHARACTERS = 64;
 const CANONICAL_FAMILIARS_PATH = '/api/client/v1/familiars';
 const CANONICAL_PROJECTS_PATH = '/api/client/v1/projects';
 const CANONICAL_CONVERSATIONS_PATH = '/api/client/v1/conversations';
@@ -121,6 +124,23 @@ function canonicalString(value: unknown, field: string): string {
   return value;
 }
 
+function canonicalBoundedString(
+  value: unknown,
+  field: string,
+  maximumLength: number,
+  options: { requireNonEmpty?: boolean } = {},
+): string {
+  const parsed = canonicalString(value, field);
+  if (
+    parsed.length > maximumLength ||
+    (options.requireNonEmpty === true && parsed.length === 0)
+  ) {
+    throw new CaveCanonicalSchemaError(field);
+  }
+
+  return parsed;
+}
+
 function optionalString(
   value: unknown,
   field: string,
@@ -196,7 +216,7 @@ function parseDeclarationIds(
       throw new CaveCanonicalSchemaError(`${field}[${index}]`);
     }
     if (
-      entry.length > DECLARATION_ID_MAX_CHARACTERS ||
+      entry.length > CAVE_CONTRACT_LIMITS.declarationIdCharacters ||
       !DECLARATION_ID_PATTERN.test(entry) ||
       declarations.includes(entry)
     ) {
@@ -216,10 +236,19 @@ function parseErrorDetails(
   }
 
   const details = canonicalObject(value, 'error.details');
+  const entries = Object.entries(details);
+  if (entries.length > CAVE_CONTRACT_LIMITS.errorDetailEntries) {
+    throw new CaveCanonicalSchemaError('error.details');
+  }
+
   return Object.fromEntries(
-    Object.entries(details).map(([key, entry]) => [
+    entries.map(([key, entry]) => [
       key,
-      canonicalString(entry, `error.details.${key}`),
+      canonicalBoundedString(
+        entry,
+        `error.details.${key}`,
+        CAVE_CONTRACT_LIMITS.errorDetailValueCharacters,
+      ),
     ]),
   );
 }
@@ -231,12 +260,14 @@ function parseEnvelope(value: unknown): JsonObject {
     envelope.minimumClientVersion,
     'minimumClientVersion',
   );
-  parseDeclarationIds(envelope.capabilities, 'capabilities');
+  parseDeclarationIds(envelope.capabilities, 'capabilities', {
+    requireNonEmpty: true,
+  });
   parseDeclarationIds(envelope.operations, 'operations', {
     requireNonEmpty: true,
   });
 
-  if (apiVersion !== CAVE_API_VERSION) {
+  if (apiVersion !== CAVE_CONTRACT_API_VERSION) {
     throw new CaveCanonicalSchemaError('apiVersion');
   }
 
@@ -259,13 +290,34 @@ function parseEnvelope(value: unknown): JsonObject {
   const requestId =
     envelope.requestId === undefined
       ? undefined
-      : canonicalString(envelope.requestId, 'requestId');
-  if (envelope.error !== undefined) {
+      : canonicalBoundedString(
+          envelope.requestId,
+          'requestId',
+          CAVE_CONTRACT_LIMITS.requestIdCharacters,
+          { requireNonEmpty: true },
+        );
+  const hasData = envelope.data !== undefined;
+  const hasError = envelope.error !== undefined;
+  if (hasData && hasError) {
+    throw new CaveCanonicalSchemaError('response');
+  }
+
+  if (hasError) {
     const error = canonicalObject(envelope.error, 'error');
+    const code = canonicalString(error.code, 'error.code');
+    if (!isCaveContractErrorCode(code)) {
+      throw new CaveCanonicalSchemaError('error.code');
+    }
+    const message = canonicalBoundedString(
+      error.message,
+      'error.message',
+      CAVE_CONTRACT_LIMITS.errorMessageCharacters,
+      { requireNonEmpty: true },
+    );
     const details = parseErrorDetails(error.details);
     throw new CaveCanonicalResponseError(
-      canonicalString(error.code, 'error.code'),
-      canonicalString(error.message, 'error.message'),
+      code,
+      message,
       {
         retryable: canonicalBoolean(error.retryable, 'error.retryable'),
         ...(details === undefined ? {} : { details }),
@@ -274,6 +326,9 @@ function parseEnvelope(value: unknown): JsonObject {
     );
   }
 
+  if (!hasData) {
+    throw new CaveCanonicalSchemaError('data');
+  }
   canonicalObject(envelope.data, 'data');
   return envelope;
 }

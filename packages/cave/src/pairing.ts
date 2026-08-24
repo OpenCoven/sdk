@@ -22,6 +22,11 @@ import {
   canonicalFamiliarsRoute,
   canonicalProjectsRoute,
 } from './canonical-reads.js';
+import {
+  CAVE_CONTRACT_API_VERSION,
+  CAVE_CONTRACT_LIMITS,
+  isCaveContractErrorCode,
+} from './contract-constraints.js';
 import { markPairingSecretUnsentError } from './pairing-secret.js';
 import {
   loadBoundCredential,
@@ -45,24 +50,8 @@ import { CAVE_CLIENT_VERSION } from './version.js';
 const DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024;
 const CAVE_API_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const DECLARATION_ID_PATTERN = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/u;
-const DECLARATION_ID_MAX_CHARACTERS = 64;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const BASE64URL_43_RE = /^[A-Za-z0-9_-]{43}$/u;
-const CAVE_ERROR_CODES = new Set([
-  'invalid_request',
-  'unauthorized',
-  'scope_denied',
-  'not_found',
-  'conflict',
-  'rate_limited',
-  'pairing_pending',
-  'pairing_denied',
-  'pairing_expired',
-  'incompatible_version',
-  'service_unavailable',
-  'reconcile_required',
-  'internal_error',
-]);
 const CAVE_PAIRING_SCOPE_SET = new Set<string>(CAVE_PAIRING_SCOPES);
 
 export interface CaveCredentialBinding {
@@ -276,7 +265,7 @@ function parseAdvertisedIds(value: unknown, label: string): string[] | undefined
   for (const entry of value) {
     if (
       typeof entry !== 'string' ||
-      entry.length > DECLARATION_ID_MAX_CHARACTERS ||
+      entry.length > CAVE_CONTRACT_LIMITS.declarationIdCharacters ||
       !DECLARATION_ID_PATTERN.test(entry) ||
       seen.has(entry)
     ) {
@@ -487,14 +476,47 @@ function parseFamiliarsResponse(value: unknown): CaveFamiliarsResponse {
   };
 }
 
-function parseErrorDetails(value: unknown): Record<string, string> | undefined {
+function parseErrorDetails(
+  value: unknown,
+  options: {
+    requestId?: string;
+    statusCode: number;
+  },
+): Record<string, string> | undefined {
   if (value === undefined) {
     return undefined;
   }
 
-  const details = expectObject(value, 'error.details');
+  if (!isObject(value)) {
+    throw transportError('invalid_response', 'error.details was malformed.', {
+      details: { field: 'error.details' },
+      ...options,
+    });
+  }
+
+  const details = value;
+  const entries = Object.entries(details);
+  if (entries.length > CAVE_CONTRACT_LIMITS.errorDetailEntries) {
+    throw transportError('invalid_response', 'error.details contained too many entries.', {
+      details: { field: 'error.details' },
+      ...options,
+    });
+  }
+
   return Object.fromEntries(
-    Object.entries(details).map(([key, entry]) => [key, expectString(entry, `error.details.${key}`)]),
+    entries.map(([key, entry]) => {
+      const field = `error.details.${key}`;
+      if (
+        typeof entry !== 'string' ||
+        entry.length > CAVE_CONTRACT_LIMITS.errorDetailValueCharacters
+      ) {
+        throw transportError('invalid_response', `${field} was malformed.`, {
+          details: { field },
+          ...options,
+        });
+      }
+      return [key, entry];
+    }),
   );
 }
 
@@ -527,18 +549,76 @@ function parseErrorPayload(status: number, value: unknown): Error {
     return parseProxyFailure(status, payload);
   }
 
+  if (
+    payload.requestId !== undefined &&
+    (
+      typeof payload.requestId !== 'string' ||
+      payload.requestId.length === 0 ||
+      payload.requestId.length > CAVE_CONTRACT_LIMITS.requestIdCharacters
+    )
+  ) {
+    throw transportError('invalid_response', 'requestId was malformed.', {
+      details: { field: 'requestId' },
+      statusCode: status,
+    });
+  }
+
   const base = parseEnvelopeBase(payload);
+  if (base.apiVersion !== CAVE_CONTRACT_API_VERSION) {
+    throw transportError('invalid_response', 'apiVersion was malformed.', {
+      details: { field: 'apiVersion' },
+      statusCode: status,
+      ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
+    });
+  }
+  if (base.capabilities === undefined || base.capabilities.length === 0) {
+    throw transportError('invalid_response', 'capabilities was malformed.', {
+      details: { field: 'capabilities' },
+      statusCode: status,
+      ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
+    });
+  }
+  if (base.operations === undefined || base.operations.length === 0) {
+    throw transportError('invalid_response', 'operations was malformed.', {
+      details: { field: 'operations' },
+      statusCode: status,
+      ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
+    });
+  }
+  if (payload.data !== undefined && payload.error !== undefined) {
+    throw transportError('invalid_response', 'Cave response branches were ambiguous.', {
+      details: { field: 'response' },
+      statusCode: status,
+      ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
+    });
+  }
   const error = expectObject(payload.error, 'error envelope');
   const code = expectString(error.code, 'error.code');
-  if (!CAVE_ERROR_CODES.has(code)) {
+  if (!isCaveContractErrorCode(code)) {
     throw transportError('invalid_response', 'error.code was not supported.', {
+      details: { field: 'error.code' },
       statusCode: status,
       ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
     });
   }
 
-  const details = parseErrorDetails(error.details);
-  return transportError(code, expectString(error.message, 'error.message'), {
+  if (
+    typeof error.message !== 'string' ||
+    error.message.length === 0 ||
+    error.message.length > CAVE_CONTRACT_LIMITS.errorMessageCharacters
+  ) {
+    throw transportError('invalid_response', 'error.message was malformed.', {
+      details: { field: 'error.message' },
+      statusCode: status,
+      ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
+    });
+  }
+
+  const details = parseErrorDetails(error.details, {
+    statusCode: status,
+    ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
+  });
+  return transportError(code, error.message, {
     ...(details === undefined ? {} : { details }),
     ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
     retryable:
