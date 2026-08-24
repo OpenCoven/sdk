@@ -18,6 +18,7 @@ part of an intentional release process.
 - [Support policy](SUPPORT.md)
 - [Security policy](SECURITY.md)
 - [Release process](RELEASING.md)
+- [Contributing](CONTRIBUTING.md)
 
 | Path | Package | Purpose |
 | --- | --- | --- |
