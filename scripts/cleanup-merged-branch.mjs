@@ -362,7 +362,7 @@ export function cleanupMergedBranch({
   return result;
 }
 
-function parseArguments(arguments_) {
+export function parseCleanupArguments(arguments_) {
   const options = {
     deleteRemote: false,
     dryRun: false,
@@ -371,7 +371,9 @@ function parseArguments(arguments_) {
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
 
-    if (argument === '--delete-remote') {
+    if (argument === '--') {
+      continue;
+    } else if (argument === '--delete-remote') {
       options.deleteRemote = true;
     } else if (argument === '--dry-run') {
       options.dryRun = true;
@@ -403,7 +405,7 @@ function printResult(result) {
 const invokedPath = process.argv[1] === undefined ? undefined : resolve(process.argv[1]);
 if (invokedPath === fileURLToPath(import.meta.url)) {
   try {
-    printResult(cleanupMergedBranch(parseArguments(process.argv.slice(2))));
+    printResult(cleanupMergedBranch(parseCleanupArguments(process.argv.slice(2))));
   } catch (error) {
     process.stderr.write(
       `${error instanceof Error ? error.message : String(error)}\n`,
