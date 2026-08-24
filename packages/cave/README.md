@@ -21,7 +21,9 @@ rather than sent to a different Cave.
 On Windows, `discoverCaveEndpoint()` also requires a reviewed native
 `options.dependencies.windowsPathTrust` validator for the discovery root and
 record path. Metadata-only checks, shell commands, and fabricated ACL trust are
-rejected; the helper fails closed until a real validator is injected.
+rejected; the helper fails closed until a real validator is injected. A
+trusted Windows validator remains authoritative when Node reports the
+filesystem inode as `0`; Unix discovery still requires a positive inode.
 
 ## Shipped surface
 

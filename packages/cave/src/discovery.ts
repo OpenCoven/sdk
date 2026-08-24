@@ -378,7 +378,8 @@ function validateRootIdentity(
     !Number.isSafeInteger(identity.device) ||
     identity.device < 0 ||
     !Number.isSafeInteger(identity.inode) ||
-    identity.inode <= 0 ||
+    identity.inode < 0 ||
+    (platform !== 'win32' && identity.inode === 0) ||
     !Number.isSafeInteger(identity.mode) ||
     identity.mode < 0 ||
     !Number.isSafeInteger(identity.ownerUid) ||
@@ -409,7 +410,8 @@ function validateRecordIdentity(
     !Number.isSafeInteger(identity.device) ||
     identity.device < 0 ||
     !Number.isSafeInteger(identity.inode) ||
-    identity.inode <= 0 ||
+    identity.inode < 0 ||
+    (platform !== 'win32' && identity.inode === 0) ||
     !Number.isSafeInteger(identity.mode) ||
     identity.mode < 0 ||
     !Number.isSafeInteger(identity.ownerUid) ||

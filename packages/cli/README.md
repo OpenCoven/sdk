@@ -76,6 +76,8 @@ code `secure_store_unavailable`. Keyring mutations use owner-local, non-secret
 filesystem lock records so separate CLI processes cannot delete a newly
 replaced credential. Credential values remain exclusively in the native
 keyring; no bearer or keychain payload is written to the lock directory.
+Owner-bearing locks older than the bounded mutation window are recovered so
+PID reuse after a crashed process cannot strand credential operations.
 
 ## Native Cave discovery security
 

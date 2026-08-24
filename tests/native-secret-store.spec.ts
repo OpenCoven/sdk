@@ -157,14 +157,21 @@ describe('native secret store', () => {
     await expect(deletingStore.get('cave-credential')).resolves.toBe('credential-new');
   });
 
-  test('recovers a stale malformed native mutation lock without exposing credentials', async () => {
+  test('recovers a stale owner lock even when its PID has been reused', async () => {
     const lockDirectory = join(TEST_LOCK_DIRECTORY, 'stale-lock');
     const staleLockPath = lockPath(lockDirectory, SERVICE, 'cave-credential');
     mkdirSync(staleLockPath, { recursive: true, mode: 0o700 });
-    writeFileSync(join(staleLockPath, 'owner.json'), '{"invalid":true}\n', {
-      mode: 0o600,
-    });
     const staleTime = new Date(Date.now() - 60_000);
+    writeFileSync(
+      join(staleLockPath, 'owner.json'),
+      `${JSON.stringify({
+        version: 1,
+        pid: process.pid,
+        token: 'stale-owner-token',
+        createdAt: staleTime.getTime(),
+      })}\n`,
+      { mode: 0o600 },
+    );
     utimesSync(staleLockPath, staleTime, staleTime);
     const secrets = new Map<string, string>();
     const store = await createNativeSecretStore({

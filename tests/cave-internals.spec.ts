@@ -1313,12 +1313,14 @@ describe('Cave discovery platform helpers', () => {
     const userProfileRecordPath = `${userProfileRoot}\\client-v1-discovery.json`;
     const recordBytes = discoveryRecord();
     const rootIdentity = discoveredPathIdentity({
+      inode: 0,
       regularFile: false,
       directory: true,
       mode: 0o040700,
       size: 0,
     });
     const recordIdentity = discoveredPathIdentity({
+      inode: 0,
       size: Buffer.byteLength(recordBytes),
     });
     const validate = vi.fn(async () => true);

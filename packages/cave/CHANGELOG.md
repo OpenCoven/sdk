@@ -7,3 +7,5 @@
   the reviewed `OpenCoven/coven-cave` producer fixture.
 - Share credential mutation queues across duplicate module copies and use
   atomic compare-and-delete when the configured secret store supports it.
+- Accept unavailable (`0`) Windows inode metadata only when reviewed native
+  path trust succeeds.

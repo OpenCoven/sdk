@@ -171,12 +171,17 @@ async function recoverAbandonedLock(lockPath: string): Promise<boolean> {
     }
   }
 
-  if (owner !== undefined && processIsAlive(owner.pid)) {
+  const lockAgeMs = Date.now() - identity.mtimeMs;
+  if (
+    owner !== undefined &&
+    processIsAlive(owner.pid) &&
+    lockAgeMs < NATIVE_SECRET_STORE_STALE_LOCK_MS
+  ) {
     return false;
   }
   if (
     owner === undefined &&
-    Date.now() - identity.mtimeMs < NATIVE_SECRET_STORE_STALE_LOCK_MS
+    lockAgeMs < NATIVE_SECRET_STORE_STALE_LOCK_MS
   ) {
     return false;
   }
