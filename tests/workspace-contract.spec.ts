@@ -43,4 +43,41 @@ describe('workspace contract', () => {
       expect(readFileSync(resolve(root, relativePath), 'utf8')).toContain('AGPL-3.0-only OR MIT');
     }
   });
+
+  test('documents runtime-only discovery and fail-closed CLI security constraints', () => {
+    const rootReadme = readFileSync(resolve(root, 'README.md'), 'utf8');
+    const caveReadme = readFileSync(resolve(root, 'packages/cave/README.md'), 'utf8');
+    const covenReadme = readFileSync(resolve(root, 'packages/coven/README.md'), 'utf8');
+    const cliReadme = readFileSync(resolve(root, 'packages/cli/README.md'), 'utf8');
+    const sdkReadme = readFileSync(resolve(root, 'packages/sdk/README.md'), 'utf8');
+
+    expect(rootReadme).toContain('Phase 1b');
+    expect(rootReadme).toContain('opencoven doctor');
+    expect(rootReadme).toContain('@napi-rs/keyring');
+    expect(rootReadme).toContain('platform_security_unavailable');
+    expect(rootReadme).toContain('windowsPathTrust');
+
+    expect(caveReadme).toContain('discoverCaveEndpoint');
+    expect(caveReadme).toContain('createDiscoveredCaveClient');
+    expect(caveReadme).toContain('credentialStatus()');
+    expect(caveReadme).toContain('forgetCredential()');
+    expect(caveReadme).toContain('authority');
+    expect(caveReadme).toContain('windowsPathTrust');
+
+    expect(covenReadme).toContain('createDiscoveredCovenClient');
+    expect(covenReadme).toContain('createCovenUnixTransport');
+    expect(covenReadme).toContain('createCovenWindowsTransport');
+    expect(covenReadme).toContain('platform_security_unavailable');
+
+    expect(cliReadme).toContain('runCli(argv, runtime?)');
+    expect(cliReadme).toContain('@napi-rs/keyring');
+    expect(cliReadme).toContain('1.3.0');
+    expect(cliReadme).toContain('platform_security_unavailable');
+    expect(cliReadme).toContain('secret-free');
+    expect(cliReadme).toContain('CliRuntime.cave.discovery.dependencies.windowsPathTrust');
+
+    expect(sdkReadme).toContain('createOpenCovenSdk');
+    expect(sdkReadme).toContain('healthReport()');
+    expect(sdkReadme).toContain('platform_security_unavailable');
+  });
 });

@@ -4,6 +4,18 @@ A constrained, owner-local Coven health client. Importing the package performs
 no filesystem, process, network, socket, or daemon I/O. Discovery and health
 checks happen only through explicit runtime calls.
 
+## Shipped surface
+
+- `discoverCovenEndpoint(options)` resolves the owner-local daemon endpoint
+  only when called.
+- `createDiscoveredCovenClient(...)` wraps that discovery with a health-only
+  `CovenClient`.
+- `createCovenUnixTransport(...)` and `createCovenWindowsTransport(...)`
+  expose the exact reviewed built-in transports for the authenticated local
+  daemon health contract.
+- `createCovenClient(...)` preserves caller-supplied transports, while
+  `COVEN_DAEMON_PROTOCOL` exports the exact reviewed daemon protocol string.
+
 ## Discover and check health
 
 `createDiscoveredCovenClient(options)` resolves the current daemon, verifies
@@ -52,6 +64,11 @@ The SDK intentionally does not bundle a peer-credential implementation.
 The embedding CLI or runtime must inject a reviewed native provider for its
 current platform. There is no pathname-only approximation, shell or `lsof`
 fallback, private Node-internals fallback, or permissive default.
+OpenCoven's Node CLI likewise ships no implicit adapter: it reports
+`platform_security_unavailable` and marks Coven health unhealthy until the
+embedding runtime injects a reviewed native provider. It never derives
+connected-peer or connected-pipe identity from discovery metadata, filesystem
+ownership, or shell commands.
 
 `discoverCovenEndpoint()` can inspect the typed endpoint and its available
 owner/freshness metadata. Unix `COVEN_HOME` discovery needs no executable
@@ -163,9 +180,13 @@ bundles or duplicate package installations.
 
 `health()` accepts an optional signal, timeout, and lifecycle observer.
 Constructor operation defaults remain additive, and zero-argument transports
-remain compatible. There is no default timeout. Timeout rejects promptly for
-non-cooperative transports, while stopping underlying daemon I/O requires the
-transport to honor its context signal.
+remain compatible. There is no default timeout and no automatic retry. Timeout
+rejects promptly for non-cooperative transports, while stopping underlying
+daemon I/O requires the transport to honor its context signal. Retry transient
+`not_found`, `command_failed`, `connect_failure`, or `timeout` failures only
+after the operator has started or repaired the local runtime; ownership,
+endpoint safety, malformed config, and platform-security failures are
+fail-closed configuration issues.
 
 The owner-local Coven daemon contract does not use bearer tokens, API keys,
 cookies, or credential files. This package neither discovers nor sends them.

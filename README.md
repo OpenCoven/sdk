@@ -7,15 +7,19 @@
 > production credentials.
 
 This workspace contains the experimental TypeScript SDK and developer CLI for
-OpenCoven clients, transports, compatibility contracts, and shared protocol
-infrastructure.
+OpenCoven Phase 1b clients, transports, compatibility contracts, runtime-only Cave
+discovery and pairing, explicit Coven daemon health, coordinated health
+reporting, and shared protocol infrastructure.
 
 ## Release status
 
 This source repository is public, but its packages are explicitly marked
-private, are not published, and have standard publishing blocked. Standard
-publishing also requires `OPENCOVEN_RELEASE_AUTHORIZATION=publish`; remove or
-change these gates only as part of the intentional, reviewed release process.
+private, are not published, and have standard publishing blocked. It is
+experimental and not yet a security-audited release. Standard publishing also
+requires `OPENCOVEN_RELEASE_AUTHORIZATION=publish`; remove or change these
+gates only as part of an intentional release process. This phase documents and
+verifies shipped contracts only; it does not publish packages or relax release
+gates.
 
 - [Roadmap](docs/ROADMAP.md)
 - [0.1 read-only release design](docs/superpowers/specs/2026-08-22-sdk-0.1-read-only-release-design.md)
@@ -42,38 +46,64 @@ than the active release checklist.
 | Path | Package | Current purpose |
 | --- | --- | --- |
 | `packages/core` | `@opencoven/sdk-core` | Transport-neutral errors, compatibility/discovery contracts, operation controls, and in-memory secret abstractions |
-| `packages/cave` | `@opencoven/cave-client` | Constrained Cave client, current familiar operations, and reviewed Cave contract fixtures |
-| `packages/coven` | `@opencoven/coven-client` | Explicit owner-local Coven discovery plus constrained health transports |
+| `packages/cave` | `@opencoven/cave-client` | Constrained Cave client, runtime discovery/pairing, familiar operations, and reviewed contract fixtures |
+| `packages/coven` | `@opencoven/coven-client` | Constrained Coven discovery and health with explicit native transport-security providers |
 | `packages/sdk` | `@opencoven/sdk` | Optional Cave/Coven coordination without merging source-system identity or errors |
-| `packages/cli` | `@opencoven/dev-cli` | Sole owner of the `opencoven` binary; help/version are implemented while operational scope is being decided |
+| `packages/cli` | `@opencoven/dev-cli` | Sole owner of the `opencoven` binary plus native secure storage and fail-closed Coven checks |
 
 ## Runtime ownership and import purity
 
-Importing any public package performs no discovery, credential lookup, network,
-filesystem, process, socket, or daemon I/O.
-
-Cave operations currently use caller-supplied narrow transports. Coven also
-offers explicit runtime discovery and owner-local health transport factories;
-those functions perform I/O only when called and require reviewed platform
-security providers where Node cannot prove connected-peer or pipe identity.
-
-Cave and Coven models, transports, authorities, and normalized errors remain
-distinct. The coordination package composes them without pretending they share
-one endpoint, credential, or failure model.
+The SDK performs no discovery, credential lookup, network, filesystem, or
+daemon I/O at import time. Cave pairing/discovery is runtime-only and opt-in;
+low-level Cave and Coven models, transports, and normalized errors remain
+distinct. Coven discovery and owner-local health transport factories also
+perform I/O only when called and require reviewed platform-security providers
+where Node cannot prove connected-peer or pipe identity. The coordination
+package composes both systems without pretending they share one endpoint,
+credential, or failure model.
 
 ## Choosing a package
 
 | Need | Package |
 | --- | --- |
 | Shared errors, compatibility/discovery contracts, operation controls, or in-memory secrets | `@opencoven/sdk-core` |
-| Cave health, familiar operations, or reviewed Cave contract fixtures | `@opencoven/cave-client` |
+| Cave health, runtime pairing/discovery, familiar operations, or reviewed contract fixtures | `@opencoven/cave-client` |
 | Explicit Coven discovery and owner-local daemon health | `@opencoven/coven-client` |
 | Optional Cave/Coven coordination | `@opencoven/sdk` |
-| Deterministic help/version output from the global binary | `@opencoven/dev-cli` |
+| Runtime diagnostics, discovery, pairing, credential status, and health commands | `@opencoven/dev-cli` |
+
+## Developer CLI contract
+
+`@opencoven/dev-cli` ships only these experimental commands:
+
+- `opencoven doctor`
+- `opencoven discover`
+- `opencoven cave pair`
+- `opencoven cave status`
+- `opencoven cave forget`
+- `opencoven coven health`
+
+Every command performs runtime discovery only when invoked, enforces an
+explicit reviewed deadline, and keeps human and JSON output secret-free.
+`cave pair` uses one absolute budget across create, poll, and exchange.
+Production credentials require direct `@napi-rs/keyring` `1.3.0`; the CLI
+fails closed with `secure_store_unavailable` and has no file, shell, or
+environment fallback. `coven health` requires a real reviewed native
+platform-security adapter; the default Node CLI reports
+`platform_security_unavailable` rather than fabricating peer ownership proof.
+On Windows, the default CLI also fails Cave `discover`, `doctor`, `pair`,
+`status`, and `forget` closed with `platform_security_unavailable` until a
+reviewed native path ownership/ACL validator is injected through
+`CliRuntime.cave.discovery.dependencies.windowsPathTrust`; the CLI never
+trusts discovery metadata, file ownership metadata alone, or shell output.
+During an active credential commit, `cave status` surfaces a retryable
+`credential_update_in_progress`/`disconnected` result instead of clearing the
+pending credential.
 
 ## Caller-supplied Cave transports
 
-Supply the narrow transport needed by the operation:
+Low-level clients still accept caller-supplied transports for the exact
+operations you need:
 
 ```ts
 import { CaveClient, isCaveClientError } from '@opencoven/cave-client';
@@ -114,6 +144,68 @@ transport ignores the supplied signal; only a cooperative transport can stop
 its underlying I/O. Transports receive an optional context with the composed
 `signal` and absolute monotonic `deadline`.
 
+## Runtime Cave discovery and pairing
+
+`@opencoven/cave-client` also ships an opt-in Client v1 helper that discovers
+the local Cave endpoint at runtime, validates the owner-local discovery file,
+and persists the exchanged bearer only through an injected `SecretStore`.
+Pairing sessions pin to the exact discovered authority record and freshness, so
+`poll()`/`exchange()` fail locally before sending the pairing secret if
+rediscovery shows a restart, record replacement, or authority mismatch:
+
+```ts
+import { createDiscoveredCaveClient } from '@opencoven/cave-client';
+import {
+  createMemorySecretStore,
+  createSecretStoreReference,
+} from '@opencoven/sdk-core';
+
+const cave = createDiscoveredCaveClient({
+  credentials: {
+    store: createMemorySecretStore(),
+    reference: createSecretStoreReference('chat.cave'),
+  },
+});
+
+const session = await cave.createPairing({
+  appName: 'OpenCoven Chat',
+  installationId: 'chat-install-1',
+  scopes: ['chat:read', 'chat:write'],
+});
+
+await session.poll();
+await session.exchange();
+```
+
+The discovered helper performs no import-time I/O. Discovery, pairing, health,
+and stored-credential checks happen only when you call those methods.
+`session.exchange()` requires an injected credential store; there is no
+implicit fallback store. It is also local single-flight: once an exchange
+attempt begins, later `poll()`/`exchange()` calls fail locally unless the
+attempt failed before any transport send. Pre-send authority mismatches keep
+the pairing secret ready and surface retryable `reconcile_required`; once an
+exchange request reaches a transport, a later timeout, abort, or discovered
+fetch rejection still spends that session locally.
+The discovered exchange brackets the single-use request with unauthenticated
+health proofs and stores the credential only when the Cave `instanceId`
+remains stable. A failed post-exchange proof is terminal for that session and
+requires a new pairing.
+If a second reader observes a staged credential write mid-commit, authenticated
+calls fail locally with retryable `credential_update_in_progress` rather than
+deleting the credential that is still being committed.
+
+When you inject `credentials` into `new CaveClient({ transport, credentials })`,
+the transport must satisfy `CaveCredentialPersistingTransport` and return the
+non-secret `authorityBinding` metadata from `pairingExchange()`. The public
+binding carries the Cave instance ID, endpoint URL, an opaque record identity,
+device/inode, and freshness, without exposing the canonical discovery-record
+path directly. Discovered authenticated calls prove the stored instance ID
+through an unauthenticated health request before attaching the bearer.
+That separate preflight detects observable restarts but cannot atomically bind
+the later HTTP request to the proven process. Final 0.1 security disposition
+and real-authority conformance remain blocked on
+[OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
+
 ## Explicit Coven discovery
 
 `@opencoven/coven-client` may discover the owner-local daemon through an
@@ -145,8 +237,8 @@ const coven = await createDiscoveredCovenClient({
 
 await coven.health({ timeoutMs: 5_000 });
 ```
-
 The package deliberately provides no pathname-only, shell, `lsof`, PowerShell,
+private-Node-internals, or permissive trust fallback.
 private-Node-internals, or permissive trust fallback.
 
 ## Coordinated health
@@ -189,6 +281,10 @@ payloads, and authority secrets.
 
 Timeouts must be positive safe integers no greater than `2_147_483_647`.
 Automatic retries are intentionally not performed.
+Retry only transient `timeout`, `not_found`, `connect_failure`,
+`service_unavailable`, or `rate_limited` failures after the operator confirms
+the local runtime is ready. Version, authority-binding, ownership,
+secure-store, and platform-security errors require repair before rerunning.
 
 ## Production checklist
 

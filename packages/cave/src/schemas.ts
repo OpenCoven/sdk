@@ -1,3 +1,8 @@
+import type {
+  CaveDiscoveredEndpoint,
+  CaveEndpointFreshness,
+} from './discovery.js';
+
 export interface CaveHealth {
   status: 'ok';
   apiVersion: string;
@@ -9,18 +14,106 @@ export interface CaveHealth {
   releaseVersion: string;
 }
 
+export interface CaveHealthData {
+  instanceId: string;
+  pairingRequired: boolean;
+  releaseVersion: string;
+}
+
 export interface CaveHealthResponse {
   apiVersion: string;
-  capabilities: readonly string[];
   minimumClientVersion: string;
-  operations: readonly string[];
   requestId?: string;
-  data: {
-    instanceId: string;
-    pairingRequired: boolean;
-    releaseVersion: string;
-  };
+  capabilities: readonly string[];
+  operations: readonly string[];
+  data: CaveHealthData;
 }
+
+export const CAVE_PAIRING_SCOPES = [
+  'chat:read',
+  'chat:write',
+  'conversations:write',
+  'attachments:write',
+  'tasks:write',
+  'github:write',
+] as const;
+
+export type CavePairingScope = (typeof CAVE_PAIRING_SCOPES)[number];
+
+export const CAVE_PAIRING_STATUSES = [
+  'pending',
+  'approved',
+  'denied',
+  'expired',
+] as const;
+
+export type CavePairingState = (typeof CAVE_PAIRING_STATUSES)[number];
+
+export interface CavePairingRequest {
+  appName: string;
+  installationId: string;
+  scopes: CavePairingScope[];
+}
+
+export interface CavePairingCreated {
+  requestId: string;
+  secret: string;
+  expiresAt: number;
+}
+
+export interface CavePairingStatus {
+  id: string;
+  status: CavePairingState;
+  expiresAt: number;
+}
+
+export interface CaveCredentialMetadata {
+  id: string;
+  appName: string;
+  installationId: string;
+  scopes: CavePairingScope[];
+  createdAt: number;
+  lastUsedAt: number | null;
+  revokedAt: number | null;
+  revocationReason: string | null;
+}
+
+export interface CavePairingExchange {
+  bearer: string;
+  credential: CaveCredentialMetadata;
+}
+
+export interface CaveAuthorityBinding {
+  version: CaveDiscoveredEndpoint['version'];
+  instanceId: string;
+  endpoint: CaveDiscoveredEndpoint['endpoint'];
+  record: {
+    identity: string;
+    device: number;
+    inode: number;
+  };
+  freshness: CaveEndpointFreshness;
+}
+
+export interface CaveAuthorityBoundPairingExchange extends CavePairingExchange {
+  authorityBinding: CaveAuthorityBinding;
+}
+
+export type CaveCredentialAccess =
+  | 'chat:read'
+  | 'scope_denied'
+  | 'service_unavailable'
+  | 'rate_limited';
+
+export type CaveCredentialDisconnectedReason =
+  | 'credential_update_in_progress'
+  | 'reconcile_required';
+
+export type CaveCredentialStatus =
+  | { status: 'missing' }
+  | { status: 'disconnected'; reason: CaveCredentialDisconnectedReason }
+  | { status: 'revoked'; health: CaveHealth }
+  | { status: 'valid'; access: CaveCredentialAccess; health: CaveHealth };
 
 /**
  * Familiars.

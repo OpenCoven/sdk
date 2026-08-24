@@ -96,6 +96,48 @@ describe('Cave contract fixture parsing', () => {
     ).toThrowError('fixture.contract.minimumClientVersion must be a string.');
   });
 
+  test('accepts object inputs and rejects invalid object field types', () => {
+    const fixture = parseCaveContractFixture(readFileSync(fixturePath, 'utf8'));
+
+    expect(parseCaveContractFixture(fixture as unknown as Record<string, unknown>)).toEqual(fixture);
+
+    const invalidStatus = structuredClone(fixture) as unknown as {
+      examples: {
+        status: {
+          status: string;
+        };
+      };
+    };
+    invalidStatus.examples.status.status = 'broken';
+    expect(() =>
+      parseCaveContractFixture(invalidStatus as unknown as Record<string, unknown>),
+    ).toThrowError(
+      'fixture.examples.status.status must be "ok".',
+    );
+
+    const invalidCapabilities = structuredClone(fixture) as unknown as {
+      examples: {
+        successEnvelope: {
+          capabilities: unknown;
+        };
+      };
+    };
+    invalidCapabilities.examples.successEnvelope.capabilities = 'not-an-array';
+    expect(() =>
+      parseCaveContractFixture(invalidCapabilities as Record<string, unknown>),
+    ).toThrowError(
+      'fixture.examples.successEnvelope.capabilities must be an array.',
+    );
+  });
+
+  test('rejects invalid digest formats before parsing fixture bytes', () => {
+    const fixture = readFileSync(fixturePath, 'utf8');
+
+    expect(() => parseVerifiedCaveContractFixture(fixture, 'ABC123')).toThrowError(
+      'Cave fixture digest must be a lowercase hexadecimal SHA-256 string.',
+    );
+  });
+
   test('accepts safe additive fixture fields without weakening required fields', () => {
     const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
       contract: Record<string, unknown>;

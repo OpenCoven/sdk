@@ -7,6 +7,7 @@ import {
 } from 'node:fs';
 import { delimiter, resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, test } from 'vitest';
 
@@ -21,7 +22,50 @@ import {
   installIsolatedOfflineAfterWarming,
   isolatedInstallArgs,
 } from '../scripts/package-artifacts.mjs';
+import * as packageArtifacts from '../scripts/package-artifacts.mjs';
 import { cleanupOwnedTempRoot, createOwnedTempDirectory } from '../scripts/owned-temp-directory.mjs';
+
+const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
+
+const packageArtifactHelpers = packageArtifacts as unknown as {
+  findTarball(directory: string): string;
+  runPnpm(args: string[], cwd: string): void;
+};
+const ROOT_PACKAGE_EXPORTS = {
+  '.': {
+    types: './dist/index.d.ts',
+    import: './dist/index.js',
+    default: './dist/index.js',
+  },
+  './package.json': './package.json',
+} as const;
+
+function expectedPackedDependencies(workspaceDirectory: string, version: string): Record<string, string> {
+  switch (workspaceDirectory) {
+    case 'core':
+      return {};
+    case 'cave':
+    case 'coven':
+      return {
+        '@opencoven/sdk-core': version,
+      };
+    case 'sdk':
+      return {
+        '@opencoven/cave-client': version,
+        '@opencoven/coven-client': version,
+        '@opencoven/sdk-core': version,
+      };
+    case 'cli':
+      return {
+        '@napi-rs/keyring': '1.3.0',
+        '@opencoven/cave-client': version,
+        '@opencoven/coven-client': version,
+        '@opencoven/sdk-core': version,
+      };
+    default:
+      throw new Error(`Unexpected workspace package ${workspaceDirectory}.`);
+  }
+}
 
 function readTarballFile(tarball: string, path: string): string {
   return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
@@ -198,6 +242,47 @@ if (existsSync(rootModules) || existsSync(nestedModules) || !existsSync(lockfile
       cleanupOwnedTempRoot(artifactContext);
     }
   });
+
+  test('packs exact root export maps and direct dependencies for every public package', () => {
+    const artifactContext = createOwnedTempDirectory({
+      prefix: 'opencoven-packed-manifest-contract-spec',
+      childSegments: ['tarballs'],
+    });
+    const tarballRoot = resolve(artifactContext.rootPath, 'tarballs');
+
+    try {
+      for (const { workspaceDirectory } of PUBLIC_PACKAGES) {
+        const destination = resolve(tarballRoot, workspaceDirectory);
+        mkdirSync(destination, { recursive: true });
+        packageArtifactHelpers.runPnpm(
+          ['pack', '--pack-destination', destination],
+          resolve(root, 'packages', workspaceDirectory),
+        );
+
+        const tarball = packageArtifactHelpers.findTarball(destination);
+        const manifest = JSON.parse(readTarballFile(tarball, 'package.json')) as {
+          version: string;
+          main?: string;
+          types?: string;
+          exports?: Record<string, unknown>;
+          dependencies?: Record<string, string>;
+          optionalDependencies?: Record<string, string>;
+        };
+
+        expect(manifest.main).toBe('./dist/index.js');
+        expect(manifest.types).toBe('./dist/index.d.ts');
+        expect(manifest.exports).toEqual(ROOT_PACKAGE_EXPORTS);
+        expect(manifest.dependencies ?? {}).toEqual(
+          expectedPackedDependencies(workspaceDirectory, manifest.version),
+        );
+        if (workspaceDirectory === 'cli') {
+          expect(manifest.optionalDependencies?.['@napi-rs/keyring']).toBeUndefined();
+        }
+      }
+    } finally {
+      cleanupOwnedTempRoot(artifactContext);
+    }
+  }, 60_000);
 
   test.each(['warm', 'offline'] as const)(
     'waits for every parallel %s install before propagating a child failure',

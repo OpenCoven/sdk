@@ -6,6 +6,10 @@ interface ManagedSecretStore {
   get(key: string): Promise<string | undefined>;
   set(key: string, value: string): Promise<void>;
   delete(key: string): Promise<boolean>;
+  compareAndDelete(
+    key: string,
+    expectedValue: string,
+  ): Promise<'absent' | 'changed' | 'deleted'>;
   clear(): Promise<void>;
   dispose(): Promise<void>;
 }
@@ -43,6 +47,9 @@ describe('managed memory secret store', () => {
       name: 'InvalidSecretKeyError',
     });
     await expect(store.delete(key)).rejects.toMatchObject({
+      name: 'InvalidSecretKeyError',
+    });
+    await expect(store.compareAndDelete(key, 'value')).rejects.toMatchObject({
       name: 'InvalidSecretKeyError',
     });
   });
@@ -86,6 +93,9 @@ describe('managed memory secret store', () => {
     await expect(store.delete('token')).rejects.toMatchObject({
       name: 'SecretStoreDisposedError',
     });
+    await expect(store.compareAndDelete('token', 'secret')).rejects.toMatchObject({
+      name: 'SecretStoreDisposedError',
+    });
     await expect(store.clear()).rejects.toMatchObject({
       name: 'SecretStoreDisposedError',
     });
@@ -101,6 +111,16 @@ describe('managed memory secret store', () => {
     expect(second.disposed).toBe(false);
     await second.set('token', 'second');
     await expect(second.get('token')).resolves.toBe('second');
+  });
+
+  test('deletes a managed secret only when its value still matches', async () => {
+    const store = createStore();
+    await store.set('token', 'current');
+
+    await expect(store.compareAndDelete('token', 'stale')).resolves.toBe('changed');
+    await expect(store.get('token')).resolves.toBe('current');
+    await expect(store.compareAndDelete('token', 'current')).resolves.toBe('deleted');
+    await expect(store.compareAndDelete('token', 'current')).resolves.toBe('absent');
   });
 
   test('applies invocation order deterministically around disposal', async () => {

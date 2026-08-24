@@ -42,6 +42,24 @@ describe('packed package verifier contract', () => {
     expect(verifier).not.toContain("packageDirectory === 'sdk'");
   });
 
+  test('verifies exact packed root export maps and direct dependencies', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain('const rootPackageExports = {');
+    expect(verifier).toContain('function expectedPackedDependencies(workspaceDirectory, version)');
+    expect(verifier).toContain('function assertPackedPackageContracts(tarballs)');
+    expect(verifier).toContain("manifest.main !== './dist/index.js'");
+    expect(verifier).toContain("manifest.types !== './dist/index.d.ts'");
+    expect(verifier).toContain('!isDeepStrictEqual(manifest.exports, rootPackageExports)');
+    expect(verifier).toContain(
+      'const expectedDependencies = expectedPackedDependencies(workspaceDirectory, manifest.version);',
+    );
+    expect(verifier).toContain(
+      '!isDeepStrictEqual(manifest.dependencies ?? {}, expectedDependencies)',
+    );
+    expect(verifier).toContain('assertPackedPackageContracts(tarballs);');
+  });
+
   test('enforces the exact approved license contract in packed tarballs', () => {
     const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
 
@@ -58,6 +76,24 @@ describe('packed package verifier contract', () => {
       "readTarballFile(tarballs[workspaceDirectory], 'CHANGELOG.md')",
     );
     expect(verifier).toContain('assertPackedChangelogs(tarballs);');
+  });
+
+  test('verifies the packed CLI native dependency and optional platform contract', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain('function assertPackedCliNativeDependency(fixtureRoot, tarballs)');
+    expect(verifier).toContain("import { createRequire } from 'node:module';");
+    expect(verifier).toContain('function readInstalledPackageManifest(requireFromPath, packageName)');
+    expect(verifier).toContain("cliManifest.dependencies?.['@napi-rs/keyring'] !== '1.3.0'");
+    expect(verifier).toContain("resolve(fixtureRoot, 'package.json')");
+    expect(verifier).toContain("const resolvedEntryPath = packageRequire.resolve(packageName);");
+    expect(verifier).toContain("cliPackage.manifest.dependencies?.['@napi-rs/keyring'] !== '1.3.0'");
+    expect(verifier).toContain("cliPackage.manifestPath,\n    '@napi-rs/keyring',");
+    expect(verifier).not.toContain(
+      "resolve(cliPackageRoot, 'node_modules', '@napi-rs', 'keyring', 'package.json')",
+    );
+    expect(verifier).toContain('Object.keys(keyringManifest.optionalDependencies ?? {}).length === 0');
+    expect(verifier).toContain('assertPackedCliNativeDependency(fixtureRoot, tarballs);');
   });
 
   test('keeps complete release verification in the dedicated matrix command', () => {
@@ -109,13 +145,13 @@ describe('packed package verifier contract', () => {
     );
     expect(verifier).toContain("result.stderr !== ''");
     expect(verifier).toContain("command: 'help'");
-    expect(verifier).toContain("data: { name: 'opencoven' }");
+    expect(verifier).toContain("data: { name: 'opencoven', usage }");
     expect(verifier).toContain('ok: true');
     expect(verifier).toContain('version: expectedVersion');
     expect(verifier).toContain('!isDeepStrictEqual(jsonOutput, expectedOutput)');
   });
 
-  test('checks both packed binary failure output modes', () => {
+  test('checks both packed binary invalid-argument failure output modes', () => {
     const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
 
     expect(verifier).toContain(
@@ -126,13 +162,13 @@ describe('packed package verifier contract', () => {
     );
     expect(verifier).toContain("humanFailure.status !== 1");
     expect(verifier).toContain("humanFailure.stdout !== ''");
-    expect(verifier).toContain(
-      "humanFailure.stderr !== 'This command is reserved for a future operational task.\\n'",
-    );
+    expect(verifier).toContain("!humanFailure.stderr.includes('Unknown or incomplete command.')");
+    expect(verifier).toContain("!humanFailure.stderr.includes('Usage:')");
     expect(verifier).toContain("jsonFailure.status !== 1");
     expect(verifier).toContain("jsonFailure.stderr !== ''");
-    expect(verifier).toContain("jsonOutput?.error?.code !== 'not_implemented'");
+    expect(verifier).toContain("jsonOutput?.error?.code !== 'invalid_arguments'");
     expect(verifier).toContain("jsonOutput?.command !== 'status'");
+    expect(verifier).toContain('!Array.isArray(jsonOutput?.data?.usage)');
     expect(verifier).toContain('jsonOutput?.ok !== false');
   });
 
