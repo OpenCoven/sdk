@@ -17,6 +17,20 @@ secret is sent. Stored bearers are rediscovered against the same authority
 identity before every authenticated discovered call and are cleared locally
 rather than sent to a different Cave.
 
+## Shipped surface
+
+- `new CaveClient({ transport })` and `createCaveClient(...)` preserve
+  caller-owned transports for health, familiars, analytics, and reviewed
+  contract-fixture helpers.
+- `discoverCaveEndpoint(options)` validates the owner-local
+  `client-v1-discovery.json` record only when called.
+- `createDiscoveredCaveClient(...)` layers runtime-only `health()`,
+  `createPairing()`, `credentialStatus()`, and `forgetCredential()` over that
+  discovery contract.
+- Runtime exports also include `CAVE_CLIENT_VERSION`,
+  `CAVE_PAIRING_SCOPES`, `CAVE_PAIRING_STATUSES`,
+  `CAVE_FAMILIAR_PROPERTIES`, and `CAVE_ANALYTICS_WINDOWS`.
+
 ```ts
 import {
   CAVE_CLIENT_VERSION,
@@ -104,6 +118,17 @@ locally unless the attempt failed before any transport send.
 Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,
 `verifyCaveContractFixtureDigest`, and `digestCaveContractFixture`.
+
+## Compatibility, deadlines, and retry guidance
+
+Cave Client v1 health accepts additive Cave API updates on major version `1`
+and rejects incompatible API or minimum-client versions with
+`incompatible_version`. There is no default timeout and no automatic retry.
+Retry transient `timeout`, `not_found`, `service_unavailable`, or
+`rate_limited` failures only after the operator confirms the local runtime is
+ready; repair `stale_record`, `reconcile_required`, `pairing_denied`,
+`pairing_expired`, or `incompatible_version` before running the operation
+again.
 
 ## License
 

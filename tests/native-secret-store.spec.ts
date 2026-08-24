@@ -1,5 +1,9 @@
+/* eslint-disable @typescript-eslint/require-await */
+
 import { createNativeSecretStore, SecureStoreUnavailableError } from '@opencoven/dev-cli';
 import { describe, expect, test, vi } from 'vitest';
+
+import { probeNativeSecretStore } from '../packages/cli/src/native-secret-store.js';
 
 interface EntryShape {
   getPassword(): string | null | undefined;
@@ -107,6 +111,46 @@ describe('native secret store', () => {
         method: 'get',
       },
     ]);
+  });
+
+  test('accepts the keyring Entry constructor from a default export shape', async () => {
+    const store = await createNativeSecretStore({
+      loadModule: () =>
+        Promise.resolve({
+          default: {
+            Entry: class {
+              getPassword(): string | undefined {
+                return undefined;
+              }
+
+              setPassword(): void {
+                // no-op
+              }
+
+              deletePassword(): void {
+                // no-op
+              }
+            },
+          },
+        } as unknown as KeyringModuleShape),
+      service: SERVICE,
+    });
+
+    await expect(store.get('cave-credential')).resolves.toBeUndefined();
+  });
+
+  test('rejects missing Entry constructors as secure_store_unavailable', async () => {
+    const error = await createNativeSecretStore({
+      loadModule: () => Promise.resolve({} as unknown as KeyringModuleShape),
+      service: SERVICE,
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(SecureStoreUnavailableError);
+    expect(error).toMatchObject({
+      code: 'secure_store_unavailable',
+      operation: 'load',
+      retryable: false,
+    });
   });
 
   test('wraps module load failures as secure_store_unavailable without leaking service details', async () => {
@@ -217,4 +261,101 @@ describe('native secret store', () => {
       expect(String(error)).not.toContain('bearer');
     },
   );
+
+  test('rejects missing probe APIs as secure_store_unavailable', async () => {
+    const error = await probeNativeSecretStore({
+      get: async () => undefined,
+      set: async () => undefined,
+      delete: async () => false,
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(SecureStoreUnavailableError);
+    expect(error).toMatchObject({
+      code: 'secure_store_unavailable',
+      operation: 'probe',
+      retryable: false,
+    });
+  });
+
+  test('preserves already wrapped secure-store failures and the default service name', async () => {
+    const store = await createNativeSecretStore({
+      loadModule: () =>
+        Promise.resolve({
+          Entry: class {
+            getPassword(): string | undefined {
+              throw new SecureStoreUnavailableError('get');
+            }
+
+            setPassword(): void {
+              throw new SecureStoreUnavailableError('set');
+            }
+
+            deletePassword(): void {
+              throw new Error('not reached');
+            }
+          },
+        }),
+    });
+    const deleteStore = await createNativeSecretStore({
+      loadModule: () =>
+        Promise.resolve({
+          Entry: class {
+            getPassword(): string {
+              return 'stored';
+            }
+
+            setPassword(): void {
+              // no-op
+            }
+
+            deletePassword(): void {
+              throw new SecureStoreUnavailableError('delete');
+            }
+          },
+        }),
+    });
+
+    await expect(store.get('cave-credential')).rejects.toMatchObject({
+      operation: 'get',
+    });
+    await expect(store.set('cave-credential', 'value')).rejects.toMatchObject({
+      operation: 'set',
+    });
+    await expect(deleteStore.delete('cave-credential')).rejects.toMatchObject({
+      operation: 'delete',
+    });
+
+    await expect(
+      probeNativeSecretStore(
+        Object.assign(store, {
+          probe: async () => {
+            throw new SecureStoreUnavailableError('probe');
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      operation: 'probe',
+    });
+  });
+
+  test('preserves already wrapped probe failures from plain SecretStore implementations', async () => {
+    await expect(
+      probeNativeSecretStore(
+        Object.assign(
+          {
+            get: async () => undefined,
+            set: async () => undefined,
+            delete: async () => false,
+          },
+          {
+            probe: async () => {
+              throw new SecureStoreUnavailableError('probe');
+            },
+          },
+        ),
+      ),
+    ).rejects.toMatchObject({
+      operation: 'probe',
+    });
+  });
 });

@@ -40,6 +40,34 @@ const rootManifest = JSON.parse(readFileSync(resolve(workspaceRoot, 'package.jso
 };
 const vitestConfig = readFileSync(resolve(workspaceRoot, 'vitest.config.ts'), 'utf8');
 const lockfile = readFileSync(resolve(workspaceRoot, 'pnpm-lock.yaml'), 'utf8');
+const ROOT_PACKAGE_EXPORTS = {
+  '.': {
+    types: './dist/index.d.ts',
+    import: './dist/index.js',
+    default: './dist/index.js',
+  },
+  './package.json': './package.json',
+} as const;
+const EXPECTED_WORKSPACE_DEPENDENCIES = {
+  core: {},
+  cave: {
+    '@opencoven/sdk-core': 'workspace:0.1.0',
+  },
+  coven: {
+    '@opencoven/sdk-core': 'workspace:0.1.0',
+  },
+  sdk: {
+    '@opencoven/cave-client': 'workspace:0.1.0',
+    '@opencoven/coven-client': 'workspace:0.1.0',
+    '@opencoven/sdk-core': 'workspace:0.1.0',
+  },
+  cli: {
+    '@napi-rs/keyring': '1.3.0',
+    '@opencoven/cave-client': 'workspace:0.1.0',
+    '@opencoven/coven-client': 'workspace:0.1.0',
+    '@opencoven/sdk-core': 'workspace:0.1.0',
+  },
+} as const;
 
 describe('public package manifests', () => {
   test('runs the clean Phase 0 matrix before the remaining full verification', () => {
@@ -160,24 +188,35 @@ describe('public package manifests', () => {
     expect(lockfile).toMatch(/optionalDependencies:\n(?:\s+'@napi-rs\/keyring-[^']+': 1\.3\.0\n)+/);
   });
 
-  test('declare only root exports and approved package metadata', () => {
+  test('declare exact root export maps, dependencies, and approved package metadata', () => {
     const versions = new Set<string>();
 
-    for (const { packageName, manifestPath, repositoryDirectory } of PUBLIC_PACKAGES) {
+    for (const { packageName, manifestPath, repositoryDirectory, workspaceDirectory } of PUBLIC_PACKAGES) {
       const manifest = JSON.parse(readFileSync(resolve(workspaceRoot, manifestPath), 'utf8')) as {
         dependencies?: Record<string, string>;
         name: string;
         exports: Record<string, unknown>;
+        main?: string;
+        types?: string;
         license?: string;
         version?: string;
+        sideEffects?: boolean;
         engines?: {
           node?: string;
         };
         repository?: unknown;
       };
+      const expectedDependencies =
+        EXPECTED_WORKSPACE_DEPENDENCIES[
+          workspaceDirectory as keyof typeof EXPECTED_WORKSPACE_DEPENDENCIES
+        ];
 
       expect(manifest.name).toBe(packageName);
-      expect(Object.keys(manifest.exports)).toEqual(['.', './package.json']);
+      expect(manifest.main).toBe('./dist/index.js');
+      expect(manifest.types).toBe('./dist/index.d.ts');
+      expect(manifest.sideEffects).toBe(false);
+      expect(manifest.exports).toEqual(ROOT_PACKAGE_EXPORTS);
+      expect(manifest.dependencies ?? {}).toEqual(expectedDependencies);
       expect(manifest.license).toBe('AGPL-3.0-only OR MIT');
       expect(manifest.version).toBe('0.1.0');
       versions.add(manifest.version ?? '');

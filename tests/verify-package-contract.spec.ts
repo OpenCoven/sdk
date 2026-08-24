@@ -42,6 +42,24 @@ describe('packed package verifier contract', () => {
     expect(verifier).not.toContain("packageDirectory === 'sdk'");
   });
 
+  test('verifies exact packed root export maps and direct dependencies', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain('const rootPackageExports = {');
+    expect(verifier).toContain('function expectedPackedDependencies(workspaceDirectory, version)');
+    expect(verifier).toContain('function assertPackedPackageContracts(tarballs)');
+    expect(verifier).toContain("manifest.main !== './dist/index.js'");
+    expect(verifier).toContain("manifest.types !== './dist/index.d.ts'");
+    expect(verifier).toContain('!isDeepStrictEqual(manifest.exports, rootPackageExports)');
+    expect(verifier).toContain(
+      'const expectedDependencies = expectedPackedDependencies(workspaceDirectory, manifest.version);',
+    );
+    expect(verifier).toContain(
+      '!isDeepStrictEqual(manifest.dependencies ?? {}, expectedDependencies)',
+    );
+    expect(verifier).toContain('assertPackedPackageContracts(tarballs);');
+  });
+
   test('enforces the exact approved license contract in packed tarballs', () => {
     const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
 

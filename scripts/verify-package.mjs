@@ -42,6 +42,14 @@ const installedPackageNames = {
   sdk: 'sdk',
   cli: 'dev-cli',
 };
+const rootPackageExports = {
+  '.': {
+    types: './dist/index.d.ts',
+    import: './dist/index.js',
+    default: './dist/index.js',
+  },
+  './package.json': './package.json',
+};
 
 function readTarballFile(tarball, path) {
   return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
@@ -194,7 +202,6 @@ function readInstalledPackageManifest(requireFromPath, packageName) {
   );
 }
 
-
 function assertPackedCliNativeDependency(fixtureRoot, tarballs) {
   const cliManifest = JSON.parse(readTarballFile(tarballs.cli, 'package.json'));
   if (cliManifest.dependencies?.['@napi-rs/keyring'] !== '1.3.0') {
@@ -259,6 +266,56 @@ function assertPackedChangelogs(tarballs) {
     if (!changelog.includes(`## ${manifest.version}`)) {
       throw new Error(
         `Packed ${packageName} package changelog does not contain version ${manifest.version}.`,
+      );
+    }
+  }
+}
+
+function expectedPackedDependencies(workspaceDirectory, version) {
+  switch (workspaceDirectory) {
+    case 'core':
+      return {};
+    case 'cave':
+    case 'coven':
+      return {
+        '@opencoven/sdk-core': version,
+      };
+    case 'sdk':
+      return {
+        '@opencoven/cave-client': version,
+        '@opencoven/coven-client': version,
+        '@opencoven/sdk-core': version,
+      };
+    case 'cli':
+      return {
+        '@napi-rs/keyring': '1.3.0',
+        '@opencoven/cave-client': version,
+        '@opencoven/coven-client': version,
+        '@opencoven/sdk-core': version,
+      };
+    default:
+      throw new Error(`Unexpected workspace package ${workspaceDirectory}.`);
+  }
+}
+
+function assertPackedPackageContracts(tarballs) {
+  for (const { packageName, workspaceDirectory } of PUBLIC_PACKAGES) {
+    const manifest = JSON.parse(readTarballFile(tarballs[workspaceDirectory], 'package.json'));
+    const expectedDependencies = expectedPackedDependencies(workspaceDirectory, manifest.version);
+
+    if (
+      manifest.main !== './dist/index.js' ||
+      manifest.types !== './dist/index.d.ts' ||
+      !isDeepStrictEqual(manifest.exports, rootPackageExports)
+    ) {
+      throw new Error(
+        `Packed ${packageName} package must ship only the reviewed root export map.`,
+      );
+    }
+
+    if (!isDeepStrictEqual(manifest.dependencies ?? {}, expectedDependencies)) {
+      throw new Error(
+        `Packed ${packageName} package direct dependencies drifted from the reviewed contract.`,
       );
     }
   }
@@ -570,6 +627,8 @@ try {
   process.stdout.write('Packed license metadata verified.\n');
   assertPackedChangelogs(tarballs);
   process.stdout.write('Packed changelog metadata verified.\n');
+  assertPackedPackageContracts(tarballs);
+  process.stdout.write('Packed package manifest contracts verified.\n');
 
   const releaseArtifactRoot = resolve(artifactRoot, 'release');
   createReleaseArtifacts({

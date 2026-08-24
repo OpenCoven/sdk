@@ -1,6 +1,10 @@
 # @opencoven/sdk
 
-Optional coordination of separately configured Cave and Coven clients.
+Optional coordination of separately configured Cave and Coven clients. The
+package exports only `createOpenCovenSdk`, `OpenCovenSdk`, and
+`OpenCovenSdkError`. It does not discover runtimes, create transports, touch
+credential stores, or perform import-time I/O; explicit discovery stays in the
+underlying Cave and Coven clients you inject.
 
 ```ts
 import { createOpenCovenSdk } from '@opencoven/sdk';
@@ -16,16 +20,21 @@ if (report.cave.status === 'unhealthy') {
 }
 ```
 
-`health()` preserves the original fail-fast behavior and returns only configured
-healthy values. `healthReport()` starts configured checks concurrently and
-returns a discriminated result for each client:
+## Shipped surface
+
+- `availability()` reports which clients are configured.
+- `requireCave()` and `requireCoven()` return the configured client or throw
+  `OpenCovenSdkError`.
+- `health()` preserves the original fail-fast behavior and returns only
+  configured healthy values.
+- `healthReport()` starts configured checks concurrently and returns a
+  discriminated result for each client:
 
 - `not_configured`
 - `healthy` with the health value
 - `unhealthy` with the typed client error
 
-`availability()` reports configured clients. `requireCave()` and
-`requireCoven()` return their client or throw `OpenCovenSdkError`.
+## Deadlines, compatibility, and retry guidance
 
 The top-level timeout is one total budget. Sequential `health()` subtracts time
 already spent in Cave before starting Coven. Concurrent `healthReport()` starts
@@ -36,7 +45,13 @@ duplicate SDK-layer terminal events.
 
 There is no default timeout and no automatic retry. Timeout can return while a
 non-cooperative transport continues its own work; transports must honor their
-context signal to stop underlying I/O.
+context signal to stop underlying I/O. Compatibility and typed errors come from
+the underlying clients: Cave keeps the reviewed additive Client v1 rules,
+while Coven keeps the exact daemon v1 transport-security requirements already
+configured on that client. If coordinated Coven health reports
+`platform_security_unavailable`, fix the embedding runtime by injecting a
+reviewed native transport-security adapter instead of accepting pathname-only
+or shell-derived proof.
 
 ## License
 

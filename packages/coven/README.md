@@ -4,6 +4,18 @@ A constrained, owner-local Coven health client. Importing the package performs
 no filesystem, process, network, socket, or daemon I/O. Discovery and health
 checks happen only through explicit runtime calls.
 
+## Shipped surface
+
+- `discoverCovenEndpoint(options)` resolves the owner-local daemon endpoint
+  only when called.
+- `createDiscoveredCovenClient(...)` wraps that discovery with a health-only
+  `CovenClient`.
+- `createCovenUnixTransport(...)` and `createCovenWindowsTransport(...)`
+  expose the exact reviewed built-in transports for the authenticated local
+  daemon health contract.
+- `createCovenClient(...)` preserves caller-supplied transports, while
+  `COVEN_DAEMON_PROTOCOL` exports the exact reviewed daemon protocol string.
+
 ## Discover and check health
 
 `createDiscoveredCovenClient(options)` resolves the current daemon, verifies
@@ -168,9 +180,13 @@ bundles or duplicate package installations.
 
 `health()` accepts an optional signal, timeout, and lifecycle observer.
 Constructor operation defaults remain additive, and zero-argument transports
-remain compatible. There is no default timeout. Timeout rejects promptly for
-non-cooperative transports, while stopping underlying daemon I/O requires the
-transport to honor its context signal.
+remain compatible. There is no default timeout and no automatic retry. Timeout
+rejects promptly for non-cooperative transports, while stopping underlying
+daemon I/O requires the transport to honor its context signal. Retry transient
+`not_found`, `command_failed`, `connect_failure`, or `timeout` failures only
+after the operator has started or repaired the local runtime; ownership,
+endpoint safety, malformed config, and platform-security failures are
+fail-closed configuration issues.
 
 The owner-local Coven daemon contract does not use bearer tokens, API keys,
 cookies, or credential files. This package neither discovers nor sends them.

@@ -69,6 +69,7 @@ const DISCOVERY_STARTED_AT = '2026-08-24T02:03:51.419Z';
 const DISCOVERY_PID = 4_321;
 const DISCOVERY_NONCE = '018f4f1a-77c2-7a31-8a15-55a25aaba003';
 const DISCOVERY_FILE_NAME = 'client-v1-discovery.json';
+const DISCOVERY_TEST_TIMEOUT_MS = 500;
 const DEFAULT_DISCOVERY_ENDPOINT = 'http://127.0.0.1:3020';
 const DEFAULT_UID = process.geteuid?.() ?? 501;
 const createdRoots = new Set<string>();
@@ -269,7 +270,7 @@ function discoveredClient(
       credentials,
       discovery: {
         root,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: discoveryDependencies(),
       },
       fetch: fetchImplementation,
@@ -293,7 +294,7 @@ function inlineDiscoveredClient(fetchImplementation: typeof fetch) {
     },
     discovery: {
       root,
-      timeoutMs: 100,
+      timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
       dependencies: {
         getEffectiveUid: () => DEFAULT_UID,
         isProcessAlive: () => true,
@@ -410,7 +411,7 @@ describe('discoverCaveEndpoint', () => {
         },
         cwd: process.cwd(),
         platform: process.platform,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: discoveryDependencies(),
       }),
     ).resolves.toEqual({
@@ -445,7 +446,7 @@ describe('discoverCaveEndpoint', () => {
     await expect(
       discoverCaveEndpoint({
         root,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: discoveryDependencies(),
       }),
     ).rejects.toMatchObject({
@@ -460,7 +461,7 @@ describe('discoverCaveEndpoint', () => {
     await expect(
       discoverCaveEndpoint({
         root: staleRoot,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: {
           ...discoveryDependencies(),
           isProcessAlive: () => false,
@@ -476,7 +477,7 @@ describe('discoverCaveEndpoint', () => {
     await expect(
       discoverCaveEndpoint({
         root: nonceRoot,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: discoveryDependencies(),
       }),
     ).rejects.toMatchObject({
@@ -491,7 +492,7 @@ describe('discoverCaveEndpoint', () => {
     await expect(
       discoverCaveEndpoint({
         root: ownerRoot,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: {
           ...discoveryDependencies(),
           getEffectiveUid: () => DEFAULT_UID + 1,
@@ -510,7 +511,7 @@ describe('discoverCaveEndpoint', () => {
     await expect(
       discoverCaveEndpoint({
         root: modeRoot,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: discoveryDependencies(),
       }),
     ).rejects.toMatchObject({
@@ -526,7 +527,7 @@ describe('discoverCaveEndpoint', () => {
     await expect(
       discoverCaveEndpoint({
         root: aliasRoot,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: discoveryDependencies(),
       }),
     ).rejects.toMatchObject({
@@ -540,7 +541,7 @@ describe('discoverCaveEndpoint', () => {
     await expect(
       discoverCaveEndpoint({
         root: swappedRoot,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: {
           getEffectiveUid: () => DEFAULT_UID,
           isProcessAlive: () => true,
@@ -595,7 +596,7 @@ describe('discoverCaveEndpoint', () => {
       discoverCaveEndpoint({
         root: oversizeRoot,
         maxRecordBytes: 64,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: discoveryDependencies(),
       }),
     ).rejects.toMatchObject({
@@ -608,7 +609,7 @@ describe('discoverCaveEndpoint', () => {
     await expect(
       discoverCaveEndpoint({
         root: malformedRoot,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: discoveryDependencies(),
       }),
     ).rejects.toMatchObject({
@@ -1561,7 +1562,7 @@ describe('discovered Cave pairing helpers', () => {
       credentials: { store, reference },
       discovery: {
         root,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: discoveryDependencies(),
       },
       fetch: fetchImplementation,
@@ -1683,7 +1684,7 @@ describe('discovered Cave pairing helpers', () => {
       },
       discovery: {
         root,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: discoveryDependencies(),
       },
       fetch: oversizedFetch,
@@ -1721,7 +1722,7 @@ describe('discovered Cave pairing helpers', () => {
       },
       discovery: {
         root,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: discoveryDependencies(),
       },
       fetch: redirectFetch,
@@ -1770,7 +1771,7 @@ describe('discovered Cave pairing helpers', () => {
       discoverEndpoint,
       discovery: {
         root: missingRoot,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: discoveryDependencies(),
       },
       fetch: fetchImplementation,
@@ -1781,7 +1782,7 @@ describe('discovered Cave pairing helpers', () => {
     expect(discoverEndpoint).toHaveBeenCalledWith(
       expect.objectContaining({
         root: missingRoot,
-        timeoutMs: 100,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
       }),
     );
   });

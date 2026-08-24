@@ -5,15 +5,20 @@
 > development, has not been security audited, and may change without notice. Do
 > not use it for production workloads or with production credentials.
 
-This workspace provides the Phase 0 public SDK scaffold for OpenCoven.
+This workspace provides the experimental Phase 1b public OpenCoven SDK
+workspace: runtime-only Cave discovery and pairing helpers, explicit Coven
+daemon health adapters, coordinated SDK health reporting, and the
+`opencoven` developer CLI.
 
 ## Release status
 
 This source repository is public, but its packages are explicitly marked
 private, are not published, and have standard publishing blocked. It is
-experimental and not yet a security-audited release. Standard publishing also requires
-`OPENCOVEN_RELEASE_AUTHORIZATION=publish`; remove or change these gates only as
-part of an intentional release process.
+experimental and not yet a security-audited release. Standard publishing also
+requires `OPENCOVEN_RELEASE_AUTHORIZATION=publish`; remove or change these
+gates only as part of an intentional release process. This phase documents and
+verifies shipped contracts only; it does not publish packages or relax release
+gates.
 
 - [Support policy](SUPPORT.md)
 - [Security policy](SECURITY.md)
@@ -23,9 +28,9 @@ part of an intentional release process.
 | --- | --- | --- |
 | `packages/core` | `@opencoven/sdk-core` | Transport-neutral errors, compatibility types, and in-memory secrets |
 | `packages/cave` | `@opencoven/cave-client` | Constrained Cave transport plus runtime discovery/pairing helpers |
-| `packages/coven` | `@opencoven/coven-client` | Constrained caller-supplied Coven transport |
-| `packages/sdk` | `@opencoven/sdk` | Optional Cave/Coven coordination |
-| `packages/cli` | `@opencoven/dev-cli` | Sole owner of the `opencoven` binary |
+| `packages/coven` | `@opencoven/coven-client` | Constrained Coven discovery and health with explicit native transport-security providers |
+| `packages/sdk` | `@opencoven/sdk` | Optional Cave/Coven coordination over already-configured clients |
+| `packages/cli` | `@opencoven/dev-cli` | Sole owner of the `opencoven` binary plus native secure storage and fail-closed Coven checks |
 
 The SDK performs no discovery, credential lookup, network, filesystem, or
 daemon I/O at import time. Cave pairing/discovery is runtime-only and opt-in;
@@ -41,6 +46,26 @@ distinct.
 | Coven daemon health | `@opencoven/coven-client` |
 | Optional Cave/Coven coordination | `@opencoven/sdk` |
 | Deterministic developer CLI output | `@opencoven/dev-cli` |
+
+## Developer CLI contract
+
+`@opencoven/dev-cli` ships only these experimental commands:
+
+- `opencoven doctor`
+- `opencoven discover`
+- `opencoven cave pair`
+- `opencoven cave status`
+- `opencoven cave forget`
+- `opencoven coven health`
+
+Every command performs runtime discovery only when invoked, enforces an
+explicit reviewed deadline, and keeps human and JSON output secret-free.
+`cave pair` uses one absolute budget across create, poll, and exchange.
+Production credentials require direct `@napi-rs/keyring` `1.3.0`; the CLI
+fails closed with `secure_store_unavailable` and has no file, shell, or
+environment fallback. `coven health` requires a real reviewed native
+platform-security adapter; the default Node CLI reports
+`platform_security_unavailable` rather than fabricating peer ownership proof.
 
 ## Caller-supplied transports
 
@@ -165,6 +190,10 @@ payloads.
 
 Timeouts must be positive safe integers no greater than `2_147_483_647`.
 Automatic retries are intentionally not performed.
+Retry only transient `timeout`, `not_found`, `connect_failure`,
+`service_unavailable`, or `rate_limited` failures after the operator confirms
+the local runtime is ready. Version, authority-binding, ownership,
+secure-store, and platform-security errors require repair before rerunning.
 
 ## Production checklist
 
