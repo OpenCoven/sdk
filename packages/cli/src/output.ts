@@ -118,6 +118,7 @@ function inferredRetryable(code: string): boolean | undefined {
     case 'not_found':
     case 'command_failed':
     case 'connect_failure':
+    case 'credential_update_in_progress':
     case 'timeout':
       return true;
     case 'secure_store_unavailable':
@@ -216,6 +217,8 @@ function messageForCode(code: string, context: CliErrorContext): string {
       return 'The paired Cave credential could not be saved securely.';
     case 'secret_store_rollback_failed':
       return 'The paired Cave credential could not be rolled back safely.';
+    case 'credential_update_in_progress':
+      return 'A Cave credential update is still in progress.';
     case 'reconcile_required':
       return 'The local Cave authority changed and the stored credential is no longer trusted.';
     case 'scope_denied':
@@ -281,6 +284,8 @@ function actionForCode(code: string, context: CliErrorContext): string | undefin
       return secureStoreAction();
     case 'secret_store_rollback_failed':
       return 'Run `opencoven cave forget` once secure credential storage is healthy, then pair again.';
+    case 'credential_update_in_progress':
+      return 'Retry once the local credential update finishes.';
     case 'reconcile_required':
       return 'Run `opencoven cave pair` to establish a fresh credential.';
     case 'scope_denied':

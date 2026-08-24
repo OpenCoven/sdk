@@ -2056,6 +2056,37 @@ describe('opencoven CLI output', () => {
       version: cliVersion,
     });
 
+    const disconnected = await runCli(
+      ['--json', 'cave', 'status'],
+      runtime({
+        cave: {
+          createClient: () => ({
+            credentialStatus: () =>
+              Promise.resolve({
+                status: 'disconnected' as const,
+                reason: 'credential_update_in_progress' as const,
+              }),
+          }),
+        },
+      }),
+    );
+
+    expect(JSON.parse(disconnected.stdout)).toEqual({
+      command: 'cave status',
+      data: {
+        status: 'disconnected',
+        reason: 'credential_update_in_progress',
+      },
+      error: {
+        code: 'credential_update_in_progress',
+        message: 'A Cave credential update is still in progress.',
+        action: 'Retry once the local credential update finishes.',
+        retryable: true,
+      },
+      ok: false,
+      version: cliVersion,
+    });
+
     const revoked = await runCli(
       ['--json', 'cave', 'status'],
       runtime({

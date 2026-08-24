@@ -52,6 +52,7 @@ export type {
   CaveContractReport,
   CaveContractViolation,
   CaveCredentialAccess,
+  CaveCredentialDisconnectedReason,
   CaveCredentialMetadata,
   CaveCredentialStatus,
   CaveExecutionAttempt,

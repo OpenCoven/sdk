@@ -22,6 +22,7 @@ const CAVE_CREDENTIAL_BINDING_OWNER_SCHEMA = 'opencoven.cave.credential-binding.
 const CAVE_CREDENTIAL_BINDING_OWNER_KEY_PREFIX =
   'opencoven.cave.credential-binding.owner.v1.' as const;
 const CAVE_CREDENTIAL_STORE_GRACE_MS = 250;
+const CAVE_CREDENTIAL_STABLE_READ_ATTEMPTS = 3;
 const FNV_OFFSET_BASIS_64 = 0xcbf29ce484222325n;
 const FNV_PRIME_64 = 0x100000001b3n;
 const SECRET_STORE_LOGICAL_ID = Symbol.for('@opencoven/sdk-core/secret-store-logical-id');
@@ -74,6 +75,7 @@ interface CaveCredentialBindingOwnerRecord {
 
 export type LoadedCaveCredential =
   | { status: 'missing' }
+  | { status: 'update_in_progress' }
   | { status: 'invalid_bearer' }
   | { status: 'invalid'; reason: CaveStoredCredentialInvalidReason }
   | { status: 'ready'; bearer: string };
@@ -82,12 +84,59 @@ export type StoredCaveCredentialMaterial =
   | { status: 'missing' }
   | { status: 'present' }
   | { status: 'invalid_bearer' }
-  | { status: 'incomplete' };
+  | { status: 'incomplete' }
+  | { status: 'update_in_progress' };
 
 interface CredentialBindingMutationOptions {
   context?: OperationContext;
   mutationGraceMs?: number;
   termination?: Promise<never>;
+}
+
+type CredentialSnapshotKey = 'metadata' | 'staging' | 'failure' | 'owner' | 'bearer';
+
+const CREDENTIAL_SNAPSHOT_KEYS = [
+  'metadata',
+  'staging',
+  'failure',
+  'owner',
+  'bearer',
+] as const satisfies readonly CredentialSnapshotKey[];
+
+const CREDENTIAL_SNAPSHOT_HEADER_KEYS = [
+  'metadata',
+  'staging',
+  'failure',
+  'owner',
+] as const satisfies readonly Exclude<CredentialSnapshotKey, 'bearer'>[];
+
+const CREDENTIAL_DELETE_ORDER = [
+  'bearer',
+  'owner',
+  'metadata',
+  'failure',
+  'staging',
+] as const satisfies readonly CredentialSnapshotKey[];
+
+const INVALID_CREDENTIAL_SNAPSHOT_ENTRY = Symbol('invalid-credential-snapshot-entry');
+
+type ParsedCredentialSnapshotEntry<T> =
+  | T
+  | typeof INVALID_CREDENTIAL_SNAPSHOT_ENTRY
+  | undefined;
+
+interface CredentialSnapshot {
+  keys: Record<CredentialSnapshotKey, string>;
+  values: Record<CredentialSnapshotKey, unknown>;
+  binding: ParsedCredentialSnapshotEntry<CaveCredentialBindingRecord>;
+  staging: ParsedCredentialSnapshotEntry<CaveCredentialBindingMarkerRecord>;
+  failure: ParsedCredentialSnapshotEntry<CaveCredentialBindingMarkerRecord>;
+  owner: ParsedCredentialSnapshotEntry<CaveCredentialBindingOwnerRecord>;
+}
+
+interface SnapshotMutationAccess {
+  read(key: string): Promise<unknown>;
+  delete(key: string): Promise<boolean>;
 }
 
 type PromiseResult<T> =
@@ -389,6 +438,333 @@ function parseOwnerRecord(serialized: string): CaveCredentialBindingOwnerRecord 
   };
 }
 
+function isInvalidCredentialSnapshotEntry<T>(
+  value: ParsedCredentialSnapshotEntry<T>,
+): value is typeof INVALID_CREDENTIAL_SNAPSHOT_ENTRY {
+  return value === INVALID_CREDENTIAL_SNAPSHOT_ENTRY;
+}
+
+function parseSnapshotBindingEntry(
+  value: unknown,
+): ParsedCredentialSnapshotEntry<CaveCredentialBindingRecord> {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    return INVALID_CREDENTIAL_SNAPSHOT_ENTRY;
+  }
+
+  return parseBindingRecord(value) ?? INVALID_CREDENTIAL_SNAPSHOT_ENTRY;
+}
+
+function parseSnapshotMarkerEntry(
+  value: unknown,
+  schema:
+    | typeof CAVE_CREDENTIAL_BINDING_STAGING_SCHEMA
+    | typeof CAVE_CREDENTIAL_BINDING_FAILURE_SCHEMA,
+): ParsedCredentialSnapshotEntry<CaveCredentialBindingMarkerRecord> {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    return INVALID_CREDENTIAL_SNAPSHOT_ENTRY;
+  }
+
+  return parseMarkerRecord(value, schema) ?? INVALID_CREDENTIAL_SNAPSHOT_ENTRY;
+}
+
+function parseSnapshotOwnerEntry(
+  value: unknown,
+): ParsedCredentialSnapshotEntry<CaveCredentialBindingOwnerRecord> {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    return INVALID_CREDENTIAL_SNAPSHOT_ENTRY;
+  }
+
+  return parseOwnerRecord(value) ?? INVALID_CREDENTIAL_SNAPSHOT_ENTRY;
+}
+
+function markerTransactionId(
+  marker: ParsedCredentialSnapshotEntry<CaveCredentialBindingMarkerRecord>,
+): string | undefined {
+  return marker === undefined || isInvalidCredentialSnapshotEntry(marker)
+    ? undefined
+    : marker.transactionId;
+}
+
+function bindingTransactionId(
+  binding: ParsedCredentialSnapshotEntry<CaveCredentialBindingRecord>,
+): string | undefined {
+  return binding === undefined || isInvalidCredentialSnapshotEntry(binding)
+    ? undefined
+    : binding.transactionId;
+}
+
+function ownerTransactionId(
+  owner: ParsedCredentialSnapshotEntry<CaveCredentialBindingOwnerRecord>,
+): string | undefined {
+  return owner === undefined || isInvalidCredentialSnapshotEntry(owner)
+    ? undefined
+    : owner.transactionId;
+}
+
+function ownedTransactionId(snapshot: CredentialSnapshot): string | undefined {
+  const ownerId = ownerTransactionId(snapshot.owner);
+  if (ownerId === undefined) {
+    return undefined;
+  }
+
+  const bindingId = bindingTransactionId(snapshot.binding);
+  return bindingId === undefined || bindingId === ownerId ? ownerId : undefined;
+}
+
+function committedTransactionId(snapshot: CredentialSnapshot): string | undefined {
+  if (snapshot.binding === undefined || isInvalidCredentialSnapshotEntry(snapshot.binding)) {
+    return undefined;
+  }
+
+  const bindingId = snapshot.binding.transactionId;
+  if (snapshot.binding.state !== 'bound' || bindingId === undefined) {
+    return undefined;
+  }
+
+  return ownerTransactionId(snapshot.owner) === bindingId ? bindingId : undefined;
+}
+
+function isSnapshotStructurallyInvalid(snapshot: CredentialSnapshot): boolean {
+  return [
+    snapshot.binding,
+    snapshot.staging,
+    snapshot.failure,
+    snapshot.owner,
+  ].some((value) => isInvalidCredentialSnapshotEntry(value));
+}
+
+function assessSnapshotReadState(
+  snapshot: CredentialSnapshot,
+):
+  | { status: 'continue' }
+  | { status: 'update_in_progress' }
+  | { status: 'invalid'; reason: CaveStoredCredentialInvalidReason } {
+  if (isSnapshotStructurallyInvalid(snapshot)) {
+    return {
+      status: 'invalid',
+      reason: 'authority_binding_invalid',
+    };
+  }
+
+  const committedId = committedTransactionId(snapshot);
+  const failureId = markerTransactionId(snapshot.failure);
+  const stagingId = markerTransactionId(snapshot.staging);
+
+  if (failureId !== undefined) {
+    if (stagingId === undefined || stagingId === failureId) {
+      if (committedId === undefined || committedId === failureId) {
+        return {
+          status: 'invalid',
+          reason: 'authority_binding_incomplete',
+        };
+      }
+    }
+  }
+
+  if (stagingId !== undefined && stagingId !== failureId) {
+    return { status: 'update_in_progress' };
+  }
+
+  return { status: 'continue' };
+}
+
+function snapshotHeaderValuesEqual(
+  left: CredentialSnapshot,
+  right: CredentialSnapshot,
+): boolean {
+  return CREDENTIAL_SNAPSHOT_HEADER_KEYS.every((key) => Object.is(left.values[key], right.values[key]));
+}
+
+async function readStoreValue(
+  store: SecretStore,
+  key: string,
+  options: CredentialBindingMutationOptions = {},
+): Promise<unknown> {
+  return await awaitStoreCall(store.get(key) as Promise<unknown>, options);
+}
+
+async function readCredentialSnapshot(
+  store: SecretStore,
+  reference: SecretStoreReference,
+  options: CredentialBindingMutationOptions = {},
+  includeBearer = true,
+): Promise<CredentialSnapshot> {
+  const keys = {
+    metadata: bindingMetadataKey(reference),
+    staging: bindingStagingKey(reference),
+    failure: bindingFailureKey(reference),
+    owner: bindingOwnerKey(reference),
+    bearer: reference.key,
+  } as const;
+
+  const failureValue = await readStoreValue(store, keys.failure, options);
+  const stagingValue = await readStoreValue(store, keys.staging, options);
+  const metadataValue = await readStoreValue(store, keys.metadata, options);
+  const ownerValue = await readStoreValue(store, keys.owner, options);
+  const bearerValue = includeBearer
+    ? await readStoreValue(store, keys.bearer, options)
+    : undefined;
+
+  return {
+    keys: { ...keys },
+    values: {
+      metadata: metadataValue,
+      staging: stagingValue,
+      failure: failureValue,
+      owner: ownerValue,
+      bearer: bearerValue,
+    },
+    binding: parseSnapshotBindingEntry(metadataValue),
+    staging: parseSnapshotMarkerEntry(
+      stagingValue,
+      CAVE_CREDENTIAL_BINDING_STAGING_SCHEMA,
+    ),
+    failure: parseSnapshotMarkerEntry(
+      failureValue,
+      CAVE_CREDENTIAL_BINDING_FAILURE_SCHEMA,
+    ),
+    owner: parseSnapshotOwnerEntry(ownerValue),
+  };
+}
+
+function keysOwnedByTransaction(
+  snapshot: CredentialSnapshot,
+  transactionId: string,
+): CredentialSnapshotKey[] {
+  const owned = new Set<CredentialSnapshotKey>();
+  const bindingId = bindingTransactionId(snapshot.binding);
+  const ownerId = ownerTransactionId(snapshot.owner);
+  const failureId = markerTransactionId(snapshot.failure);
+  const stagingId = markerTransactionId(snapshot.staging);
+
+  if (bindingId === transactionId) {
+    owned.add('metadata');
+  }
+  if (ownerId === transactionId) {
+    owned.add('owner');
+  }
+  if (failureId === transactionId) {
+    owned.add('failure');
+  }
+  if (stagingId === transactionId) {
+    owned.add('staging');
+  }
+  if (
+    snapshot.values.bearer !== undefined &&
+    (
+      ownerId === transactionId ||
+      (bindingId === transactionId && (failureId === transactionId || stagingId === transactionId))
+    )
+  ) {
+    owned.add('bearer');
+  }
+
+  return CREDENTIAL_DELETE_ORDER.filter((key) => owned.has(key));
+}
+
+async function snapshotStillMatches(
+  access: SnapshotMutationAccess,
+  snapshot: CredentialSnapshot,
+  expected: Record<CredentialSnapshotKey, unknown>,
+): Promise<boolean> {
+  for (const key of CREDENTIAL_SNAPSHOT_KEYS) {
+    const current = await access.read(snapshot.keys[key]);
+    if (!Object.is(current, expected[key])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+async function deleteObservedSnapshot(
+  access: SnapshotMutationAccess,
+  snapshot: CredentialSnapshot,
+  targetKeys: readonly CredentialSnapshotKey[],
+  options: {
+    continueOnDeleteError?: boolean;
+    onDeleteError?: (key: CredentialSnapshotKey, error: unknown) => void;
+  } = {},
+): Promise<boolean> {
+  const expected = {
+    metadata: snapshot.values.metadata,
+    staging: snapshot.values.staging,
+    failure: snapshot.values.failure,
+    owner: snapshot.values.owner,
+    bearer: snapshot.values.bearer,
+  } satisfies Record<CredentialSnapshotKey, unknown>;
+  const targets = new Set<CredentialSnapshotKey>(targetKeys);
+  let deletedAny = false;
+
+  for (const key of CREDENTIAL_DELETE_ORDER) {
+    if (!targets.has(key) || expected[key] === undefined) {
+      continue;
+    }
+
+    if (!(await snapshotStillMatches(access, snapshot, expected))) {
+      return deletedAny;
+    }
+
+    try {
+      await access.delete(snapshot.keys[key]);
+      expected[key] = undefined;
+      deletedAny = true;
+    } catch (error) {
+      options.onDeleteError?.(key, error);
+      if (options.continueOnDeleteError !== true) {
+        return deletedAny;
+      }
+    }
+  }
+
+  return deletedAny;
+}
+
+async function readStableCredentialSnapshot(
+  store: SecretStore,
+  reference: SecretStoreReference,
+  options: CredentialBindingMutationOptions = {},
+):
+  Promise<
+    | { status: 'stable'; snapshot: CredentialSnapshot; bearer: unknown }
+    | { status: 'update_in_progress' }
+    | { status: 'invalid'; reason: CaveStoredCredentialInvalidReason }
+  > {
+  for (let attempt = 0; attempt < CAVE_CREDENTIAL_STABLE_READ_ATTEMPTS; attempt += 1) {
+    const before = await readCredentialSnapshot(store, reference, options, false);
+    const beforeState = assessSnapshotReadState(before);
+    if (beforeState.status !== 'continue') {
+      return beforeState;
+    }
+
+    const bearer = await readStoreValue(store, reference.key, options);
+    const after = await readCredentialSnapshot(store, reference, options, false);
+    const afterState = assessSnapshotReadState(after);
+    if (afterState.status !== 'continue') {
+      return afterState;
+    }
+
+    if (snapshotHeaderValuesEqual(before, after)) {
+      return {
+        status: 'stable',
+        snapshot: after,
+        bearer,
+      };
+    }
+  }
+
+  return { status: 'update_in_progress' };
+}
+
 function mismatchReason(
   current: CaveAuthorityBinding,
   stored: CaveCredentialBindingRecord,
@@ -524,12 +900,11 @@ async function awaitRollbackCall<T>(
   return settled.value;
 }
 
-async function safeRollbackString(
-  operation: Promise<string | undefined>,
-): Promise<string | undefined> {
+async function safeRollbackValue(
+  operation: Promise<unknown>,
+): Promise<unknown> {
   try {
-    const value = await awaitRollbackCall(operation);
-    return typeof value === 'string' ? value : undefined;
+    return await awaitRollbackCall(operation);
   } catch {
     return undefined;
   }
@@ -571,14 +946,10 @@ async function rollbackCredentialWrite(
   store: SecretStore,
   reference: SecretStoreReference,
   transactionId: string,
-  bearer: string,
   cause: unknown,
 ): Promise<void> {
   const failures: RollbackFailure[] = [];
-  const metadataKey = bindingMetadataKey(reference);
-  const stagingKey = bindingStagingKey(reference);
   const failureKey = bindingFailureKey(reference);
-  const ownerKey = bindingOwnerKey(reference);
 
   const attempt = async (step: string, operation: Promise<unknown>): Promise<void> => {
     try {
@@ -601,47 +972,61 @@ async function rollbackCredentialWrite(
       ),
     ),
   );
-  const owner = parseOwnerRecord(
-    (await safeRollbackString(store.get(ownerKey))) ?? '',
-  );
-  const binding = parseBindingRecord(
-    (await safeRollbackString(store.get(metadataKey))) ?? '',
-  );
+  const snapshot = {
+    keys: {
+      metadata: bindingMetadataKey(reference),
+      staging: bindingStagingKey(reference),
+      failure: failureKey,
+      owner: bindingOwnerKey(reference),
+      bearer: reference.key,
+    },
+    values: {
+      metadata: await safeRollbackValue(store.get(bindingMetadataKey(reference))),
+      staging: await safeRollbackValue(store.get(bindingStagingKey(reference))),
+      failure: await safeRollbackValue(store.get(failureKey)),
+      owner: await safeRollbackValue(store.get(bindingOwnerKey(reference))),
+      bearer: await safeRollbackValue(store.get(reference.key)),
+    },
+  } satisfies Pick<CredentialSnapshot, 'keys' | 'values'>;
+  const parsedSnapshot: CredentialSnapshot = {
+    ...snapshot,
+    binding: parseSnapshotBindingEntry(snapshot.values.metadata),
+    staging: parseSnapshotMarkerEntry(
+      snapshot.values.staging,
+      CAVE_CREDENTIAL_BINDING_STAGING_SCHEMA,
+    ),
+    failure: parseSnapshotMarkerEntry(
+      snapshot.values.failure,
+      CAVE_CREDENTIAL_BINDING_FAILURE_SCHEMA,
+    ),
+    owner: parseSnapshotOwnerEntry(snapshot.values.owner),
+  };
+  const targetKeys = new Set<CredentialSnapshotKey>(keysOwnedByTransaction(parsedSnapshot, transactionId));
 
-  if (owner?.transactionId === transactionId) {
-    await attempt('delete_bearer', queuedStoreDelete(store, reference.key));
-    await attempt('delete_owner', queuedStoreDelete(store, ownerKey));
-  } else if (owner === undefined && binding?.transactionId === transactionId) {
-    const currentBearer = await safeRollbackString(store.get(reference.key));
-    if (currentBearer === bearer) {
-      await attempt('delete_bearer', queuedStoreDelete(store, reference.key));
-    }
+  if (markerTransactionId(parsedSnapshot.failure) === transactionId) {
+    targetKeys.add('failure');
+  }
+  if (markerTransactionId(parsedSnapshot.staging) === transactionId) {
+    targetKeys.add('staging');
   }
 
-  if (binding?.transactionId === transactionId) {
-    await attempt('delete_binding', queuedStoreDelete(store, metadataKey));
-  }
-
-  const staging = parseMarkerRecord(
-    (await safeRollbackString(store.get(stagingKey))) ?? '',
-    CAVE_CREDENTIAL_BINDING_STAGING_SCHEMA,
+  await deleteObservedSnapshot(
+    {
+      read: async (key) => await safeRollbackValue(store.get(key)),
+      delete: async (key) => await awaitRollbackCall(queuedStoreDelete(store, key)),
+    },
+    parsedSnapshot,
+    [...targetKeys],
+    {
+      continueOnDeleteError: true,
+      onDeleteError: (key, error) => {
+        failures.push({
+          step: `delete_${key}`,
+          error,
+        });
+      },
+    },
   );
-  if (staging?.transactionId === transactionId) {
-    await attempt('delete_staging', queuedStoreDelete(store, stagingKey));
-  }
-
-  const currentOwner = parseOwnerRecord(
-    (await safeRollbackString(store.get(ownerKey))) ?? '',
-  );
-  const currentBinding = parseBindingRecord(
-    (await safeRollbackString(store.get(metadataKey))) ?? '',
-  );
-  if (
-    (currentOwner !== undefined && currentOwner.transactionId !== transactionId) ||
-    (currentBinding?.transactionId !== undefined && currentBinding.transactionId !== transactionId)
-  ) {
-    await attempt('delete_failure_marker', queuedStoreDelete(store, failureKey));
-  }
 
   if (failures.length > 0) {
     throw rollbackFailureError(cause, failures);
@@ -714,7 +1099,7 @@ export async function storeBoundCredential(
         throw error;
       }
 
-      await rollbackCredentialWrite(store, reference, transactionId, bearer, error);
+      await rollbackCredentialWrite(store, reference, transactionId, error);
       throw error;
     }
   });
@@ -728,66 +1113,20 @@ export async function loadBoundCredential(
   options: CredentialBindingMutationOptions = {},
 ): Promise<LoadedCaveCredential> {
   const currentAuthority = caveAuthorityBindingFromDiscoveredEndpoint(discovered);
-  const failureSerialized = await awaitStoreCall(
-    store.get(bindingFailureKey(reference)),
-    options,
-  );
-  if (failureSerialized !== undefined) {
-    if (
-      typeof failureSerialized !== 'string' ||
-      parseMarkerRecord(
-        failureSerialized,
-        CAVE_CREDENTIAL_BINDING_FAILURE_SCHEMA,
-      ) === undefined
-    ) {
-      return {
-        status: 'invalid',
-        reason: 'authority_binding_invalid',
-      };
-    }
-
+  const stable = await readStableCredentialSnapshot(store, reference, options);
+  if (stable.status === 'update_in_progress') {
+    return { status: 'update_in_progress' };
+  }
+  if (stable.status === 'invalid') {
     return {
       status: 'invalid',
-      reason: 'authority_binding_incomplete',
+      reason: stable.reason,
     };
   }
 
-  const stagingSerialized = await awaitStoreCall(
-    store.get(bindingStagingKey(reference)),
-    options,
-  );
-  if (stagingSerialized !== undefined) {
-    if (
-      typeof stagingSerialized !== 'string' ||
-      parseMarkerRecord(
-        stagingSerialized,
-        CAVE_CREDENTIAL_BINDING_STAGING_SCHEMA,
-      ) === undefined
-    ) {
-      return {
-        status: 'invalid',
-        reason: 'authority_binding_invalid',
-      };
-    }
-
-    return {
-      status: 'invalid',
-      reason: 'authority_binding_incomplete',
-    };
-  }
-
-  const serialized = await awaitStoreCall(
-    store.get(bindingMetadataKey(reference)),
-    options,
-  );
-  const ownerSerialized = await awaitStoreCall(
-    store.get(bindingOwnerKey(reference)),
-    options,
-  );
-  const bearer = await awaitStoreCall(store.get(reference.key), options);
-
+  const { snapshot, bearer } = stable;
   if (bearer === undefined) {
-    return serialized === undefined && ownerSerialized === undefined
+    return snapshot.values.metadata === undefined && snapshot.values.owner === undefined
       ? { status: 'missing' }
       : {
           status: 'invalid',
@@ -799,49 +1138,27 @@ export async function loadBoundCredential(
     return { status: 'invalid_bearer' };
   }
 
-  if (serialized === undefined) {
+  const stored = snapshot.binding;
+  if (stored === undefined || isInvalidCredentialSnapshotEntry(stored)) {
     return {
       status: 'invalid',
-      reason: ownerSerialized === undefined
+      reason: snapshot.values.owner === undefined
         ? 'authority_binding_missing'
         : 'authority_binding_incomplete',
     };
   }
 
-  if (typeof serialized !== 'string') {
+  const owner = snapshot.owner;
+  if (
+    stored.transactionId === undefined ||
+    owner === undefined ||
+    isInvalidCredentialSnapshotEntry(owner) ||
+    owner.transactionId !== stored.transactionId
+  ) {
     return {
       status: 'invalid',
-      reason: 'authority_binding_invalid',
+      reason: 'authority_binding_incomplete',
     };
-  }
-
-  const stored = parseBindingRecord(serialized);
-  if (stored === undefined) {
-    return {
-      status: 'invalid',
-      reason: 'authority_binding_invalid',
-    };
-  }
-
-  if (ownerSerialized !== undefined) {
-    if (typeof ownerSerialized !== 'string') {
-      return {
-        status: 'invalid',
-        reason: 'authority_binding_invalid',
-      };
-    }
-
-    const owner = parseOwnerRecord(ownerSerialized);
-    if (
-      owner === undefined ||
-      stored.transactionId === undefined ||
-      owner.transactionId !== stored.transactionId
-    ) {
-      return {
-        status: 'invalid',
-        reason: 'authority_binding_incomplete',
-      };
-    }
   }
 
   if (stored.state !== 'bound') {
@@ -871,18 +1188,80 @@ export async function invalidateStoredCredential(
   options: CredentialBindingMutationOptions = {},
 ): Promise<void> {
   await serializeReferenceMutation(store, reference, async () => {
-    for (const key of [
-      reference.key,
-      bindingMetadataKey(reference),
-      bindingOwnerKey(reference),
-      bindingStagingKey(reference),
-      bindingFailureKey(reference),
-    ]) {
-      try {
-        await awaitStoreCall(queuedStoreDelete(store, key), options);
-      } catch {
-        // Best-effort fail closed.
+    const snapshot = await readCredentialSnapshot(store, reference, options, true);
+    if (isSnapshotStructurallyInvalid(snapshot)) {
+      return;
+    }
+
+    const failureId = markerTransactionId(snapshot.failure);
+    const stagingId = markerTransactionId(snapshot.staging);
+    if (stagingId !== undefined && stagingId !== failureId) {
+      return;
+    }
+
+    const committedId = committedTransactionId(snapshot);
+    const currentOwnedId = ownedTransactionId(snapshot);
+    const targetKeys = new Set<CredentialSnapshotKey>();
+    if (currentOwnedId !== undefined) {
+      for (const key of keysOwnedByTransaction(snapshot, currentOwnedId)) {
+        targetKeys.add(key);
       }
+
+      if (
+        failureId !== undefined &&
+        failureId !== (committedId ?? currentOwnedId) &&
+        (stagingId === undefined || stagingId === failureId)
+      ) {
+        targetKeys.add('failure');
+        if (stagingId === failureId) {
+          targetKeys.add('staging');
+        }
+      }
+    } else if (
+      failureId !== undefined &&
+      (stagingId === undefined || stagingId === failureId) &&
+      (bindingTransactionId(snapshot.binding) === undefined ||
+        bindingTransactionId(snapshot.binding) === failureId) &&
+      (ownerTransactionId(snapshot.owner) === undefined ||
+        ownerTransactionId(snapshot.owner) === failureId)
+    ) {
+      for (const key of keysOwnedByTransaction(snapshot, failureId)) {
+        targetKeys.add(key);
+      }
+      targetKeys.add('failure');
+      if (stagingId === failureId) {
+        targetKeys.add('staging');
+      }
+    }
+
+    if (
+      targetKeys.size === 0 &&
+      snapshot.binding !== undefined &&
+      !isInvalidCredentialSnapshotEntry(snapshot.binding) &&
+      snapshot.binding.transactionId !== undefined &&
+      snapshot.values.owner === undefined &&
+      snapshot.values.bearer === undefined &&
+      failureId === undefined &&
+      stagingId === undefined
+    ) {
+      targetKeys.add('metadata');
+    }
+
+    if (targetKeys.size === 0) {
+      return;
+    }
+
+    try {
+      await deleteObservedSnapshot(
+        {
+          read: async (key) => await readStoreValue(store, key, options),
+          delete: async (key) => await awaitStoreCall(queuedStoreDelete(store, key), options),
+        },
+        snapshot,
+        [...targetKeys],
+      );
+    } catch {
+      // Best-effort fail closed.
     }
   });
 }
@@ -893,28 +1272,27 @@ export async function forgetStoredCredential(
   options: CredentialBindingMutationOptions = {},
 ): Promise<boolean> {
   return await serializeReferenceMutation(store, reference, async () => {
-    const bearerDeleted = await awaitStoreCall(
-      queuedStoreDelete(store, reference.key),
-      options,
-    );
-    const bindingDeleted = await awaitStoreCall(
-      queuedStoreDelete(store, bindingMetadataKey(reference)),
-      options,
-    );
-    const ownerDeleted = await awaitStoreCall(
-      queuedStoreDelete(store, bindingOwnerKey(reference)),
-      options,
-    );
-    const stagingDeleted = await awaitStoreCall(
-      queuedStoreDelete(store, bindingStagingKey(reference)),
-      options,
-    );
-    const failureDeleted = await awaitStoreCall(
-      queuedStoreDelete(store, bindingFailureKey(reference)),
-      options,
-    );
+    const snapshot = await readCredentialSnapshot(store, reference, options, true);
+    if (!isSnapshotStructurallyInvalid(snapshot)) {
+      const failureId = markerTransactionId(snapshot.failure);
+      const stagingId = markerTransactionId(snapshot.staging);
+      if (stagingId !== undefined && stagingId !== failureId) {
+        return false;
+      }
+    }
 
-    return bearerDeleted || bindingDeleted || ownerDeleted || stagingDeleted || failureDeleted;
+    try {
+      return await deleteObservedSnapshot(
+        {
+          read: async (key) => await readStoreValue(store, key, options),
+          delete: async (key) => await awaitStoreCall(queuedStoreDelete(store, key), options),
+        },
+        snapshot,
+        CREDENTIAL_SNAPSHOT_KEYS,
+      );
+    } catch {
+      return false;
+    }
   });
 }
 
@@ -924,56 +1302,38 @@ export async function inspectStoredCredentialMaterial(
   isBearer: (value: string) => boolean,
   options: CredentialBindingMutationOptions = {},
 ): Promise<StoredCaveCredentialMaterial> {
-  const failureSerialized = await awaitStoreCall(
-    store.get(bindingFailureKey(reference)),
-    options,
-  );
-  if (failureSerialized !== undefined) {
+  const stable = await readStableCredentialSnapshot(store, reference, options);
+  if (stable.status === 'update_in_progress') {
+    return { status: 'update_in_progress' };
+  }
+  if (stable.status === 'invalid') {
     return { status: 'incomplete' };
   }
 
-  const stagingSerialized = await awaitStoreCall(
-    store.get(bindingStagingKey(reference)),
-    options,
-  );
-  if (stagingSerialized !== undefined) {
-    return { status: 'incomplete' };
-  }
-
-  const metadata = await awaitStoreCall(
-    store.get(bindingMetadataKey(reference)),
-    options,
-  );
-  const ownerSerialized = await awaitStoreCall(
-    store.get(bindingOwnerKey(reference)),
-    options,
-  );
-  const bearer = await awaitStoreCall(store.get(reference.key), options);
-
+  const { snapshot, bearer } = stable;
   if (bearer === undefined) {
-    return metadata === undefined && ownerSerialized === undefined
+    return snapshot.values.metadata === undefined && snapshot.values.owner === undefined
       ? { status: 'missing' }
       : { status: 'incomplete' };
   }
 
-  if (ownerSerialized !== undefined) {
-    if (typeof ownerSerialized !== 'string') {
-      return { status: 'incomplete' };
-    }
-
-    const owner = parseOwnerRecord(ownerSerialized);
-    const stored = typeof metadata === 'string' ? parseBindingRecord(metadata) : undefined;
-    if (
-      owner === undefined ||
-      stored === undefined ||
-      stored.transactionId === undefined ||
-      stored.transactionId !== owner.transactionId
-    ) {
-      return { status: 'incomplete' };
-    }
+  if (typeof bearer !== 'string' || !isBearer(bearer)) {
+    return { status: 'invalid_bearer' };
   }
 
-  return typeof bearer === 'string' && isBearer(bearer)
-    ? { status: 'present' }
-    : { status: 'invalid_bearer' };
+  const stored = snapshot.binding;
+  const owner = snapshot.owner;
+  if (
+    stored === undefined ||
+    isInvalidCredentialSnapshotEntry(stored) ||
+    stored.state !== 'bound' ||
+    stored.transactionId === undefined ||
+    owner === undefined ||
+    isInvalidCredentialSnapshotEntry(owner) ||
+    owner.transactionId !== stored.transactionId
+  ) {
+    return { status: 'incomplete' };
+  }
+
+  return { status: 'present' };
 }

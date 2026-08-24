@@ -68,6 +68,9 @@ platform-security adapter; the default Node CLI reports
 `platform_security_unavailable` rather than fabricating peer ownership proof.
 On Windows, the default CLI also fails Cave `discover`, `doctor`, `pair`,
 `status`, and `forget` closed with `platform_security_unavailable` until a
+reviewed validator is injected. During an active credential commit, `cave status`
+surfaces a retryable `credential_update_in_progress`/`disconnected` result
+instead of clearing the pending credential.
 reviewed native path ownership/ACL validator is injected through
 `CliRuntime.cave.discovery.dependencies.windowsPathTrust`; the CLI never
 trusts discovery metadata, file ownership metadata alone, or shell output.
@@ -157,6 +160,9 @@ attempt failed before any transport send. Pre-send authority mismatches keep
 the pairing secret ready and surface retryable `reconcile_required`; once an
 exchange request reaches a transport, a later timeout, abort, or discovered
 fetch rejection still spends that session locally.
+If a second reader observes a staged credential write mid-commit, authenticated
+calls fail locally with retryable `credential_update_in_progress` rather than
+deleting the credential that is still being committed.
 
 When you inject `credentials` into `new CaveClient({ transport, credentials })`,
 the transport must satisfy `CaveCredentialPersistingTransport` and return the

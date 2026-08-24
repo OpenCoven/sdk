@@ -27,6 +27,7 @@ import {
   isPairingSecretUnsentError,
   markPairingSecretUnsentError,
 } from '../packages/cave/src/pairing-secret.js';
+import type * as CredentialBindingModule from '../packages/cave/src/credential-binding.js';
 
 const discovered: CaveDiscoveredEndpoint = {
   version: 1,
@@ -51,6 +52,8 @@ const STAGING_KEY_PREFIX = 'opencoven.cave.credential-binding.staging.v1.';
 const FAILURE_KEY_PREFIX = 'opencoven.cave.credential-binding.failure.v1.';
 const OWNER_KEY_PREFIX = 'opencoven.cave.credential-binding.owner.v1.';
 const authorityBinding = caveAuthorityBindingFromDiscoveredEndpoint(discovered);
+
+type DuplicateCredentialBindingModule = typeof CredentialBindingModule;
 
 interface MutableStore extends SecretStore {
   deleted: string[];
@@ -342,10 +345,7 @@ describe('Cave credential binding helpers', () => {
         discovered,
         (value) => value === 'bearer',
       ),
-    ).resolves.toEqual({
-      status: 'invalid',
-      reason: 'authority_binding_incomplete',
-    });
+    ).resolves.toEqual({ status: 'update_in_progress' });
 
     await expect(
       loadBoundCredential(
@@ -396,6 +396,16 @@ describe('Cave credential binding helpers', () => {
     await expect(
       inspectStoredCredentialMaterial(
         storeWithState([
+          [stagingKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.staging.v1', transactionId: 'tx-2' })],
+        ]),
+        reference,
+        (value) => value === 'bearer',
+      ),
+    ).resolves.toEqual({ status: 'update_in_progress' });
+
+    await expect(
+      inspectStoredCredentialMaterial(
+        storeWithState([
           [reference.key, 'bearer'],
           [metadataKey, seeded.values.get(metadataKey)],
           [ownerKey, '{bad-json'],
@@ -440,6 +450,22 @@ describe('Cave credential binding helpers', () => {
         storeWithState([
           [reference.key, 'bearer'],
           [metadataKey, String(seeded.values.get(metadataKey)).replace('"bound"', '"pending"')],
+        ]),
+        reference,
+        discovered,
+        (value) => value === 'bearer',
+      ),
+    ).resolves.toEqual({
+      status: 'invalid',
+      reason: 'authority_binding_incomplete',
+    });
+
+    await expect(
+      loadBoundCredential(
+        storeWithState([
+          [reference.key, 'bearer'],
+          [metadataKey, String(seeded.values.get(metadataKey)).replace('"bound"', '"pending"')],
+          [ownerKey, seeded.values.get(ownerKey)],
         ]),
         reference,
         discovered,
@@ -505,6 +531,144 @@ describe('Cave credential binding helpers', () => {
     });
   });
 
+  test('preserves a newer committed credential when stale failed markers linger', async () => {
+    const reference = createSecretStoreReference('chat.cave.stale.failure');
+    const store = storeWithState();
+
+    await storeBoundCredential(store, reference, 'bearer-current', authorityBinding);
+    const metadataKey = storedKeyWithPrefix(store, BINDING_KEY_PREFIX);
+    const failureKey = `${FAILURE_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+    const stagingKey = `${STAGING_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+
+    store.values.set(
+      failureKey,
+      JSON.stringify({ schema: 'opencoven.cave.credential-binding.failure.v1', transactionId: 'tx-old' }),
+    );
+    store.values.set(
+      stagingKey,
+      JSON.stringify({ schema: 'opencoven.cave.credential-binding.staging.v1', transactionId: 'tx-old' }),
+    );
+
+    await expect(
+      loadBoundCredential(
+        store,
+        reference,
+        discovered,
+        (value) => value === 'bearer-current',
+      ),
+    ).resolves.toEqual({
+      status: 'ready',
+      bearer: 'bearer-current',
+    });
+    await expect(
+      inspectStoredCredentialMaterial(
+        store,
+        reference,
+        (value) => value === 'bearer-current',
+      ),
+    ).resolves.toEqual({ status: 'present' });
+  });
+
+  test('cleans orphaned owned partial state when ownership is still provable', async () => {
+    const reference = createSecretStoreReference('chat.cave.orphaned.partial');
+    const seeded = storeWithState();
+
+    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
+    const metadataKey = storedKeyWithPrefix(seeded, BINDING_KEY_PREFIX);
+    const ownerKey = `${OWNER_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+    const orphaned = storeWithState([
+      [metadataKey, seeded.values.get(metadataKey)],
+      [ownerKey, seeded.values.get(ownerKey)],
+    ]);
+
+    await expect(invalidateStoredCredential(orphaned, reference)).resolves.toBeUndefined();
+    await expect(
+      loadBoundCredential(orphaned, reference, discovered, (value) => value === 'bearer'),
+    ).resolves.toEqual({ status: 'missing' });
+    expect(orphaned.values.size).toBe(0);
+  });
+
+  test('cleans metadata-only orphaned state when no owner or bearer remains', async () => {
+    const reference = createSecretStoreReference('chat.cave.metadata.only');
+    const seeded = storeWithState();
+
+    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
+    const metadataKey = storedKeyWithPrefix(seeded, BINDING_KEY_PREFIX);
+    const metadataOnly = storeWithState([[metadataKey, seeded.values.get(metadataKey)]]);
+
+    await expect(invalidateStoredCredential(metadataOnly, reference)).resolves.toBeUndefined();
+    await expect(
+      loadBoundCredential(metadataOnly, reference, discovered, (value) => value === 'bearer'),
+    ).resolves.toEqual({ status: 'missing' });
+    expect(metadataOnly.values.size).toBe(0);
+  });
+
+  test('leaves active staging and structurally invalid snapshots untouched during automatic invalidation', async () => {
+    const reference = createSecretStoreReference('chat.cave.invalidate.noop');
+    const seeded = storeWithState();
+
+    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
+    const metadataKey = storedKeyWithPrefix(seeded, BINDING_KEY_PREFIX);
+    const ownerKey = `${OWNER_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+    const stagingKey = `${STAGING_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+    const active = storeWithState([
+      [reference.key, 'bearer'],
+      [metadataKey, seeded.values.get(metadataKey)],
+      [ownerKey, seeded.values.get(ownerKey)],
+      [stagingKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.staging.v1', transactionId: 'tx-active' })],
+    ]);
+    const invalid = storeWithState([[stagingKey, '{bad-json']]);
+
+    await expect(invalidateStoredCredential(active, reference)).resolves.toBeUndefined();
+    await expect(invalidateStoredCredential(invalid, reference)).resolves.toBeUndefined();
+
+    expect(active.values.size).toBe(4);
+    expect(invalid.values.size).toBe(1);
+  });
+
+  test('clears stale failed markers alongside a newer owned invalidation target', async () => {
+    const reference = createSecretStoreReference('chat.cave.invalidate.stale-failure');
+    const store = storeWithState();
+
+    await storeBoundCredential(store, reference, 'bearer', authorityBinding);
+    const metadataKey = storedKeyWithPrefix(store, BINDING_KEY_PREFIX);
+    const failureKey = `${FAILURE_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+    const stagingKey = `${STAGING_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+    store.values.set(
+      failureKey,
+      JSON.stringify({ schema: 'opencoven.cave.credential-binding.failure.v1', transactionId: 'tx-old' }),
+    );
+    store.values.set(
+      stagingKey,
+      JSON.stringify({ schema: 'opencoven.cave.credential-binding.staging.v1', transactionId: 'tx-old' }),
+    );
+
+    await expect(invalidateStoredCredential(store, reference)).resolves.toBeUndefined();
+    expect(store.values.size).toBe(0);
+  });
+
+  test('cleans a failed staged transaction when binding ownership still matches', async () => {
+    const reference = createSecretStoreReference('chat.cave.invalidate.failed-staging');
+    const seeded = storeWithState();
+
+    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
+    const metadataKey = storedKeyWithPrefix(seeded, BINDING_KEY_PREFIX);
+    const failureKey = `${FAILURE_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+    const stagingKey = `${STAGING_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+    const transactionId = (
+      JSON.parse(String(seeded.values.get(metadataKey))) as { transactionId: string }
+    ).transactionId;
+    const failed = storeWithState([
+      [reference.key, 'bearer'],
+      [metadataKey, seeded.values.get(metadataKey)],
+      [failureKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.failure.v1', transactionId })],
+      [stagingKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.staging.v1', transactionId })],
+    ]);
+
+    await expect(invalidateStoredCredential(failed, reference)).resolves.toBeUndefined();
+    expect(failed.values.size).toBe(0);
+  });
+
   test('swallows invalidation delete failures and reports whether any credential material was forgotten', async () => {
     const reference = createSecretStoreReference('chat.cave.delete');
     const first = storeWithState();
@@ -547,6 +711,153 @@ describe('Cave credential binding helpers', () => {
     const bindingOnlyStore = storeWithState([[metadataKey, first.values.get(metadataKey)]]);
     await expect(forgetStoredCredential(bindingOnlyStore, reference)).resolves.toBe(true);
     await expect(forgetStoredCredential(storeWithState(), reference)).resolves.toBe(false);
+  });
+
+  test('returns false when explicit forget cannot delete the observed snapshot', async () => {
+    const reference = createSecretStoreReference('chat.cave.forget.failure');
+    const seeded = storeWithState();
+
+    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
+    const failingStore: SecretStore = {
+      async get(key) {
+        return seeded.values.get(key) as string | undefined;
+      },
+      async set() {
+        return undefined;
+      },
+      async delete() {
+        throw new Error('delete failed');
+      },
+    };
+
+    await expect(forgetStoredCredential(failingStore, reference)).resolves.toBe(false);
+  });
+
+  test('returns false when explicit forget cannot re-read the observed snapshot', async () => {
+    const reference = createSecretStoreReference('chat.cave.forget.reread');
+    const seeded = storeWithState();
+
+    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
+    let reads = 0;
+    const failingRereadStore: SecretStore = {
+      async get(key) {
+        reads += 1;
+        if (reads > 5) {
+          throw new Error('read failed');
+        }
+        return seeded.values.get(key) as string | undefined;
+      },
+      async set() {
+        return undefined;
+      },
+      async delete(key) {
+        return seeded.values.delete(key);
+      },
+    };
+
+    await expect(forgetStoredCredential(failingRereadStore, reference)).resolves.toBe(false);
+  });
+
+  test('reports stable metadata without a matching owner as incomplete material', async () => {
+    const reference = createSecretStoreReference('chat.cave.inspect.incomplete');
+    const seeded = storeWithState();
+
+    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
+    const metadataKey = storedKeyWithPrefix(seeded, BINDING_KEY_PREFIX);
+
+    await expect(
+      inspectStoredCredentialMaterial(
+        storeWithState([
+          [reference.key, 'bearer'],
+          [metadataKey, seeded.values.get(metadataKey)],
+        ]),
+        reference,
+        (value) => value === 'bearer',
+      ),
+    ).resolves.toEqual({ status: 'incomplete' });
+  });
+
+  test('treats duplicate-module reads during staging as update-in-progress and preserves the commit', async () => {
+    const duplicateModuleUrl = new URL(
+      `../packages/cave/src/credential-binding.ts?duplicate=${Date.now()}`,
+      import.meta.url,
+    ).href;
+    const duplicateModule = (await import(
+      /* @vite-ignore */ duplicateModuleUrl
+    )) as DuplicateCredentialBindingModule;
+    const reference = createSecretStoreReference('chat.cave.duplicate.reader');
+    const controlled = createControlledMutationStore([2]);
+
+    const storing = storeBoundCredential(
+      controlled.store,
+      reference,
+      'bearer-current',
+      authorityBinding,
+    );
+    await controlled.waitForMutationStart(2);
+
+    await expect(
+      duplicateModule.loadBoundCredential(
+        controlled.store,
+        reference,
+        discovered,
+        (value) => value === 'bearer-current',
+      ),
+    ).resolves.toEqual({ status: 'update_in_progress' });
+
+    controlled.unblockMutation(2);
+
+    await expect(storing).resolves.toBeUndefined();
+    await expect(
+      loadBoundCredential(
+        controlled.store,
+        reference,
+        discovered,
+        (value) => value === 'bearer-current',
+      ),
+    ).resolves.toEqual({
+      status: 'ready',
+      bearer: 'bearer-current',
+    });
+  });
+
+  test('returns false for a duplicate-module forget during active staging and preserves the newer commit', async () => {
+    const duplicateModuleUrl = new URL(
+      `../packages/cave/src/credential-binding.ts?duplicate=${Date.now() + 1}`,
+      import.meta.url,
+    ).href;
+    const duplicateModule = (await import(
+      /* @vite-ignore */ duplicateModuleUrl
+    )) as DuplicateCredentialBindingModule;
+    const reference = createSecretStoreReference('chat.cave.duplicate.forget');
+    const controlled = createControlledMutationStore([2]);
+
+    const storing = storeBoundCredential(
+      controlled.store,
+      reference,
+      'bearer-committed',
+      authorityBinding,
+    );
+    await controlled.waitForMutationStart(2);
+
+    await expect(
+      duplicateModule.forgetStoredCredential(controlled.store, reference),
+    ).resolves.toBe(false);
+
+    controlled.unblockMutation(2);
+
+    await expect(storing).resolves.toBeUndefined();
+    await expect(
+      loadBoundCredential(
+        controlled.store,
+        reference,
+        discovered,
+        (value) => value === 'bearer-committed',
+      ),
+    ).resolves.toEqual({
+      status: 'ready',
+      bearer: 'bearer-committed',
+    });
   });
 
   test('preserves a later concurrent credential store after an earlier timeout rollback', async () => {

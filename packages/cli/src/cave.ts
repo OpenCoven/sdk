@@ -552,6 +552,44 @@ async function runStatus(runtime: ResolvedCliRuntime): Promise<CliCommandResult>
       return { exitCode: 1, output };
     }
 
+    if (status.status === 'disconnected') {
+      const error = status.reason === 'credential_update_in_progress'
+        ? createCliError(
+            'credential_update_in_progress',
+            'A Cave credential update is still in progress.',
+            {
+              action: 'Retry once the local credential update finishes.',
+              retryable: true,
+            },
+          )
+        : createCliError(
+            'reconcile_required',
+            'The local Cave authority changed and the stored credential is no longer trusted.',
+            {
+              action: 'Run `opencoven cave pair` to establish a fresh credential.',
+            },
+          );
+      const data = {
+        status: 'disconnected',
+        reason: status.reason,
+      };
+      const output: CliOutput = {
+        command: 'cave status',
+        data,
+        error,
+        human: renderStatusHuman({
+          command: 'cave status',
+          data,
+          error,
+          ok: false,
+          version: runtime.version,
+        }),
+        ok: false,
+        version: runtime.version,
+      };
+      return { exitCode: 1, output };
+    }
+
     if (status.status === 'revoked') {
       const error = createCliError(
         'revoked_credential',

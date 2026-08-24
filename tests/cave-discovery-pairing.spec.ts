@@ -2268,12 +2268,9 @@ describe('discovered Cave pairing helpers', () => {
       });
       await expect(client.familiars()).rejects.toMatchObject({
         normalized: {
-          code: 'reconcile_required',
+          code: 'unauthorized',
           retryable: false,
           operation: 'familiars',
-        },
-        details: {
-          reason: 'authority_binding_incomplete',
         },
       });
       await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
@@ -2281,6 +2278,92 @@ describe('discovered Cave pairing helpers', () => {
       expect(fetchImplementation).toHaveBeenCalledTimes(2);
     },
   );
+
+  test('reports in-progress credential updates without sending a bearer or wiping the eventual commit', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const root = createScratchRoot('pairing-update-in-progress');
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const slowStore = createSlowMutationStore({
+        delayMs: 50,
+        delayedMutation: 2,
+      });
+      const reference = createSecretStoreReference('cave-update-in-progress');
+      const fetchImplementation = queuedFetch([
+        () =>
+          jsonResponse(
+            201,
+            successEnvelope({
+              requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+              secret: PAIRING_SECRET,
+              expiresAt: 1_755_731_112_617,
+            }),
+          ),
+        () =>
+          jsonResponse(
+            200,
+            successEnvelope({
+              bearer: BEARER,
+              credential: pairingCredential(),
+            }),
+          ),
+        () => jsonResponse(200, CURRENT_HEALTH_ENVELOPE),
+        (_url, init) => {
+          expect(header(init, 'authorization')).toBe(`Bearer ${BEARER}`);
+          return jsonResponse(
+            200,
+            successEnvelope({
+              familiars: [DISCOVERED_FAMILIAR_WIRE],
+            }),
+          );
+        },
+      ]);
+      const client = createDiscoveredCaveClient({
+        credentials: { store: slowStore.store, reference },
+        discovery: {
+          root,
+          timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
+          dependencies: discoveryDependencies(),
+        },
+        fetch: fetchImplementation,
+      });
+      const session = await client.createPairing({
+        appName: 'OpenCoven Chat',
+        installationId: 'chat-install-1',
+        scopes: ['chat:read'],
+      });
+
+      const exchange = session.exchange();
+      await slowStore.waitForMutationStart(2);
+
+      await expect(client.credentialStatus()).resolves.toEqual({
+        status: 'disconnected',
+        reason: 'credential_update_in_progress',
+      });
+      await expect(client.familiars()).rejects.toMatchObject({
+        normalized: {
+          code: 'credential_update_in_progress',
+          retryable: true,
+          operation: 'familiars',
+        },
+      });
+      expect(fetchImplementation).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(75);
+
+      await expect(exchange).resolves.toEqual(pairingCredential());
+      await expect(client.credentialStatus()).resolves.toEqual({
+        status: 'valid',
+        access: 'chat:read',
+        health: caveHealth(),
+      });
+      expect(slowStore.retained.get(reference.key)).toBe(BEARER);
+      expect(fetchImplementation).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   test.each([
     ['staging write', 1],
@@ -2367,12 +2450,9 @@ describe('discovered Cave pairing helpers', () => {
       });
       await expect(client.familiars()).rejects.toMatchObject({
         normalized: {
-          code: 'reconcile_required',
+          code: 'unauthorized',
           retryable: false,
           operation: 'familiars',
-        },
-        details: {
-          reason: 'authority_binding_incomplete',
         },
       });
       await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
@@ -2446,7 +2526,7 @@ describe('discovered Cave pairing helpers', () => {
     const error = await exchange;
 
     expect(store.set).toHaveBeenCalledTimes(5);
-    expect(store.delete).toHaveBeenCalledTimes(3);
+    expect(store.delete).toHaveBeenCalledTimes(4);
     expect(error).toMatchObject({
       normalized: {
         code: 'secret_store_write_failed',

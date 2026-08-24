@@ -106,8 +106,13 @@ export type CaveCredentialAccess =
   | 'service_unavailable'
   | 'rate_limited';
 
+export type CaveCredentialDisconnectedReason =
+  | 'credential_update_in_progress'
+  | 'reconcile_required';
+
 export type CaveCredentialStatus =
   | { status: 'missing' }
+  | { status: 'disconnected'; reason: CaveCredentialDisconnectedReason }
   | { status: 'revoked'; health: CaveHealth }
   | { status: 'valid'; access: CaveCredentialAccess; health: CaveHealth };
 

@@ -1414,21 +1414,65 @@ export class CaveClient {
       }
 
       this.#ensureActive(context, 'credentialStatus');
-      const localMaterial = await inspectStoredCredentialMaterial(
-        credentials.store,
-        credentials.reference,
-        (value) => BASE64URL_43_RE.test(value),
-        { context },
-      );
-      if (localMaterial.status === 'missing') {
-        return { status: 'missing' };
-      }
-      if (localMaterial.status === 'incomplete') {
+      const localMaterialStatus = async (
+        allowInvalidate: boolean,
+      ): Promise<CaveCredentialStatus | { status: 'continue' }> => {
+        const localMaterial = await inspectStoredCredentialMaterial(
+          credentials.store,
+          credentials.reference,
+          (value) => BASE64URL_43_RE.test(value),
+          { context },
+        );
+
+        if (localMaterial.status === 'missing') {
+          return { status: 'missing' };
+        }
+        if (localMaterial.status === 'update_in_progress') {
+          return {
+            status: 'disconnected',
+            reason: 'credential_update_in_progress',
+          };
+        }
+        if (localMaterial.status === 'present') {
+          return { status: 'continue' };
+        }
+        if (!allowInvalidate) {
+          return {
+            status: 'disconnected',
+            reason: 'reconcile_required',
+          };
+        }
+
         await invalidateStoredCredential(credentials.store, credentials.reference, { context });
-        return { status: 'missing' };
-      }
-      if (localMaterial.status === 'invalid_bearer') {
-        throw invalidResponse('credentialStatus');
+        const repaired = await inspectStoredCredentialMaterial(
+          credentials.store,
+          credentials.reference,
+          (value) => BASE64URL_43_RE.test(value),
+          { context },
+        );
+
+        if (repaired.status === 'missing') {
+          return { status: 'missing' };
+        }
+        if (repaired.status === 'update_in_progress') {
+          return {
+            status: 'disconnected',
+            reason: 'credential_update_in_progress',
+          };
+        }
+        if (repaired.status === 'present') {
+          return { status: 'continue' };
+        }
+
+        return {
+          status: 'disconnected',
+          reason: 'reconcile_required',
+        };
+      };
+
+      const localStatus = await localMaterialStatus(true);
+      if (localStatus.status !== 'continue') {
+        return localStatus;
       }
 
       const health = await this.#runHealth(context);
@@ -1445,11 +1489,27 @@ export class CaveClient {
           ? error.code
           : normalizeCaveError(error, 'credentialStatus').code;
 
+        if (code === 'credential_update_in_progress') {
+          return {
+            status: 'disconnected',
+            reason: 'credential_update_in_progress',
+          };
+        }
         if (code === 'unauthorized') {
           return { status: 'revoked', health };
         }
         if (code === 'reconcile_required') {
-          return { status: 'missing' };
+          const afterReconcile = await localMaterialStatus(false);
+          if (afterReconcile.status === 'missing') {
+            return afterReconcile;
+          }
+          if (afterReconcile.status === 'disconnected') {
+            return afterReconcile;
+          }
+          return {
+            status: 'disconnected',
+            reason: 'reconcile_required',
+          };
         }
         if (code === 'scope_denied') {
           return { status: 'valid', access: 'scope_denied', health };
