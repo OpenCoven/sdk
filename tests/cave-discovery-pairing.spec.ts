@@ -97,6 +97,19 @@ function caveHealth() {
   };
 }
 
+function pairingCredential() {
+  return {
+    id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+    appName: 'OpenCoven Chat',
+    installationId: 'chat-install-1',
+    scopes: ['chat:read'] as const,
+    createdAt: 1_755_730_812_617,
+    lastUsedAt: null,
+    revokedAt: null,
+    revocationReason: null,
+  };
+}
+
 function successEnvelope(data: Record<string, unknown>) {
   return {
     ...CURRENT_HEALTH_ENVELOPE,
@@ -279,6 +292,92 @@ function discoveredClient(
         : { maxResponseBytes: overrides.maxResponseBytes }),
     }),
     credentials,
+  };
+}
+
+interface SlowStoreOptions {
+  delayMs?: number;
+  delayedMutation?: number;
+  failSetAtMutation?: number;
+  failDeleteAtMutation?: number;
+}
+
+function createSlowMutationStore(
+  options: SlowStoreOptions = {},
+) {
+  const retained = new Map<string, string>();
+  const delayedMutation = options.delayedMutation;
+  const delayMs = options.delayMs ?? 0;
+  let mutationIndex = 0;
+  const log: Array<{ mutation: number; method: 'set' | 'delete'; key: string; phase: 'start' | 'finish' }> = [];
+  const startedResolvers = new Map<number, () => void>();
+  const started = new Map<number, Promise<void>>();
+
+  const waitForMutationStart = (target: number): Promise<void> => {
+    const existing = started.get(target);
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    const promise = new Promise<void>((resolve) => {
+      startedResolvers.set(target, resolve);
+    });
+    started.set(target, promise);
+    return promise;
+  };
+
+  const signalMutationStart = (target: number): void => {
+    startedResolvers.get(target)?.();
+    startedResolvers.delete(target);
+    if (!started.has(target)) {
+      started.set(target, Promise.resolve());
+    }
+  };
+
+  const maybeDelay = async (target: number): Promise<void> => {
+    if (target !== delayedMutation || delayMs <= 0) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, delayMs);
+    });
+  };
+
+  const store = {
+    get: vi.fn((key: string) => Promise.resolve(retained.get(key))),
+    set: vi.fn(async (key: string, value: string) => {
+      mutationIndex += 1;
+      const current = mutationIndex;
+      log.push({ mutation: current, method: 'set', key, phase: 'start' });
+      signalMutationStart(current);
+      await maybeDelay(current);
+      if (options.failSetAtMutation === current) {
+        throw new Error(`set failed at ${current}`);
+      }
+      retained.set(key, value);
+      log.push({ mutation: current, method: 'set', key, phase: 'finish' });
+    }),
+    delete: vi.fn(async (key: string) => {
+      mutationIndex += 1;
+      const current = mutationIndex;
+      log.push({ mutation: current, method: 'delete', key, phase: 'start' });
+      signalMutationStart(current);
+      await maybeDelay(current);
+      if (options.failDeleteAtMutation === current) {
+        throw new Error(`delete failed at ${current}`);
+      }
+      const deleted = retained.delete(key);
+      log.push({ mutation: current, method: 'delete', key, phase: 'finish' });
+      return deleted;
+    }),
+  };
+
+  return {
+    log,
+    retained,
+    store,
+    waitForMutationStart,
   };
 }
 
@@ -2039,6 +2138,200 @@ describe('discovered Cave pairing helpers', () => {
     expect(fetchImplementation).toHaveBeenCalledTimes(2);
   });
 
+  test.each([
+    ['staging write', 1],
+    ['pending binding write', 2],
+    ['bearer write', 3],
+    ['bound binding write', 4],
+    ['failure marker clear', 5],
+    ['staging clear', 6],
+  ] as const)(
+    'rolls back and stays fail-closed when %s times out',
+    async (_label, delayedMutation) => {
+      vi.useFakeTimers();
+      const root = createScratchRoot(`pairing-timeout-${delayedMutation}`);
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const credential = pairingCredential();
+      const slowStore = createSlowMutationStore({
+        delayMs: 50,
+        delayedMutation,
+      });
+      const reference = createSecretStoreReference(`cave-timeout-${delayedMutation}`);
+      const fetchImplementation = queuedFetch([
+        () =>
+          jsonResponse(
+            201,
+            successEnvelope({
+              requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+              secret: PAIRING_SECRET,
+              expiresAt: 1_755_731_112_617,
+            }),
+          ),
+        () =>
+          jsonResponse(
+            200,
+            successEnvelope({
+              bearer: BEARER,
+              credential,
+            }),
+          ),
+      ]);
+      const client = createDiscoveredCaveClient({
+        credentials: { store: slowStore.store, reference },
+        discovery: {
+          root,
+          timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
+          dependencies: discoveryDependencies(),
+        },
+        fetch: fetchImplementation,
+      });
+      const session = await client.createPairing({
+        appName: 'OpenCoven Chat',
+        installationId: 'chat-install-1',
+        scopes: ['chat:read'],
+      });
+
+      const exchange = session.exchange({ timeoutMs: 10 }).catch((error: unknown) => error);
+      await slowStore.waitForMutationStart(delayedMutation);
+      await vi.advanceTimersByTimeAsync(75);
+
+      const error = await exchange;
+      expect(error).toMatchObject({
+        normalized: {
+          code: 'timeout',
+          retryable: true,
+          operation: 'pairingExchange',
+        },
+      });
+      const settledLogLength = slowStore.log.length;
+      await vi.advanceTimersByTimeAsync(250);
+      await Promise.resolve();
+      expect(slowStore.log).toHaveLength(settledLogLength);
+
+      await expect(session.exchange()).rejects.toMatchObject({
+        normalized: {
+          code: 'conflict',
+          retryable: false,
+          operation: 'pairingExchange',
+        },
+        details: {
+          reason: 'pairing_replayed',
+        },
+      });
+      await expect(client.familiars()).rejects.toMatchObject({
+        normalized: {
+          code: 'reconcile_required',
+          retryable: false,
+          operation: 'familiars',
+        },
+        details: {
+          reason: 'authority_binding_incomplete',
+        },
+      });
+      await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
+      expect(slowStore.retained.size).toBe(0);
+      expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  test.each([
+    ['staging write', 1],
+    ['pending binding write', 2],
+    ['bearer write', 3],
+    ['bound binding write', 4],
+    ['failure marker clear', 5],
+    ['staging clear', 6],
+  ] as const)(
+    'rolls back and stays fail-closed when %s is aborted',
+    async (_label, delayedMutation) => {
+      vi.useFakeTimers();
+      const root = createScratchRoot(`pairing-abort-${delayedMutation}`);
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const credential = pairingCredential();
+      const slowStore = createSlowMutationStore({
+        delayMs: 50,
+        delayedMutation,
+      });
+      const reference = createSecretStoreReference(`cave-abort-${delayedMutation}`);
+      const fetchImplementation = queuedFetch([
+        () =>
+          jsonResponse(
+            201,
+            successEnvelope({
+              requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+              secret: PAIRING_SECRET,
+              expiresAt: 1_755_731_112_617,
+            }),
+          ),
+        () =>
+          jsonResponse(
+            200,
+            successEnvelope({
+              bearer: BEARER,
+              credential,
+            }),
+          ),
+      ]);
+      const client = createDiscoveredCaveClient({
+        credentials: { store: slowStore.store, reference },
+        discovery: {
+          root,
+          timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
+          dependencies: discoveryDependencies(),
+        },
+        fetch: fetchImplementation,
+      });
+      const session = await client.createPairing({
+        appName: 'OpenCoven Chat',
+        installationId: 'chat-install-1',
+        scopes: ['chat:read'],
+      });
+      const controller = new AbortController();
+
+      const exchange = session.exchange({ signal: controller.signal }).catch((error: unknown) => error);
+      await slowStore.waitForMutationStart(delayedMutation);
+      controller.abort(new Error('stop'));
+      await vi.advanceTimersByTimeAsync(75);
+
+      const error = await exchange;
+      expect(error).toMatchObject({
+        normalized: {
+          code: 'aborted',
+          retryable: false,
+          operation: 'pairingExchange',
+        },
+      });
+      const settledLogLength = slowStore.log.length;
+      await vi.advanceTimersByTimeAsync(250);
+      await Promise.resolve();
+      expect(slowStore.log).toHaveLength(settledLogLength);
+
+      await expect(session.exchange()).rejects.toMatchObject({
+        normalized: {
+          code: 'conflict',
+          retryable: false,
+          operation: 'pairingExchange',
+        },
+        details: {
+          reason: 'pairing_replayed',
+        },
+      });
+      await expect(client.familiars()).rejects.toMatchObject({
+        normalized: {
+          code: 'reconcile_required',
+          retryable: false,
+          operation: 'familiars',
+        },
+        details: {
+          reason: 'authority_binding_incomplete',
+        },
+      });
+      await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
+      expect(slowStore.retained.size).toBe(0);
+      expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    },
+  );
+
   test('marks a partially stored bearer unusable when authority binding storage fails', async () => {
     const root = createScratchRoot('pairing-store-failure');
     await writeDiscoveryRecord(root, discoveryRecord());
@@ -2103,7 +2396,8 @@ describe('discovered Cave pairing helpers', () => {
     const exchange = session.exchange().catch((error: unknown) => error);
     const error = await exchange;
 
-    expect(store.set).toHaveBeenCalledTimes(3);
+    expect(store.set).toHaveBeenCalledTimes(4);
+    expect(store.delete).toHaveBeenCalledTimes(3);
     expect(error).toMatchObject({
       normalized: {
         code: 'secret_store_write_failed',
@@ -2123,6 +2417,75 @@ describe('discovered Cave pairing helpers', () => {
         reason: 'pairing_replayed',
       },
     });
+    await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
+    await expect(client.familiars()).rejects.toMatchObject({
+      normalized: {
+        code: 'unauthorized',
+        retryable: false,
+        operation: 'familiars',
+      },
+    });
+    await expect(store.get(reference.key)).resolves.toBeUndefined();
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  });
+
+  test('surfaces an explicit fail-closed error when rollback cannot finish', async () => {
+    const root = createScratchRoot('pairing-rollback-failure');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const credential = pairingCredential();
+    const slowStore = createSlowMutationStore({
+      failSetAtMutation: 3,
+      failDeleteAtMutation: 6,
+    });
+    const reference = createSecretStoreReference('cave-rollback-failure');
+    const fetchImplementation = queuedFetch([
+      () =>
+        jsonResponse(
+          201,
+          successEnvelope({
+            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+            secret: PAIRING_SECRET,
+            expiresAt: 1_755_731_112_617,
+          }),
+        ),
+      () =>
+        jsonResponse(
+          200,
+          successEnvelope({
+            bearer: BEARER,
+            credential,
+          }),
+        ),
+    ]);
+    const client = createDiscoveredCaveClient({
+      credentials: { store: slowStore.store, reference },
+      discovery: {
+        root,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
+        dependencies: discoveryDependencies(),
+      },
+      fetch: fetchImplementation,
+    });
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    const error = await session.exchange().catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      normalized: {
+        code: 'secret_store_rollback_failed',
+        retryable: false,
+        operation: 'pairingExchange',
+      },
+      details: {
+        reason: 'fail_closed',
+      },
+    });
+    expect(String(error)).not.toContain(BEARER);
+    expect(JSON.stringify(error)).not.toContain(BEARER);
     await expect(client.familiars()).rejects.toMatchObject({
       normalized: {
         code: 'reconcile_required',
@@ -2133,7 +2496,7 @@ describe('discovered Cave pairing helpers', () => {
         reason: 'authority_binding_incomplete',
       },
     });
-    await expect(store.get(reference.key)).resolves.toBeUndefined();
+    await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
     expect(fetchImplementation).toHaveBeenCalledTimes(2);
   });
 

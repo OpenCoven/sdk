@@ -1,5 +1,6 @@
 import {
   assessCompatibility,
+  createOperationScope,
   isOperationAbortedError,
   isOperationTimeoutError,
   normalizeError,
@@ -25,6 +26,8 @@ import type {
 } from './schemas.js';
 import {
   forgetStoredCredential,
+  inspectStoredCredentialMaterial,
+  invalidateStoredCredential,
   storeBoundCredential,
 } from './credential-binding.js';
 import type { CaveDiscoveredEndpoint } from './discovery.js';
@@ -296,6 +299,53 @@ function secretStoreWriteFailed(operation: string, cause: unknown): CaveClientEr
     undefined,
     { cause },
   );
+}
+
+function operationDuration(startedAt: number): number {
+  return Math.max(0, performance.now() - startedAt);
+}
+
+function notifyOperationObserver(
+  observer: OperationDefaults['observer'],
+  event: {
+    phase: 'start';
+    system: 'cave';
+    operation: string;
+  } | {
+    phase: 'success';
+    system: 'cave';
+    operation: string;
+    durationMs: number;
+  } | {
+    phase: 'failure' | 'timeout' | 'abort';
+    system: 'cave';
+    operation: string;
+    durationMs: number;
+    error: NormalizedError;
+  },
+): void {
+  if (observer === undefined) {
+    return;
+  }
+
+  try {
+    observer.onEvent(event);
+  } catch (error) {
+    observer.onObserverError(error, event);
+  }
+}
+
+function errorCodeOf(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) {
+    return undefined;
+  }
+
+  try {
+    const code: unknown = Reflect.get(error, 'code');
+    return typeof code === 'string' && code.length > 0 ? code : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function replayedPairing(operation: string): CaveClientError {
@@ -808,6 +858,91 @@ export class CaveClient {
     }
   }
 
+  #operationControls(options: OperationOptions): {
+    observer: OperationDefaults['observer'];
+    timeoutMs: number | undefined;
+  } {
+    return {
+      timeoutMs: options.timeoutMs ?? this.#operation?.timeoutMs,
+      observer: options.observer ?? this.#operation?.observer,
+    };
+  }
+
+  #wrapOperationError(error: unknown, operation: string): CaveClientError {
+    if (isCaveClientError(error)) {
+      return error;
+    }
+
+    return new CaveClientError(normalizeCaveError(error, operation), undefined, {
+      cause: error,
+    });
+  }
+
+  async #executePersistentMutation<T>(
+    operation: string,
+    options: OperationOptions,
+    executor: (
+      context: OperationContext,
+      termination: Promise<never>,
+    ) => Promise<T>,
+  ): Promise<T> {
+    const { observer, timeoutMs } = this.#operationControls(options);
+    const scope = createOperationScope(
+      {
+        system: 'cave',
+        operation,
+      },
+      {
+        signals: options.signal === undefined ? [] : [options.signal],
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      },
+    );
+    const startedAt = performance.now();
+
+    try {
+      notifyOperationObserver(observer, {
+        phase: 'start',
+        system: 'cave',
+        operation,
+      });
+
+      let result: T;
+      try {
+        if (scope.context.signal.aborted) {
+          result = await scope.termination;
+        } else {
+          result = await executor(scope.context, scope.termination);
+        }
+        this.#ensureActive(scope.context, operation);
+      } catch (error) {
+        const wrapped = this.#wrapOperationError(error, operation);
+        notifyOperationObserver(observer, {
+          phase:
+            wrapped.normalized.code === 'timeout'
+              ? 'timeout'
+              : wrapped.normalized.code === 'aborted'
+                ? 'abort'
+                : 'failure',
+          system: 'cave',
+          operation,
+          durationMs: operationDuration(startedAt),
+          error: wrapped.normalized,
+        });
+        throw wrapped;
+      }
+
+      notifyOperationObserver(observer, {
+        phase: 'success',
+        system: 'cave',
+        operation,
+        durationMs: operationDuration(startedAt),
+      });
+      return result;
+    } finally {
+      scope.dispose();
+    }
+  }
+
   #ensureActive(context: OperationContext, operation: string): void {
     if (context.signal.aborted) {
       throw new CaveClientError(normalizeCaveError(context.signal.reason, operation), undefined, {
@@ -1166,7 +1301,10 @@ export class CaveClient {
           return status;
         }),
       exchange: async (exchangeOptions = {}) =>
-        this.#execute('pairingExchange', exchangeOptions, async (context) => {
+        this.#executePersistentMutation('pairingExchange', exchangeOptions, async (
+          context,
+          termination,
+        ) => {
           const credentials = this.#credentials;
           if (credentials === undefined) {
             throw unsupported('pairingExchange');
@@ -1200,16 +1338,30 @@ export class CaveClient {
             const bearer = bearerBytes.toString('utf8');
             if (authorityBinding === undefined) {
               await credentials.store.set(credentials.reference.key, bearer);
+              this.#ensureActive(context, 'pairingExchange');
             } else {
               await storeBoundCredential(
                 credentials.store,
                 credentials.reference,
                 bearer,
                 authorityBinding,
+                {
+                  context,
+                  termination,
+                },
               );
             }
           } catch (error) {
             clearPairingSecret();
+            const code = errorCodeOf(error);
+            if (
+              code === 'secret_store_rollback_failed' ||
+              code === 'timeout' ||
+              code === 'aborted'
+            ) {
+              throw error;
+            }
+
             throw secretStoreWriteFailed('pairingExchange', error);
           } finally {
             bearerBytes.fill(0);
@@ -1228,11 +1380,20 @@ export class CaveClient {
       }
 
       this.#ensureActive(context, 'credentialStatus');
-      const bearer = await credentials.store.get(credentials.reference.key);
-      if (bearer === undefined) {
+      const localMaterial = await inspectStoredCredentialMaterial(
+        credentials.store,
+        credentials.reference,
+        (value) => BASE64URL_43_RE.test(value),
+        { context },
+      );
+      if (localMaterial.status === 'missing') {
         return { status: 'missing' };
       }
-      if (typeof bearer !== 'string' || !BASE64URL_43_RE.test(bearer)) {
+      if (localMaterial.status === 'incomplete') {
+        await invalidateStoredCredential(credentials.store, credentials.reference, { context });
+        return { status: 'missing' };
+      }
+      if (localMaterial.status === 'invalid_bearer') {
         throw invalidResponse('credentialStatus');
       }
 
@@ -1278,7 +1439,7 @@ export class CaveClient {
       }
 
       this.#ensureActive(context, 'forgetCredential');
-      return await forgetStoredCredential(credentials.store, credentials.reference);
+      return await forgetStoredCredential(credentials.store, credentials.reference, { context });
     });
   }
 }

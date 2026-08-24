@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CAVE_PAIRING_SCOPES } from '@opencoven/cave-client';
+import { CAVE_PAIRING_SCOPES, createDiscoveredCaveClient } from '@opencoven/cave-client';
 import { createMemorySecretStore } from '@opencoven/sdk-core';
 import {
   createNativeSecretStore,
@@ -105,6 +105,80 @@ function createProbeableStore(
   probe: () => Promise<void> = () => Promise.resolve(),
 ) {
   return Object.assign(createMemorySecretStore(), { probe });
+}
+
+function caveResponse(status: number, data: Record<string, unknown>): Response {
+  return new Response(
+    JSON.stringify({
+      apiVersion: '1.0',
+      minimumClientVersion: '0.1.0',
+      capabilities: [...caveHealth.capabilities],
+      operations: [...caveHealth.operations],
+      data,
+    }),
+    {
+      status,
+      headers: {
+        'content-type': 'application/json',
+      },
+    },
+  );
+}
+
+function createSlowMutationStore(
+  options: { delayedMutation: number; delayMs: number },
+) {
+  const retained = new Map<string, string>();
+  const log: Array<{ mutation: number; phase: 'start' | 'finish' }> = [];
+  let mutationIndex = 0;
+  let startedResolver: (() => void) | undefined;
+  const started = new Promise<void>((resolve) => {
+    startedResolver = resolve;
+  });
+
+  const maybeDelay = async (current: number): Promise<void> => {
+    if (current !== options.delayedMutation) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, options.delayMs);
+    });
+  };
+
+  return {
+    log,
+    retained,
+    store: {
+      get(key: string) {
+        return Promise.resolve(retained.get(key));
+      },
+      async set(key: string, value: string) {
+        mutationIndex += 1;
+        const current = mutationIndex;
+        log.push({ mutation: current, phase: 'start' });
+        if (current === options.delayedMutation) {
+          startedResolver?.();
+        }
+        await maybeDelay(current);
+        retained.set(key, value);
+        log.push({ mutation: current, phase: 'finish' });
+      },
+      async delete(key: string) {
+        mutationIndex += 1;
+        const current = mutationIndex;
+        log.push({ mutation: current, phase: 'start' });
+        if (current === options.delayedMutation) {
+          startedResolver?.();
+        }
+        await maybeDelay(current);
+        const deleted = retained.delete(key);
+        log.push({ mutation: current, phase: 'finish' });
+        return deleted;
+      },
+    },
+    started,
+  };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -1039,6 +1113,141 @@ describe('opencoven CLI output', () => {
     });
     expect(storeError.stdout).not.toContain('OpenCoven CLI');
     expect(storeError.stdout).not.toContain('bearer secret');
+  });
+
+  test('reproduces fail-closed CLI timeout during credential binding persistence', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(fakeClockStart);
+
+    try {
+      const slowStore = createSlowMutationStore({
+        delayedMutation: 6,
+        delayMs: 50,
+      });
+      const timedCreateClient = (options: Parameters<typeof createDiscoveredCaveClient>[0]) => {
+        const client = createDiscoveredCaveClient(options);
+        return {
+          health: client.health.bind(client),
+          credentialStatus: client.credentialStatus.bind(client),
+          forgetCredential: client.forgetCredential.bind(client),
+          createPairing: async (
+            request: Parameters<typeof client.createPairing>[0],
+            createOptions?: Parameters<typeof client.createPairing>[1],
+          ) => {
+            const session = await client.createPairing(request, createOptions);
+            return {
+              requestId: session.requestId,
+              expiresAt: session.expiresAt,
+              poll: session.poll.bind(session),
+              exchange: (exchangeOptions?: { timeoutMs?: number }) =>
+                session.exchange({
+                  ...(exchangeOptions ?? {}),
+                  timeoutMs: 10,
+                }),
+            };
+          },
+        };
+      };
+      const fetchImplementation = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          caveResponse(201, {
+            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+            secret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+            expiresAt: fakeClockStart + 10_000,
+          }),
+        )
+        .mockResolvedValueOnce(
+          caveResponse(200, {
+            id: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+            status: 'approved',
+            expiresAt: fakeClockStart + 10_000,
+          }),
+        )
+        .mockResolvedValueOnce(
+          caveResponse(200, {
+            bearer: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+            credential: caveCredential,
+          }),
+        );
+
+      const pairPromise = runCli(
+        ['--json', 'cave', 'pair'],
+        runtime({
+          now: () => Date.now(),
+          sleep: (milliseconds: number) =>
+            new Promise((resolve) => setTimeout(resolve, milliseconds)),
+          timing: {
+            cavePairTimeoutMs: 100,
+            cavePairPollIntervalMs: 10,
+          },
+          fetch: fetchImplementation,
+          createSecretStore: () => slowStore.store,
+          cave: {
+            createClient: timedCreateClient,
+            discoverEndpoint: () => Promise.resolve(caveDiscovery),
+          },
+        }),
+      );
+
+      await vi.advanceTimersByTimeAsync(200);
+      const pair = await pairPromise;
+
+      expect(pair.exitCode).toBe(1);
+      expect(JSON.parse(pair.stdout)).toEqual({
+        command: 'cave pair',
+        data: {
+          attempts: 1,
+          expiresAt: fakeClockStart + 10_000,
+          requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+        },
+        error: {
+          code: 'timeout',
+          message: 'The Cave operation timed out.',
+          retryable: true,
+        },
+        ok: false,
+        version: cliVersion,
+      });
+      expect(pair.stdout).not.toContain('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB');
+
+      const settledLogLength = slowStore.log.length;
+      await vi.advanceTimersByTimeAsync(250);
+      await Promise.resolve();
+      expect(slowStore.log).toHaveLength(settledLogLength);
+
+      const status = await runCli(
+        ['--json', 'cave', 'status'],
+        runtime({
+          now: () => Date.now(),
+          sleep: (milliseconds: number) =>
+            new Promise((resolve) => setTimeout(resolve, milliseconds)),
+          fetch: fetchImplementation,
+          createSecretStore: () => slowStore.store,
+          cave: {
+            createClient: createDiscoveredCaveClient,
+            discoverEndpoint: () => Promise.resolve(caveDiscovery),
+          },
+        }),
+      );
+
+      expect(JSON.parse(status.stdout)).toEqual({
+        command: 'cave status',
+        data: {
+          status: 'missing',
+        },
+        error: {
+          code: 'missing_credential',
+          message: 'No Cave credential is stored.',
+          action: 'Run `opencoven cave pair` to create and store a credential.',
+        },
+        ok: false,
+        version: cliVersion,
+      });
+      expect(fetchImplementation).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('times out hung discover, pair create, pair exchange, status, forget, and Coven health commands', async () => {

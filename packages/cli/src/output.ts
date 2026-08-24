@@ -127,6 +127,7 @@ function inferredRetryable(code: string): boolean | undefined {
     case 'pairing_expired':
     case 'owner_mismatch':
     case 'unsafe_endpoint':
+    case 'secret_store_rollback_failed':
     case 'reconcile_required':
       return false;
     default:
@@ -211,6 +212,8 @@ function messageForCode(code: string, context: CliErrorContext): string {
       return 'Native secure credential storage is unavailable.';
     case 'secret_store_write_failed':
       return 'The paired Cave credential could not be saved securely.';
+    case 'secret_store_rollback_failed':
+      return 'The paired Cave credential could not be rolled back safely.';
     case 'reconcile_required':
       return 'The local Cave authority changed and the stored credential is no longer trusted.';
     case 'scope_denied':
@@ -272,6 +275,8 @@ function actionForCode(code: string, context: CliErrorContext): string | undefin
       return secureStoreAction();
     case 'secret_store_write_failed':
       return secureStoreAction();
+    case 'secret_store_rollback_failed':
+      return 'Run `opencoven cave forget` once secure credential storage is healthy, then pair again.';
     case 'reconcile_required':
       return 'Run `opencoven cave pair` to establish a fresh credential.';
     case 'scope_denied':

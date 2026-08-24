@@ -638,6 +638,36 @@ describe('CLI output helpers', () => {
     });
   });
 
+  test('keeps rollback failures explicit and fail-closed', () => {
+    const normalized = normalizeCliError(
+      Object.assign(new Error('rollback failed'), {
+        code: 'secret_store_rollback_failed',
+        retryable: false,
+        details: {
+          failedStep: 'delete_binding',
+          reason: 'fail_closed',
+          rollbackState: 'failed',
+        },
+      }),
+      {
+        system: 'secure-store',
+        operation: 'set',
+      },
+    );
+
+    expect(normalized).toEqual({
+      code: 'secret_store_rollback_failed',
+      message: 'The paired Cave credential could not be rolled back safely.',
+      retryable: false,
+      action: 'Run `opencoven cave forget` once secure credential storage is healthy, then pair again.',
+      details: {
+        failedStep: 'delete_binding',
+        reason: 'fail_closed',
+        rollbackState: 'failed',
+      },
+    });
+  });
+
   test('falls back safely when error metadata throws during inspection', () => {
     const throwing = new Proxy(
       {},
