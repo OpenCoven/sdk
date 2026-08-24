@@ -155,6 +155,14 @@ async function caveErrorOf(run: () => Promise<unknown>) {
   throw new Error('Expected CaveClientError.');
 }
 
+async function collect<T>(iterator: AsyncIterable<T>): Promise<T[]> {
+  const items: T[] = [];
+  for await (const item of iterator) {
+    items.push(item);
+  }
+  return items;
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -312,6 +320,511 @@ describe('Cave caller-supplied canonical reads', () => {
         retryable: false,
       },
     });
+  });
+
+  describe('Cave bounded canonical iteration', () => {
+    test.each([
+      [
+        'familiars',
+        (client: CaveClient) => client.iterateFamiliars({ maxPages: 1 }),
+        'listFamiliars',
+        'familiars',
+        FAMILIAR,
+      ],
+      [
+        'projects',
+        (client: CaveClient) => client.iterateProjects({ maxPages: 1 }),
+        'listProjects',
+        'projects',
+        PROJECT,
+      ],
+      [
+        'conversations',
+        (client: CaveClient) => client.iterateConversations({ maxPages: 1 }),
+        'listConversations',
+        'conversations',
+        CONVERSATION,
+      ],
+      [
+        'conversation messages',
+        (client: CaveClient) =>
+          client.iterateConversationMessages('conversation/one', {
+            maxPages: 1,
+          }),
+        'listConversationMessages',
+        'messages',
+        MESSAGE,
+      ],
+    ] as const)(
+      'iterates exactly one %s page through its one-page transport',
+      async (_label, iterate, transportMethod, dataKey, item) => {
+        const method = vi.fn(() =>
+          Promise.resolve(
+            successEnvelope(
+              { [dataKey]: [item] },
+              { hasMore: false },
+            ),
+          ),
+        );
+        const { client } = clientWith({ [transportMethod]: method });
+
+        await expect(
+          collect(iterate(client) as AsyncIterable<unknown>),
+        ).resolves.toEqual([item]);
+        expect(method).toHaveBeenCalledOnce();
+      },
+    );
+
+    test('returns no items for an empty terminal page', async () => {
+      const listProjects = vi.fn(() =>
+        Promise.resolve(
+          successEnvelope({ projects: [] }, { hasMore: false }),
+        ),
+      );
+      const { client } = clientWith({ listProjects });
+
+      await expect(
+        collect(client.iterateProjects({ maxPages: 1 })),
+      ).resolves.toEqual([]);
+      expect(listProjects).toHaveBeenCalledOnce();
+    });
+
+    test('fetches multiple pages one at a time and preserves the initial limit and cursor', async () => {
+      const listProjects = vi
+        .fn()
+        .mockResolvedValueOnce(
+          successEnvelope(
+            { projects: [{ ...PROJECT, id: 'project-2' }] },
+            {
+              current: CURSOR,
+              next: NEXT_CURSOR,
+              hasMore: true,
+            },
+          ),
+        )
+        .mockResolvedValueOnce(
+          successEnvelope(
+            { projects: [{ ...PROJECT, id: 'project-3' }] },
+            {
+              current: NEXT_CURSOR,
+              hasMore: false,
+            },
+          ),
+        );
+      const { client } = clientWith({ listProjects });
+
+      await expect(
+        collect(
+          client.iterateProjects({
+            limit: 25,
+            cursor: CURSOR,
+            maxPages: 2,
+          }),
+        ),
+      ).resolves.toMatchObject([
+        { id: 'project-2' },
+        { id: 'project-3' },
+      ]);
+      expect(listProjects).toHaveBeenCalledTimes(2);
+      expect(listProjects.mock.calls[0]?.[0]).toEqual({
+        limit: 25,
+        cursor: CURSOR,
+      });
+      expect(listProjects.mock.calls[1]?.[0]).toEqual({
+        limit: 25,
+        cursor: NEXT_CURSOR,
+      });
+    });
+
+    test('stops at maxPages before requesting page N plus one', async () => {
+      const listProjects = vi
+        .fn()
+        .mockResolvedValueOnce(
+          successEnvelope(
+            { projects: [{ ...PROJECT, id: 'project-1' }] },
+            { next: CURSOR, hasMore: true },
+          ),
+        )
+        .mockResolvedValueOnce(
+          successEnvelope(
+            { projects: [{ ...PROJECT, id: 'project-2' }] },
+            { current: CURSOR, next: NEXT_CURSOR, hasMore: true },
+          ),
+        )
+        .mockRejectedValue(new Error('page three must not be requested'));
+      const { client } = clientWith({ listProjects });
+
+      await expect(
+        collect(client.iterateProjects({ maxPages: 2 })),
+      ).resolves.toMatchObject([
+        { id: 'project-1' },
+        { id: 'project-2' },
+      ]);
+      expect(listProjects).toHaveBeenCalledTimes(2);
+    });
+
+    test('supports a caller-owned signal as the only explicit bound', async () => {
+      const controller = new AbortController();
+      const listProjects = vi.fn(() =>
+        Promise.resolve(
+          successEnvelope({ projects: [PROJECT] }, { hasMore: false }),
+        ),
+      );
+      const { client } = clientWith({ listProjects });
+
+      await expect(
+        collect(
+          client.iterateProjects({ signal: controller.signal }),
+        ),
+      ).resolves.toEqual([PROJECT]);
+      expect(listProjects).toHaveBeenCalledOnce();
+    });
+
+    test('rejects an omitted explicit bound even when TypeScript is bypassed', () => {
+      const { client } = clientWith({});
+
+      expect(() =>
+        (
+          client.iterateProjects as unknown as (
+            options: Record<string, never>,
+          ) => AsyncGenerator<unknown>
+        )({}),
+      ).toThrow(expect.objectContaining({ code: 'invalid_options' }));
+    });
+
+    test('is lazy and never downloads a later page without demand', async () => {
+      const listProjects = vi
+        .fn()
+        .mockResolvedValueOnce(
+          successEnvelope(
+            { projects: [PROJECT] },
+            { next: CURSOR, hasMore: true },
+          ),
+        )
+        .mockRejectedValue(new Error('page two must remain lazy'));
+      const { client } = clientWith({ listProjects });
+      const iterator = client.iterateProjects({ maxPages: 2 });
+
+      expect(listProjects).not.toHaveBeenCalled();
+      await expect(iterator.next()).resolves.toEqual({
+        value: PROJECT,
+        done: false,
+      });
+      expect(listProjects).toHaveBeenCalledOnce();
+      await expect(iterator.return(undefined)).resolves.toEqual({
+        value: undefined,
+        done: true,
+      });
+      expect(listProjects).toHaveBeenCalledOnce();
+    });
+
+    test('honors caller abort between pages without starting another request', async () => {
+      const controller = new AbortController();
+      const listProjects = vi.fn(() =>
+        Promise.resolve(
+          successEnvelope(
+            { projects: [PROJECT] },
+            { next: CURSOR, hasMore: true },
+          ),
+        ),
+      );
+      const { client } = clientWith({ listProjects });
+      const iterator = client.iterateProjects({
+        signal: controller.signal,
+      });
+
+      await expect(iterator.next()).resolves.toEqual({
+        value: PROJECT,
+        done: false,
+      });
+      controller.abort('caller stopped');
+
+      await expect(iterator.next()).rejects.toMatchObject({
+        code: 'aborted',
+        retryable: false,
+      });
+      expect(listProjects).toHaveBeenCalledOnce();
+    });
+
+    test('honors timeout between pages without starting another request', async () => {
+      vi.useFakeTimers();
+      const listProjects = vi.fn(() =>
+        Promise.resolve(
+          successEnvelope(
+            { projects: [PROJECT] },
+            { next: CURSOR, hasMore: true },
+          ),
+        ),
+      );
+      const { client } = clientWith({ listProjects });
+      const iterator = client.iterateProjects({
+        maxPages: 2,
+        timeoutMs: 10,
+      });
+
+      await expect(iterator.next()).resolves.toEqual({
+        value: PROJECT,
+        done: false,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      await expect(iterator.next()).rejects.toMatchObject({
+        code: 'timeout',
+        retryable: true,
+      });
+      expect(listProjects).toHaveBeenCalledOnce();
+    });
+
+    test('applies the client default timeout to the aggregate iterator', async () => {
+      vi.useFakeTimers();
+      const listProjects = vi.fn(() =>
+        Promise.resolve(
+          successEnvelope(
+            { projects: [PROJECT] },
+            { next: CURSOR, hasMore: true },
+          ),
+        ),
+      );
+      const { client } = clientWith(
+        { listProjects },
+        { timeoutMs: 10 },
+      );
+      const iterator = client.iterateProjects({ maxPages: 2 });
+
+      await iterator.next();
+      await vi.advanceTimersByTimeAsync(10);
+
+      await expect(iterator.next()).rejects.toMatchObject({
+        code: 'timeout',
+        retryable: true,
+      });
+      expect(listProjects).toHaveBeenCalledOnce();
+    });
+
+    test.each([
+      ['missing', { current: CURSOR, hasMore: true }],
+      [
+        'repeated',
+        { current: CURSOR, next: CURSOR, hasMore: true },
+      ],
+    ] as const)('rejects a %s advancing cursor without retrying', async (
+      _kind,
+      cursor,
+    ) => {
+      const listProjects = vi.fn(() =>
+        Promise.resolve(
+          successEnvelope({ projects: [] }, cursor),
+        ),
+      );
+      const { client } = clientWith({ listProjects });
+
+      await expect(
+        collect(
+          client.iterateProjects({ cursor: CURSOR, maxPages: 2 }),
+        ),
+      ).rejects.toMatchObject({
+        code: 'invalid_response',
+        retryable: false,
+      });
+      expect(listProjects).toHaveBeenCalledOnce();
+    });
+
+    test('propagates reconcile_required from messages without retrying and forwards the id', async () => {
+      const listConversationMessages = vi.fn<
+        (
+          conversationId: string,
+          options: PageOptions,
+          context?: OperationContext,
+        ) => Promise<unknown>
+      >(() =>
+        Promise.resolve(
+          errorEnvelope({
+            error: {
+              code: 'reconcile_required',
+              message: 'Reload canonical state.',
+              retryable: false,
+              details: {
+                reason: 'resume_from_canonical_state',
+              },
+            },
+          }),
+        ),
+      );
+      const { client } = clientWith({ listConversationMessages });
+
+      await expect(
+        collect(
+          client.iterateConversationMessages('conversation/one', {
+            maxPages: 3,
+          }),
+        ),
+      ).rejects.toMatchObject({
+        normalized: {
+          code: 'reconcile_required',
+          operation: 'listConversationMessages',
+          retryable: false,
+        },
+        details: {
+          reason: 'resume_from_canonical_state',
+        },
+      });
+      expect(listConversationMessages).toHaveBeenCalledOnce();
+      expect(listConversationMessages.mock.calls[0]?.[0]).toBe(
+        'conversation/one',
+      );
+    });
+
+    test('does not retry a retryable page failure', async () => {
+      const listProjects = vi.fn(() =>
+        Promise.reject(
+          Object.assign(new Error('offline'), {
+            code: 'service_unavailable',
+            retryable: true,
+          }),
+        ),
+      );
+      const { client } = clientWith({ listProjects });
+
+      await expect(
+        collect(client.iterateProjects({ maxPages: 3 })),
+      ).rejects.toMatchObject({
+        normalized: {
+          code: 'service_unavailable',
+          operation: 'listProjects',
+          retryable: true,
+        },
+      });
+      expect(listProjects).toHaveBeenCalledOnce();
+    });
+
+    test('reports exactly one aggregate observer lifecycle across multiple pages', async () => {
+      const events: OperationEvent[] = [];
+      const listProjects = vi
+        .fn()
+        .mockResolvedValueOnce(
+          successEnvelope(
+            { projects: [PROJECT] },
+            { next: CURSOR, hasMore: true },
+          ),
+        )
+        .mockResolvedValueOnce(
+          successEnvelope({ projects: [] }, { hasMore: false }),
+        );
+      const { client } = clientWith(
+        { listProjects },
+        {
+          observer: {
+            onEvent(event) {
+              events.push(event);
+            },
+            onObserverError(error) {
+              throw error;
+            },
+          },
+        },
+      );
+
+      await expect(
+        collect(client.iterateProjects({ maxPages: 2 })),
+      ).resolves.toEqual([PROJECT]);
+      expect(events.map(({ phase }) => phase)).toEqual(['start', 'success']);
+      expect(events.map(({ operation }) => operation)).toEqual([
+        'iteratePages',
+        'iteratePages',
+      ]);
+    });
+
+    test('preserves Core return and throw cancellation semantics', async () => {
+      const events: OperationEvent[] = [];
+      const consumerError = new Error('consumer stopped');
+      const listProjects = vi.fn(() =>
+        Promise.resolve(
+          successEnvelope(
+            { projects: [PROJECT] },
+            { next: CURSOR, hasMore: true },
+          ),
+        ),
+      );
+      const { client } = clientWith({ listProjects });
+      const returned = client.iterateProjects({
+        maxPages: 2,
+        observer: {
+          onEvent(event) {
+            events.push(event);
+          },
+          onObserverError(error) {
+            throw error;
+          },
+        },
+      });
+
+      await returned.next();
+      await expect(returned.return(undefined)).resolves.toEqual({
+        value: undefined,
+        done: true,
+      });
+      expect(events.map(({ phase }) => phase)).toEqual(['start', 'abort']);
+
+      const thrown = client.iterateProjects({ maxPages: 2 });
+      await thrown.next();
+      await expect(thrown.throw(consumerError)).rejects.toBe(consumerError);
+      expect(listProjects).toHaveBeenCalledTimes(2);
+    });
+
+    test('preserves the first consumer throw while a page request is in flight', async () => {
+      const consumerError = new Error('consumer stopped');
+      const listProjects = vi.fn(
+        (_options: PageOptions, context?: OperationContext) =>
+          new Promise<never>((_resolve, reject) => {
+            context?.signal.addEventListener(
+              'abort',
+              () => {
+                const reason = context.signal.reason as unknown;
+                reject(
+                  reason instanceof Error
+                    ? reason
+                    : new Error('transport aborted', { cause: reason }),
+                );
+              },
+              { once: true },
+            );
+          }),
+      );
+      const { client } = clientWith({ listProjects });
+      const iterator = client.iterateProjects({ maxPages: 1 });
+      const pendingNext = iterator.next().catch((error: unknown) => error);
+
+      await vi.waitFor(() => {
+        expect(listProjects).toHaveBeenCalledOnce();
+      });
+      const thrown = iterator.throw(consumerError).catch(
+        (error: unknown) => error,
+      );
+
+      await expect(Promise.all([pendingNext, thrown])).resolves.toEqual([
+        consumerError,
+        consumerError,
+      ]);
+    });
+
+    test.each(['', '   ', '.', '..'])(
+      'validates message conversation id %j before page I/O',
+      async (conversationId) => {
+        const listConversationMessages = vi.fn(() =>
+          Promise.resolve(successEnvelope({ messages: [] })),
+        );
+        const { client } = clientWith({ listConversationMessages });
+
+        await expect(
+          client
+            .iterateConversationMessages(conversationId, { maxPages: 1 })
+            .next(),
+        ).rejects.toMatchObject({
+          code: 'invalid_options',
+        });
+        expect(listConversationMessages).not.toHaveBeenCalled();
+      },
+    );
   });
 
   test('preserves every optional DTO field and ignores unknown additive fields', async () => {

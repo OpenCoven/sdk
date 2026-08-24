@@ -3,11 +3,13 @@ import {
   createOperationScope,
   isOperationAbortedError,
   isOperationTimeoutError,
+  iteratePages,
   normalizeError,
   normalizePageOptions,
   OperationConfigurationError,
   runOperation,
   type CompatibilityAssessment,
+  type BoundedPageOptions,
   type NormalizedError,
   type OperationContext,
   type OperationDefaults,
@@ -871,9 +873,14 @@ export class CaveClient {
     operation: string,
     options: OperationOptions,
     executor: (context: OperationContext) => Promise<T>,
+    inheritDefaults = true,
   ): Promise<T> {
-    const timeoutMs = options.timeoutMs ?? this.#operation?.timeoutMs;
-    const observer = options.observer ?? this.#operation?.observer;
+    const timeoutMs =
+      options.timeoutMs ??
+      (inheritDefaults ? this.#operation?.timeoutMs : undefined);
+    const observer =
+      options.observer ??
+      (inheritDefaults ? this.#operation?.observer : undefined);
     const operationOptions: OperationOptions = {
       ...(options.signal === undefined ? {} : { signal: options.signal }),
       ...(timeoutMs === undefined ? {} : { timeoutMs }),
@@ -1083,23 +1090,30 @@ export class CaveClient {
     options: OperationOptions,
     read: (context: OperationContext) => Promise<unknown>,
     parse: (value: unknown) => T,
+    inheritDefaults = true,
   ): Promise<T> {
-    return this.#execute(operation, options, async (context) => {
-      this.#ensureActive(context, operation);
-      const response = await read(context);
-      try {
-        return parse(response);
-      } catch (error) {
-        if (error instanceof CaveCanonicalSchemaError) {
-          throw invalidCanonicalResponse(operation, error.field);
+    return this.#execute(
+      operation,
+      options,
+      async (context) => {
+        this.#ensureActive(context, operation);
+        const response = await read(context);
+        try {
+          return parse(response);
+        } catch (error) {
+          if (error instanceof CaveCanonicalSchemaError) {
+            throw invalidCanonicalResponse(operation, error.field);
+          }
+          throw error;
         }
-        throw error;
-      }
-    });
+      },
+      inheritDefaults,
+    );
   }
 
-  async listFamiliars(
+  async #listFamiliars(
     options: PageOptions & OperationOptions = {},
+    inheritDefaults = true,
   ): Promise<Page<CaveCanonicalFamiliar>> {
     const pageOptions = normalizePageOptions(options);
 
@@ -1114,11 +1128,19 @@ export class CaveClient {
         return call(pageOptions, context);
       },
       parseFamiliarsEnvelope,
+      inheritDefaults,
     );
   }
 
-  async listProjects(
+  async listFamiliars(
     options: PageOptions & OperationOptions = {},
+  ): Promise<Page<CaveCanonicalFamiliar>> {
+    return this.#listFamiliars(options);
+  }
+
+  async #listProjects(
+    options: PageOptions & OperationOptions = {},
+    inheritDefaults = true,
   ): Promise<Page<CaveProject>> {
     const pageOptions = normalizePageOptions(options);
 
@@ -1133,11 +1155,19 @@ export class CaveClient {
         return call(pageOptions, context);
       },
       parseProjectsEnvelope,
+      inheritDefaults,
     );
   }
 
-  async listConversations(
+  async listProjects(
     options: PageOptions & OperationOptions = {},
+  ): Promise<Page<CaveProject>> {
+    return this.#listProjects(options);
+  }
+
+  async #listConversations(
+    options: PageOptions & OperationOptions = {},
+    inheritDefaults = true,
   ): Promise<Page<CaveConversation>> {
     const pageOptions = normalizePageOptions(options);
 
@@ -1152,7 +1182,14 @@ export class CaveClient {
         return call(pageOptions, context);
       },
       parseConversationsEnvelope,
+      inheritDefaults,
     );
+  }
+
+  async listConversations(
+    options: PageOptions & OperationOptions = {},
+  ): Promise<Page<CaveConversation>> {
+    return this.#listConversations(options);
   }
 
   async getConversation(
@@ -1175,9 +1212,10 @@ export class CaveClient {
     );
   }
 
-  async listConversationMessages(
+  async #listConversationMessages(
     conversationId: string,
     options: PageOptions & OperationOptions = {},
+    inheritDefaults = true,
   ): Promise<Page<CaveConversationMessage>> {
     const validatedId = validateCanonicalId(conversationId, 'conversationId');
     const pageOptions = normalizePageOptions(options);
@@ -1195,6 +1233,65 @@ export class CaveClient {
         return call(validatedId, pageOptions, context);
       },
       parseConversationMessagesEnvelope,
+      inheritDefaults,
+    );
+  }
+
+  async listConversationMessages(
+    conversationId: string,
+    options: PageOptions & OperationOptions = {},
+  ): Promise<Page<CaveConversationMessage>> {
+    return this.#listConversationMessages(conversationId, options);
+  }
+
+  #boundedPageOptions(options: BoundedPageOptions): BoundedPageOptions {
+    if (typeof options !== 'object' || options === null) {
+      return options;
+    }
+
+    const timeoutMs = options.timeoutMs ?? this.#operation?.timeoutMs;
+    const observer = options.observer ?? this.#operation?.observer;
+
+    return {
+      ...options,
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      ...(observer === undefined ? {} : { observer }),
+    };
+  }
+
+  iterateFamiliars(
+    options: BoundedPageOptions,
+  ): AsyncGenerator<CaveCanonicalFamiliar> {
+    return iteratePages(
+      (pageOptions) => this.#listFamiliars(pageOptions, false),
+      this.#boundedPageOptions(options),
+    );
+  }
+
+  iterateProjects(options: BoundedPageOptions): AsyncGenerator<CaveProject> {
+    return iteratePages(
+      (pageOptions) => this.#listProjects(pageOptions, false),
+      this.#boundedPageOptions(options),
+    );
+  }
+
+  iterateConversations(
+    options: BoundedPageOptions,
+  ): AsyncGenerator<CaveConversation> {
+    return iteratePages(
+      (pageOptions) => this.#listConversations(pageOptions, false),
+      this.#boundedPageOptions(options),
+    );
+  }
+
+  iterateConversationMessages(
+    conversationId: string,
+    options: BoundedPageOptions,
+  ): AsyncGenerator<CaveConversationMessage> {
+    return iteratePages(
+      (pageOptions) =>
+        this.#listConversationMessages(conversationId, pageOptions, false),
+      this.#boundedPageOptions(options),
     );
   }
 

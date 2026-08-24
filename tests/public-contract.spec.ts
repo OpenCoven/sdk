@@ -137,6 +137,31 @@ type ListConversationMessagesContract = Assert<Equal<
     options?: core.PageOptions & core.OperationOptions,
   ) => Promise<core.Page<cave.CaveConversationMessage>>
 >>;
+type IterateFamiliarsContract = Assert<Equal<
+  cave.CaveClient['iterateFamiliars'],
+  (
+    options: core.BoundedPageOptions,
+  ) => AsyncGenerator<cave.CaveCanonicalFamiliar>
+>>;
+type IterateProjectsContract = Assert<Equal<
+  cave.CaveClient['iterateProjects'],
+  (
+    options: core.BoundedPageOptions,
+  ) => AsyncGenerator<cave.CaveProject>
+>>;
+type IterateConversationsContract = Assert<Equal<
+  cave.CaveClient['iterateConversations'],
+  (
+    options: core.BoundedPageOptions,
+  ) => AsyncGenerator<cave.CaveConversation>
+>>;
+type IterateConversationMessagesContract = Assert<Equal<
+  cave.CaveClient['iterateConversationMessages'],
+  (
+    conversationId: string,
+    options: core.BoundedPageOptions,
+  ) => AsyncGenerator<cave.CaveConversationMessage>
+>>;
 
 function canonicalReadCompileOnly(
   client: cave.CaveClient,
@@ -152,6 +177,14 @@ function canonicalReadCompileOnly(
     client.getConversation('conversation-1');
   const messages: Promise<core.Page<cave.CaveConversationMessage>> =
     client.listConversationMessages('conversation-1', { timeoutMs: 100 });
+  const familiarIterator: AsyncGenerator<cave.CaveCanonicalFamiliar> =
+    client.iterateFamiliars({ maxPages: 1 });
+  const projectIterator: AsyncGenerator<cave.CaveProject> =
+    client.iterateProjects({ signal: new AbortController().signal });
+  const conversationIterator: AsyncGenerator<cave.CaveConversation> =
+    client.iterateConversations({ maxPages: 1, limit: 25 });
+  const messageIterator: AsyncGenerator<cave.CaveConversationMessage> =
+    client.iterateConversationMessages('conversation-1', { maxPages: 1 });
 
   void new cave.CaveClient({ transport });
   void familiars;
@@ -159,6 +192,10 @@ function canonicalReadCompileOnly(
   void conversations;
   void conversation;
   void messages;
+  void familiarIterator;
+  void projectIterator;
+  void conversationIterator;
+  void messageIterator;
 }
 
 void (undefined as unknown as CaveCanonicalFamiliarContract);
@@ -175,6 +212,10 @@ void (undefined as unknown as ListProjectsContract);
 void (undefined as unknown as ListConversationsContract);
 void (undefined as unknown as GetConversationContract);
 void (undefined as unknown as ListConversationMessagesContract);
+void (undefined as unknown as IterateFamiliarsContract);
+void (undefined as unknown as IterateProjectsContract);
+void (undefined as unknown as IterateConversationsContract);
+void (undefined as unknown as IterateConversationMessagesContract);
 void canonicalReadCompileOnly;
 
 interface NormalizedError {
@@ -321,6 +362,15 @@ describe('public package entry points', () => {
     expect(client.listConversations.bind(client)).toBeTypeOf('function');
     expect(client.getConversation.bind(client)).toBeTypeOf('function');
     expect(client.listConversationMessages.bind(client)).toBeTypeOf('function');
+    expect(client.iterateFamiliars.bind(client)).toBeTypeOf('function');
+    expect(client.iterateProjects.bind(client)).toBeTypeOf('function');
+    expect(client.iterateConversations.bind(client)).toBeTypeOf('function');
+    expect(
+      client.iterateConversationMessages.bind(client),
+    ).toBeTypeOf('function');
+    expect(
+      (client as unknown as Record<string, unknown>).iterateConversation,
+    ).toBeUndefined();
   });
 
   test('normalizes Cave unauthorized errors with an explicit operation', () => {

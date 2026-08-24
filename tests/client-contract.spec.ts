@@ -2,6 +2,7 @@ import * as cave from '@opencoven/cave-client';
 import * as coven from '@opencoven/coven-client';
 import {
   createSecretStoreReference,
+  type BoundedPageOptions,
   type OperationContext,
   type OperationEvent,
   type PageOptions,
@@ -77,6 +78,14 @@ function expectStoredCredentialRecord(serialized: string | undefined): void {
       instanceId: 'test-cave',
     },
   });
+}
+
+async function collect<T>(iterator: AsyncIterable<T>): Promise<T[]> {
+  const items: T[] = [];
+  for await (const item of iterator) {
+    items.push(item);
+  }
+  return items;
 }
 
 const VALID_CAVE_HEALTH_RESPONSE = {
@@ -203,6 +212,16 @@ describe('constrained client transports', () => {
     await expect(
       client.listConversationMessages('conversation-1'),
     ).resolves.toEqual({ data: [] });
+
+    const bounded: BoundedPageOptions = { maxPages: 1 };
+    await expect(collect(client.iterateFamiliars(bounded))).resolves.toEqual([]);
+    await expect(collect(client.iterateProjects(bounded))).resolves.toEqual([]);
+    await expect(collect(client.iterateConversations(bounded))).resolves.toEqual([]);
+    await expect(
+      collect(
+        client.iterateConversationMessages('conversation-1', bounded),
+      ),
+    ).resolves.toEqual([]);
   });
 
   test('creates Cave health clients through the public factory', async () => {

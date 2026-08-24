@@ -41,6 +41,11 @@ describe('Cave contract fixture parsing', () => {
         minimumClientVersion: '0.1.0',
         pairingRequired: true,
         pairingSecretHeader: 'x-coven-pairing-secret',
+        limits: {
+          cursorCharacters: 512,
+          defaultPageSize: 50,
+          maxPageSize: 100,
+        },
       },
       examples: {
         healthEnvelope: {
