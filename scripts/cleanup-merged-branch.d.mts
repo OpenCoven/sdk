@@ -31,3 +31,11 @@ export interface CleanupMergedBranchResult {
 export function cleanupMergedBranch(
   options: CleanupMergedBranchOptions,
 ): CleanupMergedBranchResult;
+
+export function parseCleanupArguments(arguments_: string[]): {
+  branch?: string;
+  deleteRemote: boolean;
+  dryRun: boolean;
+  prNumber?: number;
+  repository?: string;
+};

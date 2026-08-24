@@ -11,7 +11,10 @@ import { resolve } from 'node:path';
 
 import { afterEach, describe, expect, test } from 'vitest';
 
-import { cleanupMergedBranch } from '../scripts/cleanup-merged-branch.mjs';
+import {
+  cleanupMergedBranch,
+  parseCleanupArguments,
+} from '../scripts/cleanup-merged-branch.mjs';
 
 const roots: string[] = [];
 
@@ -92,6 +95,27 @@ afterEach(() => {
 });
 
 describe('cleanup merged branch', () => {
+  test('accepts the pnpm argument separator used by the documented command', () => {
+    expect(
+      parseCleanupArguments([
+        '--',
+        '--branch',
+        'feature/merged',
+        '--pr',
+        '123',
+        '--repo',
+        'OpenCoven/sdk',
+        '--dry-run',
+      ]),
+    ).toEqual({
+      branch: 'feature/merged',
+      deleteRemote: false,
+      dryRun: true,
+      prNumber: 123,
+      repository: 'OpenCoven/sdk',
+    });
+  });
+
   test('exposes and documents the explicit cleanup command', () => {
     const root = resolve(import.meta.dirname, '..');
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
