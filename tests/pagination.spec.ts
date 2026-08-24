@@ -2,9 +2,11 @@ import {
   iteratePages,
   normalizePageOptions,
   type BoundedPageOptions,
+  type OperationEvent,
+  type OperationObserver,
   type Page,
 } from '@opencoven/sdk-core';
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 const FIRST_CURSOR = 'eyJwYWdlIjoxfQ';
 const SECOND_CURSOR = 'eyJwYWdlIjoyfQ';
@@ -16,6 +18,17 @@ async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> {
     values.push(value);
   }
   return values;
+}
+
+function collectingObserver(events: OperationEvent[]): OperationObserver {
+  return {
+    onEvent(event) {
+      events.push(event);
+    },
+    onObserverError(error) {
+      throw error;
+    },
+  };
 }
 
 function compileOnly(): void {
@@ -33,6 +46,11 @@ function compileOnly(): void {
   // @ts-expect-error Bounded page options cannot omit both runtime bounds.
   void ({} satisfies BoundedPageOptions);
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe('page option normalization', () => {
   test('defaults the page limit to 50', () => {
@@ -123,6 +141,93 @@ describe('bounded page iteration', () => {
     ).toThrow(
       expect.objectContaining({ code: 'invalid_options' }),
     );
+  });
+
+  test('snapshots initial page options and operation controls at construction', async () => {
+    const originalController = new AbortController();
+    const replacementController = new AbortController();
+    const originalEvents: OperationEvent[] = [];
+    const replacementEvents: OperationEvent[] = [];
+    const options: BoundedPageOptions = {
+      limit: 10,
+      cursor: SECOND_CURSOR,
+      maxPages: 1,
+      signal: originalController.signal,
+      timeoutMs: 100,
+      observer: collectingObserver(originalEvents),
+    };
+    const readPage = vi.fn(
+      (pageOptions: { limit: number; cursor?: string }): Promise<Page<string>> =>
+        Promise.resolve({
+          data: ['item'],
+          cursor: {
+            ...(pageOptions.cursor === undefined
+              ? {}
+              : { current: pageOptions.cursor }),
+            next: THIRD_CURSOR,
+            hasMore: true,
+          },
+        }),
+    );
+    const iterator = iteratePages(readPage, options);
+
+    options.limit = 99;
+    options.cursor = THIRD_CURSOR;
+    options.maxPages = 2;
+    options.signal = replacementController.signal;
+    options.timeoutMs = 1;
+    options.observer = collectingObserver(replacementEvents);
+
+    await expect(collect(iterator)).resolves.toEqual(['item']);
+    expect(readPage).toHaveBeenCalledOnce();
+    expect(readPage).toHaveBeenCalledWith({
+      limit: 10,
+      cursor: SECOND_CURSOR,
+    });
+    expect(originalEvents.map(({ phase }) => phase)).toEqual(['start', 'success']);
+    expect(replacementEvents).toEqual([]);
+  });
+
+  test('retains a signal-only bound when the options signal is removed', async () => {
+    const controller = new AbortController();
+    const options: BoundedPageOptions = { signal: controller.signal };
+    const readPage = vi.fn(() =>
+      Promise.resolve({
+        data: ['unexpected'],
+        cursor: { next: FIRST_CURSOR, hasMore: true },
+      }),
+    );
+    const iterator = iteratePages(readPage, options);
+
+    delete (options as { signal?: AbortSignal }).signal;
+    controller.abort('caller stopped');
+
+    await expect(iterator.next()).rejects.toMatchObject({
+      code: 'aborted',
+      retryable: false,
+    });
+    expect(readPage).not.toHaveBeenCalled();
+  });
+
+  test('retains the initial timeout when options are mutated before iteration', async () => {
+    vi.useFakeTimers();
+    const options: BoundedPageOptions = { maxPages: 1, timeoutMs: 10 };
+    const iterator = iteratePages(
+      () => new Promise<Page<never>>(() => undefined),
+      options,
+    );
+    let caught: unknown;
+
+    options.timeoutMs = 1_000;
+    void iterator.next().catch((error: unknown) => {
+      caught = error;
+    });
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(caught).toMatchObject({
+      code: 'timeout',
+      retryable: true,
+    });
   });
 
   test.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
@@ -438,5 +543,99 @@ describe('bounded page iteration', () => {
       limit: 50,
       cursor: SECOND_CURSOR,
     });
+  });
+
+  test('emits observer start and success events for completed iteration', async () => {
+    const events: OperationEvent[] = [];
+
+    await expect(
+      collect(
+        iteratePages(
+          () =>
+            Promise.resolve({
+              data: ['item'],
+              cursor: { hasMore: false },
+            }),
+          { maxPages: 1, observer: collectingObserver(events) },
+        ),
+      ),
+    ).resolves.toEqual(['item']);
+
+    expect(events.map(({ phase }) => phase)).toEqual(['start', 'success']);
+    expect(events[0]).toEqual({
+      phase: 'start',
+      system: 'sdk',
+      operation: 'iteratePages',
+    });
+    const successEvent = events[1];
+    expect(successEvent).toMatchObject({
+      phase: 'success',
+      system: 'sdk',
+      operation: 'iteratePages',
+    });
+    if (successEvent?.phase !== 'success') {
+      throw new Error('expected pagination success event');
+    }
+    expect(successEvent.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test('emits observer start and failure events for page errors', async () => {
+    const events: OperationEvent[] = [];
+    const pageError = new Error('page failed');
+
+    await expect(
+      collect(
+        iteratePages(() => Promise.reject(pageError), {
+          maxPages: 1,
+          observer: collectingObserver(events),
+        }),
+      ),
+    ).rejects.toBe(pageError);
+
+    expect(events.map(({ phase }) => phase)).toEqual(['start', 'failure']);
+    expect(events[1]).toMatchObject({
+      system: 'sdk',
+      operation: 'iteratePages',
+      error: {
+        system: 'sdk',
+        operation: 'iteratePages',
+        code: 'unknown',
+        retryable: false,
+      },
+    });
+  });
+
+  test('emits observer start and abort events for caller cancellation', async () => {
+    const events: OperationEvent[] = [];
+    const controller = new AbortController();
+    const iterator = iteratePages(
+      () =>
+        Promise.resolve({
+          data: ['item'],
+          cursor: { next: FIRST_CURSOR, hasMore: true },
+        }),
+      {
+        signal: controller.signal,
+        observer: collectingObserver(events),
+      },
+    );
+
+    await expect(iterator.next()).resolves.toEqual({ value: 'item', done: false });
+    controller.abort('caller stopped');
+
+    await expect(iterator.next()).rejects.toMatchObject({
+      code: 'aborted',
+      retryable: false,
+    });
+    expect(events.map(({ phase }) => phase)).toEqual(['start', 'abort']);
+    expect(events[1]).toMatchObject({
+      system: 'sdk',
+      operation: 'iteratePages',
+      error: {
+        code: 'aborted',
+        retryable: false,
+      },
+    });
+    expect(JSON.stringify(events[1])).not.toContain('caller stopped');
   });
 });

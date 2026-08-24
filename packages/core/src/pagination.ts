@@ -1,8 +1,15 @@
 import {
   createOperationScope,
+  isOperationAbortedError,
+  isOperationTimeoutError,
   OperationConfigurationError,
   type OperationOptions,
 } from './operation-control.js';
+import {
+  normalizeOperationEventError,
+  notifyOperationObserver,
+  operationDuration,
+} from './operation-events.js';
 
 const DEFAULT_PAGE_LIMIT = 50;
 const MAX_PAGE_LIMIT = 100;
@@ -156,13 +163,17 @@ export function normalizePageOptions(
 async function* generatePages<T>(
   readPage: (options: NormalizedPageOptions) => Promise<Page<T>>,
   normalized: NormalizedPageOptions,
-  options: BoundedPageOptions,
+  operationOptions: OperationOptions,
   maxPages: number | undefined,
 ): AsyncGenerator<T> {
   const scope = createOperationScope(PAGINATION_DESCRIPTOR, {
-    signals: options.signal === undefined ? [] : [options.signal],
-    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    signals:
+      operationOptions.signal === undefined ? [] : [operationOptions.signal],
+    ...(operationOptions.timeoutMs === undefined
+      ? {}
+      : { timeoutMs: operationOptions.timeoutMs }),
   });
+  const startedAt = performance.now();
   const seenCursors = new Set<string>();
   let cursor = normalized.cursor;
   let pagesRead = 0;
@@ -172,48 +183,80 @@ async function* generatePages<T>(
   }
 
   try {
-    while (maxPages === undefined || pagesRead < maxPages) {
-      ensureActive(scope);
-      const readOptions =
-        cursor === undefined
-          ? { limit: normalized.limit }
-          : { limit: normalized.limit, cursor };
-      const page = await Promise.race([
-        Promise.resolve().then(() => readPage(readOptions)),
-        scope.termination,
-      ]);
-      ensureActive(scope);
-      validatePage<T>(page);
-      pagesRead += 1;
+    notifyOperationObserver(operationOptions.observer, {
+      phase: 'start',
+      system: PAGINATION_DESCRIPTOR.system,
+      operation: PAGINATION_DESCRIPTOR.operation,
+    });
 
-      for (const item of page.data) {
+    try {
+      while (maxPages === undefined || pagesRead < maxPages) {
         ensureActive(scope);
-        yield item;
+        const readOptions =
+          cursor === undefined
+            ? { limit: normalized.limit }
+            : { limit: normalized.limit, cursor };
+        const page = await Promise.race([
+          Promise.resolve().then(() => readPage(readOptions)),
+          scope.termination,
+        ]);
         ensureActive(scope);
-      }
+        validatePage<T>(page);
+        pagesRead += 1;
 
-      if (page.cursor === undefined || !page.cursor.hasMore) {
-        ensureActive(scope);
-        return;
-      }
+        for (const item of page.data) {
+          ensureActive(scope);
+          yield item;
+          ensureActive(scope);
+        }
 
-      const next = page.cursor.next;
-      if (next === undefined) {
-        throw new PaginationResponseError(
-          'page cursor next was required when hasMore was true',
-        );
-      }
-      if (next === page.cursor.current || seenCursors.has(next)) {
-        throw new PaginationResponseError('page cursor did not advance');
-      }
-      if (pagesRead >= (maxPages ?? Number.POSITIVE_INFINITY)) {
-        ensureActive(scope);
-        return;
-      }
+        if (page.cursor === undefined || !page.cursor.hasMore) {
+          ensureActive(scope);
+          break;
+        }
 
-      seenCursors.add(next);
-      cursor = next;
+        const next = page.cursor.next;
+        if (next === undefined) {
+          throw new PaginationResponseError(
+            'page cursor next was required when hasMore was true',
+          );
+        }
+        if (next === page.cursor.current || seenCursors.has(next)) {
+          throw new PaginationResponseError('page cursor did not advance');
+        }
+        if (pagesRead >= (maxPages ?? Number.POSITIVE_INFINITY)) {
+          ensureActive(scope);
+          break;
+        }
+
+        seenCursors.add(next);
+        cursor = next;
+      }
+    } catch (error) {
+      const phase = isOperationTimeoutError(error)
+        ? 'timeout'
+        : isOperationAbortedError(error)
+          ? 'abort'
+          : 'failure';
+      notifyOperationObserver(operationOptions.observer, {
+        phase,
+        system: PAGINATION_DESCRIPTOR.system,
+        operation: PAGINATION_DESCRIPTOR.operation,
+        durationMs: operationDuration(startedAt),
+        error: normalizeOperationEventError(
+          error,
+          PAGINATION_DESCRIPTOR.system,
+          PAGINATION_DESCRIPTOR.operation,
+        ),
+      });
+      throw error;
     }
+    notifyOperationObserver(operationOptions.observer, {
+      phase: 'success',
+      system: PAGINATION_DESCRIPTOR.system,
+      operation: PAGINATION_DESCRIPTOR.operation,
+      durationMs: operationDuration(startedAt),
+    });
   } finally {
     scope.dispose();
   }
@@ -232,20 +275,35 @@ export function iteratePages<T>(
 
   const maxPages = options.maxPages;
   validateMaxPages(maxPages);
-  if (maxPages === undefined && options.signal === undefined) {
+  const signal = options.signal;
+  if (maxPages === undefined && signal === undefined) {
     throw invalidOptions('iteration requires maxPages or a caller-owned signal');
   }
+  const timeoutMs = options.timeoutMs;
+  const observer = options.observer;
+  const operationOptions: OperationOptions = {
+    ...(signal === undefined ? {} : { signal }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    ...(observer === undefined ? {} : { observer }),
+  };
 
   const validationScope = createOperationScope(PAGINATION_DESCRIPTOR, {
-    signals: options.signal === undefined ? [] : [options.signal],
-    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    signals: signal === undefined ? [] : [signal],
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
   });
   validationScope.dispose();
 
+  const limit = options.limit;
+  const cursor = options.cursor;
+  const pageOptions: PageOptions = {
+    ...(limit === undefined ? {} : { limit }),
+    ...(cursor === undefined ? {} : { cursor }),
+  };
+
   return generatePages(
     readPage,
-    normalizePageOptions(options),
-    options,
+    normalizePageOptions(pageOptions),
+    operationOptions,
     maxPages,
   );
 }
