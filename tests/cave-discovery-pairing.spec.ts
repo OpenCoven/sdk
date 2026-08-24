@@ -63,6 +63,37 @@ const DISCOVERED_FAMILIAR_WIRE = {
   memory_freshness: 'fresh',
 } as const;
 
+const CANONICAL_FAMILIAR = {
+  id: 'cody',
+  displayName: 'Cody',
+  role: 'Implementation',
+} as const;
+
+const CANONICAL_PROJECT = {
+  id: 'project-1',
+  name: 'OpenCoven Chat',
+  root: '/workspace/chat',
+  createdAt: '2026-08-24T00:00:00.000Z',
+  updatedAt: '2026-08-24T01:00:00.000Z',
+} as const;
+
+const CANONICAL_CONVERSATION = {
+  id: 'conversation/one?#',
+  familiarId: 'cody',
+  updatedAt: '2026-08-24T01:00:00.000Z',
+} as const;
+
+const CANONICAL_MESSAGE = {
+  id: 'message-1',
+  conversationId: CANONICAL_CONVERSATION.id,
+  parentId: null,
+  role: 'user',
+  text: 'Read canonical state.',
+  createdAt: '2026-08-24T00:30:00.000Z',
+  attachmentCount: 0,
+  toolCount: 0,
+} as const;
+
 const PAIRING_SECRET = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const BEARER = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
 const DISCOVERY_STARTED_AT = '2026-08-24T02:03:51.419Z';
@@ -122,6 +153,39 @@ function pairingCredential() {
     revokedAt: null,
     revocationReason: null,
   };
+}
+
+function successfulPairingHandlers() {
+  return [
+    () =>
+      jsonResponse(
+        201,
+        successEnvelope({
+          requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+          secret: PAIRING_SECRET,
+          expiresAt: 1_755_731_112_617,
+        }),
+      ),
+    () =>
+      jsonResponse(
+        200,
+        successEnvelope({
+          bearer: BEARER,
+          credential: pairingCredential(),
+        }),
+      ),
+  ];
+}
+
+async function pairDiscoveredClient(
+  client: ReturnType<typeof createDiscoveredCaveClient>,
+): Promise<void> {
+  const session = await client.createPairing({
+    appName: 'OpenCoven Chat',
+    installationId: 'chat-install-1',
+    scopes: ['chat:read'],
+  });
+  await session.exchange();
 }
 
 function expectStoredCredentialRecord(
@@ -1031,6 +1095,483 @@ describe('discovered Cave pairing helpers', () => {
       status: 'valid',
       access: 'chat:read',
       health: caveHealth(),
+    });
+  });
+
+  describe('discovered Cave canonical reads', () => {
+    test('uses exact canonical routes, deterministic queries, encoded ids, and bearer-only authenticated requests', async () => {
+      const root = createScratchRoot('canonical-routes');
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const fetchImplementation = queuedFetch([
+        ...successfulPairingHandlers(),
+        (url, init) => {
+          expect(url).toBe(
+            `${DEFAULT_DISCOVERY_ENDPOINT}/api/client/v1/familiars?limit=50`,
+          );
+          expect(init?.method).toBe('GET');
+          expect(init?.redirect).toBe('error');
+          expect(header(init, 'authorization')).toBe(
+            ['Bearer', BEARER].join(' '),
+          );
+          return jsonResponse(
+            200,
+            successEnvelope({ familiars: [CANONICAL_FAMILIAR] }),
+          );
+        },
+        (url, init) => {
+          expect(url).toBe(
+            `${DEFAULT_DISCOVERY_ENDPOINT}/api/client/v1/projects?limit=25&cursor=eyJ2IjoxfQ`,
+          );
+          expect(init?.method).toBe('GET');
+          expect(init?.redirect).toBe('error');
+          expect(header(init, 'authorization')).toBe(
+            ['Bearer', BEARER].join(' '),
+          );
+          return jsonResponse(
+            200,
+            successEnvelope({ projects: [CANONICAL_PROJECT] }),
+          );
+        },
+        (url, init) => {
+          expect(url).toBe(
+            `${DEFAULT_DISCOVERY_ENDPOINT}/api/client/v1/conversations?limit=50&cursor=eyJ2IjoxfQ`,
+          );
+          expect(init?.method).toBe('GET');
+          expect(init?.redirect).toBe('error');
+          expect(header(init, 'authorization')).toBe(
+            ['Bearer', BEARER].join(' '),
+          );
+          return jsonResponse(
+            200,
+            successEnvelope({ conversations: [CANONICAL_CONVERSATION] }),
+          );
+        },
+        (url, init) => {
+          expect(url).toBe(
+            `${DEFAULT_DISCOVERY_ENDPOINT}/api/client/v1/conversations/conversation%2Fone%3F%23`,
+          );
+          expect(init?.method).toBe('GET');
+          expect(init?.redirect).toBe('error');
+          expect(header(init, 'authorization')).toBe(
+            ['Bearer', BEARER].join(' '),
+          );
+          return jsonResponse(
+            200,
+            successEnvelope({ conversation: CANONICAL_CONVERSATION }),
+          );
+        },
+        (url, init) => {
+          expect(url).toBe(
+            `${DEFAULT_DISCOVERY_ENDPOINT}/api/client/v1/conversations/conversation%2Fone%3F%23/messages?limit=100&cursor=eyJ2IjoxfQ`,
+          );
+          expect(init?.method).toBe('GET');
+          expect(init?.redirect).toBe('error');
+          expect(header(init, 'authorization')).toBe(
+            ['Bearer', BEARER].join(' '),
+          );
+          return jsonResponse(
+            200,
+            successEnvelope({ messages: [CANONICAL_MESSAGE] }),
+          );
+        },
+      ]);
+      const { client } = discoveredClient(root, fetchImplementation);
+
+      await pairDiscoveredClient(client);
+      await expect(client.listFamiliars()).resolves.toEqual({
+        data: [CANONICAL_FAMILIAR],
+      });
+      await expect(
+        client.listProjects({ limit: 25, cursor: 'eyJ2IjoxfQ' }),
+      ).resolves.toEqual({ data: [CANONICAL_PROJECT] });
+      await expect(
+        client.listConversations({ cursor: 'eyJ2IjoxfQ' }),
+      ).resolves.toEqual({ data: [CANONICAL_CONVERSATION] });
+      await expect(
+        client.getConversation(CANONICAL_CONVERSATION.id),
+      ).resolves.toEqual(CANONICAL_CONVERSATION);
+      await expect(
+        client.listConversationMessages(CANONICAL_CONVERSATION.id, {
+          limit: 100,
+          cursor: 'eyJ2IjoxfQ',
+        }),
+      ).resolves.toEqual({ data: [CANONICAL_MESSAGE] });
+
+      const authenticatedRequests = fetchImplementation.mock.calls.filter(
+        ([, init]) => header(init, 'authorization') !== null,
+      );
+      expect(authenticatedRequests).toHaveLength(5);
+      expect(fetchImplementation).toHaveBeenCalledTimes(14);
+    });
+
+    test('keeps legacy familiars separate from the canonical familiar page', async () => {
+      const root = createScratchRoot('canonical-legacy-separation');
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const fetchImplementation = queuedFetch([
+        ...successfulPairingHandlers(),
+        (url, init) => {
+          expect(url).toBe(
+            `${DEFAULT_DISCOVERY_ENDPOINT}/api/client/v1/familiars`,
+          );
+          expect(header(init, 'authorization')).toBe(
+            ['Bearer', BEARER].join(' '),
+          );
+          return jsonResponse(
+            200,
+            successEnvelope({ familiars: [DISCOVERED_FAMILIAR_WIRE] }),
+          );
+        },
+        (url, init) => {
+          expect(url).toBe(
+            `${DEFAULT_DISCOVERY_ENDPOINT}/api/client/v1/familiars?limit=50`,
+          );
+          expect(header(init, 'authorization')).toBe(
+            ['Bearer', BEARER].join(' '),
+          );
+          return jsonResponse(
+            200,
+            successEnvelope({ familiars: [CANONICAL_FAMILIAR] }),
+          );
+        },
+      ]);
+      const { client } = discoveredClient(root, fetchImplementation);
+
+      await pairDiscoveredClient(client);
+      await expect(client.familiars()).resolves.toEqual([
+        expect.objectContaining({
+          id: 'cody',
+          lastSeen: DISCOVERED_FAMILIAR_WIRE.last_seen,
+        }),
+      ]);
+      await expect(client.listFamiliars()).resolves.toEqual({
+        data: [CANONICAL_FAMILIAR],
+      });
+    });
+
+    test('fails closed with a missing credential before any request', async () => {
+      const root = createScratchRoot('canonical-missing-credential');
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const fetchImplementation = vi.fn<typeof fetch>(() =>
+        Promise.reject(new Error('network must not be reached')),
+      );
+      const { client } = discoveredClient(root, fetchImplementation);
+
+      await expect(client.listProjects()).rejects.toMatchObject({
+        normalized: {
+          code: 'unauthorized',
+          operation: 'listProjects',
+          retryable: false,
+        },
+      });
+      expect(fetchImplementation).not.toHaveBeenCalled();
+    });
+
+    test('fails closed with malformed stored credentials without deleting a replacement value', async () => {
+      const root = createScratchRoot('canonical-malformed-credential');
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const store = createMemorySecretStore();
+      const reference = createSecretStoreReference(
+        'canonical-malformed-credential',
+      );
+      await store.set(reference.key, '{bad-json');
+      const replacement = 'replacement-written-after-read';
+      const compareAndDelete = vi
+        .spyOn(store, 'compareAndDelete')
+        .mockImplementation(async (key, expectedValue) => {
+          expect(expectedValue).toBe('{bad-json');
+          await store.set(key, replacement);
+          return 'changed';
+        });
+      const fetchImplementation = vi.fn<typeof fetch>(() =>
+        Promise.reject(new Error('network must not be reached')),
+      );
+      const { client } = discoveredClient(root, fetchImplementation, {
+        credentials: { store, reference },
+      });
+
+      await expect(client.listProjects()).rejects.toMatchObject({
+        normalized: {
+          code: 'reconcile_required',
+          operation: 'listProjects',
+          retryable: false,
+        },
+        details: {
+          reason: 'authority_binding_invalid',
+        },
+      });
+      await expect(store.get(reference.key)).resolves.toBe(replacement);
+      expect(compareAndDelete).toHaveBeenCalledOnce();
+      expect(fetchImplementation).not.toHaveBeenCalled();
+    });
+
+    test.each([
+      ['wrong', 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'],
+      ['revoked', BEARER],
+    ])('preserves %s bearer rejection without fallback or retry', async (
+      label,
+      rejectedBearer,
+    ) => {
+      const root = createScratchRoot(`canonical-${label}-credential`);
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const fetchImplementation = queuedFetch([
+        ...successfulPairingHandlers(),
+        (_url, init) => {
+          expect(header(init, 'authorization')).toBe(`Bearer ${rejectedBearer}`);
+          return jsonResponse(401, errorEnvelope('unauthorized', 401));
+        },
+      ]);
+      const { client, credentials } = discoveredClient(
+        root,
+        fetchImplementation,
+      );
+
+      await pairDiscoveredClient(client);
+      if (rejectedBearer !== BEARER) {
+        const serialized = await credentials.store.get(
+          credentials.reference.key,
+        );
+        expect(serialized).toBeTypeOf('string');
+        const record = JSON.parse(serialized as string) as Record<
+          string,
+          unknown
+        >;
+        record.bearer = rejectedBearer;
+        await credentials.store.set(
+          credentials.reference.key,
+          JSON.stringify(record),
+        );
+      }
+      const storedBeforeRead = await credentials.store.get(
+        credentials.reference.key,
+      );
+
+      await expect(client.listProjects()).rejects.toMatchObject({
+        normalized: {
+          code: 'unauthorized',
+          operation: 'listProjects',
+          retryable: false,
+          statusCode: 401,
+        },
+      });
+      await expect(
+        credentials.store.get(credentials.reference.key),
+      ).resolves.toBe(storedBeforeRead);
+      const authenticatedRequests = fetchImplementation.mock.calls.filter(
+        ([, init]) => header(init, 'authorization') !== null,
+      );
+      expect(authenticatedRequests).toHaveLength(1);
+    });
+
+    test('invalidates an instance-replaced credential before bearer attachment', async () => {
+      const root = createScratchRoot('canonical-instance-replaced');
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const fetchImplementation = queuedFetch(successfulPairingHandlers());
+      const { client, credentials } = discoveredClient(
+        root,
+        fetchImplementation,
+      );
+
+      await pairDiscoveredClient(client);
+      await replaceDiscoveryRecord(root, discoveryRecord());
+
+      await expect(client.listConversations()).rejects.toMatchObject({
+        normalized: {
+          code: 'reconcile_required',
+          operation: 'listConversations',
+          retryable: false,
+        },
+        details: {
+          reason: 'record_replaced',
+        },
+      });
+      await expect(
+        credentials.store.get(credentials.reference.key),
+      ).resolves.toBeUndefined();
+      expect(fetchImplementation).toHaveBeenCalledTimes(4);
+    });
+
+    test('sends no bearer when the unauthenticated instance proof detects replacement', async () => {
+      const root = createScratchRoot('canonical-instance-proof');
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const replacementHealth = {
+        ...CURRENT_HEALTH_ENVELOPE,
+        data: {
+          ...CURRENT_HEALTH_ENVELOPE.data,
+          instanceId: '00000000-0000-4000-8000-000000000099',
+        },
+      };
+      const fetchImplementation = queuedFetch([
+        successfulPairingHandlers()[0]!,
+        (_url, init) => {
+          expect(header(init, 'authorization')).toBeNull();
+          return jsonResponse(200, CURRENT_HEALTH_ENVELOPE);
+        },
+        successfulPairingHandlers()[1]!,
+        (_url, init) => {
+          expect(header(init, 'authorization')).toBeNull();
+          return jsonResponse(200, CURRENT_HEALTH_ENVELOPE);
+        },
+        (_url, init) => {
+          expect(header(init, 'authorization')).toBeNull();
+          return jsonResponse(200, replacementHealth);
+        },
+      ], { automaticHealth: false });
+      const { client, credentials } = discoveredClient(
+        root,
+        fetchImplementation,
+      );
+
+      await pairDiscoveredClient(client);
+      await expect(client.listConversations()).rejects.toMatchObject({
+        normalized: {
+          code: 'reconcile_required',
+          operation: 'listConversations',
+          retryable: false,
+        },
+        details: {
+          reason: 'authority_restarted',
+        },
+      });
+      await expect(
+        credentials.store.get(credentials.reference.key),
+      ).resolves.toBeUndefined();
+      expect(
+        fetchImplementation.mock.calls.every(
+          ([, init]) => header(init, 'authorization') === null,
+        ),
+      ).toBe(true);
+      expect(fetchImplementation).toHaveBeenCalledTimes(5);
+    });
+
+    test.each([
+      ['not_found', 404, 'getConversation'],
+      ['scope_denied', 403, 'listProjects'],
+      ['reconcile_required', 409, 'listConversationMessages'],
+    ] as const)(
+      'preserves canonical %s errors and never retries',
+      async (code, status, operation) => {
+        const root = createScratchRoot(`canonical-error-${code}`);
+        await writeDiscoveryRecord(root, discoveryRecord());
+        const details =
+          code === 'reconcile_required'
+            ? { reason: 'resume_from_canonical_state' }
+            : undefined;
+        const fetchImplementation = queuedFetch([
+          ...successfulPairingHandlers(),
+          () => jsonResponse(status, errorEnvelope(code, status, false, details)),
+        ]);
+        const { client } = discoveredClient(root, fetchImplementation);
+
+        await pairDiscoveredClient(client);
+        const read =
+          operation === 'getConversation'
+            ? client.getConversation('missing')
+            : operation === 'listProjects'
+              ? client.listProjects()
+              : client.listConversationMessages('conversation-1');
+
+        await expect(read).rejects.toMatchObject({
+          normalized: {
+            code,
+            operation,
+            retryable: false,
+            statusCode: status,
+          },
+          ...(details === undefined ? {} : { details }),
+        });
+        const authenticatedRequests = fetchImplementation.mock.calls.filter(
+          ([, init]) => header(init, 'authorization') !== null,
+        );
+        expect(authenticatedRequests).toHaveLength(1);
+        expect(fetchImplementation).toHaveBeenCalledTimes(6);
+      },
+    );
+
+    test('refuses canonical redirects without following them', async () => {
+      const root = createScratchRoot('canonical-redirect');
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const fetchImplementation = queuedFetch([
+        ...successfulPairingHandlers(),
+        (_url, init) => {
+          expect(init?.redirect).toBe('error');
+          return new Response('', {
+            status: 302,
+            headers: {
+              location: 'http://127.0.0.1:3999/redirected',
+            },
+          });
+        },
+      ]);
+      const { client } = discoveredClient(root, fetchImplementation);
+
+      await pairDiscoveredClient(client);
+      await expect(client.listProjects()).rejects.toMatchObject({
+        normalized: {
+          code: 'invalid_response',
+          operation: 'listProjects',
+          statusCode: 302,
+        },
+      });
+      expect(fetchImplementation).toHaveBeenCalledTimes(6);
+    });
+
+    test('bounds oversized canonical responses', async () => {
+      const root = createScratchRoot('canonical-body-limit');
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const fetchImplementation = queuedFetch([
+        ...successfulPairingHandlers(),
+        () =>
+          jsonResponse(
+            200,
+            successEnvelope({
+              projects: [CANONICAL_PROJECT],
+              padding: 'x'.repeat(2_048),
+            }),
+          ),
+      ]);
+      const { client } = discoveredClient(root, fetchImplementation, {
+        maxResponseBytes: 1_024,
+      });
+
+      await pairDiscoveredClient(client);
+      await expect(client.listProjects()).rejects.toMatchObject({
+        normalized: {
+          code: 'body_limit',
+          operation: 'listProjects',
+          statusCode: 200,
+        },
+      });
+      expect(fetchImplementation).toHaveBeenCalledTimes(6);
+    });
+
+    test('rejects malformed canonical JSON without retrying', async () => {
+      const root = createScratchRoot('canonical-malformed-json');
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const fetchImplementation = queuedFetch([
+        ...successfulPairingHandlers(),
+        () =>
+          new Response('{bad json', {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          }),
+      ]);
+      const { client } = discoveredClient(root, fetchImplementation);
+
+      await pairDiscoveredClient(client);
+      await expect(client.listProjects()).rejects.toMatchObject({
+        normalized: {
+          code: 'invalid_response',
+          operation: 'listProjects',
+          statusCode: 200,
+        },
+      });
+      const authenticatedRequests = fetchImplementation.mock.calls.filter(
+        ([, init]) => header(init, 'authorization') !== null,
+      );
+      expect(authenticatedRequests).toHaveLength(1);
+      expect(fetchImplementation).toHaveBeenCalledTimes(6);
     });
   });
 

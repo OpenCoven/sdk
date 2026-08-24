@@ -3,6 +3,7 @@ import {
   normalizePageOptions,
   type Page,
   type PageCursor,
+  type PageOptions,
 } from '@opencoven/sdk-core';
 
 import type {
@@ -16,8 +17,59 @@ import { CAVE_CLIENT_VERSION } from './version.js';
 const CAVE_API_VERSION = '1.0';
 const DECLARATION_ID_PATTERN = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/u;
 const DECLARATION_ID_MAX_CHARACTERS = 64;
+const CANONICAL_FAMILIARS_PATH = '/api/client/v1/familiars';
+const CANONICAL_PROJECTS_PATH = '/api/client/v1/projects';
+const CANONICAL_CONVERSATIONS_PATH = '/api/client/v1/conversations';
 
 type JsonObject = Record<string, unknown>;
+
+function canonicalPageQuery(options: PageOptions): string {
+  const normalized = normalizePageOptions(options);
+  const query = new URLSearchParams();
+  query.append('limit', String(normalized.limit));
+  if (normalized.cursor !== undefined) {
+    query.append('cursor', normalized.cursor);
+  }
+
+  return query.toString();
+}
+
+function canonicalListRoute(
+  path:
+    | typeof CANONICAL_FAMILIARS_PATH
+    | typeof CANONICAL_PROJECTS_PATH
+    | typeof CANONICAL_CONVERSATIONS_PATH,
+  options: PageOptions,
+): string {
+  return `${path}?${canonicalPageQuery(options)}`;
+}
+
+function encodedConversationPath(conversationId: string): string {
+  return `${CANONICAL_CONVERSATIONS_PATH}/${encodeURIComponent(conversationId)}`;
+}
+
+export function canonicalFamiliarsRoute(options: PageOptions): string {
+  return canonicalListRoute(CANONICAL_FAMILIARS_PATH, options);
+}
+
+export function canonicalProjectsRoute(options: PageOptions): string {
+  return canonicalListRoute(CANONICAL_PROJECTS_PATH, options);
+}
+
+export function canonicalConversationsRoute(options: PageOptions): string {
+  return canonicalListRoute(CANONICAL_CONVERSATIONS_PATH, options);
+}
+
+export function canonicalConversationRoute(conversationId: string): string {
+  return encodedConversationPath(conversationId);
+}
+
+export function canonicalConversationMessagesRoute(
+  conversationId: string,
+  options: PageOptions,
+): string {
+  return `${encodedConversationPath(conversationId)}/messages?${canonicalPageQuery(options)}`;
+}
 
 export class CaveCanonicalSchemaError extends TypeError {
   readonly field: string;

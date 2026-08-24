@@ -15,6 +15,13 @@ import {
   type DiscoverCaveEndpointOptions,
 } from './discovery.js';
 import { caveAuthorityBindingFromDiscoveredEndpoint } from './authority-binding.js';
+import {
+  canonicalConversationMessagesRoute,
+  canonicalConversationRoute,
+  canonicalConversationsRoute,
+  canonicalFamiliarsRoute,
+  canonicalProjectsRoute,
+} from './canonical-reads.js';
 import { markPairingSecretUnsentError } from './pairing-secret.js';
 import {
   loadBoundCredential,
@@ -772,6 +779,21 @@ function createDiscoveredTransport(
   options: DiscoveredTransportOptions,
 ): CaveCredentialPersistingTransport {
   const pairingAuthorities = new Map<string, CaveDiscoveredEndpoint>();
+  const canonicalRead = async (
+    route: string,
+    context: OperationContext | undefined,
+  ): Promise<unknown> => {
+    const { payload } = await requestJson('GET', route, {
+      ...(context === undefined ? {} : { context }),
+      credentials: options.credentials,
+      discoverEndpoint: options.discoverEndpoint,
+      discovery: options.discovery,
+      fetchImplementation: options.fetchImplementation,
+      maxResponseBytes: options.maxResponseBytes,
+      requireBearer: true,
+    });
+    return payload;
+  };
 
   const requirePinnedAuthority = (requestId: string): CaveDiscoveredEndpoint => {
     const pinnedAuthority = pairingAuthorities.get(requestId);
@@ -894,6 +916,24 @@ function createDiscoveredTransport(
         ),
       };
       return authorityBoundExchange;
+    },
+    async listFamiliars(pageOptions, context) {
+      return canonicalRead(canonicalFamiliarsRoute(pageOptions), context);
+    },
+    async listProjects(pageOptions, context) {
+      return canonicalRead(canonicalProjectsRoute(pageOptions), context);
+    },
+    async listConversations(pageOptions, context) {
+      return canonicalRead(canonicalConversationsRoute(pageOptions), context);
+    },
+    async getConversation(conversationId, context) {
+      return canonicalRead(canonicalConversationRoute(conversationId), context);
+    },
+    async listConversationMessages(conversationId, pageOptions, context) {
+      return canonicalRead(
+        canonicalConversationMessagesRoute(conversationId, pageOptions),
+        context,
+      );
     },
     async familiars(context) {
       const { payload } = await requestJson('GET', '/api/client/v1/familiars', {

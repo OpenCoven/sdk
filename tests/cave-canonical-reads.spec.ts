@@ -15,6 +15,14 @@ import {
 } from '@opencoven/sdk-core';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+import {
+  canonicalConversationMessagesRoute,
+  canonicalConversationRoute,
+  canonicalConversationsRoute,
+  canonicalFamiliarsRoute,
+  canonicalProjectsRoute,
+} from '../packages/cave/src/canonical-reads.js';
+
 const CURSOR = 'eyJwYWdlIjoyfQ';
 const NEXT_CURSOR = 'eyJwYWdlIjozfQ';
 const CANONICAL_OPERATIONS = [
@@ -150,6 +158,35 @@ async function caveErrorOf(run: () => Promise<unknown>) {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+});
+
+describe('Cave canonical route construction', () => {
+  test('constructs only the five fixed routes with deterministic query order', () => {
+    expect(canonicalFamiliarsRoute({ limit: 50 })).toBe(
+      '/api/client/v1/familiars?limit=50',
+    );
+    expect(
+      canonicalProjectsRoute({ limit: 25, cursor: CURSOR }),
+    ).toBe(
+      `/api/client/v1/projects?limit=25&cursor=${CURSOR}`,
+    );
+    expect(
+      canonicalConversationsRoute({ limit: 100, cursor: NEXT_CURSOR }),
+    ).toBe(
+      `/api/client/v1/conversations?limit=100&cursor=${NEXT_CURSOR}`,
+    );
+    expect(canonicalConversationRoute('conversation/one?#')).toBe(
+      '/api/client/v1/conversations/conversation%2Fone%3F%23',
+    );
+    expect(
+      canonicalConversationMessagesRoute('conversation/one?#', {
+        limit: 1,
+        cursor: CURSOR,
+      }),
+    ).toBe(
+      `/api/client/v1/conversations/conversation%2Fone%3F%23/messages?limit=1&cursor=${CURSOR}`,
+    );
+  });
 });
 
 describe('Cave caller-supplied canonical reads', () => {
