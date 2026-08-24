@@ -158,6 +158,9 @@ function createControlledMutationStore(blockedMutations: readonly number[] = [])
 
   return {
     log,
+    mutationCount(): number {
+      return mutationIndex;
+    },
     store,
     unblockMutation(mutation: number): void {
       blocked.get(mutation)?.resolve();
@@ -892,6 +895,52 @@ describe('Cave credential binding helpers', () => {
       });
   });
 
+  test('uses atomic compare-and-delete to preserve a cross-process replacement', async () => {
+    const reference = createSecretStoreReference('chat.cave.forget.atomic-exact-match');
+    const currentSerialized = await storedCredentialValue(reference.key, 'bearer-current');
+    const newerSerialized = await storedCredentialValue(reference.key, 'bearer-newer');
+    const values = new Map<string, string>([[reference.key, currentSerialized]]);
+    const deleteValue = vi.fn(() => Promise.resolve(values.delete(reference.key)));
+    const compareAndDelete = vi.fn(
+      async (
+        key: string,
+        expectedValue: string,
+      ): Promise<'absent' | 'changed' | 'deleted'> => {
+        values.set(key, newerSerialized);
+        const current = values.get(key);
+        if (current === undefined) {
+          return 'absent';
+        }
+        if (current !== expectedValue) {
+          return 'changed';
+        }
+        values.delete(key);
+        return 'deleted';
+      },
+    );
+    const store: SecretStore = {
+      get: async (key) => values.get(key),
+      set: async (key, value) => {
+        values.set(key, value);
+      },
+      delete: deleteValue,
+      compareAndDelete,
+    };
+
+    await expect(forgetStoredCredential(store, reference)).rejects.toMatchObject({
+      code: 'credential_update_in_progress',
+      retryable: true,
+    });
+    expect(compareAndDelete).toHaveBeenCalledWith(reference.key, currentSerialized);
+    expect(deleteValue).not.toHaveBeenCalled();
+    await expect(
+      loadBoundCredential(store, reference, discovered, (value) => value === 'bearer-newer'),
+    ).resolves.toEqual({
+      status: 'ready',
+      bearer: 'bearer-newer',
+    });
+  });
+
   test('keeps duplicate-module concurrent writers coherent and atomic', async () => {
     const duplicateModuleUrl = new URL(
       `../packages/cave/src/credential-binding.ts?duplicate=${Date.now()}`,
@@ -917,10 +966,11 @@ describe('Cave credential binding helpers', () => {
       'bearer-second',
       authorityBinding,
     );
-    await controlled.waitForMutationStart(2);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(controlled.mutationCount()).toBe(1);
 
     controlled.unblockMutation(1);
-    await Promise.resolve();
+    await controlled.waitForMutationStart(2);
     controlled.unblockMutation(2);
 
     await expect(first).resolves.toBeUndefined();

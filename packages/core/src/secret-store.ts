@@ -2,6 +2,10 @@ export interface SecretStore {
   get(key: string): Promise<string | undefined>;
   set(key: string, value: string): Promise<void>;
   delete(key: string): Promise<boolean>;
+  compareAndDelete?(
+    key: string,
+    expectedValue: string,
+  ): Promise<'absent' | 'changed' | 'deleted'>;
 }
 
 export interface ManagedSecretStore extends SecretStore {
@@ -70,6 +74,22 @@ class MemorySecretStore implements SecretStore {
   delete(key: string): Promise<boolean> {
     return Promise.resolve(this.#secrets.delete(key));
   }
+
+  compareAndDelete(
+    key: string,
+    expectedValue: string,
+  ): Promise<'absent' | 'changed' | 'deleted'> {
+    const current = this.#secrets.get(key);
+    if (current === undefined) {
+      return Promise.resolve('absent');
+    }
+    if (current !== expectedValue) {
+      return Promise.resolve('changed');
+    }
+
+    this.#secrets.delete(key);
+    return Promise.resolve('deleted');
+  }
 }
 
 class ManagedMemorySecretStore implements ManagedSecretStore {
@@ -108,6 +128,27 @@ class ManagedMemorySecretStore implements ManagedSecretStore {
     return error === undefined
       ? Promise.resolve(this.#secrets.delete(key))
       : Promise.reject(error);
+  }
+
+  compareAndDelete(
+    key: string,
+    expectedValue: string,
+  ): Promise<'absent' | 'changed' | 'deleted'> {
+    const error = this.#operationError(key);
+    if (error !== undefined) {
+      return Promise.reject(error);
+    }
+
+    const current = this.#secrets.get(key);
+    if (current === undefined) {
+      return Promise.resolve('absent');
+    }
+    if (current !== expectedValue) {
+      return Promise.resolve('changed');
+    }
+
+    this.#secrets.delete(key);
+    return Promise.resolve('deleted');
   }
 
   clear(): Promise<void> {

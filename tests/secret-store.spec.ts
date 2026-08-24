@@ -5,6 +5,10 @@ interface SecretStore {
   get(key: string): Promise<string | undefined>;
   set(key: string, value: string): Promise<void>;
   delete(key: string): Promise<boolean>;
+  compareAndDelete?(
+    key: string,
+    expectedValue: string,
+  ): Promise<'absent' | 'changed' | 'deleted'>;
 }
 
 type StoreFactory = () => SecretStore;
@@ -56,5 +60,23 @@ describe('memory secret store', () => {
 
     await expect(first?.get('token') ?? Promise.resolve(undefined)).resolves.toBe('updated');
     await expect(second?.get('token') ?? Promise.resolve(undefined)).resolves.toBeUndefined();
+  });
+
+  test('deletes only the expected in-memory value', async () => {
+    const createMemorySecretStore = (core as { createMemorySecretStore?: StoreFactory })
+      .createMemorySecretStore;
+    const store = createMemorySecretStore?.();
+
+    await store?.set('token', 'current');
+    await expect(
+      store?.compareAndDelete?.('token', 'stale') ?? Promise.resolve(undefined),
+    ).resolves.toBe('changed');
+    await expect(store?.get('token') ?? Promise.resolve(undefined)).resolves.toBe('current');
+    await expect(
+      store?.compareAndDelete?.('token', 'current') ?? Promise.resolve(undefined),
+    ).resolves.toBe('deleted');
+    await expect(
+      store?.compareAndDelete?.('token', 'current') ?? Promise.resolve(undefined),
+    ).resolves.toBe('absent');
   });
 });

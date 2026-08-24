@@ -72,7 +72,10 @@ files, shell commands, environment variables, or alternate keychain adapters.
 against a dedicated keyring account so constructor and backend availability are
 exercised without overwriting or deleting a user's real credential. If the
 native binding or backend is unavailable, commands fail with the stable error
-code `secure_store_unavailable`.
+code `secure_store_unavailable`. Keyring mutations use owner-local, non-secret
+filesystem lock records so separate CLI processes cannot delete a newly
+replaced credential. Credential values remain exclusively in the native
+keyring; no bearer or keychain payload is written to the lock directory.
 
 ## Native Cave discovery security
 

@@ -125,7 +125,9 @@ times out or is aborted before credential persistence begins, any later
 transport result is discarded before the bearer can be written. Once
 persistence starts, the client commits through one atomic credential-record
 write and best-effort exact-value cleanup if that write lands after
-timeout/abort. Only a cooperative transport stops underlying I/O. Do not log
+timeout/abort. Duplicate package copies share process-global mutation queues,
+and stores with `compareAndDelete()` preserve exact-value deletion across
+processes. Only a cooperative transport stops underlying I/O. Do not log
 `error.cause` blindly.
 The same controls apply to `createPairing()`, `session.poll()`,
 `session.exchange()`, `credentialStatus()`, `forgetCredential()`,

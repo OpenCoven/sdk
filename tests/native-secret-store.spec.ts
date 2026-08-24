@@ -1,7 +1,19 @@
 /* eslint-disable @typescript-eslint/require-await */
 
+import { createHash } from 'node:crypto';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { createNativeSecretStore, SecureStoreUnavailableError } from '@opencoven/dev-cli';
-import { describe, expect, test, vi } from 'vitest';
+import { afterAll, describe, expect, test, vi } from 'vitest';
 
 import { probeNativeSecretStore } from '../packages/cli/src/native-secret-store.js';
 
@@ -19,13 +31,37 @@ interface ProbeableNativeSecretStore {
   probe(): Promise<void>;
 }
 
+interface AtomicNativeSecretStore {
+  compareAndDelete(
+    key: string,
+    expectedValue: string,
+  ): Promise<'absent' | 'changed' | 'deleted'>;
+}
+
 const SERVICE = 'OpenCoven CLI';
+const TEST_LOCK_DIRECTORY = mkdtempSync(
+  join(tmpdir(), 'opencoven-native-secret-store-'),
+);
+
+afterAll(() => {
+  rmSync(TEST_LOCK_DIRECTORY, { force: true, recursive: true });
+});
 
 function moduleWithEntry(entry: KeyringModuleShape['Entry']) {
   return {
+    lockDirectory: TEST_LOCK_DIRECTORY,
     loadModule: () => Promise.resolve({ Entry: entry }),
     service: SERVICE,
   };
+}
+
+function lockPath(lockDirectory: string, service: string, key: string): string {
+  const digest = createHash('sha256')
+    .update(service)
+    .update('\0')
+    .update(key)
+    .digest('hex');
+  return join(lockDirectory, `${digest}.lock`);
 }
 
 describe('native secret store', () => {
@@ -54,6 +90,7 @@ describe('native secret store', () => {
     } satisfies KeyringModuleShape));
 
     const store = await createNativeSecretStore({
+      lockDirectory: TEST_LOCK_DIRECTORY,
       loadModule,
       service: SERVICE,
     });
@@ -63,9 +100,130 @@ describe('native secret store', () => {
 
     await expect(store.set('cave-credential', 'bearer-value')).resolves.toBeUndefined();
     await expect(store.get('cave-credential')).resolves.toBe('bearer-value');
+    await expect(
+      store.compareAndDelete?.('cave-credential', 'stale-value'),
+    ).resolves.toBe('changed');
     await expect(store.delete('cave-credential')).resolves.toBe(true);
     await expect(store.get('cave-credential')).resolves.toBeUndefined();
+    await expect(
+      store.compareAndDelete?.('cave-credential', 'bearer-value'),
+    ).resolves.toBe('absent');
     expect(loadModule).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not delete a replacement written by another native store instance', async () => {
+    const secrets = new Map<string, string>([
+      [`${SERVICE}:cave-credential`, 'credential-current'],
+    ]);
+    let replacement: Promise<void> | undefined;
+
+    class Entry {
+      readonly #slot: string;
+
+      constructor(service: string, account: string) {
+        this.#slot = `${service}:${account}`;
+      }
+
+      getPassword(): string | undefined {
+        const value = secrets.get(this.#slot);
+        if (
+          this.#slot === `${SERVICE}:cave-credential` &&
+          value === 'credential-current' &&
+          replacement === undefined
+        ) {
+          replacement = replacementStore.set('cave-credential', 'credential-new');
+        }
+        return value;
+      }
+
+      setPassword(value: string): void {
+        secrets.set(this.#slot, value);
+      }
+
+      deletePassword(): void {
+        secrets.delete(this.#slot);
+      }
+    }
+
+    const options = moduleWithEntry(Entry);
+    const deletingStore = await createNativeSecretStore(options);
+    const replacementStore = await createNativeSecretStore(options);
+    const atomicStore = deletingStore as typeof deletingStore & AtomicNativeSecretStore;
+
+    await expect(
+      atomicStore.compareAndDelete('cave-credential', 'credential-current'),
+    ).resolves.toBe('deleted');
+    await replacement;
+    await expect(deletingStore.get('cave-credential')).resolves.toBe('credential-new');
+  });
+
+  test('recovers a stale malformed native mutation lock without exposing credentials', async () => {
+    const lockDirectory = join(TEST_LOCK_DIRECTORY, 'stale-lock');
+    const staleLockPath = lockPath(lockDirectory, SERVICE, 'cave-credential');
+    mkdirSync(staleLockPath, { recursive: true, mode: 0o700 });
+    writeFileSync(join(staleLockPath, 'owner.json'), '{"invalid":true}\n', {
+      mode: 0o600,
+    });
+    const staleTime = new Date(Date.now() - 60_000);
+    utimesSync(staleLockPath, staleTime, staleTime);
+    const secrets = new Map<string, string>();
+    const store = await createNativeSecretStore({
+      ...moduleWithEntry(
+        class {
+          readonly #slot: string;
+
+          constructor(service: string, account: string) {
+            this.#slot = `${service}:${account}`;
+          }
+
+          getPassword(): string | undefined {
+            return secrets.get(this.#slot);
+          }
+
+          setPassword(value: string): void {
+            secrets.set(this.#slot, value);
+          }
+
+          deletePassword(): void {
+            secrets.delete(this.#slot);
+          }
+        },
+      ),
+      lockDirectory,
+    });
+
+    await expect(store.set('cave-credential', 'credential-value')).resolves.toBeUndefined();
+    await expect(store.get('cave-credential')).resolves.toBe('credential-value');
+    expect(existsSync(staleLockPath)).toBe(false);
+  });
+
+  test('fails closed when the native mutation lock root is not a directory', async () => {
+    const lockDirectory = join(TEST_LOCK_DIRECTORY, 'not-a-directory');
+    writeFileSync(lockDirectory, 'not a lock directory', { mode: 0o600 });
+    const store = await createNativeSecretStore({
+      ...moduleWithEntry(
+        class {
+          getPassword(): string | undefined {
+            return undefined;
+          }
+
+          setPassword(): void {
+            throw new Error('mutation must not run');
+          }
+
+          deletePassword(): void {
+            throw new Error('mutation must not run');
+          }
+        },
+      ),
+      lockDirectory,
+    });
+
+    await expect(store.set('cave-credential', 'credential-value')).rejects.toMatchObject({
+      code: 'secure_store_unavailable',
+      operation: 'set',
+      retryable: false,
+    });
   });
 
   test('probes a dedicated native keyring entry without mutating stored credentials', async () => {
@@ -115,6 +273,7 @@ describe('native secret store', () => {
 
   test('accepts the keyring Entry constructor from a default export shape', async () => {
     const store = await createNativeSecretStore({
+      lockDirectory: TEST_LOCK_DIRECTORY,
       loadModule: () =>
         Promise.resolve({
           default: {
@@ -279,6 +438,7 @@ describe('native secret store', () => {
 
   test('preserves already wrapped secure-store failures and the default service name', async () => {
     const store = await createNativeSecretStore({
+      lockDirectory: TEST_LOCK_DIRECTORY,
       loadModule: () =>
         Promise.resolve({
           Entry: class {
@@ -297,6 +457,7 @@ describe('native secret store', () => {
         }),
     });
     const deleteStore = await createNativeSecretStore({
+      lockDirectory: TEST_LOCK_DIRECTORY,
       loadModule: () =>
         Promise.resolve({
           Entry: class {

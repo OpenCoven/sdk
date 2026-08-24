@@ -41,6 +41,10 @@ cannot be reliably zeroized. Neither memory store is persistent credential
 storage. Higher-level clients may keep companion non-secret metadata beside a
 secret through the same store contract, so callers should treat a secret-store
 entry as scoped application state rather than as a single raw value slot.
+Stores may implement optional `compareAndDelete(key, expectedValue)` to make
+exact-value deletion atomic. Higher-level credential clients use that
+capability when a backend must coordinate replacement and deletion across
+independent processes.
 
 ## License
 

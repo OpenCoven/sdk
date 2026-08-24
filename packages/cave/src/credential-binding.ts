@@ -21,17 +21,46 @@ const CAVE_STORED_CREDENTIAL_STARTED_AT_MAX_LENGTH = 128;
 const FNV_OFFSET_BASIS_64 = 0xcbf29ce484222325n;
 const FNV_PRIME_64 = 0x100000001b3n;
 const SECRET_STORE_LOGICAL_ID = Symbol.for('@opencoven/sdk-core/secret-store-logical-id');
+const CREDENTIAL_MUTATION_REGISTRY = Symbol.for(
+  '@opencoven/cave-client/credential-mutation-registry',
+);
 const textEncoder = new TextEncoder();
-const referenceMutationQueues = new Map<string, Promise<void>>();
-const concreteMutationQueues = new Map<string, Promise<void>>();
-const secretStoreLogicalIds = new WeakMap<object, string>();
 const LEGACY_CREDENTIAL_KEY_PREFIXES = [
   'opencoven.cave.credential-binding.v1.',
   'opencoven.cave.credential-binding.staging.v1.',
   'opencoven.cave.credential-binding.failure.v1.',
   'opencoven.cave.credential-binding.owner.v1.',
 ] as const;
-let nextSecretStoreLogicalId = 0;
+
+interface CredentialMutationRegistry {
+  readonly referenceQueues: Map<string, Promise<void>>;
+  readonly concreteQueues: Map<string, Promise<void>>;
+  readonly storeLogicalIds: WeakMap<object, string>;
+  nextStoreLogicalId: number;
+}
+
+function credentialMutationRegistry(): CredentialMutationRegistry {
+  const existing: unknown = Reflect.get(globalThis, CREDENTIAL_MUTATION_REGISTRY);
+  if (typeof existing === 'object' && existing !== null) {
+    return existing as CredentialMutationRegistry;
+  }
+
+  const created: CredentialMutationRegistry = {
+    referenceQueues: new Map(),
+    concreteQueues: new Map(),
+    storeLogicalIds: new WeakMap(),
+    nextStoreLogicalId: 0,
+  };
+  Object.defineProperty(globalThis, CREDENTIAL_MUTATION_REGISTRY, {
+    configurable: false,
+    enumerable: false,
+    value: created,
+    writable: false,
+  });
+  return created;
+}
+
+const mutationRegistry = credentialMutationRegistry();
 
 export type CaveStoredCredentialMismatchReason =
   | 'authority_mismatch'
@@ -185,17 +214,17 @@ function logicalStoreId(store: SecretStore): string {
       // Fall back to process-local identity tracking below.
     }
 
-    const existing = secretStoreLogicalIds.get(store);
+    const existing = mutationRegistry.storeLogicalIds.get(store);
     if (existing !== undefined) {
       return existing;
     }
 
-    const allocated = `store:${String(++nextSecretStoreLogicalId)}`;
-    secretStoreLogicalIds.set(store, allocated);
+    const allocated = `store:${String(++mutationRegistry.nextStoreLogicalId)}`;
+    mutationRegistry.storeLogicalIds.set(store, allocated);
     return allocated;
   }
 
-  return `store:${String(++nextSecretStoreLogicalId)}`;
+  return `store:${String(++mutationRegistry.nextStoreLogicalId)}`;
 }
 
 function runSerializedTask<T>(
@@ -232,7 +261,7 @@ function serializeReferenceMutation<T>(
   task: () => Promise<T>,
 ): Promise<T> {
   return runSerializedTask(
-    referenceMutationQueues,
+    mutationRegistry.referenceQueues,
     referenceMutationKey(store, reference),
     task,
   );
@@ -244,7 +273,7 @@ function serializeConcreteMutation<T>(
   task: () => Promise<T>,
 ): Promise<T> {
   return runSerializedTask(
-    concreteMutationQueues,
+    mutationRegistry.concreteQueues,
     concreteMutationKey(store, key),
     task,
   );
@@ -528,6 +557,14 @@ async function deleteCurrentValueIfExact(
   options: CredentialBindingMutationOptions = {},
 ): Promise<boolean> {
   return await serializeConcreteMutation(store, reference.key, async () => {
+    if (typeof expected === 'string' && store.compareAndDelete !== undefined) {
+      const result = await awaitStoreCall(
+        store.compareAndDelete(reference.key, expected),
+        options,
+      );
+      return result === 'deleted';
+    }
+
     const current = await readStoreValue(store, reference.key, options);
     if (!Object.is(current, expected)) {
       return false;
@@ -544,6 +581,24 @@ async function confirmForgetDeleteCurrentValueIfExact(
   options: CredentialBindingMutationOptions = {},
 ): Promise<ForgetCurrentDeletionResult> {
   return await serializeConcreteMutation(store, reference.key, async () => {
+    if (typeof expected === 'string' && store.compareAndDelete !== undefined) {
+      let result: Awaited<ReturnType<NonNullable<SecretStore['compareAndDelete']>>>;
+      try {
+        result = await awaitStoreCall(
+          store.compareAndDelete(reference.key, expected),
+          options,
+        );
+      } catch (error) {
+        throw wrapForgetStoreFailure(error, 'secret_store_delete_failed');
+      }
+
+      return result === 'deleted'
+        ? { status: 'deleted' }
+        : result === 'absent'
+          ? { status: 'absent' }
+          : { status: 'present' };
+    }
+
     const current = await readStoreValueForForget(store, reference.key, options);
     if (!Object.is(current, expected)) {
       return { status: current === undefined ? 'absent' : 'present' };
