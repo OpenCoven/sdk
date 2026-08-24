@@ -16,11 +16,17 @@ import {
 } from './discovery.js';
 import { caveAuthorityBindingFromDiscoveredEndpoint } from './authority-binding.js';
 import {
+  CAVE_CANONICAL_CONVERSATION_REQUIREMENTS,
+  CAVE_CANONICAL_CONVERSATIONS_REQUIREMENTS,
+  CAVE_CANONICAL_FAMILIARS_REQUIREMENTS,
+  CAVE_CANONICAL_MESSAGES_REQUIREMENTS,
+  CAVE_CANONICAL_PROJECTS_REQUIREMENTS,
   canonicalConversationMessagesRoute,
   canonicalConversationRoute,
   canonicalConversationsRoute,
   canonicalFamiliarsRoute,
   canonicalProjectsRoute,
+  type CaveCanonicalEnvelopeRequirements,
 } from './canonical-reads.js';
 import {
   CAVE_CONTRACT_API_VERSION,
@@ -543,7 +549,11 @@ function parseProxyFailure(status: number, payload: JsonObject): Error {
   });
 }
 
-function parseErrorPayload(status: number, value: unknown): Error {
+function parseErrorPayload(
+  status: number,
+  value: unknown,
+  canonicalRequirements?: CaveCanonicalEnvelopeRequirements,
+): Error {
   const payload = expectObject(value, 'error response');
   if (payload.ok === false && typeof payload.error === 'string') {
     return parseProxyFailure(status, payload);
@@ -563,14 +573,19 @@ function parseErrorPayload(status: number, value: unknown): Error {
     });
   }
 
-  const base = parseEnvelopeBase(payload);
-  if (base.apiVersion !== CAVE_CONTRACT_API_VERSION) {
+  if (
+    canonicalRequirements !== undefined &&
+    payload.apiVersion !== CAVE_CONTRACT_API_VERSION
+  ) {
     throw transportError('invalid_response', 'apiVersion was malformed.', {
       details: { field: 'apiVersion' },
       statusCode: status,
-      ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
+      ...(typeof payload.requestId === 'string'
+        ? { requestId: payload.requestId }
+        : {}),
     });
   }
+  const base = parseEnvelopeBase(payload);
   if (base.capabilities === undefined || base.capabilities.length === 0) {
     throw transportError('invalid_response', 'capabilities was malformed.', {
       details: { field: 'capabilities' },
@@ -581,6 +596,28 @@ function parseErrorPayload(status: number, value: unknown): Error {
   if (base.operations === undefined || base.operations.length === 0) {
     throw transportError('invalid_response', 'operations was malformed.', {
       details: { field: 'operations' },
+      statusCode: status,
+      ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
+    });
+  }
+  if (
+    canonicalRequirements !== undefined &&
+    !base.operations.includes(canonicalRequirements.operation)
+  ) {
+    throw transportError('invalid_response', 'operations was malformed.', {
+      details: { field: 'operations' },
+      statusCode: status,
+      ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
+    });
+  }
+  if (
+    canonicalRequirements !== undefined &&
+    canonicalRequirements.capabilities.some(
+      (capability) => !base.capabilities?.includes(capability),
+    )
+  ) {
+    throw transportError('invalid_response', 'capabilities was malformed.', {
+      details: { field: 'capabilities' },
       statusCode: status,
       ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
     });
@@ -735,6 +772,7 @@ async function requestJson(
     pairingSecretDispatch?: 'reusable' | 'single_use';
     pinnedAuthority?: CaveDiscoveredEndpoint;
     requireBearer?: boolean;
+    canonicalRequirements?: CaveCanonicalEnvelopeRequirements;
   },
 ): Promise<RequestJsonResult> {
   ensureActive(options.context);
@@ -846,7 +884,11 @@ async function requestJson(
   }
 
   if (response.status < 200 || response.status >= 300) {
-    throw parseErrorPayload(response.status, payload);
+    throw parseErrorPayload(
+      response.status,
+      payload,
+      options.canonicalRequirements,
+    );
   }
 
   return {
@@ -862,6 +904,7 @@ function createDiscoveredTransport(
   const canonicalRead = async (
     route: string,
     context: OperationContext | undefined,
+    requirements: CaveCanonicalEnvelopeRequirements,
   ): Promise<unknown> => {
     const { payload } = await requestJson('GET', route, {
       ...(context === undefined ? {} : { context }),
@@ -871,6 +914,7 @@ function createDiscoveredTransport(
       fetchImplementation: options.fetchImplementation,
       maxResponseBytes: options.maxResponseBytes,
       requireBearer: true,
+      canonicalRequirements: requirements,
     });
     return payload;
   };
@@ -998,21 +1042,38 @@ function createDiscoveredTransport(
       return authorityBoundExchange;
     },
     async listFamiliars(pageOptions, context) {
-      return canonicalRead(canonicalFamiliarsRoute(pageOptions), context);
+      return canonicalRead(
+        canonicalFamiliarsRoute(pageOptions),
+        context,
+        CAVE_CANONICAL_FAMILIARS_REQUIREMENTS,
+      );
     },
     async listProjects(pageOptions, context) {
-      return canonicalRead(canonicalProjectsRoute(pageOptions), context);
+      return canonicalRead(
+        canonicalProjectsRoute(pageOptions),
+        context,
+        CAVE_CANONICAL_PROJECTS_REQUIREMENTS,
+      );
     },
     async listConversations(pageOptions, context) {
-      return canonicalRead(canonicalConversationsRoute(pageOptions), context);
+      return canonicalRead(
+        canonicalConversationsRoute(pageOptions),
+        context,
+        CAVE_CANONICAL_CONVERSATIONS_REQUIREMENTS,
+      );
     },
     async getConversation(conversationId, context) {
-      return canonicalRead(canonicalConversationRoute(conversationId), context);
+      return canonicalRead(
+        canonicalConversationRoute(conversationId),
+        context,
+        CAVE_CANONICAL_CONVERSATION_REQUIREMENTS,
+      );
     },
     async listConversationMessages(conversationId, pageOptions, context) {
       return canonicalRead(
         canonicalConversationMessagesRoute(conversationId, pageOptions),
         context,
+        CAVE_CANONICAL_MESSAGES_REQUIREMENTS,
       );
     },
     async familiars(context) {

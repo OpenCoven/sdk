@@ -26,6 +26,36 @@ const CANONICAL_CONVERSATIONS_PATH = '/api/client/v1/conversations';
 
 type JsonObject = Record<string, unknown>;
 
+export interface CaveCanonicalEnvelopeRequirements {
+  operation: string;
+  capabilities: readonly string[];
+}
+
+export const CAVE_CANONICAL_FAMILIARS_REQUIREMENTS = {
+  operation: 'familiars.list',
+  capabilities: ['familiars', 'cursors'],
+} as const satisfies CaveCanonicalEnvelopeRequirements;
+
+export const CAVE_CANONICAL_PROJECTS_REQUIREMENTS = {
+  operation: 'projects.list',
+  capabilities: ['projects', 'cursors'],
+} as const satisfies CaveCanonicalEnvelopeRequirements;
+
+export const CAVE_CANONICAL_CONVERSATIONS_REQUIREMENTS = {
+  operation: 'conversations.list',
+  capabilities: ['conversations', 'cursors'],
+} as const satisfies CaveCanonicalEnvelopeRequirements;
+
+export const CAVE_CANONICAL_CONVERSATION_REQUIREMENTS = {
+  operation: 'conversations.read',
+  capabilities: ['conversations'],
+} as const satisfies CaveCanonicalEnvelopeRequirements;
+
+export const CAVE_CANONICAL_MESSAGES_REQUIREMENTS = {
+  operation: 'messages.list',
+  capabilities: ['conversation-messages', 'cursors'],
+} as const satisfies CaveCanonicalEnvelopeRequirements;
+
 function canonicalPageQuery(options: PageOptions): string {
   const normalized = normalizePageOptions(options);
   const query = new URLSearchParams();
@@ -253,22 +283,35 @@ function parseErrorDetails(
   );
 }
 
-function parseEnvelope(value: unknown): JsonObject {
+function parseEnvelope(
+  value: unknown,
+  requirements: CaveCanonicalEnvelopeRequirements,
+): JsonObject {
   const envelope = canonicalObject(value, 'response');
   const apiVersion = canonicalString(envelope.apiVersion, 'apiVersion');
   const minimumClientVersion = canonicalString(
     envelope.minimumClientVersion,
     'minimumClientVersion',
   );
-  parseDeclarationIds(envelope.capabilities, 'capabilities', {
+  const capabilities = parseDeclarationIds(envelope.capabilities, 'capabilities', {
     requireNonEmpty: true,
   });
-  parseDeclarationIds(envelope.operations, 'operations', {
+  const operations = parseDeclarationIds(envelope.operations, 'operations', {
     requireNonEmpty: true,
   });
 
   if (apiVersion !== CAVE_CONTRACT_API_VERSION) {
     throw new CaveCanonicalSchemaError('apiVersion');
+  }
+  if (!operations.includes(requirements.operation)) {
+    throw new CaveCanonicalSchemaError('operations');
+  }
+  if (
+    requirements.capabilities.some(
+      (capability) => !capabilities.includes(capability),
+    )
+  ) {
+    throw new CaveCanonicalSchemaError('capabilities');
   }
 
   let compatibility: ReturnType<typeof assessCompatibility>;
@@ -366,8 +409,9 @@ function parsePage<T>(
   value: unknown,
   collection: string,
   parseEntry: (entry: unknown, field: string) => T,
+  requirements: CaveCanonicalEnvelopeRequirements,
 ): Page<T> {
-  const envelope = parseEnvelope(value);
+  const envelope = parseEnvelope(value, requirements);
   const data = canonicalObject(envelope.data, 'data');
   const entries = data[collection];
   if (!Array.isArray(entries)) {
@@ -509,23 +553,41 @@ function parseMessage(
 export function parseFamiliarsEnvelope(
   value: unknown,
 ): Page<CaveCanonicalFamiliar> {
-  return parsePage(value, 'familiars', parseFamiliar);
+  return parsePage(
+    value,
+    'familiars',
+    parseFamiliar,
+    CAVE_CANONICAL_FAMILIARS_REQUIREMENTS,
+  );
 }
 
 export function parseProjectsEnvelope(value: unknown): Page<CaveProject> {
-  return parsePage(value, 'projects', parseProject);
+  return parsePage(
+    value,
+    'projects',
+    parseProject,
+    CAVE_CANONICAL_PROJECTS_REQUIREMENTS,
+  );
 }
 
 export function parseConversationsEnvelope(
   value: unknown,
 ): Page<CaveConversation> {
-  return parsePage(value, 'conversations', parseConversation);
+  return parsePage(
+    value,
+    'conversations',
+    parseConversation,
+    CAVE_CANONICAL_CONVERSATIONS_REQUIREMENTS,
+  );
 }
 
 export function parseConversationEnvelope(
   value: unknown,
 ): CaveConversation {
-  const envelope = parseEnvelope(value);
+  const envelope = parseEnvelope(
+    value,
+    CAVE_CANONICAL_CONVERSATION_REQUIREMENTS,
+  );
   parseCursor(envelope.cursor);
   const data = canonicalObject(envelope.data, 'data');
   return parseConversation(data.conversation, 'data.conversation');
@@ -534,5 +596,10 @@ export function parseConversationEnvelope(
 export function parseConversationMessagesEnvelope(
   value: unknown,
 ): Page<CaveConversationMessage> {
-  return parsePage(value, 'messages', parseMessage);
+  return parsePage(
+    value,
+    'messages',
+    parseMessage,
+    CAVE_CANONICAL_MESSAGES_REQUIREMENTS,
+  );
 }

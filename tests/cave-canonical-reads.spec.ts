@@ -33,6 +33,16 @@ const CANONICAL_OPERATIONS = [
   'conversations.read',
   'messages.list',
 ] as const;
+const CANONICAL_CAPABILITIES = [
+  'health',
+  'pairing',
+  'credentials',
+  'familiars',
+  'projects',
+  'conversations',
+  'conversation-messages',
+  'cursors',
+] as const;
 
 const VALID_HEALTH_RESPONSE = {
   apiVersion: '1.0',
@@ -102,7 +112,7 @@ function successEnvelope(
   return {
     apiVersion: '1.0',
     minimumClientVersion: '0.1.0',
-    capabilities: ['canonical-reads'],
+    capabilities: CANONICAL_CAPABILITIES,
     operations: CANONICAL_OPERATIONS,
     data,
     ...(cursor === undefined ? {} : { cursor }),
@@ -115,7 +125,7 @@ function errorEnvelope(
   return {
     apiVersion: '1.0',
     minimumClientVersion: '0.1.0',
-    capabilities: ['conversation-messages'],
+    capabilities: CANONICAL_CAPABILITIES,
     operations: CANONICAL_OPERATIONS,
     error: {
       code: 'reconcile_required',
@@ -211,6 +221,46 @@ describe('Cave canonical route construction', () => {
 });
 
 describe('Cave caller-supplied canonical reads', () => {
+  const routeInventories = [
+    {
+      clientOperation: 'listFamiliars',
+      expectedOperation: 'familiars.list',
+      requiredCapabilities: ['familiars', 'cursors'],
+      data: { familiars: [FAMILIAR] },
+      invoke: (client: CaveClient) => client.listFamiliars(),
+    },
+    {
+      clientOperation: 'listProjects',
+      expectedOperation: 'projects.list',
+      requiredCapabilities: ['projects', 'cursors'],
+      data: { projects: [PROJECT] },
+      invoke: (client: CaveClient) => client.listProjects(),
+    },
+    {
+      clientOperation: 'listConversations',
+      expectedOperation: 'conversations.list',
+      requiredCapabilities: ['conversations', 'cursors'],
+      data: { conversations: [CONVERSATION] },
+      invoke: (client: CaveClient) => client.listConversations(),
+    },
+    {
+      clientOperation: 'getConversation',
+      expectedOperation: 'conversations.read',
+      requiredCapabilities: ['conversations'],
+      data: { conversation: CONVERSATION },
+      invoke: (client: CaveClient) =>
+        client.getConversation('conversation-1'),
+    },
+    {
+      clientOperation: 'listConversationMessages',
+      expectedOperation: 'messages.list',
+      requiredCapabilities: ['conversation-messages', 'cursors'],
+      data: { messages: [MESSAGE] },
+      invoke: (client: CaveClient) =>
+        client.listConversationMessages('conversation-1'),
+    },
+  ] as const;
+
   test('calls all five optional transport methods with normalized options and operation context', async () => {
     const listFamiliars = vi.fn<
       (options: PageOptions, context?: OperationContext) => Promise<unknown>
@@ -331,6 +381,91 @@ describe('Cave caller-supplied canonical reads', () => {
       },
     });
   });
+
+  test.each(
+    routeInventories.flatMap((route) => [
+      {
+        ...route,
+        field: 'operations',
+        declarations: CANONICAL_OPERATIONS.filter(
+          (operation) => operation !== route.expectedOperation,
+        ),
+      },
+      ...route.requiredCapabilities.map((missingCapability) => ({
+        ...route,
+        field: 'capabilities',
+        declarations: CANONICAL_CAPABILITIES.filter(
+          (capability) => capability !== missingCapability,
+        ),
+      })),
+    ]),
+  )(
+    'rejects $clientOperation success without required $field inventory',
+    async ({ clientOperation, data, declarations, field, invoke }) => {
+      const method = vi.fn(() =>
+        Promise.resolve({
+          ...successEnvelope(data),
+          [field]: declarations,
+        }),
+      );
+      const { client } = clientWith({
+        [clientOperation]: method,
+      });
+
+      const error = await caveErrorOf(() => invoke(client));
+
+      expect(error.normalized).toMatchObject({
+        code: 'invalid_response',
+        operation: clientOperation,
+        retryable: false,
+      });
+      expect(error.details).toEqual({ field });
+      expect(method).toHaveBeenCalledOnce();
+    },
+  );
+
+  test.each(
+    routeInventories.flatMap((route) => [
+      {
+        ...route,
+        field: 'operations',
+        declarations: CANONICAL_OPERATIONS.filter(
+          (operation) => operation !== route.expectedOperation,
+        ),
+      },
+      ...route.requiredCapabilities.map((missingCapability) => ({
+        ...route,
+        field: 'capabilities',
+        declarations: CANONICAL_CAPABILITIES.filter(
+          (capability) => capability !== missingCapability,
+        ),
+      })),
+    ]),
+  )(
+    'rejects $clientOperation explicit error without required $field inventory',
+    async ({ clientOperation, declarations, field, invoke }) => {
+      const method = vi.fn(() =>
+        Promise.resolve(
+          errorEnvelope({
+            [field]: declarations,
+          }),
+        ),
+      );
+      const { client } = clientWith({
+        [clientOperation]: method,
+      });
+
+      const error = await caveErrorOf(() => invoke(client));
+
+      expect(error.normalized).toMatchObject({
+        code: 'invalid_response',
+        operation: clientOperation,
+        retryable: false,
+      });
+      expect(error.details).toEqual({ field });
+      expect(method).toHaveBeenCalledOnce();
+    },
+  );
 
   describe('Cave bounded canonical iteration', () => {
     test.each([
@@ -840,7 +975,10 @@ describe('Cave caller-supplied canonical reads', () => {
           ),
         )
         .mockResolvedValueOnce(
-          successEnvelope({ projects: [] }, { hasMore: false }),
+          successEnvelope(
+            { projects: [] },
+            { current: CURSOR, hasMore: false },
+          ),
         );
       const { client } = clientWith(
         { listProjects },
@@ -1444,7 +1582,7 @@ describe('Cave caller-supplied canonical reads', () => {
       {
         apiVersion: '1.0',
         minimumClientVersion: '0.1.0',
-        capabilities: ['canonical-reads'],
+        capabilities: CANONICAL_CAPABILITIES,
         operations: CANONICAL_OPERATIONS,
       },
     ],

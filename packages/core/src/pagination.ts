@@ -80,11 +80,16 @@ function isThrowCancellation(
 
 class PaginationResponseError extends Error {
   readonly code = 'invalid_response';
+  readonly details: Record<string, string> | undefined;
   readonly retryable = false;
 
-  constructor(message: string) {
+  constructor(
+    message: string,
+    details?: Record<string, string>,
+  ) {
     super(message);
     this.name = 'PaginationResponseError';
+    this.details = details;
   }
 }
 
@@ -239,6 +244,15 @@ async function* generatePages<T>(
         ]);
         ensureActive(scope);
         validatePage<T>(page);
+        if (
+          cursor !== undefined &&
+          page.cursor?.current !== cursor
+        ) {
+          throw new PaginationResponseError(
+            'page cursor current did not match the requested cursor',
+            { field: 'cursor.current' },
+          );
+        }
         pagesRead += 1;
 
         for (const item of page.data) {

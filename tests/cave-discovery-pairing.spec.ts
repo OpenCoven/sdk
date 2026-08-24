@@ -1102,6 +1102,44 @@ describe('discovered Cave pairing helpers', () => {
   });
 
   describe('discovered Cave canonical reads', () => {
+    const routeInventories = [
+      {
+        clientOperation: 'listFamiliars',
+        expectedOperation: 'familiars.list',
+        requiredCapabilities: ['familiars', 'cursors'],
+        invoke: (client: ReturnType<typeof createDiscoveredCaveClient>) =>
+          client.listFamiliars(),
+      },
+      {
+        clientOperation: 'listProjects',
+        expectedOperation: 'projects.list',
+        requiredCapabilities: ['projects', 'cursors'],
+        invoke: (client: ReturnType<typeof createDiscoveredCaveClient>) =>
+          client.listProjects(),
+      },
+      {
+        clientOperation: 'listConversations',
+        expectedOperation: 'conversations.list',
+        requiredCapabilities: ['conversations', 'cursors'],
+        invoke: (client: ReturnType<typeof createDiscoveredCaveClient>) =>
+          client.listConversations(),
+      },
+      {
+        clientOperation: 'getConversation',
+        expectedOperation: 'conversations.read',
+        requiredCapabilities: ['conversations'],
+        invoke: (client: ReturnType<typeof createDiscoveredCaveClient>) =>
+          client.getConversation('conversation-1'),
+      },
+      {
+        clientOperation: 'listConversationMessages',
+        expectedOperation: 'messages.list',
+        requiredCapabilities: ['conversation-messages', 'cursors'],
+        invoke: (client: ReturnType<typeof createDiscoveredCaveClient>) =>
+          client.listConversationMessages('conversation-1'),
+      },
+    ] as const;
+
     test.each([
       ['getConversation', '.', (client: ReturnType<typeof createDiscoveredCaveClient>) =>
         client.getConversation('.')],
@@ -1496,12 +1534,12 @@ describe('discovered Cave pairing helpers', () => {
     });
 
     test.each([
-      ['not_found', 404, 'getConversation'],
-      ['scope_denied', 403, 'listProjects'],
-      ['reconcile_required', 409, 'listConversationMessages'],
+      ['not_found', 404, 'getConversation', false],
+      ['scope_denied', 403, 'listProjects', false],
+      ['reconcile_required', 409, 'listConversationMessages', true],
     ] as const)(
       'preserves canonical %s errors and never retries',
-      async (code, status, operation) => {
+      async (code, status, operation, retryable) => {
         const root = createScratchRoot(`canonical-error-${code}`);
         await writeDiscoveryRecord(root, discoveryRecord());
         const details =
@@ -1510,7 +1548,11 @@ describe('discovered Cave pairing helpers', () => {
             : undefined;
         const fetchImplementation = queuedFetch([
           ...successfulPairingHandlers(),
-          () => jsonResponse(status, errorEnvelope(code, status, false, details)),
+          () =>
+            jsonResponse(
+              status,
+              errorEnvelope(code, status, retryable, details),
+            ),
         ]);
         const { client } = discoveredClient(root, fetchImplementation);
 
@@ -1526,10 +1568,107 @@ describe('discovered Cave pairing helpers', () => {
           normalized: {
             code,
             operation,
-            retryable: false,
+            requestId: `request-${status}-${code}`,
+            retryable,
             statusCode: status,
           },
           ...(details === undefined ? {} : { details }),
+        });
+        const authenticatedRequests = fetchImplementation.mock.calls.filter(
+          ([, init]) => header(init, 'authorization') !== null,
+        );
+        expect(authenticatedRequests).toHaveLength(1);
+        expect(fetchImplementation).toHaveBeenCalledTimes(6);
+      },
+    );
+
+    test.each(['1.1', '2.0'] as const)(
+      'rejects discovered canonical HTTP error apiVersion %s as invalid_response',
+      async (apiVersion) => {
+        const root = createScratchRoot(`canonical-error-version-${apiVersion}`);
+        await writeDiscoveryRecord(root, discoveryRecord());
+        const requestId = `canonical-version-${apiVersion}`;
+        const fetchImplementation = queuedFetch([
+          ...successfulPairingHandlers(),
+          () =>
+            jsonResponse(409, {
+              ...errorEnvelope(
+                'reconcile_required',
+                409,
+                false,
+                { reason: 'resume_from_canonical_state' },
+              ),
+              apiVersion,
+              requestId,
+            }),
+        ]);
+        const { client } = discoveredClient(root, fetchImplementation);
+
+        await pairDiscoveredClient(client);
+        await expect(client.listProjects()).rejects.toMatchObject({
+          normalized: {
+            code: 'invalid_response',
+            operation: 'listProjects',
+            requestId,
+            retryable: false,
+            statusCode: 409,
+          },
+          details: { field: 'apiVersion' },
+        });
+        const authenticatedRequests = fetchImplementation.mock.calls.filter(
+          ([, init]) => header(init, 'authorization') !== null,
+        );
+        expect(authenticatedRequests).toHaveLength(1);
+        expect(fetchImplementation).toHaveBeenCalledTimes(6);
+      },
+    );
+
+    test.each(
+      routeInventories.flatMap((route) => [
+        {
+          ...route,
+          field: 'operations',
+          declarations: CAVE_OPERATIONS.filter(
+            (operation) => operation !== route.expectedOperation,
+          ),
+        },
+        ...route.requiredCapabilities.map((missingCapability) => ({
+          ...route,
+          field: 'capabilities',
+          declarations: CAVE_CAPABILITIES.filter(
+            (capability) => capability !== missingCapability,
+          ),
+        })),
+      ]),
+    )(
+      'rejects $clientOperation discovered HTTP error without required $field inventory',
+      async ({ clientOperation, declarations, field, invoke }) => {
+        const root = createScratchRoot(
+          `canonical-error-inventory-${clientOperation}-${field}-${randomUUID()}`,
+        );
+        await writeDiscoveryRecord(root, discoveryRecord());
+        const requestId = `inventory-${clientOperation}-${field}`;
+        const fetchImplementation = queuedFetch([
+          ...successfulPairingHandlers(),
+          () =>
+            jsonResponse(409, {
+              ...errorEnvelope('reconcile_required', 409, false),
+              [field]: declarations,
+              requestId,
+            }),
+        ]);
+        const { client } = discoveredClient(root, fetchImplementation);
+
+        await pairDiscoveredClient(client);
+        await expect(invoke(client)).rejects.toMatchObject({
+          normalized: {
+            code: 'invalid_response',
+            operation: clientOperation,
+            requestId,
+            retryable: false,
+            statusCode: 409,
+          },
+          details: { field },
         });
         const authenticatedRequests = fetchImplementation.mock.calls.filter(
           ([, init]) => header(init, 'authorization') !== null,
@@ -1551,6 +1690,41 @@ describe('discovered Cave pairing helpers', () => {
             headers: {
               location: 'http://127.0.0.1:3999/redirected',
             },
+          });
+
+          test('preserves legacy pairing error compatibility for apiVersion 1.1', async () => {
+            const root = createScratchRoot('pairing-error-version-1-1');
+            await writeDiscoveryRecord(root, discoveryRecord());
+            const requestId = 'pairing-error-version-1-1';
+            const fetchImplementation = queuedFetch([
+              () =>
+                jsonResponse(409, {
+                  ...errorEnvelope('conflict', 409, false, {
+                    reason: 'pairing_pending',
+                  }),
+                  apiVersion: '1.1',
+                  requestId,
+                }),
+            ]);
+            const { client } = discoveredClient(root, fetchImplementation);
+
+            await expect(
+              client.createPairing({
+                appName: 'OpenCoven Chat',
+                installationId: 'chat-install-1',
+                scopes: ['chat:read'],
+              }),
+            ).rejects.toMatchObject({
+              normalized: {
+                code: 'conflict',
+                operation: 'pairingCreate',
+                requestId,
+                retryable: false,
+                statusCode: 409,
+              },
+              details: { reason: 'pairing_pending' },
+            });
+            expect(fetchImplementation).toHaveBeenCalledOnce();
           });
         },
       ]);

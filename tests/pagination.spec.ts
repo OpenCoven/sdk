@@ -335,6 +335,169 @@ describe('bounded page iteration', () => {
     ).toBe(true);
   });
 
+  test.each([
+    ['missing', undefined],
+    ['mismatched', FIRST_CURSOR],
+  ] as const)(
+    'rejects a %s initial cursor.current before yielding page data',
+    async (_kind, current) => {
+      const yielded: string[] = [];
+      const readPage = vi.fn(
+        (
+          options: {
+            limit: number;
+            cursor?: string;
+            signal: AbortSignal;
+          },
+        ): Promise<Page<string>> => {
+          void options;
+          return Promise.resolve({
+            data: ['must-not-leak'],
+            cursor: {
+              ...(current === undefined ? {} : { current }),
+              hasMore: false,
+            },
+          });
+        },
+      );
+
+      try {
+        for await (const item of iteratePages(readPage, {
+          cursor: SECOND_CURSOR,
+          limit: 25,
+          maxPages: 1,
+        })) {
+          yielded.push(item);
+        }
+        throw new Error('Expected cursor.current validation to fail.');
+      } catch (error) {
+        expect(error).toMatchObject({
+          code: 'invalid_response',
+          details: { field: 'cursor.current' },
+          retryable: false,
+        });
+      }
+
+      expect(yielded).toEqual([]);
+      expect(readPage).toHaveBeenCalledOnce();
+      expect(readPage.mock.calls[0]?.[0]).toMatchObject({
+        cursor: SECOND_CURSOR,
+        limit: 25,
+      });
+      expect(readPage.mock.calls[0]?.[0].signal).toBeInstanceOf(AbortSignal);
+    },
+  );
+
+  test.each([
+    ['missing', undefined],
+    ['mismatched', THIRD_CURSOR],
+  ] as const)(
+    'rejects a %s continuation cursor.current before yielding that page data',
+    async (_kind, current) => {
+      const yielded: string[] = [];
+      const readPage = vi.fn(
+        (
+          options: {
+            limit: number;
+            cursor?: string;
+            signal: AbortSignal;
+          },
+        ): Promise<Page<string>> =>
+          Promise.resolve(
+            options.cursor === undefined
+              ? {
+                  data: ['first-page'],
+                  cursor: { next: FIRST_CURSOR, hasMore: true },
+                }
+              : {
+                  data: ['must-not-leak'],
+                  cursor: {
+                    ...(current === undefined ? {} : { current }),
+                    hasMore: false,
+                  },
+                },
+          ),
+      );
+
+      try {
+        for await (const item of iteratePages(readPage, {
+          limit: 10,
+          maxPages: 2,
+        })) {
+          yielded.push(item);
+        }
+        throw new Error('Expected cursor.current validation to fail.');
+      } catch (error) {
+        expect(error).toMatchObject({
+          code: 'invalid_response',
+          details: { field: 'cursor.current' },
+          retryable: false,
+        });
+      }
+
+      expect(yielded).toEqual(['first-page']);
+      expect(
+        readPage.mock.calls.map(([options]) =>
+          options.cursor === undefined
+            ? { limit: options.limit }
+            : { cursor: options.cursor, limit: options.limit },
+        ),
+      ).toEqual([
+        { limit: 10 },
+        { cursor: FIRST_CURSOR, limit: 10 },
+      ]);
+    },
+  );
+
+  test('accepts exact cursor.current echoes for initial and continuation requests', async () => {
+    const readPage = vi.fn(
+      (
+        options: {
+          limit: number;
+          cursor?: string;
+          signal: AbortSignal;
+        },
+      ): Promise<Page<string>> =>
+        Promise.resolve(
+          options.cursor === SECOND_CURSOR
+            ? {
+                data: ['one'],
+                cursor: {
+                  current: SECOND_CURSOR,
+                  next: THIRD_CURSOR,
+                  hasMore: true,
+                },
+              }
+            : {
+                data: ['two'],
+                cursor: {
+                  current: THIRD_CURSOR,
+                  hasMore: false,
+                },
+              },
+        ),
+    );
+
+    await expect(
+      collect(
+        iteratePages(readPage, {
+          cursor: SECOND_CURSOR,
+          limit: 10,
+          maxPages: 2,
+        }),
+      ),
+    ).resolves.toEqual(['one', 'two']);
+    expect(
+      readPage.mock.calls.map(([options]) => ({
+        cursor: options.cursor,
+        limit: options.limit,
+      })),
+    ).toEqual([
+      { cursor: SECOND_CURSOR, limit: 10 },
+      { cursor: THIRD_CURSOR, limit: 10 },
+    ]);
+  });
+
   test('stops before requesting page maxPages plus one', async () => {
     const readPage = vi.fn(
       (options: { limit: number; cursor?: string }): Promise<Page<string>> => {

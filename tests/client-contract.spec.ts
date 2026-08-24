@@ -139,8 +139,20 @@ describe('constrained client transports', () => {
     const metadata = {
       apiVersion: '1.0',
       minimumClientVersion: '0.1.0',
-      capabilities: ['canonical-reads'],
-      operations: ['familiars.list'],
+      capabilities: [
+        'familiars',
+        'projects',
+        'conversations',
+        'conversation-messages',
+        'cursors',
+      ],
+      operations: [
+        'familiars.list',
+        'projects.list',
+        'conversations.list',
+        'conversations.read',
+        'messages.list',
+      ],
     } as const;
     const transport = {
       health: () => Promise.resolve(VALID_CAVE_HEALTH_RESPONSE),
