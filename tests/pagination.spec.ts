@@ -157,7 +157,13 @@ describe('bounded page iteration', () => {
       observer: collectingObserver(originalEvents),
     };
     const readPage = vi.fn(
-      (pageOptions: { limit: number; cursor?: string }): Promise<Page<string>> =>
+      (
+        pageOptions: {
+          limit: number;
+          cursor?: string;
+          signal: AbortSignal;
+        },
+      ): Promise<Page<string>> =>
         Promise.resolve({
           data: ['item'],
           cursor: {
@@ -180,10 +186,11 @@ describe('bounded page iteration', () => {
 
     await expect(collect(iterator)).resolves.toEqual(['item']);
     expect(readPage).toHaveBeenCalledOnce();
-    expect(readPage).toHaveBeenCalledWith({
+    expect(readPage.mock.calls[0]?.[0]).toMatchObject({
       limit: 10,
       cursor: SECOND_CURSOR,
     });
+    expect(readPage.mock.calls[0]?.[0].signal).toBeInstanceOf(AbortSignal);
     expect(originalEvents.map(({ phase }) => phase)).toEqual(['start', 'success']);
     expect(replacementEvents).toEqual([]);
   });
@@ -240,38 +247,50 @@ describe('bounded page iteration', () => {
   );
 
   test('iterates an empty page', async () => {
-    const readPage = vi.fn(() =>
-      Promise.resolve({
-        data: [],
-        cursor: { hasMore: false },
-      }),
+    const readPage = vi.fn(
+      (options: { limit: number; cursor?: string; signal: AbortSignal }) => {
+        void options.signal;
+        return Promise.resolve({
+          data: [],
+          cursor: { hasMore: false },
+        });
+      },
     );
 
     await expect(collect(iteratePages(readPage, { maxPages: 1 }))).resolves.toEqual(
       [],
     );
     expect(readPage).toHaveBeenCalledOnce();
-    expect(readPage).toHaveBeenCalledWith({ limit: 50 });
+    expect(readPage.mock.calls[0]?.[0]).toMatchObject({ limit: 50 });
+    expect(readPage.mock.calls[0]?.[0].signal).toBeInstanceOf(AbortSignal);
   });
 
   test('iterates exactly one page when hasMore is false', async () => {
-    const readPage = vi.fn(() =>
-      Promise.resolve({
-        data: ['one', 'two'],
-        cursor: { hasMore: false },
-      }),
+    const readPage = vi.fn(
+      (options: { limit: number; cursor?: string; signal: AbortSignal }) => {
+        void options.signal;
+        return Promise.resolve({
+          data: ['one', 'two'],
+          cursor: { hasMore: false },
+        });
+      },
     );
 
     await expect(
       collect(iteratePages(readPage, { limit: 25, maxPages: 5 })),
     ).resolves.toEqual(['one', 'two']);
     expect(readPage).toHaveBeenCalledOnce();
-    expect(readPage).toHaveBeenCalledWith({ limit: 25 });
+    expect(readPage.mock.calls[0]?.[0]).toMatchObject({ limit: 25 });
+    expect(readPage.mock.calls[0]?.[0].signal).toBeInstanceOf(AbortSignal);
   });
 
   test('iterates multiple pages until hasMore is false', async () => {
     const readPage = vi.fn(
-      (options: { limit: number; cursor?: string }): Promise<Page<string>> => {
+      (options: {
+        limit: number;
+        cursor?: string;
+        signal: AbortSignal;
+      }): Promise<Page<string>> => {
         if (options.cursor === undefined) {
           return Promise.resolve({
             data: ['one'],
@@ -298,11 +317,20 @@ describe('bounded page iteration', () => {
     await expect(
       collect(iteratePages(readPage, { limit: 10, maxPages: 4 })),
     ).resolves.toEqual(['one', 'two', 'three']);
-    expect(readPage.mock.calls).toEqual([
-      [{ limit: 10 }],
-      [{ limit: 10, cursor: FIRST_CURSOR }],
-      [{ limit: 10, cursor: SECOND_CURSOR }],
+    expect(
+      readPage.mock.calls.map(([{ cursor, limit }]) =>
+        cursor === undefined ? { limit } : { limit, cursor },
+      ),
+    ).toEqual([
+      { limit: 10 },
+      { limit: 10, cursor: FIRST_CURSOR },
+      { limit: 10, cursor: SECOND_CURSOR },
     ]);
+    expect(
+      readPage.mock.calls.every(([options]) =>
+        options.signal instanceof AbortSignal
+      ),
+    ).toBe(true);
   });
 
   test('stops before requesting page maxPages plus one', async () => {
@@ -520,7 +548,11 @@ describe('bounded page iteration', () => {
 
   test('accepts a caller-provided initial cursor and advances from it', async () => {
     const readPage = vi.fn(
-      (options: { limit: number; cursor?: string }): Promise<Page<string>> =>
+      (options: {
+        limit: number;
+        cursor?: string;
+        signal: AbortSignal;
+      }): Promise<Page<string>> =>
         Promise.resolve({
           data: ['item'],
           cursor: {
@@ -539,10 +571,11 @@ describe('bounded page iteration', () => {
         }),
       ),
     ).resolves.toEqual(['item']);
-    expect(readPage).toHaveBeenCalledWith({
+    expect(readPage.mock.calls[0]?.[0]).toMatchObject({
       limit: 50,
       cursor: SECOND_CURSOR,
     });
+    expect(readPage.mock.calls[0]?.[0].signal).toBeInstanceOf(AbortSignal);
   });
 
   test('emits observer start and success events for completed iteration', async () => {
@@ -637,5 +670,233 @@ describe('bounded page iteration', () => {
       },
     });
     expect(JSON.stringify(events[1])).not.toContain('caller stopped');
+  });
+
+  test('aborts and disposes operation controls when returned after a yield', async () => {
+    vi.useFakeTimers();
+    const events: OperationEvent[] = [];
+    const listeners = new Set<() => void>();
+    const signal = {
+      aborted: false,
+      reason: undefined,
+      addEventListener(type: string, listener: () => void) {
+        if (type === 'abort') {
+          listeners.add(listener);
+        }
+      },
+      removeEventListener(type: string, listener: () => void) {
+        if (type === 'abort') {
+          listeners.delete(listener);
+        }
+      },
+    } as unknown as AbortSignal;
+    const iterator = iteratePages(
+      () =>
+        Promise.resolve({
+          data: ['item'],
+          cursor: { next: FIRST_CURSOR, hasMore: true },
+        }),
+      {
+        signal,
+        timeoutMs: 1_000,
+        observer: collectingObserver(events),
+      },
+    );
+
+    await expect(iterator.next()).resolves.toEqual({ value: 'item', done: false });
+    expect(listeners.size).toBe(1);
+    expect(vi.getTimerCount()).toBe(1);
+
+    await expect(iterator.return(undefined)).resolves.toEqual({
+      value: undefined,
+      done: true,
+    });
+
+    expect(events.map(({ phase }) => phase)).toEqual(['start', 'abort']);
+    expect(events[1]).toMatchObject({
+      phase: 'abort',
+      error: {
+        code: 'aborted',
+        retryable: false,
+      },
+    });
+    expect(listeners.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('disposes operation controls when abort observation throws', async () => {
+    vi.useFakeTimers();
+    const reporterFailure = new Error('observer reporter failed');
+    const listeners = new Set<() => void>();
+    const signal = {
+      aborted: false,
+      reason: undefined,
+      addEventListener(type: string, listener: () => void) {
+        if (type === 'abort') {
+          listeners.add(listener);
+        }
+      },
+      removeEventListener(type: string, listener: () => void) {
+        if (type === 'abort') {
+          listeners.delete(listener);
+        }
+      },
+    } as unknown as AbortSignal;
+    const iterator = iteratePages(
+      () => Promise.resolve({ data: ['item'] }),
+      {
+        signal,
+        timeoutMs: 1_000,
+        observer: {
+          onEvent(event) {
+            if (event.phase === 'abort') {
+              throw new Error('observer failed');
+            }
+          },
+          onObserverError() {
+            throw reporterFailure;
+          },
+        },
+      },
+    );
+
+    await iterator.next();
+    await expect(iterator.return(undefined)).rejects.toBe(reporterFailure);
+
+    expect(listeners.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('return aborts an in-flight transport read without waiting for it', async () => {
+    const callerController = new AbortController();
+    let transportSignal: AbortSignal | undefined;
+    const readPage = vi.fn(
+      (
+        pageOptions: {
+          limit: number;
+          cursor?: string;
+          signal: AbortSignal;
+        },
+      ): Promise<Page<never>> => {
+        transportSignal = pageOptions.signal;
+        return new Promise((_resolve, reject) => {
+          transportSignal?.addEventListener(
+            'abort',
+            () => {
+              const reason = transportSignal?.reason as unknown;
+              reject(
+                reason instanceof Error
+                  ? reason
+                  : new Error('transport aborted', { cause: reason }),
+              );
+            },
+            { once: true },
+          );
+        });
+      },
+    );
+    const iterator = iteratePages(readPage, {
+      maxPages: 1,
+      signal: callerController.signal,
+    });
+    const pendingNext = iterator.next().then(
+      (result) => ({ result }),
+      (error: unknown) => ({ error }),
+    );
+
+    await vi.waitFor(() => {
+      expect(readPage).toHaveBeenCalledOnce();
+    });
+    const returned = iterator.return(undefined);
+
+    try {
+      const closeOutcome = await Promise.race([
+        returned.then(() => 'returned' as const),
+        new Promise<'still-pending'>((resolve) => {
+          setTimeout(() => {
+            resolve('still-pending');
+          }, 50);
+        }),
+      ]);
+
+      expect(closeOutcome).toBe('returned');
+      expect(transportSignal).toBeDefined();
+      expect(transportSignal).not.toBe(callerController.signal);
+      expect(transportSignal?.aborted).toBe(true);
+      await expect(pendingNext).resolves.toMatchObject({
+        error: {
+          code: 'aborted',
+          retryable: false,
+        },
+      });
+      await expect(returned).resolves.toEqual({
+        value: undefined,
+        done: true,
+      });
+    } finally {
+      callerController.abort('test cleanup');
+      await pendingNext;
+      await returned;
+    }
+  });
+
+  test('return before first next does not start an operation', async () => {
+    vi.useFakeTimers();
+    const events: OperationEvent[] = [];
+    const readPage = vi.fn(() => Promise.resolve({ data: [] }));
+    const iterator = iteratePages(readPage, {
+      maxPages: 1,
+      timeoutMs: 1_000,
+      observer: collectingObserver(events),
+    });
+
+    await expect(iterator.return(undefined)).resolves.toEqual({
+      value: undefined,
+      done: true,
+    });
+
+    expect(readPage).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('repeated return and completion do not duplicate terminal events', async () => {
+    const returnedEvents: OperationEvent[] = [];
+    const returnedIterator = iteratePages(
+      () =>
+        Promise.resolve({
+          data: ['item'],
+          cursor: { next: FIRST_CURSOR, hasMore: true },
+        }),
+      {
+        maxPages: 2,
+        observer: collectingObserver(returnedEvents),
+      },
+    );
+
+    await returnedIterator.next();
+    await returnedIterator.return(undefined);
+    await returnedIterator.return(undefined);
+    await returnedIterator.next();
+
+    expect(returnedEvents.map(({ phase }) => phase)).toEqual(['start', 'abort']);
+
+    const completedEvents: OperationEvent[] = [];
+    const completedIterator = iteratePages(
+      () => Promise.resolve({ data: [] }),
+      {
+        maxPages: 1,
+        observer: collectingObserver(completedEvents),
+      },
+    );
+
+    await completedIterator.next();
+    await completedIterator.return(undefined);
+    await completedIterator.return(undefined);
+
+    expect(completedEvents.map(({ phase }) => phase)).toEqual([
+      'start',
+      'success',
+    ]);
   });
 });

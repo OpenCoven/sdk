@@ -2,6 +2,7 @@ import {
   createOperationScope,
   isOperationAbortedError,
   isOperationTimeoutError,
+  OperationAbortedError,
   OperationConfigurationError,
   type OperationOptions,
 } from './operation-control.js';
@@ -49,6 +50,14 @@ export type BoundedPageOptions = PageOptions &
 interface NormalizedPageOptions {
   limit: number;
   cursor?: string;
+}
+
+type PageReadOptions = NormalizedPageOptions & { signal: AbortSignal };
+
+interface IteratorLifecycle {
+  started: boolean;
+  terminal: boolean;
+  closeError?: OperationAbortedError;
 }
 
 class PaginationResponseError extends Error {
@@ -161,14 +170,18 @@ export function normalizePageOptions(
 }
 
 async function* generatePages<T>(
-  readPage: (options: NormalizedPageOptions) => Promise<Page<T>>,
+  readPage: (options: PageReadOptions) => Promise<Page<T>>,
   normalized: NormalizedPageOptions,
   operationOptions: OperationOptions,
   maxPages: number | undefined,
+  closureSignal: AbortSignal,
+  lifecycle: IteratorLifecycle,
 ): AsyncGenerator<T> {
   const scope = createOperationScope(PAGINATION_DESCRIPTOR, {
     signals:
-      operationOptions.signal === undefined ? [] : [operationOptions.signal],
+      operationOptions.signal === undefined
+        ? [closureSignal]
+        : [closureSignal, operationOptions.signal],
     ...(operationOptions.timeoutMs === undefined
       ? {}
       : { timeoutMs: operationOptions.timeoutMs }),
@@ -183,6 +196,7 @@ async function* generatePages<T>(
   }
 
   try {
+    lifecycle.started = true;
     notifyOperationObserver(operationOptions.observer, {
       phase: 'start',
       system: PAGINATION_DESCRIPTOR.system,
@@ -194,8 +208,12 @@ async function* generatePages<T>(
         ensureActive(scope);
         const readOptions =
           cursor === undefined
-            ? { limit: normalized.limit }
-            : { limit: normalized.limit, cursor };
+            ? { limit: normalized.limit, signal: scope.context.signal }
+            : {
+                limit: normalized.limit,
+                cursor,
+                signal: scope.context.signal,
+              };
         const page = await Promise.race([
           Promise.resolve().then(() => readPage(readOptions)),
           scope.termination,
@@ -238,6 +256,7 @@ async function* generatePages<T>(
         : isOperationAbortedError(error)
           ? 'abort'
           : 'failure';
+      lifecycle.terminal = true;
       notifyOperationObserver(operationOptions.observer, {
         phase,
         system: PAGINATION_DESCRIPTOR.system,
@@ -251,6 +270,7 @@ async function* generatePages<T>(
       });
       throw error;
     }
+    lifecycle.terminal = true;
     notifyOperationObserver(operationOptions.observer, {
       phase: 'success',
       system: PAGINATION_DESCRIPTOR.system,
@@ -258,12 +278,32 @@ async function* generatePages<T>(
       durationMs: operationDuration(startedAt),
     });
   } finally {
-    scope.dispose();
+    try {
+      if (lifecycle.started && !lifecycle.terminal) {
+        const error =
+          lifecycle.closeError ??
+          new OperationAbortedError(PAGINATION_DESCRIPTOR);
+        lifecycle.terminal = true;
+        notifyOperationObserver(operationOptions.observer, {
+          phase: 'abort',
+          system: PAGINATION_DESCRIPTOR.system,
+          operation: PAGINATION_DESCRIPTOR.operation,
+          durationMs: operationDuration(startedAt),
+          error: normalizeOperationEventError(
+            error,
+            PAGINATION_DESCRIPTOR.system,
+            PAGINATION_DESCRIPTOR.operation,
+          ),
+        });
+      }
+    } finally {
+      scope.dispose();
+    }
   }
 }
 
 export function iteratePages<T>(
-  readPage: (options: NormalizedPageOptions) => Promise<Page<T>>,
+  readPage: (options: PageReadOptions) => Promise<Page<T>>,
   options: BoundedPageOptions,
 ): AsyncGenerator<T> {
   if (typeof readPage !== 'function') {
@@ -300,10 +340,27 @@ export function iteratePages<T>(
     ...(cursor === undefined ? {} : { cursor }),
   };
 
-  return generatePages(
+  const closureController = new AbortController();
+  const lifecycle: IteratorLifecycle = {
+    started: false,
+    terminal: false,
+  };
+  const iterator = generatePages(
     readPage,
     normalizePageOptions(pageOptions),
     operationOptions,
     maxPages,
+    closureController.signal,
+    lifecycle,
   );
+  const close = iterator.return.bind(iterator);
+  iterator.return = (value) => {
+    if (lifecycle.started && !lifecycle.terminal) {
+      const error = new OperationAbortedError(PAGINATION_DESCRIPTOR);
+      lifecycle.closeError ??= error;
+      closureController.abort(lifecycle.closeError);
+    }
+    return close(value);
+  };
+  return iterator;
 }
