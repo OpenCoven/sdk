@@ -820,6 +820,217 @@ describe('bounded page iteration', () => {
     });
   });
 
+  test('throw preserves a timeout that wins while suspended at a yield', async () => {
+    vi.useFakeTimers();
+    const events: OperationEvent[] = [];
+    const consumerError = new Error('consumer failed');
+    let transportSignal: AbortSignal | undefined;
+    const iterator = iteratePages(
+      (options) => {
+        transportSignal = options.signal;
+        return Promise.resolve({
+          data: ['item'],
+          cursor: { next: FIRST_CURSOR, hasMore: true },
+        });
+      },
+      {
+        maxPages: 2,
+        timeoutMs: 10,
+        observer: collectingObserver(events),
+      },
+    );
+
+    await expect(iterator.next()).resolves.toEqual({ value: 'item', done: false });
+    await vi.advanceTimersByTimeAsync(10);
+
+    const timeoutReason = transportSignal?.reason as unknown;
+    expect(timeoutReason).toBeInstanceOf(OperationTimeoutError);
+
+    await expect(iterator.throw(consumerError)).rejects.toBe(timeoutReason);
+
+    expect(transportSignal?.reason).toBe(timeoutReason);
+    expect(events.map(({ phase }) => phase)).toEqual(['start', 'timeout']);
+    expect(events[1]).toMatchObject({
+      phase: 'timeout',
+      error: {
+        code: 'timeout',
+        retryable: true,
+      },
+    });
+    expect(events.filter(({ phase }) => phase !== 'start')).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('throw preserves a caller abort that wins while suspended at a yield', async () => {
+    const events: OperationEvent[] = [];
+    const controller = new AbortController();
+    const callerReason = new Error('caller stopped');
+    const consumerError = new Error('consumer failed');
+    let transportSignal: AbortSignal | undefined;
+    const iterator = iteratePages(
+      (options) => {
+        transportSignal = options.signal;
+        return Promise.resolve({
+          data: ['item'],
+          cursor: { next: FIRST_CURSOR, hasMore: true },
+        });
+      },
+      {
+        maxPages: 2,
+        signal: controller.signal,
+        observer: collectingObserver(events),
+      },
+    );
+
+    await expect(iterator.next()).resolves.toEqual({ value: 'item', done: false });
+    controller.abort(callerReason);
+
+    const abortReason = transportSignal?.reason as unknown;
+    expect(abortReason).toBeInstanceOf(OperationAbortedError);
+    expect((abortReason as Error).cause).toBe(callerReason);
+
+    await expect(iterator.throw(consumerError)).rejects.toBe(abortReason);
+
+    expect(transportSignal?.reason).toBe(abortReason);
+    expect((transportSignal?.reason as Error).cause).toBe(callerReason);
+    expect(events.map(({ phase }) => phase)).toEqual(['start', 'abort']);
+    expect(events[1]).toMatchObject({
+      phase: 'abort',
+      error: {
+        code: 'aborted',
+        retryable: false,
+      },
+    });
+  });
+
+  test('throw after a yield cancels transport and reports the consumer error as failure', async () => {
+    const events: OperationEvent[] = [];
+    const consumerError = new Error('consumer failed');
+    let transportSignal: AbortSignal | undefined;
+    const iterator = iteratePages(
+      (options) => {
+        transportSignal = options.signal;
+        return Promise.resolve({
+          data: ['item'],
+          cursor: { next: FIRST_CURSOR, hasMore: true },
+        });
+      },
+      {
+        maxPages: 2,
+        observer: collectingObserver(events),
+      },
+    );
+
+    await expect(iterator.next()).resolves.toEqual({ value: 'item', done: false });
+    await expect(iterator.throw(consumerError)).rejects.toBe(consumerError);
+
+    expect(transportSignal?.aborted).toBe(true);
+    expect(events.map(({ phase }) => phase)).toEqual(['start', 'failure']);
+    expect(events[1]).toMatchObject({
+      phase: 'failure',
+      error: {
+        code: 'unknown',
+        retryable: false,
+      },
+    });
+    expect(events.filter(({ phase }) => phase !== 'start')).toHaveLength(1);
+  });
+
+  test('throw before first next follows AsyncGenerator protocol without starting an operation', async () => {
+    vi.useFakeTimers();
+    const events: OperationEvent[] = [];
+    const consumerError = new Error('consumer failed');
+    const readPage = vi.fn(() => Promise.resolve({ data: [] }));
+    const iterator = iteratePages(readPage, {
+      maxPages: 1,
+      timeoutMs: 1_000,
+      observer: collectingObserver(events),
+    });
+
+    await expect(iterator.throw(consumerError)).rejects.toBe(consumerError);
+    await expect(iterator.next()).resolves.toEqual({
+      value: undefined,
+      done: true,
+    });
+
+    expect(readPage).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('throw promptly terminates an in-flight transport read without unhandled rejection', async () => {
+    const events: OperationEvent[] = [];
+    const consumerError = new Error('consumer failed');
+    const cleanupController = new AbortController();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (error: unknown): void => {
+      unhandled.push(error);
+    };
+    let transportSignal: AbortSignal | undefined;
+    const readPage = vi.fn(
+      (options: { signal: AbortSignal }): Promise<Page<never>> => {
+        transportSignal = options.signal;
+        return new Promise((_resolve, reject) => {
+          options.signal.addEventListener(
+            'abort',
+            () => {
+              const reason = options.signal.reason as unknown;
+              reject(
+                reason instanceof Error
+                  ? reason
+                  : new Error('transport aborted', { cause: reason }),
+              );
+            },
+            { once: true },
+          );
+        });
+      },
+    );
+    const iterator = iteratePages(readPage, {
+      maxPages: 1,
+      signal: cleanupController.signal,
+      observer: collectingObserver(events),
+    });
+    const pendingNext = iterator.next().then(
+      (result) => ({ result }),
+      (error: unknown) => ({ error }),
+    );
+
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      await vi.waitFor(() => {
+        expect(readPage).toHaveBeenCalledOnce();
+      });
+      const thrown = iterator.throw(consumerError).then(
+        (result) => ({ result }),
+        (error: unknown) => ({ error }),
+      );
+      const settlement = await Promise.race([
+        Promise.all([pendingNext, thrown]),
+        new Promise<'still-pending'>((resolve) => {
+          setTimeout(() => {
+            resolve('still-pending');
+          }, 50);
+        }),
+      ]);
+
+      expect(settlement).not.toBe('still-pending');
+      expect(settlement).toEqual([
+        { error: consumerError },
+        { error: consumerError },
+      ]);
+      expect(transportSignal?.aborted).toBe(true);
+      expect(events.map(({ phase }) => phase)).toEqual(['start', 'failure']);
+      expect(events.filter(({ phase }) => phase !== 'start')).toHaveLength(1);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.removeListener('unhandledRejection', onUnhandled);
+      cleanupController.abort('test cleanup');
+      await pendingNext;
+    }
+  });
+
   test('disposes operation controls when abort observation throws', async () => {
     vi.useFakeTimers();
     const reporterFailure = new Error('observer reporter failed');

@@ -59,6 +59,9 @@ interface IteratorLifecycle {
   terminal: boolean;
   effectiveSignal?: AbortSignal;
   closeError?: OperationAbortedError;
+  throwRequested: boolean;
+  throwError?: unknown;
+  throwCancellation: object;
 }
 
 class PaginationResponseError extends Error {
@@ -253,9 +256,16 @@ async function* generatePages<T>(
         cursor = next;
       }
     } catch (error) {
-      const phase = isOperationTimeoutError(error)
+      const terminalError =
+        lifecycle.throwRequested &&
+        error === scope.context.signal.reason &&
+        isOperationAbortedError(error) &&
+        error.cause === lifecycle.throwCancellation
+          ? lifecycle.throwError
+          : error;
+      const phase = isOperationTimeoutError(terminalError)
         ? 'timeout'
-        : isOperationAbortedError(error)
+        : isOperationAbortedError(terminalError)
           ? 'abort'
           : 'failure';
       lifecycle.terminal = true;
@@ -265,12 +275,12 @@ async function* generatePages<T>(
         operation: PAGINATION_DESCRIPTOR.operation,
         durationMs: operationDuration(startedAt),
         error: normalizeOperationEventError(
-          error,
+          terminalError,
           PAGINATION_DESCRIPTOR.system,
           PAGINATION_DESCRIPTOR.operation,
         ),
       });
-      throw error;
+      throw terminalError;
     }
     lifecycle.terminal = true;
     notifyOperationObserver(operationOptions.observer, {
@@ -354,6 +364,8 @@ export function iteratePages<T>(
   const lifecycle: IteratorLifecycle = {
     started: false,
     terminal: false,
+    throwRequested: false,
+    throwCancellation: {},
   };
   const iterator = generatePages(
     readPage,
@@ -375,6 +387,21 @@ export function iteratePages<T>(
       closureController.abort(lifecycle.closeError);
     }
     return close(value);
+  };
+  const throwInto = iterator.throw.bind(iterator);
+  iterator.throw = (error) => {
+    if (!lifecycle.started || lifecycle.terminal) {
+      return throwInto(error);
+    }
+    if (lifecycle.effectiveSignal?.aborted === true) {
+      return throwInto(lifecycle.effectiveSignal.reason);
+    }
+    if (!lifecycle.throwRequested) {
+      lifecycle.throwRequested = true;
+      lifecycle.throwError = error;
+      closureController.abort(lifecycle.throwCancellation);
+    }
+    return throwInto(error);
   };
   return iterator;
 }
