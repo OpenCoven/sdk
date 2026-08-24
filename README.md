@@ -236,6 +236,24 @@ callers that intentionally retain those artifacts.
 Runnable deterministic examples are documented in
 [`examples/README.md`](examples/README.md).
 
+## Merged branch cleanup
+
+GitHub automatically deletes future merged PR branches in this repository. For
+existing branches or attached local worktrees, run the guarded cleanup from a
+different clean checkout:
+
+```bash
+pnpm cleanup:merged -- --branch <branch> --pr <number> --dry-run
+pnpm cleanup:merged -- --branch <branch> --pr <number> --delete-remote
+```
+
+The command verifies the exact merged PR and recorded head commit, confirms its
+merge commit is on the remote base branch, accepts squash merges only when the
+recorded head tree matches the merge tree, refuses dirty or locked worktrees and
+changed remote branches, and then removes only the named worktree and branch.
+Local and remote ref deletion use expected commit IDs to reject concurrent
+changes. Remote deletion is opt-in.
+
 ## Local security checks
 
 Install the repository hooks once per checkout:
