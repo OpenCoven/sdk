@@ -2114,10 +2114,32 @@ describe('opencoven CLI output', () => {
     });
 
     const forgotten = await runCli(['--json', 'cave', 'forget'], runtime());
+    expect(forgotten.exitCode).toBe(0);
     expect(JSON.parse(forgotten.stdout)).toEqual({
       command: 'cave forget',
       data: {
         deleted: true,
+      },
+      ok: true,
+      version: cliVersion,
+    });
+
+    const alreadyAbsent = await runCli(
+      ['--json', 'cave', 'forget'],
+      runtime({
+        cave: {
+          createClient: () => ({
+            forgetCredential: () => Promise.resolve(false),
+          }),
+        },
+      }),
+    );
+
+    expect(alreadyAbsent.exitCode).toBe(0);
+    expect(JSON.parse(alreadyAbsent.stdout)).toEqual({
+      command: 'cave forget',
+      data: {
+        deleted: false,
       },
       ok: true,
       version: cliVersion,
@@ -2130,7 +2152,7 @@ describe('opencoven CLI output', () => {
           createClient: () => ({
             forgetCredential: () =>
               Promise.reject(
-                Object.assign(new Error('secret backend failure'), {
+                Object.assign(new Error('secret backend failure with bearer abc123'), {
                   code: 'secure_store_unavailable',
                   operation: 'delete',
                   retryable: false,
@@ -2141,6 +2163,7 @@ describe('opencoven CLI output', () => {
       }),
     );
 
+    expect(forgetFailure.exitCode).toBe(1);
     expect(JSON.parse(forgetFailure.stdout)).toEqual({
       command: 'cave forget',
       error: {
@@ -2152,6 +2175,38 @@ describe('opencoven CLI output', () => {
       ok: false,
       version: cliVersion,
     });
+    expect(forgetFailure.stdout).not.toContain('abc123');
+
+    const forgetIndeterminate = await runCli(
+      ['--json', 'cave', 'forget'],
+      runtime({
+        cave: {
+          createClient: () => ({
+            forgetCredential: () =>
+              Promise.reject(
+                Object.assign(new Error('newer bearer abc123 arrived mid-forget'), {
+                  code: 'credential_update_in_progress',
+                  retryable: true,
+                }),
+              ),
+          }),
+        },
+      }),
+    );
+
+    expect(forgetIndeterminate.exitCode).toBe(1);
+    expect(JSON.parse(forgetIndeterminate.stdout)).toEqual({
+      command: 'cave forget',
+      error: {
+        code: 'credential_update_in_progress',
+        message: 'A Cave credential update is still in progress.',
+        action: 'Retry once the local credential update finishes.',
+        retryable: true,
+      },
+      ok: false,
+      version: cliVersion,
+    });
+    expect(forgetIndeterminate.stdout).not.toContain('abc123');
   });
 
   test('fails Windows Cave commands before secret-store or client access when trust is unavailable', async () => {

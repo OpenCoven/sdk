@@ -101,7 +101,9 @@ console.log(credential.id, credential.scopes);
 `health()` accepts additive Cave API updates on supported major version `1` and
 rejects incompatible API or minimum-client versions. When the backing transport
 speaks Client v1, `health()` also returns `instanceId`, `pairingRequired`, the
-running `releaseVersion`, and the advertised operation inventory additively.
+running `releaseVersion`, and the advertised operation inventory additively,
+preserving explicit empty `capabilities`/`operations` arrays when the service
+advertises none.
 Use `isCaveClientError(error)` when errors may cross bundles or duplicate
 package installations; unlike `instanceof`, the guard is stable across module
 instances.
@@ -141,7 +143,11 @@ the client cannot prove whether the request was sent.
 Credential reads observe one coherent stored record per reference: the previous
 committed credential, the new committed credential, or no credential at all.
 Malformed or mismatched records fail closed and are invalidated locally before
-their bearer can be sent.
+their bearer can be sent. `forgetCredential()` returns `false` only when the
+client can confirm there is no stored credential left to delete; concurrent
+record replacement surfaces retryable `credential_update_in_progress`, and
+store read/delete failures stay explicit instead of being reported as a
+successful absence.
 
 Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,

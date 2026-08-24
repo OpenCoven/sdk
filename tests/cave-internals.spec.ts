@@ -299,6 +299,12 @@ describe('Cave credential binding helpers', () => {
     expect(serialized).not.toContain('"path"');
   });
 
+  test('returns false only when forget confirms no stored credential state remains', async () => {
+    const reference = createSecretStoreReference('chat.cave.absent');
+
+    await expect(forgetStoredCredential(storeWithState(), reference)).resolves.toBe(false);
+  });
+
   test('reports malformed, invalid, and mismatched atomic records conservatively', async () => {
     const reference = createSecretStoreReference('chat.cave.status');
     const validSerialized = await storedCredentialValue(reference.key);
@@ -628,7 +634,7 @@ describe('Cave credential binding helpers', () => {
     }
   });
 
-  test('swallows legacy cleanup failures and keeps no-current forget conservative', async () => {
+  test('surfaces legacy cleanup failures from forget while invalidate stays best effort', async () => {
     const reference = createSecretStoreReference('chat.cave.legacy.delete-failure');
     const deleted: string[] = [];
     const store: SecretStore = {
@@ -644,12 +650,18 @@ describe('Cave credential binding helpers', () => {
       },
     };
 
-    await expect(forgetStoredCredential(store, reference)).resolves.toBe(false);
+    await expect(forgetStoredCredential(store, reference)).rejects.toMatchObject({
+      code: 'secret_store_delete_failed',
+      retryable: false,
+    });
+    expect(deleted).toHaveLength(1);
+
+    deleted.length = 0;
     await expect(invalidateStoredCredential(store, reference)).resolves.toBeUndefined();
-    expect(deleted).toHaveLength(8);
+    expect(deleted).toHaveLength(4);
   });
 
-  test('swallows invalidate and forget read/delete failures conservatively', async () => {
+  test('keeps invalidate best effort but surfaces forget read/delete failures explicitly', async () => {
     const reference = createSecretStoreReference('chat.cave.failure-branches');
     const invalidateReadFailure: SecretStore = {
       async get() {
@@ -698,8 +710,14 @@ describe('Cave credential binding helpers', () => {
 
     await expect(invalidateStoredCredential(invalidateReadFailure, reference)).resolves.toBeUndefined();
     await expect(invalidateStoredCredential(invalidateDeleteFailure, reference)).resolves.toBeUndefined();
-    await expect(forgetStoredCredential(forgetReadFailure, reference)).resolves.toBe(false);
-    await expect(forgetStoredCredential(forgetDeleteFailure, reference)).resolves.toBe(false);
+    await expect(forgetStoredCredential(forgetReadFailure, reference)).rejects.toMatchObject({
+      code: 'secret_store_read_failed',
+      retryable: false,
+    });
+    await expect(forgetStoredCredential(forgetDeleteFailure, reference)).rejects.toMatchObject({
+      code: 'secret_store_delete_failed',
+      retryable: false,
+    });
     await expect(
       inspectStoredCredentialMaterial(
         storeWithState([[reference.key, 99]]),
@@ -840,7 +858,7 @@ describe('Cave credential binding helpers', () => {
     }
   });
 
-  test('returns false when forget loses exact-value ownership before delete', async () => {
+  test('fails retryably when forget loses exact-value ownership before delete to a newer record', async () => {
     const reference = createSecretStoreReference('chat.cave.forget.exact-match');
     const currentSerialized = await storedCredentialValue(reference.key, 'bearer-current');
     const newerSerialized = await storedCredentialValue(reference.key, 'bearer-newer');
@@ -863,7 +881,10 @@ describe('Cave credential binding helpers', () => {
       },
     };
 
-    await expect(forgetStoredCredential(store, reference)).resolves.toBe(false);
+    await expect(forgetStoredCredential(store, reference)).rejects.toMatchObject({
+      code: 'credential_update_in_progress',
+      retryable: true,
+    });
     await expect(loadBoundCredential(store, reference, discovered, (value) => value === 'bearer-newer'))
       .resolves.toEqual({
         status: 'ready',

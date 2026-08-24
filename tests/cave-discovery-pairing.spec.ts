@@ -86,14 +86,24 @@ function requestUrl(input: string | URL | Request): string {
   return input.url;
 }
 
-function caveHealth() {
+function caveHealth(
+  envelope: {
+    data: {
+      instanceId: string;
+      pairingRequired: true;
+      releaseVersion: string;
+    };
+    capabilities: readonly string[];
+    operations: readonly string[];
+  } = CURRENT_HEALTH_ENVELOPE,
+) {
   return {
     status: 'ok' as const,
-    instanceId: CURRENT_HEALTH_ENVELOPE.data.instanceId,
-    pairingRequired: CURRENT_HEALTH_ENVELOPE.data.pairingRequired,
-    releaseVersion: CURRENT_HEALTH_ENVELOPE.data.releaseVersion,
-    capabilities: [...CURRENT_HEALTH_ENVELOPE.capabilities],
-    operations: [...CURRENT_HEALTH_ENVELOPE.operations],
+    instanceId: envelope.data.instanceId,
+    pairingRequired: envelope.data.pairingRequired,
+    releaseVersion: envelope.data.releaseVersion,
+    capabilities: [...envelope.capabilities],
+    operations: [...envelope.operations],
   };
 }
 
@@ -2007,6 +2017,51 @@ describe('discovered Cave pairing helpers', () => {
             ...CURRENT_HEALTH_ENVELOPE,
             minimumClientVersion: 'not-semver',
           }),
+      ]),
+    );
+
+    await expect(client.health()).rejects.toMatchObject({
+      normalized: {
+        code: 'invalid_response',
+        operation: 'health',
+      },
+    });
+  });
+
+  test('preserves explicit empty discovered capability and operation arrays', async () => {
+    const emptyAdvertisedArrays = {
+      ...CURRENT_HEALTH_ENVELOPE,
+      capabilities: [],
+      operations: [],
+    };
+    const client = inlineDiscoveredClient(
+      queuedFetch([
+        () => jsonResponse(200, emptyAdvertisedArrays),
+      ]),
+    );
+
+    await expect(client.health()).resolves.toEqual(caveHealth(emptyAdvertisedArrays));
+  });
+
+  test.each([
+    {
+      label: 'duplicate capabilities',
+      envelope: {
+        ...CURRENT_HEALTH_ENVELOPE,
+        capabilities: ['health', 'health'],
+      },
+    },
+    {
+      label: 'duplicate operations',
+      envelope: {
+        ...CURRENT_HEALTH_ENVELOPE,
+        operations: ['health.read', 'health.read'],
+      },
+    },
+  ])('rejects discovered health envelopes with $label', async ({ envelope }) => {
+    const client = inlineDiscoveredClient(
+      queuedFetch([
+        () => jsonResponse(200, envelope),
       ]),
     );
 

@@ -246,20 +246,22 @@ function parseAdvertisedIds(value: unknown, label: string): string[] | undefined
     return undefined;
   }
 
-  if (!Array.isArray(value) || value.length === 0) {
-    throw transportError('invalid_response', `${label} must be a non-empty array.`);
+  if (!Array.isArray(value)) {
+    throw transportError('invalid_response', `${label} must be an array.`);
   }
 
   const parsed: string[] = [];
+  const seen = new Set<string>();
   for (const entry of value) {
     if (
       typeof entry !== 'string' ||
       entry.length > DECLARATION_ID_MAX_CHARACTERS ||
       !DECLARATION_ID_PATTERN.test(entry) ||
-      parsed.includes(entry)
+      seen.has(entry)
     ) {
       throw transportError('invalid_response', `${label} contained an invalid declaration id.`);
     }
+    seen.add(entry);
     parsed.push(entry);
   }
 

@@ -218,6 +218,28 @@ describe('health validation', () => {
     });
   });
 
+  test('preserves explicit empty Cave capability and operation arrays', async () => {
+    const emptyAdvertisedArrays = {
+      ...CURRENT_CAVE_HEALTH_RESPONSE,
+      capabilities: [],
+      operations: [],
+    };
+    const client = new CaveClient({
+      transport: {
+        health: () => Promise.resolve(emptyAdvertisedArrays),
+      },
+    });
+
+    await expect(client.health()).resolves.toEqual({
+      status: 'ok',
+      instanceId: '00000000-0000-4000-8000-000000000000',
+      pairingRequired: true,
+      releaseVersion: '0.3.9',
+      capabilities: [],
+      operations: [],
+    });
+  });
+
   test('rejects Cave health responses that require a newer client version', async () => {
     const client = new CaveClient({
       transport: {
@@ -297,6 +319,14 @@ describe('health validation', () => {
     { minimumClientVersion: 1, data: { status: 'ok' } },
     { minimumClientVersion: 'not-semver', data: { status: 'ok' } },
     { requestId: 1, data: { status: 'ok' } },
+    {
+      ...CURRENT_CAVE_HEALTH_RESPONSE,
+      capabilities: ['health', 'health'],
+    },
+    {
+      ...CURRENT_CAVE_HEALTH_RESPONSE,
+      operations: ['health.read', 'health.read'],
+    },
   ])('normalizes invalid Cave health responses: %j', async (invalidResponse) => {
     const client = new CaveClient({
       transport: {

@@ -519,6 +519,28 @@ describe('CLI output helpers', () => {
       },
     },
     {
+      label: 'secret store read failed',
+      error: { code: 'secret_store_read_failed' },
+      context: { system: 'cave', operation: 'forget' },
+      expected: {
+        code: 'secret_store_read_failed',
+        message: 'The stored Cave credential could not be read safely.',
+        retryable: false,
+        action: 'Enable the platform secure-store backend for this user session and retry.',
+      },
+    },
+    {
+      label: 'secret store delete failed',
+      error: { code: 'secret_store_delete_failed' },
+      context: { system: 'cave', operation: 'forget' },
+      expected: {
+        code: 'secret_store_delete_failed',
+        message: 'The stored Cave credential could not be deleted safely.',
+        retryable: false,
+        action: 'Enable the platform secure-store backend for this user session and retry.',
+      },
+    },
+    {
       label: 'reconcile required',
       error: { code: 'reconcile_required' },
       context: { system: 'cave', operation: 'status' },

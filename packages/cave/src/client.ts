@@ -206,20 +206,22 @@ function parseAdvertisedIds(value: unknown): string[] | undefined {
     return undefined;
   }
 
-  if (!Array.isArray(value) || value.length === 0) {
+  if (!Array.isArray(value)) {
     return undefined;
   }
 
   const parsed: string[] = [];
+  const seen = new Set<string>();
   for (const candidate of value) {
     if (
       typeof candidate !== 'string' ||
       candidate.length > ADVERTISED_ID_MAX_CHARACTERS ||
       !ADVERTISED_ID_PATTERN.test(candidate) ||
-      parsed.includes(candidate)
+      seen.has(candidate)
     ) {
       return undefined;
     }
+    seen.add(candidate);
     parsed.push(candidate);
   }
 

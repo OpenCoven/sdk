@@ -70,6 +70,11 @@ type PromiseResult<T> =
   | { status: 'fulfilled'; value: T }
   | { status: 'rejected'; error: unknown };
 
+type ForgetCurrentDeletionResult =
+  | { status: 'deleted' }
+  | { status: 'absent' }
+  | { status: 'present' };
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false;
@@ -98,6 +103,56 @@ function utf8ByteLength(value: string): number {
 function credentialBindingTimeoutError(): Error {
   return Object.assign(new Error('Cave credential binding timed out.'), {
     code: 'timeout',
+    retryable: true,
+  });
+}
+
+function errorCodeOf(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) {
+    return undefined;
+  }
+
+  try {
+    const code: unknown = Reflect.get(error, 'code');
+    return typeof code === 'string' && code.length > 0 ? code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function wrapForgetStoreFailure(
+  error: unknown,
+  code: 'secret_store_read_failed' | 'secret_store_delete_failed',
+): Error {
+  const existingCode = errorCodeOf(error);
+  if (
+    existingCode === 'timeout' ||
+    existingCode === 'aborted' ||
+    existingCode === 'secure_store_unavailable' ||
+    existingCode === 'secret_store_read_failed' ||
+    existingCode === 'secret_store_delete_failed' ||
+    existingCode === 'credential_update_in_progress'
+  ) {
+    return error as Error;
+  }
+
+  return Object.assign(
+    new Error(
+      code === 'secret_store_read_failed'
+        ? 'The stored Cave credential could not be read safely.'
+        : 'The stored Cave credential could not be deleted safely.',
+      { cause: error },
+    ),
+    {
+      code,
+      retryable: false,
+    },
+  );
+}
+
+function credentialUpdateInProgressError(): Error {
+  return Object.assign(new Error('A Cave credential update is still in progress.'), {
+    code: 'credential_update_in_progress',
     retryable: true,
   });
 }
@@ -454,6 +509,18 @@ async function readStoreValue(
   return await awaitStoreCall(store.get(key) as Promise<unknown>, options);
 }
 
+async function readStoreValueForForget(
+  store: SecretStore,
+  key: string,
+  options: CredentialBindingMutationOptions = {},
+): Promise<unknown> {
+  try {
+    return await readStoreValue(store, key, options);
+  } catch (error) {
+    throw wrapForgetStoreFailure(error, 'secret_store_read_failed');
+  }
+}
+
 async function deleteCurrentValueIfExact(
   store: SecretStore,
   reference: SecretStoreReference,
@@ -470,6 +537,34 @@ async function deleteCurrentValueIfExact(
   });
 }
 
+async function confirmForgetDeleteCurrentValueIfExact(
+  store: SecretStore,
+  reference: SecretStoreReference,
+  expected: unknown,
+  options: CredentialBindingMutationOptions = {},
+): Promise<ForgetCurrentDeletionResult> {
+  return await serializeConcreteMutation(store, reference.key, async () => {
+    const current = await readStoreValueForForget(store, reference.key, options);
+    if (!Object.is(current, expected)) {
+      return { status: current === undefined ? 'absent' : 'present' };
+    }
+
+    let deleted: boolean;
+    try {
+      deleted = await awaitStoreCall(store.delete(reference.key), options);
+    } catch (error) {
+      throw wrapForgetStoreFailure(error, 'secret_store_delete_failed');
+    }
+
+    if (deleted) {
+      return { status: 'deleted' };
+    }
+
+    const currentAfterDelete = await readStoreValueForForget(store, reference.key, options);
+    return { status: currentAfterDelete === undefined ? 'absent' : 'present' };
+  });
+}
+
 async function clearLegacyCredentialState(
   store: SecretStore,
   reference: SecretStoreReference,
@@ -482,6 +577,24 @@ async function clearLegacyCredentialState(
       deletedAny = (await awaitStoreCall(queuedStoreDelete(store, key), options)) || deletedAny;
     } catch {
       // Best effort only.
+    }
+  }
+
+  return deletedAny;
+}
+
+async function forgetLegacyCredentialState(
+  store: SecretStore,
+  reference: SecretStoreReference,
+  options: CredentialBindingMutationOptions = {},
+): Promise<boolean> {
+  let deletedAny = false;
+
+  for (const key of legacyCredentialKeys(reference)) {
+    try {
+      deletedAny = (await awaitStoreCall(queuedStoreDelete(store, key), options)) || deletedAny;
+    } catch (error) {
+      throw wrapForgetStoreFailure(error, 'secret_store_delete_failed');
     }
   }
 
@@ -655,25 +768,23 @@ export async function forgetStoredCredential(
   options: CredentialBindingMutationOptions = {},
 ): Promise<boolean> {
   return await serializeReferenceMutation(store, reference, async () => {
-    let observed: unknown;
+    const observed = await readStoreValueForForget(store, reference.key, options);
+    let current: ForgetCurrentDeletionResult = { status: 'absent' };
 
-    try {
-      observed = await readStoreValue(store, reference.key, options);
-    } catch {
-      return false;
-    }
-
-    let deletedCurrent = false;
     if (observed !== undefined) {
-      try {
-        deletedCurrent = await deleteCurrentValueIfExact(store, reference, observed, options);
-      } catch {
-        deletedCurrent = false;
+      current = await confirmForgetDeleteCurrentValueIfExact(
+        store,
+        reference,
+        observed,
+        options,
+      );
+      if (current.status === 'present') {
+        throw credentialUpdateInProgressError();
       }
     }
 
-    const deletedLegacy = await clearLegacyCredentialState(store, reference, options);
-    return deletedCurrent || (observed === undefined && deletedLegacy);
+    const deletedLegacy = await forgetLegacyCredentialState(store, reference, options);
+    return current.status === 'deleted' || deletedLegacy;
   });
 }
 

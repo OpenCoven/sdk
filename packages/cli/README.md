@@ -46,7 +46,10 @@ opencoven coven health
   committed credential, or no credential at all; malformed records fail closed
   before any bearer is sent.
 - `opencoven cave forget [--json]` deletes the stored Cave credential and its
-  authority metadata; missing credentials are a successful no-op.
+  authority metadata; missing credentials are a successful no-op, but
+  concurrent credential replacement or secure-store read/delete failures stay
+  explicit so `deleted: true|false` is emitted only when the result is
+  confirmed.
 - On Windows, `discover`, `doctor`, `cave pair`, `cave status`, and
   `cave forget` fail closed with `platform_security_unavailable` before Cave
   discovery, secret-store access, or network I/O unless a reviewed native Cave
@@ -94,6 +97,7 @@ explicit platform-security proof. The CLI never retries automatically. Retry
 transient `timeout`, `not_found`, `command_failed`, `connect_failure`,
 `service_unavailable`, `rate_limited`
 failures after repairing or starting the local runtime as needed; do not retry `secure_store_unavailable`,
+`secret_store_read_failed`, `secret_store_delete_failed`,
 `platform_security_unavailable`, `owner_mismatch`, `unsafe_endpoint`,
 `reconcile_required`, or `incompatible_version` until the underlying
 configuration, ownership, authority binding, or version mismatch has been

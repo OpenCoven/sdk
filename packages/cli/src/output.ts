@@ -126,6 +126,8 @@ function inferredRetryable(code: string): boolean | undefined {
     case 'platform_security_unavailable':
     case 'pairing_denied':
     case 'pairing_expired':
+    case 'secret_store_read_failed':
+    case 'secret_store_delete_failed':
     case 'owner_mismatch':
     case 'unsafe_endpoint':
     case 'secret_store_rollback_failed':
@@ -213,6 +215,10 @@ function messageForCode(code: string, context: CliErrorContext): string {
       return 'The local Cave service requires a newer OpenCoven CLI version.';
     case 'secure_store_unavailable':
       return 'Native secure credential storage is unavailable.';
+    case 'secret_store_read_failed':
+      return 'The stored Cave credential could not be read safely.';
+    case 'secret_store_delete_failed':
+      return 'The stored Cave credential could not be deleted safely.';
     case 'secret_store_write_failed':
       return 'The paired Cave credential could not be saved securely.';
     case 'secret_store_rollback_failed':
@@ -279,6 +285,8 @@ function actionForCode(code: string, context: CliErrorContext): string | undefin
     case 'incompatible_version':
       return 'Upgrade the OpenCoven CLI to the minimum reviewed version and retry.';
     case 'secure_store_unavailable':
+    case 'secret_store_read_failed':
+    case 'secret_store_delete_failed':
       return secureStoreAction();
     case 'secret_store_write_failed':
       return secureStoreAction();
