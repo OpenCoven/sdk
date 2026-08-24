@@ -1,0 +1,42 @@
+name: Bug report
+description: Report reproducible SDK behavior that appears incorrect.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, private endpoints, or raw sensitive error causes.
+  - type: input
+    id: package
+    attributes:
+      label: Package and version
+      placeholder: "@opencoven/sdk@0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide the smallest safe reproduction and exact commands.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime
+      placeholder: Node 24.18.1, pnpm 10.34.0, macOS 15
+    validations:
+      required: true

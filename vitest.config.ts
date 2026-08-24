@@ -30,6 +30,24 @@ export default defineConfig({
         functions: 90,
         lines: 90,
         statements: 90,
+        'packages/coven/src/discovery.ts': {
+          branches: 88,
+          functions: 98,
+          lines: 91,
+          statements: 91,
+        },
+        'packages/coven/src/transport-unix.ts': {
+          branches: 78,
+          functions: 98,
+          lines: 86,
+          statements: 86,
+        },
+        'packages/coven/src/transport-windows.ts': {
+          branches: 94,
+          functions: 90,
+          lines: 91,
+          statements: 91,
+        },
       },
     },
     projects: [

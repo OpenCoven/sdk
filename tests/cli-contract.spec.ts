@@ -62,6 +62,9 @@ const caveDiscovery = {
 } as const;
 const caveHealth = {
   status: 'ok',
+  apiVersion: '1.0',
+  minimumClientVersion: '0.1.0',
+  instanceId: 'cli-contract-cave',
   pairingRequired: true,
   releaseVersion: '0.1.0',
   capabilities: ['chat', 'pairing'],

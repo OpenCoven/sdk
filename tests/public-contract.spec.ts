@@ -115,7 +115,18 @@ describe('public package entry points', () => {
   test('adds pairing and credential helpers without removing existing Cave APIs', () => {
     const client = new cave.CaveClient({
       transport: {
-        health: () => Promise.resolve({ data: { status: 'ok' as const } }),
+        health: () =>
+          Promise.resolve({
+            apiVersion: '1.0',
+            minimumClientVersion: '0.1.0',
+            capabilities: ['health'],
+            operations: ['health.read'],
+            data: {
+              instanceId: 'public-contract-cave',
+              pairingRequired: true,
+              releaseVersion: '0.1.0',
+            },
+          }),
       },
       credentials: {
         store: core.createMemorySecretStore(),

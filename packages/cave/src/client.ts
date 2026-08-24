@@ -89,8 +89,8 @@ export interface CaveFamiliarAnalyticsOptions extends OperationOptions {
 }
 
 interface ParsedHealthResponse {
-  apiVersion?: string | undefined;
-  minimumClientVersion?: string | undefined;
+  apiVersion: string;
+  minimumClientVersion: string;
   health: CaveHealth;
 }
 
@@ -233,11 +233,11 @@ function parseHealthResponse(response: unknown): ParsedHealthResponse | undefine
     return undefined;
   }
 
-  if (response.apiVersion !== undefined && typeof response.apiVersion !== 'string') {
+  if (typeof response.apiVersion !== 'string') {
     return undefined;
   }
 
-  if (response.minimumClientVersion !== undefined && typeof response.minimumClientVersion !== 'string') {
+  if (typeof response.minimumClientVersion !== 'string') {
     return undefined;
   }
 
@@ -246,12 +246,12 @@ function parseHealthResponse(response: unknown): ParsedHealthResponse | undefine
   }
 
   const capabilities = parseAdvertisedIds(response.capabilities);
-  if (response.capabilities !== undefined && capabilities === undefined) {
+  if (capabilities === undefined) {
     return undefined;
   }
 
   const operations = parseAdvertisedIds(response.operations);
-  if (response.operations !== undefined && operations === undefined) {
+  if (operations === undefined) {
     return undefined;
   }
 
@@ -259,24 +259,10 @@ function parseHealthResponse(response: unknown): ParsedHealthResponse | undefine
     return undefined;
   }
 
-  if (response.data.status === 'ok') {
-    return {
-      ...(response.apiVersion === undefined ? {} : { apiVersion: response.apiVersion }),
-      ...(response.minimumClientVersion === undefined
-        ? {}
-        : { minimumClientVersion: response.minimumClientVersion }),
-      health: {
-        status: 'ok',
-        ...(capabilities === undefined ? {} : { capabilities }),
-        ...(operations === undefined ? {} : { operations }),
-      },
-    };
-  }
-
   if (
     typeof response.data.instanceId !== 'string' ||
     response.data.instanceId.length === 0 ||
-    response.data.pairingRequired !== true ||
+    typeof response.data.pairingRequired !== 'boolean' ||
     typeof response.data.releaseVersion !== 'string' ||
     response.data.releaseVersion.length === 0
   ) {
@@ -284,18 +270,18 @@ function parseHealthResponse(response: unknown): ParsedHealthResponse | undefine
   }
 
   return {
-    ...(response.apiVersion === undefined ? {} : { apiVersion: response.apiVersion }),
-    ...(response.minimumClientVersion === undefined
-      ? {}
-      : { minimumClientVersion: response.minimumClientVersion }),
-    health: {
+    apiVersion: response.apiVersion,
+    minimumClientVersion: response.minimumClientVersion,
+    health: Object.freeze({
       status: 'ok',
+      apiVersion: response.apiVersion,
+      minimumClientVersion: response.minimumClientVersion,
+      capabilities: Object.freeze(capabilities),
+      operations: Object.freeze(operations),
       instanceId: response.data.instanceId,
-      pairingRequired: true,
+      pairingRequired: response.data.pairingRequired,
       releaseVersion: response.data.releaseVersion,
-      ...(capabilities === undefined ? {} : { capabilities }),
-      ...(operations === undefined ? {} : { operations }),
-    },
+    }),
   };
 }
 
@@ -990,49 +976,53 @@ export class CaveClient {
   async #runHealth(context: OperationContext): Promise<CaveHealth> {
     this.#ensureActive(context, 'health');
     const response: unknown = await this.#transport.health(context);
+
+    if (isObject(response)) {
+      const refusal = refusalOf(response, 'health');
+      if (refusal !== null) {
+        throw refusal;
+      }
+    }
+
     const parsed = parseHealthResponse(response);
 
     if (parsed === undefined) {
       throw invalidHealthResponse();
     }
 
-    if (parsed.minimumClientVersion !== undefined) {
-      let compatibility: CompatibilityAssessment;
+    let compatibility: CompatibilityAssessment;
 
-      try {
-        compatibility = assessCompatibility(parsed.minimumClientVersion, CAVE_CLIENT_VERSION);
-      } catch {
-        throw invalidHealthResponse();
-      }
-
-      if (!compatibility.compatible) {
-        throw new CaveClientError(
-          normalizeCaveError(
-            {
-              code: 'incompatible_version',
-            },
-            'health',
-          ),
-          compatibility,
-        );
-      }
+    try {
+      compatibility = assessCompatibility(parsed.minimumClientVersion, CAVE_CLIENT_VERSION);
+    } catch {
+      throw invalidHealthResponse();
     }
 
-    if (parsed.apiVersion !== undefined) {
-      if (!CAVE_API_VERSION_PATTERN.test(parsed.apiVersion)) {
-        throw invalidHealthResponse();
-      }
+    if (!compatibility.compatible) {
+      throw new CaveClientError(
+        normalizeCaveError(
+          {
+            code: 'incompatible_version',
+          },
+          'health',
+        ),
+        compatibility,
+      );
+    }
 
-      if (parsed.apiVersion.split('.')[0] !== SUPPORTED_CAVE_API_MAJOR) {
-        throw new CaveClientError(
-          normalizeCaveError(
-            {
-              code: 'incompatible_version',
-            },
-            'health',
-          ),
-        );
-      }
+    if (!CAVE_API_VERSION_PATTERN.test(parsed.apiVersion)) {
+      throw invalidHealthResponse();
+    }
+
+    if (parsed.apiVersion.split('.')[0] !== SUPPORTED_CAVE_API_MAJOR) {
+      throw new CaveClientError(
+        normalizeCaveError(
+          {
+            code: 'incompatible_version',
+          },
+          'health',
+        ),
+      );
     }
 
     return parsed.health;

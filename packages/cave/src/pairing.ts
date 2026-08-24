@@ -307,17 +307,17 @@ function parseEnvelopeBase(value: unknown): EnvelopeBase {
 
 function parseHealthData(value: unknown): CaveHealthData {
   const data = expectObject(value, 'health.data');
-  if (data.status === 'ok') {
-    return { status: 'ok' };
-  }
 
   return {
     instanceId: expectString(data.instanceId, 'health.data.instanceId'),
     pairingRequired:
-      data.pairingRequired === true
-        ? true
+      typeof data.pairingRequired === 'boolean'
+        ? data.pairingRequired
         : (() => {
-            throw transportError('invalid_response', 'health.data.pairingRequired must be true.');
+            throw transportError(
+              'invalid_response',
+              'health.data.pairingRequired must be a boolean.',
+            );
           })(),
     releaseVersion: expectString(data.releaseVersion, 'health.data.releaseVersion'),
   };
@@ -326,13 +326,19 @@ function parseHealthData(value: unknown): CaveHealthData {
 function parseHealthResponse(value: unknown): CaveHealthResponse {
   const base = parseEnvelopeBase(value);
   const envelope = expectObject(value, 'health response');
+  if (base.capabilities === undefined || base.operations === undefined) {
+    throw transportError(
+      'invalid_response',
+      'health response must declare capabilities and operations.',
+    );
+  }
 
   return {
     apiVersion: base.apiVersion,
     minimumClientVersion: base.minimumClientVersion,
     ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
-    ...(base.capabilities === undefined ? {} : { capabilities: [...base.capabilities] }),
-    ...(base.operations === undefined ? {} : { operations: [...base.operations] }),
+    capabilities: [...base.capabilities],
+    operations: [...base.operations],
     data: parseHealthData(envelope.data),
   };
 }

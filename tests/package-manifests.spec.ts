@@ -82,6 +82,9 @@ describe('public package manifests', () => {
     expect(rootManifest.devDependencies?.['@vitest/coverage-v8']).toBe(
       rootManifest.devDependencies?.vitest,
     );
+    expect(vitestConfig).toContain("'packages/coven/src/discovery.ts':");
+    expect(vitestConfig).toContain("'packages/coven/src/transport-unix.ts':");
+    expect(vitestConfig).toContain("'packages/coven/src/transport-windows.ts':");
   });
 
   test('keeps the typings on the runtime this ships for', () => {

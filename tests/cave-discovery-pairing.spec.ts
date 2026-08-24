@@ -88,6 +88,8 @@ function requestUrl(input: string | URL | Request): string {
 
 function caveHealth(
   envelope: {
+    apiVersion: string;
+    minimumClientVersion: string;
     data: {
       instanceId: string;
       pairingRequired: true;
@@ -99,6 +101,8 @@ function caveHealth(
 ) {
   return {
     status: 'ok' as const,
+    apiVersion: envelope.apiVersion,
+    minimumClientVersion: envelope.minimumClientVersion,
     instanceId: envelope.data.instanceId,
     pairingRequired: envelope.data.pairingRequired,
     releaseVersion: envelope.data.releaseVersion,

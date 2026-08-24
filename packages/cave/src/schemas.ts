@@ -5,29 +5,27 @@ import type {
 
 export interface CaveHealth {
   status: 'ok';
-  instanceId?: string;
-  pairingRequired?: true;
-  releaseVersion?: string;
-  capabilities?: readonly string[];
-  operations?: readonly string[];
+  apiVersion: string;
+  minimumClientVersion: string;
+  capabilities: readonly string[];
+  operations: readonly string[];
+  instanceId: string;
+  pairingRequired: boolean;
+  releaseVersion: string;
 }
 
-export type CaveHealthData =
-  | {
-      status: 'ok';
-    }
-  | {
-      instanceId: string;
-      pairingRequired: true;
-      releaseVersion: string;
-    };
+export interface CaveHealthData {
+  instanceId: string;
+  pairingRequired: boolean;
+  releaseVersion: string;
+}
 
 export interface CaveHealthResponse {
-  apiVersion?: string;
-  minimumClientVersion?: string;
+  apiVersion: string;
+  minimumClientVersion: string;
   requestId?: string;
-  capabilities?: readonly string[];
-  operations?: readonly string[];
+  capabilities: readonly string[];
+  operations: readonly string[];
   data: CaveHealthData;
 }
 

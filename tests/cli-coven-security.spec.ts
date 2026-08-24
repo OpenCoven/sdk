@@ -34,6 +34,9 @@ const caveDiscovery = {
 
 const caveHealth = {
   status: 'ok',
+  apiVersion: '1.0',
+  minimumClientVersion: '0.1.0',
+  instanceId: 'security-test-cave',
   pairingRequired: true,
   releaseVersion: '0.1.0',
   capabilities: ['chat', 'pairing'],

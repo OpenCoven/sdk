@@ -37,7 +37,19 @@ export type {
   DiscoverCaveEndpointOptions,
 } from './discovery.js';
 export type { CaveDiscoveredClientOptions } from './pairing.js';
-export type { CaveContractFixture } from './contract-fixture.js';
+export type {
+  CaveContractCursor,
+  CaveContractEnvelopeMetadata,
+  CaveContractFixture,
+  CaveContractHealthData,
+  CaveContractIdentity,
+  CaveContractOperation,
+  CaveContractPairingCreatedData,
+  CaveContractPairingExchangeData,
+  CaveContractPairingStatusData,
+  CaveContractPublicRoute,
+  CaveContractRevision,
+} from './contract-fixture.js';
 export {
   CAVE_ANALYTICS_WINDOWS,
   CAVE_FAMILIAR_PROPERTIES,

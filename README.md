@@ -2,13 +2,14 @@
 
 > [!WARNING]
 > **Experimental — not ready for public consumption.** This SDK is under active
-> development, has not been security audited, and may change without notice. Do
-> not use it for production workloads or with production credentials.
+> development, has not completed its first-release security review, and may
+> change without notice. Do not use it for production workloads or with
+> production credentials.
 
-This workspace provides the experimental Phase 1b public OpenCoven SDK
-workspace: runtime-only Cave discovery and pairing helpers, explicit Coven
-daemon health adapters, coordinated SDK health reporting, and the
-`opencoven` developer CLI.
+This workspace contains the experimental TypeScript SDK and developer CLI for
+OpenCoven Phase 1b clients, transports, compatibility contracts, runtime-only Cave
+discovery and pairing, explicit Coven daemon health, coordinated health
+reporting, and shared protocol infrastructure.
 
 ## Release status
 
@@ -20,32 +21,56 @@ gates only as part of an intentional release process. This phase documents and
 verifies shipped contracts only; it does not publish packages or relax release
 gates.
 
+- [Roadmap](docs/ROADMAP.md)
+- [0.1 read-only release design](docs/superpowers/specs/2026-08-22-sdk-0.1-read-only-release-design.md)
+- [0.1 dependency-ordered delivery program](docs/superpowers/plans/2026-08-22-sdk-0.1-delivery-program.md)
+- [GitHub delivery program](https://github.com/OpenCoven/sdk/issues/31)
 - [Support policy](SUPPORT.md)
 - [Security policy](SECURITY.md)
 - [Release process](RELEASING.md)
+- [Contributing](CONTRIBUTING.md)
 
-| Path | Package | Purpose |
+## Current delivery program
+
+The first public release is intentionally scoped as a secure **read-only**
+protocol release. A packed consumer must be able to discover Cave and Coven,
+negotiate compatibility, pair through user consent, retain credentials in
+native custody, validate live IPC identity, and read canonical state.
+
+Message sending, streaming, attachments, task handoffs, GitHub mutations, and
+offline mutation queues are explicitly deferred to separately reviewed
+post-release authority milestones. The roadmap and issue program above are the
+current plan of record; older Phase 0 plans remain historical evidence rather
+than the active release checklist.
+
+| Path | Package | Current purpose |
 | --- | --- | --- |
-| `packages/core` | `@opencoven/sdk-core` | Transport-neutral errors, compatibility types, and in-memory secrets |
-| `packages/cave` | `@opencoven/cave-client` | Constrained Cave transport plus runtime discovery/pairing helpers |
+| `packages/core` | `@opencoven/sdk-core` | Transport-neutral errors, compatibility/discovery contracts, operation controls, and in-memory secret abstractions |
+| `packages/cave` | `@opencoven/cave-client` | Constrained Cave client, runtime discovery/pairing, familiar operations, and reviewed contract fixtures |
 | `packages/coven` | `@opencoven/coven-client` | Constrained Coven discovery and health with explicit native transport-security providers |
-| `packages/sdk` | `@opencoven/sdk` | Optional Cave/Coven coordination over already-configured clients |
+| `packages/sdk` | `@opencoven/sdk` | Optional Cave/Coven coordination without merging source-system identity or errors |
 | `packages/cli` | `@opencoven/dev-cli` | Sole owner of the `opencoven` binary plus native secure storage and fail-closed Coven checks |
+
+## Runtime ownership and import purity
 
 The SDK performs no discovery, credential lookup, network, filesystem, or
 daemon I/O at import time. Cave pairing/discovery is runtime-only and opt-in;
 low-level Cave and Coven models, transports, and normalized errors remain
-distinct.
+distinct. Coven discovery and owner-local health transport factories also
+perform I/O only when called and require reviewed platform-security providers
+where Node cannot prove connected-peer or pipe identity. The coordination
+package composes both systems without pretending they share one endpoint,
+credential, or failure model.
 
 ## Choosing a package
 
 | Need | Package |
 | --- | --- |
-| Shared errors, compatibility, or in-memory secrets | `@opencoven/sdk-core` |
-| Cave health, runtime pairing/discovery, and reviewed Cave contract fixtures | `@opencoven/cave-client` |
-| Coven daemon health | `@opencoven/coven-client` |
+| Shared errors, compatibility/discovery contracts, operation controls, or in-memory secrets | `@opencoven/sdk-core` |
+| Cave health, runtime pairing/discovery, familiar operations, or reviewed contract fixtures | `@opencoven/cave-client` |
+| Explicit Coven discovery and owner-local daemon health | `@opencoven/coven-client` |
 | Optional Cave/Coven coordination | `@opencoven/sdk` |
-| Deterministic developer CLI output | `@opencoven/dev-cli` |
+| Runtime diagnostics, discovery, pairing, credential status, and health commands | `@opencoven/dev-cli` |
 
 ## Developer CLI contract
 
@@ -68,14 +93,14 @@ platform-security adapter; the default Node CLI reports
 `platform_security_unavailable` rather than fabricating peer ownership proof.
 On Windows, the default CLI also fails Cave `discover`, `doctor`, `pair`,
 `status`, and `forget` closed with `platform_security_unavailable` until a
-reviewed validator is injected. During an active credential commit, `cave status`
-surfaces a retryable `credential_update_in_progress`/`disconnected` result
-instead of clearing the pending credential.
 reviewed native path ownership/ACL validator is injected through
 `CliRuntime.cave.discovery.dependencies.windowsPathTrust`; the CLI never
 trusts discovery metadata, file ownership metadata alone, or shell output.
+During an active credential commit, `cave status` surfaces a retryable
+`credential_update_in_progress`/`disconnected` result instead of clearing the
+pending credential.
 
-## Caller-supplied transports
+## Caller-supplied Cave transports
 
 Low-level clients still accept caller-supplied transports for the exact
 operations you need:
@@ -93,8 +118,9 @@ const cave = new CaveClient({
 });
 ```
 
-The SDK does not own the URL, authentication, retry, or fetch policy. Callers
-may provide cancellation and an optional SDK-enforced timeout:
+The Cave client does not own the URL, authentication, retry, or fetch policy in
+this current surface. Callers may provide cancellation and an optional
+SDK-enforced timeout:
 
 ```ts
 const controller = new AbortController();
@@ -170,6 +196,41 @@ non-secret `authorityBinding` metadata from `pairingExchange()`. The public
 binding carries the endpoint URL, an opaque record identity, device/inode, and
 freshness, without exposing the canonical discovery-record path directly.
 
+## Explicit Coven discovery
+
+`@opencoven/coven-client` may discover the owner-local daemon through an
+explicit runtime call. Importing the package remains pure. Discovery through a
+CLI fallback requires a trusted executable resolver; Unix and Windows health
+transports require the platform-appropriate connected-peer or pipe-ownership
+provider.
+
+```ts
+import {
+  createDiscoveredCovenClient,
+  type CovenUnixPeerIdentityAdapter,
+} from '@opencoven/coven-client';
+
+declare const nativeUnixPeerIdentity: CovenUnixPeerIdentityAdapter;
+declare const trustedCovenPath: string;
+
+const coven = await createDiscoveredCovenClient({
+  discovery: {
+    dependencies: {
+      resolveExecutable: () => trustedCovenPath,
+    },
+  },
+  transportSecurity: {
+    platform: 'unix',
+    peerIdentity: nativeUnixPeerIdentity,
+  },
+});
+
+await coven.health({ timeoutMs: 5_000 });
+```
+The package deliberately provides no pathname-only, shell, `lsof`, PowerShell,
+private-Node-internals, or permissive trust fallback.
+private-Node-internals, or permissive trust fallback.
+
 ## Coordinated health
 
 | API | Behavior |
@@ -197,8 +258,8 @@ try {
 ```
 
 Do not serialize or log `cause` blindly: it may contain caller or transport
-data. Observer events exclude causes, stacks, transport messages, and response
-payloads.
+data. Observer events exclude causes, stacks, transport messages, response
+payloads, and authority secrets.
 
 ## Runtime control errors
 
@@ -217,19 +278,28 @@ secure-store, and platform-security errors require repair before rerunning.
 
 ## Production checklist
 
-- Configure an explicit timeout for every remote operation.
+- Do not adopt these unpublished experimental packages in production yet.
+- Configure an explicit timeout for every remote or IPC operation.
 - Define which application component owns each cancellation signal.
 - Implement both observer callbacks and route observer failures to a safe sink.
 - Supply application-managed persistent credential storage; SDK memory stores
   are non-persistent.
+- Supply reviewed native IPC identity providers where required.
 - Treat error causes as sensitive and log only normalized or event metadata.
-- Complete the separate release-readiness gate before publishing or production
-  adoption; these packages remain private and experimental.
+- Complete the dependency-ordered 0.1 program, real-authority conformance,
+  security disposition, and release validation before production adoption.
 
 Reviewed Cave and Coven fixture bytes are committed under their client
-packages and verified locally. Refresh them with
+packages and verified locally. The Cave fixture provenance manifest pins
+`OpenCoven/coven-cave` commit
+`e2b5b9d10d8498895ba9ff39ce6185f4ed873b57`, producer paths, and SHA-256.
+Refresh fixture bytes with
 `pnpm sync:contracts -- --cave-root <path> --coven-root <path>` before running
-the contract verifier. No authority source tree is imported at runtime.
+the offline contract verifier. Explicitly prove a checkout is at the pinned
+producer commit and byte-identical with
+`pnpm verify:cave-authority -- --cave-root <path>`. No authority source tree is
+imported at runtime, and packed-package verification compares all three
+vendored Cave contract artifacts byte for byte.
 
 ## Validation
 
@@ -250,10 +320,29 @@ pnpm lint
 
 `pack-public-packages.mjs` is the reusable tarball producer for cross-repository
 consumers such as the Chat packed-package canary. It prints JSON containing a
-process-created temp `artifactRoot` plus the packed tarball paths for callers
-that intentionally keep those artifacts.
+process-created temporary `artifactRoot` plus the packed tarball paths for
+callers that intentionally retain those artifacts.
 
-Runnable deterministic examples are documented in [`examples/README.md`](examples/README.md).
+Runnable deterministic examples are documented in
+[`examples/README.md`](examples/README.md).
+
+## Merged branch cleanup
+
+GitHub automatically deletes future merged PR branches in this repository. For
+existing branches or attached local worktrees, run the guarded cleanup from a
+different clean checkout:
+
+```bash
+pnpm cleanup:merged -- --branch <branch> --pr <number> --dry-run
+pnpm cleanup:merged -- --branch <branch> --pr <number> --delete-remote
+```
+
+The command verifies the exact merged PR and recorded head commit, confirms its
+merge commit is on the remote base branch, refuses dirty or locked worktrees and
+changed remote branches, and then removes only the named worktree and branch.
+This supports squash merges even when the base advanced before merge. Local and
+remote ref deletion use expected commit IDs to reject concurrent changes.
+Remote deletion is opt-in.
 
 ## Local security checks
 

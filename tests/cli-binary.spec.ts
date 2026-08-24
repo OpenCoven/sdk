@@ -25,7 +25,17 @@ describe('opencoven CLI binary defaults', () => {
       {
         cave: {
           createClient: ({ credentials }: { credentials: { reference: { key: string }; store: object } }) => ({
-            health: () => Promise.resolve({ status: 'ok' as const }),
+            health: () =>
+              Promise.resolve({
+                status: 'ok' as const,
+                apiVersion: '1.0',
+                minimumClientVersion: '0.1.0',
+                capabilities: ['health'],
+                operations: ['health.read'],
+                instanceId: 'production-cave',
+                pairingRequired: true,
+                releaseVersion: '0.1.0',
+              }),
             credentialStatus: () => Promise.resolve({ status: 'missing' as const }),
             forgetCredential: () => Promise.resolve(false),
             createPairing: () => {

@@ -56,8 +56,14 @@ const transportBacked = new CaveClient({
   transport: {
     health: async (context) => ({
       apiVersion: '1.0',
+      capabilities: ['health', 'pairing'],
       minimumClientVersion: CAVE_CLIENT_VERSION,
-      data: { status: 'ok' },
+      operations: ['health.read', 'pairing.create'],
+      data: {
+        instanceId: 'cave-instance-id',
+        pairingRequired: true,
+        releaseVersion: '0.3.9',
+      },
     }),
   },
 });
@@ -99,14 +105,17 @@ console.log(credential.id, credential.scopes);
 ```
 
 `health()` accepts additive Cave API updates on supported major version `1` and
-rejects incompatible API or minimum-client versions. When the backing transport
-speaks Client v1, `health()` also returns `instanceId`, `pairingRequired`, the
-running `releaseVersion`, and the advertised operation inventory additively,
-preserving explicit empty `capabilities`/`operations` arrays when the service
-advertises none.
-Use `isCaveClientError(error)` when errors may cross bundles or duplicate
-package installations; unlike `instanceof`, the guard is stable across module
-instances.
+rejects incompatible API or minimum-client versions. It returns normalized
+`status: "ok"` together with the authority's API and minimum-client versions,
+capability and operation declarations, instance ID, release version, and
+pairing requirement. Unknown additive fields are ignored safely and unknown
+declarations remain available. Missing or malformed required fields fail
+closed, while explicit empty `capabilities`/`operations` arrays are preserved.
+Proxy `{ ok: false, reason, error }` responses are normalized as failures and
+cannot be mistaken for Client v1 envelopes. No request is made until `health()`
+is called. Use `isCaveClientError(error)` when errors may cross bundles or
+duplicate package installations; unlike `instanceof`, the guard is stable
+across module instances.
 
 Constructor operation defaults are overridden by per-call values. There is no
 default timeout. The transport context is optional for source compatibility
@@ -152,6 +161,14 @@ successful absence.
 Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,
 `verifyCaveContractFixtureDigest`, and `digestCaveContractFixture`.
+The vendored fixture is byte-identical to `OpenCoven/coven-cave` commit
+`e2b5b9d10d8498895ba9ff39ce6185f4ed873b57`; its source paths and SHA-256 are
+recorded in `fixtures/contract-fixture.provenance.json`.
+
+Migration note: transports that returned `{ data: { status: "ok" } }` must now
+return the complete Client v1 health envelope shown above. Consumers may keep
+checking `health.status`, and can additionally gate pairing or feature use from
+the normalized metadata.
 
 ## Compatibility, deadlines, and retry guidance
 
