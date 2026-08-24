@@ -4,12 +4,15 @@ import {
   isOperationAbortedError,
   isOperationTimeoutError,
   normalizeError,
+  normalizePageOptions,
+  OperationConfigurationError,
   runOperation,
   type CompatibilityAssessment,
   type NormalizedError,
   type OperationContext,
   type OperationDefaults,
   type OperationOptions,
+  type Page,
   type SecretStore,
   type SecretStoreReference,
 } from '@opencoven/sdk-core';
@@ -45,11 +48,28 @@ import type {
   CaveFamiliarContract,
   CaveFamiliarWire,
 } from './schemas.js';
-import { CAVE_PAIRING_SCOPES } from './schemas.js';
+import {
+  CAVE_PAIRING_SCOPES,
+  CaveCanonicalSchemaError,
+  parseCanonicalFamiliarsEnvelope,
+  parseConversationEnvelope,
+  parseConversationsEnvelope,
+  parseMessagesEnvelope,
+  parseProjectsEnvelope,
+} from './schemas.js';
 import type {
   CaveCredentialPersistingTransport,
   CaveTransport,
 } from './transport.js';
+import type {
+  CaveCanonicalFamiliar,
+  CaveCanonicalReadOptions,
+  CaveConversation,
+  CaveConversationDetail,
+  CaveMessage,
+  CaveProject,
+  CaveReadTransport,
+} from './types.js';
 import { CAVE_CLIENT_VERSION } from './version.js';
 
 const CAVE_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveClientError');
@@ -68,6 +88,7 @@ export interface CaveCredentialBinding {
 
 interface CaveClientOptionsBase {
   operation?: OperationDefaults;
+  readTransport?: CaveReadTransport;
 }
 
 interface CaveClientOptionsWithoutCredentials extends CaveClientOptionsBase {
@@ -298,6 +319,52 @@ function invalidRequest(operation: string): CaveClientError {
 
 function unsupported(operation: string): CaveClientError {
   return new CaveClientError(normalizeCaveError({ code: 'unsupported_operation' }, operation));
+}
+
+function invalidCanonicalResponse(
+  operation: string,
+  field: string,
+): CaveClientError {
+  return new CaveClientError(
+    normalizeCaveError({ code: 'invalid_response' }, operation),
+    undefined,
+    {
+      cause: {
+        code: 'invalid_response',
+        details: { field },
+        retryable: false,
+      },
+    },
+  );
+}
+
+function canonicalPagePath(
+  path: string,
+  options: ReturnType<typeof normalizePageOptions>,
+): string {
+  const query = new URLSearchParams();
+  query.set('limit', String(options.limit));
+  if (options.cursor !== undefined) {
+    query.set('cursor', options.cursor);
+  }
+
+  return `${path}?${query.toString()}`;
+}
+
+function encodeCanonicalRouteId(id: unknown, label: string): string {
+  if (typeof id !== 'string' || id.trim().length === 0) {
+    throw new OperationConfigurationError(
+      `${label} must be a non-empty string`,
+    );
+  }
+
+  try {
+    return encodeURIComponent(id);
+  } catch {
+    throw new OperationConfigurationError(
+      `${label} must be URI component compatible`,
+    );
+  }
 }
 
 function secretStoreWriteFailed(operation: string, cause: unknown): CaveClientError {
@@ -812,11 +879,13 @@ export class CavePairingSession {
 
 export class CaveClient {
   readonly #transport: CaveTransport;
+  readonly #readTransport: CaveReadTransport | undefined;
   readonly #operation: OperationDefaults | undefined;
   readonly #credentials: CaveCredentialBinding | undefined;
 
   constructor(options: CaveClientOptions) {
     this.#transport = options.transport;
+    this.#readTransport = options.readTransport;
     this.#operation = options.operation;
     this.#credentials = options.credentials;
   }
@@ -1030,6 +1099,103 @@ export class CaveClient {
 
   async health(options: OperationOptions = {}): Promise<CaveHealth> {
     return this.#execute('health', options, async (context) => this.#runHealth(context));
+  }
+
+  async #canonicalRead<T>(
+    operation: string,
+    path: string,
+    options: OperationOptions,
+    parse: (value: unknown) => T,
+  ): Promise<T> {
+    return this.#execute(operation, options, async (context) => {
+      this.#ensureActive(context, operation);
+      const call = this.#readTransport?.getJson.bind(this.#readTransport);
+      if (call === undefined) {
+        throw unsupported(operation);
+      }
+
+      const response = await call(path, context);
+      try {
+        return parse(response);
+      } catch (error) {
+        if (error instanceof CaveCanonicalSchemaError) {
+          throw invalidCanonicalResponse(operation, error.field);
+        }
+        throw error;
+      }
+    });
+  }
+
+  async listCanonicalFamiliars(
+    options: CaveCanonicalReadOptions = {},
+  ): Promise<Page<CaveCanonicalFamiliar>> {
+    const pageOptions = normalizePageOptions(options);
+    return this.#canonicalRead(
+      'listCanonicalFamiliars',
+      canonicalPagePath('/api/client/v1/familiars', pageOptions),
+      options,
+      parseCanonicalFamiliarsEnvelope,
+    );
+  }
+
+  async listProjects(
+    options: CaveCanonicalReadOptions = {},
+  ): Promise<Page<CaveProject>> {
+    const pageOptions = normalizePageOptions(options);
+    return this.#canonicalRead(
+      'listProjects',
+      canonicalPagePath('/api/client/v1/projects', pageOptions),
+      options,
+      parseProjectsEnvelope,
+    );
+  }
+
+  async listConversations(
+    options: CaveCanonicalReadOptions = {},
+  ): Promise<Page<CaveConversation>> {
+    const pageOptions = normalizePageOptions(options);
+    return this.#canonicalRead(
+      'listConversations',
+      canonicalPagePath('/api/client/v1/conversations', pageOptions),
+      options,
+      parseConversationsEnvelope,
+    );
+  }
+
+  async getConversation(
+    conversationId: string,
+    options: OperationOptions = {},
+  ): Promise<CaveConversationDetail> {
+    const encodedId = encodeCanonicalRouteId(
+      conversationId,
+      'conversationId',
+    );
+    return this.#canonicalRead(
+      'getConversation',
+      `/api/client/v1/conversations/${encodedId}`,
+      options,
+      parseConversationEnvelope,
+    );
+  }
+
+  async listMessages(
+    conversationId: string,
+    options: CaveCanonicalReadOptions = {},
+  ): Promise<Page<CaveMessage>> {
+    const encodedId = encodeCanonicalRouteId(
+      conversationId,
+      'conversationId',
+    );
+    const pageOptions = normalizePageOptions(options);
+    return this.#canonicalRead(
+      'listMessages',
+      canonicalPagePath(
+        `/api/client/v1/conversations/${encodedId}/messages`,
+        pageOptions,
+      ),
+      options,
+      parseMessagesEnvelope,
+    );
   }
 
   /**

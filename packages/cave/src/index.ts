@@ -95,4 +95,13 @@ export type {
   CaveCredentialPersistingTransport,
   CaveTransport,
 } from './transport.js';
+export type {
+  CaveCanonicalFamiliar,
+  CaveCanonicalReadOptions,
+  CaveConversation,
+  CaveConversationDetail,
+  CaveMessage,
+  CaveProject,
+  CaveReadTransport,
+} from './types.js';
 export { CAVE_CLIENT_VERSION } from './version.js';

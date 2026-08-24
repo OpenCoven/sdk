@@ -1,7 +1,283 @@
+import {
+  normalizePageOptions,
+  type Page,
+  type PageCursor,
+} from '@opencoven/sdk-core';
+
 import type {
   CaveDiscoveredEndpoint,
   CaveEndpointFreshness,
 } from './discovery.js';
+import type {
+  CaveCanonicalFamiliar,
+  CaveConversation,
+  CaveConversationDetail,
+  CaveMessage,
+  CaveProject,
+} from './types.js';
+
+type JsonObject = Record<string, unknown>;
+
+export class CaveCanonicalSchemaError extends TypeError {
+  readonly field: string;
+
+  constructor(field: string) {
+    super(`${field} was malformed.`);
+    this.name = 'CaveCanonicalSchemaError';
+    this.field = field;
+  }
+}
+
+function canonicalObject(value: unknown, field: string): JsonObject {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new CaveCanonicalSchemaError(field);
+  }
+
+  return value as JsonObject;
+}
+
+function canonicalString(value: unknown, field: string): string {
+  if (typeof value !== 'string') {
+    throw new CaveCanonicalSchemaError(field);
+  }
+
+  return value;
+}
+
+function optionalCanonicalString(
+  value: unknown,
+  field: string,
+): string | undefined {
+  return value === undefined ? undefined : canonicalString(value, field);
+}
+
+function canonicalStringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new CaveCanonicalSchemaError(field);
+  }
+
+  return value.map((entry, index) =>
+    canonicalString(entry, `${field}[${index}]`),
+  );
+}
+
+function canonicalVersion(value: unknown, field: string): number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < 0
+  ) {
+    throw new CaveCanonicalSchemaError(field);
+  }
+
+  return value;
+}
+
+function parseCanonicalCursor(value: unknown): PageCursor | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const cursor = canonicalObject(value, 'cursor');
+  if (typeof cursor.hasMore !== 'boolean') {
+    throw new CaveCanonicalSchemaError('cursor.hasMore');
+  }
+
+  const parsed: PageCursor = { hasMore: cursor.hasMore };
+  for (const key of ['current', 'next', 'previous'] as const) {
+    const candidate = cursor[key];
+    if (candidate === undefined) {
+      continue;
+    }
+    if (typeof candidate !== 'string') {
+      throw new CaveCanonicalSchemaError(`cursor.${key}`);
+    }
+    try {
+      normalizePageOptions({ cursor: candidate });
+    } catch {
+      throw new CaveCanonicalSchemaError(`cursor.${key}`);
+    }
+    parsed[key] = candidate;
+  }
+
+  return parsed;
+}
+
+function parseCanonicalPage<T>(
+  value: unknown,
+  collection: string,
+  parseEntry: (entry: unknown, field: string) => T,
+): Page<T> {
+  const envelope = canonicalObject(value, 'response');
+  const data = canonicalObject(envelope.data, 'data');
+  const entries = data[collection];
+  if (!Array.isArray(entries)) {
+    throw new CaveCanonicalSchemaError(`data.${collection}`);
+  }
+
+  const cursor = parseCanonicalCursor(envelope.cursor);
+  return {
+    data: entries.map((entry, index) =>
+      parseEntry(entry, `data.${collection}[${index}]`),
+    ),
+    ...(cursor === undefined ? {} : { cursor }),
+  };
+}
+
+function parseCanonicalFamiliar(
+  value: unknown,
+  field: string,
+): CaveCanonicalFamiliar {
+  const familiar = canonicalObject(value, field);
+
+  return {
+    id: canonicalString(familiar.id, `${field}.id`),
+    name: canonicalString(familiar.name, `${field}.name`),
+    repository: canonicalString(familiar.repository, `${field}.repository`),
+    displayName: canonicalString(familiar.displayName, `${field}.displayName`),
+    description: canonicalString(familiar.description, `${field}.description`),
+    createdAt: canonicalString(familiar.createdAt, `${field}.createdAt`),
+    updatedAt: canonicalString(familiar.updatedAt, `${field}.updatedAt`),
+  };
+}
+
+function parseProject(value: unknown, field: string): CaveProject {
+  const project = canonicalObject(value, field);
+
+  return {
+    id: canonicalString(project.id, `${field}.id`),
+    name: canonicalString(project.name, `${field}.name`),
+    familiarIds: canonicalStringArray(
+      project.familiarIds,
+      `${field}.familiarIds`,
+    ),
+    repository: canonicalString(project.repository, `${field}.repository`),
+    defaultBranch: canonicalString(
+      project.defaultBranch,
+      `${field}.defaultBranch`,
+    ),
+    createdAt: canonicalString(project.createdAt, `${field}.createdAt`),
+    updatedAt: canonicalString(project.updatedAt, `${field}.updatedAt`),
+  };
+}
+
+function parseConversation(
+  value: unknown,
+  field: string,
+): CaveConversation {
+  const conversation = canonicalObject(value, field);
+  const projectId = optionalCanonicalString(
+    conversation.projectId,
+    `${field}.projectId`,
+  );
+  const title = optionalCanonicalString(conversation.title, `${field}.title`);
+  const createdAt = optionalCanonicalString(
+    conversation.createdAt,
+    `${field}.createdAt`,
+  );
+
+  return {
+    id: canonicalString(conversation.id, `${field}.id`),
+    familiarId: canonicalString(
+      conversation.familiarId,
+      `${field}.familiarId`,
+    ),
+    ...(projectId === undefined ? {} : { projectId }),
+    ...(title === undefined ? {} : { title }),
+    ...(createdAt === undefined ? {} : { createdAt }),
+    updatedAt: canonicalString(conversation.updatedAt, `${field}.updatedAt`),
+  };
+}
+
+function parseConversationDetail(
+  value: unknown,
+  field: string,
+): CaveConversationDetail {
+  const detail = canonicalObject(value, field);
+  const conversation = parseConversation(detail, field);
+  const metadata = canonicalObject(detail.metadata, `${field}.metadata`);
+  const state = canonicalObject(detail.state, `${field}.state`);
+  const headMessageId = optionalCanonicalString(
+    detail.headMessageId,
+    `${field}.headMessageId`,
+  );
+
+  return {
+    ...conversation,
+    metadata,
+    branchId: canonicalString(detail.branchId, `${field}.branchId`),
+    ...(headMessageId === undefined ? {} : { headMessageId }),
+    state: {
+      activePath: canonicalStringArray(
+        state.activePath,
+        `${field}.state.activePath`,
+      ),
+      currentVersion: canonicalVersion(
+        state.currentVersion,
+        `${field}.state.currentVersion`,
+      ),
+      baseVersion: canonicalVersion(
+        state.baseVersion,
+        `${field}.state.baseVersion`,
+      ),
+    },
+  };
+}
+
+function parseMessage(value: unknown, field: string): CaveMessage {
+  const message = canonicalObject(value, field);
+  const parentId =
+    message.parentId === null
+      ? null
+      : canonicalString(message.parentId, `${field}.parentId`);
+  const familiarId = optionalCanonicalString(
+    message.familiarId,
+    `${field}.familiarId`,
+  );
+  const metadata =
+    message.metadata === undefined
+      ? undefined
+      : canonicalObject(message.metadata, `${field}.metadata`);
+
+  return {
+    id: canonicalString(message.id, `${field}.id`),
+    parentId,
+    type: canonicalString(message.type, `${field}.type`),
+    content: canonicalString(message.content, `${field}.content`),
+    createdAt: canonicalString(message.createdAt, `${field}.createdAt`),
+    ...(familiarId === undefined ? {} : { familiarId }),
+    ...(metadata === undefined ? {} : { metadata }),
+  };
+}
+
+export function parseCanonicalFamiliarsEnvelope(
+  value: unknown,
+): Page<CaveCanonicalFamiliar> {
+  return parseCanonicalPage(value, 'familiars', parseCanonicalFamiliar);
+}
+
+export function parseProjectsEnvelope(value: unknown): Page<CaveProject> {
+  return parseCanonicalPage(value, 'projects', parseProject);
+}
+
+export function parseConversationsEnvelope(
+  value: unknown,
+): Page<CaveConversation> {
+  return parseCanonicalPage(value, 'conversations', parseConversation);
+}
+
+export function parseConversationEnvelope(
+  value: unknown,
+): CaveConversationDetail {
+  const envelope = canonicalObject(value, 'response');
+  const data = canonicalObject(envelope.data, 'data');
+
+  return parseConversationDetail(data.conversation, 'data.conversation');
+}
+
+export function parseMessagesEnvelope(value: unknown): Page<CaveMessage> {
+  return parseCanonicalPage(value, 'messages', parseMessage);
+}
 
 export interface CaveHealth {
   status: 'ok';
