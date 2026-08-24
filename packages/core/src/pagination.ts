@@ -8,6 +8,8 @@ const DEFAULT_PAGE_LIMIT = 50;
 const MAX_PAGE_LIMIT = 100;
 const MAX_CURSOR_CHARACTERS = 512;
 const BASE64URL_CURSOR_RE = /^[A-Za-z0-9_-]{1,512}$/u;
+const BASE64URL_ALPHABET =
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const PAGINATION_DESCRIPTOR = {
   system: 'sdk',
   operation: 'iteratePages',
@@ -61,7 +63,23 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isCursor(value: unknown): value is string {
-  return typeof value === 'string' && BASE64URL_CURSOR_RE.test(value);
+  if (typeof value !== 'string' || !BASE64URL_CURSOR_RE.test(value)) {
+    return false;
+  }
+
+  const trailingCharacters = value.length % 4;
+  if (trailingCharacters === 1) {
+    return false;
+  }
+  if (trailingCharacters === 0) {
+    return true;
+  }
+
+  const trailingValue = BASE64URL_ALPHABET.indexOf(
+    value.charAt(value.length - 1),
+  );
+  const canonicalMultiple = trailingCharacters === 2 ? 16 : 4;
+  return trailingValue % canonicalMultiple === 0;
 }
 
 function validateMaxPages(maxPages: unknown): asserts maxPages is number | undefined {

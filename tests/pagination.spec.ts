@@ -53,17 +53,36 @@ describe('page option normalization', () => {
   );
 
   test('accepts bounded canonical base64url cursor spelling without decoding it', () => {
+    const opaqueCursor = 'b3BhcXVlX2N1cnNvci12YWx1ZQ';
     const boundedCursor = 'abcd'.repeat(128);
 
-    expect(normalizePageOptions({ cursor: 'opaque_cursor-value' })).toEqual({
+    expect(normalizePageOptions({ cursor: opaqueCursor })).toEqual({
       limit: 50,
-      cursor: 'opaque_cursor-value',
+      cursor: opaqueCursor,
     });
     expect(normalizePageOptions({ cursor: boundedCursor })).toEqual({
       limit: 50,
       cursor: boundedCursor,
     });
   });
+
+  test.each(['A', 'AAAAA'])(
+    'rejects impossible unpadded base64url length for %s',
+    (cursor) => {
+      expect(() => normalizePageOptions({ cursor })).toThrow(
+        expect.objectContaining({ code: 'invalid_options' }),
+      );
+    },
+  );
+
+  test.each(['AB', 'AAB'])(
+    'rejects nonzero trailing base64url pad bits for %s',
+    (cursor) => {
+      expect(() => normalizePageOptions({ cursor })).toThrow(
+        expect.objectContaining({ code: 'invalid_options' }),
+      );
+    },
+  );
 
   test.each(['', 'cursor=', 'cursor+', 'cursor/', 'cursor value', 'a'.repeat(513)])(
     'rejects invalid cursor spelling',
