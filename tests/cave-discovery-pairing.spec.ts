@@ -1017,6 +1017,68 @@ describe('discovered Cave pairing helpers', () => {
     expect(fetchImplementation).toHaveBeenCalledTimes(1);
   });
 
+  test('allows retry after a pre-send authority mismatch without replaying the secret', async () => {
+    const root = createScratchRoot('pairing-pre-send-authority-mismatch');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const credential = {
+      id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'] as const,
+      createdAt: 1_755_730_812_617,
+      lastUsedAt: null,
+      revokedAt: null,
+      revocationReason: null,
+    };
+    const fetchImplementation = queuedFetch([
+      () =>
+        jsonResponse(
+          201,
+          successEnvelope({
+            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+            secret: PAIRING_SECRET,
+            expiresAt: 1_755_731_112_617,
+          }),
+        ),
+      (_url, init) => {
+        expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+        return jsonResponse(
+          200,
+          successEnvelope({
+            bearer: BEARER,
+            credential,
+          }),
+        );
+      },
+    ]);
+    const { client, credentials } = discoveredClient(root, fetchImplementation);
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await writeDiscoveryRecord(root, discoveryRecord({ endpoint: 'http://127.0.0.1:3021' }));
+
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: {
+        code: 'reconcile_required',
+        retryable: false,
+        operation: 'pairingExchange',
+      },
+      details: {
+        reason: 'authority_mismatch',
+      },
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+
+    await writeDiscoveryRecord(root, discoveryRecord());
+
+    await expect(session.exchange()).resolves.toEqual(credential);
+    await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  });
+
   test('clears a restarted stored credential before familiars can send its bearer', async () => {
     const root = createScratchRoot('pairing-stored-credential-restarted');
     await writeDiscoveryRecord(root, discoveryRecord());
@@ -1326,6 +1388,129 @@ describe('discovered Cave pairing helpers', () => {
     });
   });
 
+  test('allows only one transport exchange across concurrent exchange attempts', async () => {
+    const root = createScratchRoot('pairing-concurrent-exchange');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const credential = {
+      id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'] as const,
+      createdAt: 1_755_730_812_617,
+      lastUsedAt: null,
+      revokedAt: null,
+      revocationReason: null,
+    };
+    let resolveExchange: ((response: Response) => void) | undefined;
+    let signalExchangeStarted: (() => void) | undefined;
+    const exchangeStarted = new Promise<void>((resolve) => {
+      signalExchangeStarted = resolve;
+    });
+    const fetchImplementation = queuedFetch([
+      () =>
+        jsonResponse(
+          201,
+          successEnvelope({
+            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+            secret: PAIRING_SECRET,
+            expiresAt: 1_755_731_112_617,
+          }),
+        ),
+      (_url, init) => {
+        expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+        signalExchangeStarted?.();
+        return new Promise<Response>((resolve) => {
+          resolveExchange = resolve;
+        });
+      },
+    ]);
+    const { client, credentials } = discoveredClient(root, fetchImplementation);
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    const firstExchange = session.exchange();
+    await exchangeStarted;
+
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: {
+        code: 'conflict',
+        retryable: false,
+        operation: 'pairingExchange',
+      },
+      details: {
+        reason: 'pairing_replayed',
+      },
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+
+    expect(resolveExchange).toBeDefined();
+    resolveExchange?.(
+      jsonResponse(
+        200,
+        successEnvelope({
+          bearer: BEARER,
+          credential,
+        }),
+      ),
+    );
+
+    await expect(firstExchange).resolves.toEqual(credential);
+    await expect(credentials.store.get(credentials.reference.key)).resolves.toBe(BEARER);
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  });
+
+  test('fails later exchange retries locally after a malformed exchange response', async () => {
+    const root = createScratchRoot('pairing-malformed-exchange');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const fetchImplementation = queuedFetch([
+      () =>
+        jsonResponse(
+          201,
+          successEnvelope({
+            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+            secret: PAIRING_SECRET,
+            expiresAt: 1_755_731_112_617,
+          }),
+        ),
+      () =>
+        jsonResponse(
+          200,
+          successEnvelope({
+            bearer: 7,
+            credential: null,
+          }),
+        ),
+    ]);
+    const { client } = discoveredClient(root, fetchImplementation);
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: {
+        code: 'invalid_response',
+        retryable: false,
+        operation: 'pairingExchange',
+      },
+    });
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: {
+        code: 'conflict',
+        retryable: false,
+        operation: 'pairingExchange',
+      },
+      details: {
+        reason: 'pairing_replayed',
+      },
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  });
+
   test('marks a partially stored bearer unusable when authority binding storage fails', async () => {
     const root = createScratchRoot('pairing-store-failure');
     await writeDiscoveryRecord(root, discoveryRecord());
@@ -1400,6 +1585,16 @@ describe('discovered Cave pairing helpers', () => {
     });
     expect(String(error)).not.toContain(BEARER);
     expect(JSON.stringify(error)).not.toContain(BEARER);
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: {
+        code: 'conflict',
+        retryable: false,
+        operation: 'pairingExchange',
+      },
+      details: {
+        reason: 'pairing_replayed',
+      },
+    });
     await expect(client.familiars()).rejects.toMatchObject({
       normalized: {
         code: 'reconcile_required',

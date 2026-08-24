@@ -14,6 +14,7 @@ import {
   type CaveDiscoveredEndpoint,
   type DiscoverCaveEndpointOptions,
 } from './discovery.js';
+import { markPairingSecretUnsentError } from './pairing-secret.js';
 import {
   invalidateStoredCredential,
   loadBoundCredential,
@@ -610,14 +611,23 @@ async function requestJson(
   },
 ): Promise<RequestJsonResult> {
   ensureActive(options.context);
-  const discovered = await discoverCaveEndpoint({
-    ...(options.discovery ?? {}),
-    ...(options.context?.signal === undefined ? {} : { signal: options.context.signal }),
-    ...(options.context?.deadline === undefined ? {} : { deadline: options.context.deadline }),
-  });
-  ensureActive(options.context);
-  if (options.pinnedAuthority !== undefined) {
-    assertPinnedPairingAuthority(discovered, options.pinnedAuthority);
+  let discovered: CaveDiscoveredEndpoint;
+
+  try {
+    discovered = await discoverCaveEndpoint({
+      ...(options.discovery ?? {}),
+      ...(options.context?.signal === undefined ? {} : { signal: options.context.signal }),
+      ...(options.context?.deadline === undefined ? {} : { deadline: options.context.deadline }),
+    });
+    ensureActive(options.context);
+    if (options.pinnedAuthority !== undefined) {
+      assertPinnedPairingAuthority(discovered, options.pinnedAuthority);
+    }
+  } catch (error) {
+    if (options.pinnedAuthority !== undefined) {
+      throw markPairingSecretUnsentError(error);
+    }
+    throw error;
   }
 
   const url = new URL(route, discovered.endpoint.url).toString();

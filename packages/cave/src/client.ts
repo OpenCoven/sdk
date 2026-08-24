@@ -28,6 +28,7 @@ import {
   storeBoundCredential,
 } from './credential-binding.js';
 import type { CaveDiscoveredEndpoint } from './discovery.js';
+import { isPairingSecretUnsentError } from './pairing-secret.js';
 import type {
   CaveExecutionAttempt,
   CaveExecutionSlice,
@@ -1043,24 +1044,14 @@ export class CaveClient {
     return status;
   }
 
-  async #runPairingExchange(
-    requestId: string,
-    pairingSecret: string,
-    context: OperationContext,
-  ): Promise<CavePairingExchange> {
-    this.#ensureActive(context, 'pairingExchange');
+  #pairingExchangeCall(): NonNullable<CaveTransport['pairingExchange']> {
     const call = this.#transport.pairingExchange?.bind(this.#transport);
 
     if (call === undefined) {
       throw unsupported('pairingExchange');
     }
 
-    const exchanged: unknown = await call(requestId, pairingSecret, context);
-    if (!isPairingExchange(exchanged)) {
-      throw invalidResponse('pairingExchange');
-    }
-
-    return exchanged;
+    return call;
   }
 
   async createPairing(
@@ -1073,14 +1064,29 @@ export class CaveClient {
     );
 
     let pairingSecret: string | undefined = created.secret;
+    let pairingSecretState: 'ready' | 'exchange_pending' | 'spent' = 'ready';
+    // Poll can reuse the secret while ready. exchange() takes it synchronously
+    // so later poll()/exchange() calls fail locally unless a marked pre-send
+    // failure proves the secret never left the process.
     const clearPairingSecret = (): void => {
       pairingSecret = undefined;
+      pairingSecretState = 'spent';
+    };
+    const restorePairingSecret = (secret: string): void => {
+      pairingSecret = secret;
+      pairingSecretState = 'ready';
     };
     const requirePairingSecret = (operation: string): string => {
-      if (pairingSecret === undefined) {
+      if (pairingSecretState !== 'ready' || pairingSecret === undefined) {
         throw replayedPairing(operation);
       }
       return pairingSecret;
+    };
+    const beginPairingExchange = (): string => {
+      const secret = requirePairingSecret('pairingExchange');
+      pairingSecret = undefined;
+      pairingSecretState = 'exchange_pending';
+      return secret;
     };
 
     return new CavePairingSession({
@@ -1118,30 +1124,30 @@ export class CaveClient {
         this.#execute('pairingExchange', exchangeOptions, async (context) => {
           const credentials = this.#credentials;
           if (credentials === undefined) {
-            clearPairingSecret();
             throw unsupported('pairingExchange');
           }
 
-          const secret = requirePairingSecret('pairingExchange');
+          const call = this.#pairingExchangeCall();
+          this.#ensureActive(context, 'pairingExchange');
+          const secret = beginPairingExchange();
           let exchanged: CavePairingExchange;
 
           try {
-            exchanged = await this.#runPairingExchange(created.requestId, secret, context);
+            const response: unknown = await call(created.requestId, secret, context);
+            if (!isPairingExchange(response)) {
+              throw invalidResponse('pairingExchange');
+            }
+            exchanged = response;
           } catch (error) {
-            if (
-              isCaveClientError(error) &&
-              (
-                error.code === 'pairing_denied' ||
-                error.code === 'pairing_expired' ||
-                error.code === 'conflict' ||
-                error.code === 'reconcile_required'
-              )
-            ) {
+            if (isPairingSecretUnsentError(error)) {
+              restorePairingSecret(secret);
+            } else {
               clearPairingSecret();
             }
             throw error;
           }
 
+          clearPairingSecret();
           const bearerBytes = Buffer.from(exchanged.bearer, 'utf8');
           const authorityBinding = pairingExchangeAuthorityBinding(exchanged);
           try {
@@ -1164,7 +1170,6 @@ export class CaveClient {
             bearerBytes.fill(0);
           }
 
-          clearPairingSecret();
           return exchanged.credential;
         }),
     });

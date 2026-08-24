@@ -121,7 +121,9 @@ await session.exchange();
 The discovered helper performs no import-time I/O. Discovery, pairing, health,
 and stored-credential checks happen only when you call those methods.
 `session.exchange()` requires an injected credential store; there is no
-implicit fallback store.
+implicit fallback store. It is also local single-flight: once an exchange
+attempt begins, later `poll()`/`exchange()` calls fail locally unless the
+attempt failed before any transport send.
 
 ## Coordinated health
 

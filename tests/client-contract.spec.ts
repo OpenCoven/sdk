@@ -86,6 +86,13 @@ describe('constrained client transports', () => {
         operation: 'pairingExchange',
       },
     });
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: {
+        code: 'unsupported_operation',
+        retryable: false,
+        operation: 'pairingExchange',
+      },
+    });
     expect(pairingExchange).not.toHaveBeenCalled();
   });
 
