@@ -296,6 +296,50 @@ describe('bounded page iteration', () => {
     });
   });
 
+  test('honors abort after an item before rejecting a missing next cursor', async () => {
+    const controller = new AbortController();
+    const iterator = iteratePages(
+      () =>
+        Promise.resolve({
+          data: ['one'],
+          cursor: { hasMore: true },
+        }),
+      { signal: controller.signal },
+    );
+
+    await expect(iterator.next()).resolves.toEqual({ value: 'one', done: false });
+    controller.abort('caller stopped');
+
+    await expect(iterator.next()).rejects.toMatchObject({
+      code: 'aborted',
+      retryable: false,
+    });
+  });
+
+  test('honors abort after an item before rejecting a non-progressing next cursor', async () => {
+    const controller = new AbortController();
+    const iterator = iteratePages(
+      () =>
+        Promise.resolve({
+          data: ['one'],
+          cursor: {
+            current: FIRST_CURSOR,
+            next: FIRST_CURSOR,
+            hasMore: true,
+          },
+        }),
+      { signal: controller.signal },
+    );
+
+    await expect(iterator.next()).resolves.toEqual({ value: 'one', done: false });
+    controller.abort('caller stopped');
+
+    await expect(iterator.next()).rejects.toMatchObject({
+      code: 'aborted',
+      retryable: false,
+    });
+  });
+
   test('rejects hasMore without a next cursor', async () => {
     const iterator = iteratePages(
       () => Promise.resolve({

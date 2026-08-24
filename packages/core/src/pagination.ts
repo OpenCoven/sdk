@@ -189,6 +189,7 @@ async function* generatePages<T>(
       for (const item of page.data) {
         ensureActive(scope);
         yield item;
+        ensureActive(scope);
       }
 
       if (page.cursor === undefined || !page.cursor.hasMore) {
