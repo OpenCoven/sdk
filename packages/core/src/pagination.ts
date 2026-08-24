@@ -1,7 +1,7 @@
 import {
   createOperationScope,
   isOperationAbortedError,
-  isOperationTimeoutError,
+  operationFailurePhase,
   OperationAbortedError,
   OperationConfigurationError,
   type OperationOptions,
@@ -274,14 +274,9 @@ async function* generatePages<T>(
         isThrowCancellation(error, scope.context.signal, lifecycle)
           ? lifecycle.throwError
           : error;
-      const phase = isOperationTimeoutError(terminalError)
-        ? 'timeout'
-        : isOperationAbortedError(terminalError)
-          ? 'abort'
-          : 'failure';
       lifecycle.terminal = true;
       notifyOperationObserver(operationOptions.observer, {
-        phase,
+        phase: operationFailurePhase(terminalError),
         system: PAGINATION_DESCRIPTOR.system,
         operation: PAGINATION_DESCRIPTOR.operation,
         durationMs: operationDuration(startedAt),
@@ -309,14 +304,9 @@ async function* generatePages<T>(
             ? (scope.context.signal.reason as unknown)
             : undefined) ??
           new OperationAbortedError(PAGINATION_DESCRIPTOR);
-        const phase = isOperationTimeoutError(error)
-          ? 'timeout'
-          : isOperationAbortedError(error)
-            ? 'abort'
-            : 'failure';
         lifecycle.terminal = true;
         notifyOperationObserver(operationOptions.observer, {
-          phase,
+          phase: operationFailurePhase(error),
           system: PAGINATION_DESCRIPTOR.system,
           operation: PAGINATION_DESCRIPTOR.operation,
           durationMs: operationDuration(startedAt),

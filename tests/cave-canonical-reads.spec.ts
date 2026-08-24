@@ -575,6 +575,114 @@ describe('Cave caller-supplied canonical reads', () => {
       expect(listProjects).toHaveBeenCalledOnce();
     });
 
+    test('classifies a wrapped project transport abort in the aggregate lifecycle', async () => {
+      const events: OperationEvent[] = [];
+      const transportError = Object.assign(new Error('transport aborted'), {
+        code: 'aborted',
+        retryable: false,
+        details: {
+          reason: 'transport_cancelled',
+        },
+      });
+      const listProjects = vi.fn(() => Promise.reject(transportError));
+      const { client } = clientWith({ listProjects });
+
+      const error = await caveErrorOf(() =>
+        collect(
+          client.iterateProjects({
+            maxPages: 2,
+            observer: {
+              onEvent(event) {
+                events.push(event);
+              },
+              onObserverError(observerError) {
+                throw observerError;
+              },
+            },
+          }),
+        ),
+      );
+
+      expect(error.normalized).toMatchObject({
+        code: 'aborted',
+        operation: 'listProjects',
+        retryable: false,
+      });
+      expect(error.details).toEqual({
+        reason: 'transport_cancelled',
+      });
+      expect(error.cause).toBe(transportError);
+      expect(events.map(({ phase }) => phase)).toEqual(['start', 'abort']);
+      expect(events.map(({ operation }) => operation)).toEqual([
+        'iteratePages',
+        'iteratePages',
+      ]);
+      expect(events[1]).toMatchObject({
+        phase: 'abort',
+        error: {
+          code: 'aborted',
+          operation: 'iteratePages',
+          retryable: false,
+        },
+      });
+      expect(listProjects).toHaveBeenCalledOnce();
+    });
+
+    test('classifies a wrapped message transport timeout in the aggregate lifecycle', async () => {
+      const events: OperationEvent[] = [];
+      const transportError = Object.assign(new Error('transport timed out'), {
+        code: 'timeout',
+        retryable: true,
+        details: {
+          phase: 'read',
+        },
+      });
+      const listConversationMessages = vi.fn(() =>
+        Promise.reject(transportError),
+      );
+      const { client } = clientWith({ listConversationMessages });
+
+      const error = await caveErrorOf(() =>
+        collect(
+          client.iterateConversationMessages('conversation/one', {
+            maxPages: 2,
+            observer: {
+              onEvent(event) {
+                events.push(event);
+              },
+              onObserverError(observerError) {
+                throw observerError;
+              },
+            },
+          }),
+        ),
+      );
+
+      expect(error.normalized).toMatchObject({
+        code: 'timeout',
+        operation: 'listConversationMessages',
+        retryable: true,
+      });
+      expect(error.details).toEqual({
+        phase: 'read',
+      });
+      expect(error.cause).toBe(transportError);
+      expect(events.map(({ phase }) => phase)).toEqual(['start', 'timeout']);
+      expect(events.map(({ operation }) => operation)).toEqual([
+        'iteratePages',
+        'iteratePages',
+      ]);
+      expect(events[1]).toMatchObject({
+        phase: 'timeout',
+        error: {
+          code: 'timeout',
+          operation: 'iteratePages',
+          retryable: true,
+        },
+      });
+      expect(listConversationMessages).toHaveBeenCalledOnce();
+    });
+
     test('applies the client default timeout to the aggregate iterator', async () => {
       vi.useFakeTimers();
       const listProjects = vi.fn(() =>
@@ -630,6 +738,7 @@ describe('Cave caller-supplied canonical reads', () => {
     });
 
     test('propagates reconcile_required from messages without retrying and forwards the id', async () => {
+      const events: OperationEvent[] = [];
       const listConversationMessages = vi.fn<
         (
           conversationId: string,
@@ -656,6 +765,14 @@ describe('Cave caller-supplied canonical reads', () => {
         collect(
           client.iterateConversationMessages('conversation/one', {
             maxPages: 3,
+            observer: {
+              onEvent(event) {
+                events.push(event);
+              },
+              onObserverError(observerError) {
+                throw observerError;
+              },
+            },
           }),
         ),
       ).rejects.toMatchObject({
@@ -672,6 +789,11 @@ describe('Cave caller-supplied canonical reads', () => {
       expect(listConversationMessages.mock.calls[0]?.[0]).toBe(
         'conversation/one',
       );
+      expect(events.map(({ phase }) => phase)).toEqual(['start', 'failure']);
+      expect(events.map(({ operation }) => operation)).toEqual([
+        'iteratePages',
+        'iteratePages',
+      ]);
     });
 
     test('does not retry a retryable page failure', async () => {

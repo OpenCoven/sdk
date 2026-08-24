@@ -111,6 +111,44 @@ function usePackedCaveIteratorContracts(
 void usePackedCaveIteratorContracts;
 
 describe('packed public packages', () => {
+  test('generates an isolated consumer that typechecks and invokes bounded Cave iterators', () => {
+    const verifier = readFileSync(resolve(root, 'scripts', 'verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain(
+      `import {
+  CaveClient,
+  type CaveCanonicalFamiliar,
+  type CaveConversation,
+  type CaveConversationMessage,
+  type CaveProject,
+} from '@opencoven/cave-client';`,
+    );
+    expect(verifier).toContain('type BoundedPageOptions,');
+    expect(verifier).toContain('const boundedPageOptions: BoundedPageOptions = { maxPages: 1 };');
+    expect(verifier).toContain('cave.iterateFamiliars(boundedPageOptions)');
+    expect(verifier).toContain('cave.iterateProjects(boundedPageOptions)');
+    expect(verifier).toContain('cave.iterateConversations(boundedPageOptions)');
+    expect(verifier).toContain(
+      "cave.iterateConversationMessages('conversation-1', boundedPageOptions)",
+    );
+    expect(verifier).toContain('const caveIterators: [');
+    expect(verifier).toContain('AsyncGenerator<CaveCanonicalFamiliar>');
+    expect(verifier).toContain('AsyncGenerator<CaveProject>');
+    expect(verifier).toContain('AsyncGenerator<CaveConversation>');
+    expect(verifier).toContain('AsyncGenerator<CaveConversationMessage>');
+    expect(verifier).toContain('const iteratorClient = new CaveClient({');
+    expect(verifier).toContain('iteratorClient.iterateFamiliars({ maxPages: 1 })');
+    expect(verifier).toContain('iteratorClient.iterateProjects({ maxPages: 1 })');
+    expect(verifier).toContain('iteratorClient.iterateConversations({ maxPages: 1 })');
+    expect(verifier).toContain(
+      "iteratorClient.iterateConversationMessages('conversation-1', { maxPages: 1 })",
+    );
+    expect(verifier).toContain("typeof iterator.next !== 'function'");
+    expect(verifier).toContain(
+      "throw new Error('Packed Cave iterator methods are unavailable.');",
+    );
+  });
+
   test('exposes bounded Cave iterators from package roots', () => {
     const client = new CaveClient({
       transport: {

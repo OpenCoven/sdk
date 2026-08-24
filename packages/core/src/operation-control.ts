@@ -103,6 +103,29 @@ export function isOperationAbortedError(error: unknown): error is OperationAbort
   return hasBrand(error, OPERATION_ABORTED_ERROR_BRAND);
 }
 
+export function operationFailurePhase(
+  error: unknown,
+): 'timeout' | 'abort' | 'failure' {
+  if (isOperationTimeoutError(error)) {
+    return 'timeout';
+  }
+  if (isOperationAbortedError(error)) {
+    return 'abort';
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    const code = safelyRead(error, 'code');
+    if (code === 'timeout') {
+      return 'timeout';
+    }
+    if (code === 'aborted') {
+      return 'abort';
+    }
+  }
+
+  return 'failure';
+}
+
 function validateTimeout(timeoutMs: number | undefined): void {
   if (
     timeoutMs !== undefined &&
@@ -265,13 +288,8 @@ export async function runOperation<T>(
         result = await Promise.race([operation, scope.termination]);
       }
     } catch (error) {
-      const phase = isOperationTimeoutError(error)
-        ? 'timeout'
-        : isOperationAbortedError(error)
-          ? 'abort'
-          : 'failure';
       notifyOperationObserver(options.observer, {
-        phase,
+        phase: operationFailurePhase(error),
         system: descriptor.system,
         operation: descriptor.operation,
         durationMs: operationDuration(startedAt),
