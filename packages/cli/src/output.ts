@@ -122,6 +122,7 @@ function inferredRetryable(code: string): boolean | undefined {
       return true;
     case 'secure_store_unavailable':
     case 'incompatible_version':
+    case 'platform_security_unavailable':
     case 'pairing_denied':
     case 'pairing_expired':
     case 'owner_mismatch':
@@ -175,6 +176,10 @@ function messageForCode(code: string, context: CliErrorContext): string {
       return 'The local Cave service returned malformed data.';
     case 'connect_failure':
       return 'Could not connect to the Coven daemon.';
+    case 'platform_security_unavailable':
+      return context.system === 'coven'
+        ? 'Required native Coven platform security is unavailable.'
+        : 'Required native platform security is unavailable.';
     case 'timeout':
       if (context.system === 'coven') {
         return context.operation === 'discover'
@@ -249,6 +254,10 @@ function actionForCode(code: string, context: CliErrorContext): string | undefin
       return 'Restart Cave so it can write fresh runtime discovery metadata.';
     case 'connect_failure':
       return 'Start Coven and retry once the local daemon is listening.';
+    case 'platform_security_unavailable':
+      return context.system === 'coven'
+        ? 'Use a reviewed OpenCoven CLI/runtime that injects the required native Coven transport-security adapter for this platform and retry.'
+        : 'Use a reviewed runtime that injects the required native platform security adapter and retry.';
     case 'invalid_response':
       return 'Update the local service to a reviewed build and retry.';
     case 'pairing_pending':

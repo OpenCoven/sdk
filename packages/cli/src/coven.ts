@@ -1,9 +1,14 @@
 import {
+  CovenIpcError,
   createCovenClient,
   createCovenUnixTransport,
   createCovenWindowsTransport,
   type CovenDiscoveredEndpoint,
+  type CovenDiscoveredUnixTransportOptions,
+  type CovenDiscoveredWindowsTransportOptions,
   type CovenHealthResponse,
+  type CovenTransport,
+  type CovenTransportSecurityProvider,
 } from '@opencoven/coven-client';
 import type { OperationOptions } from '@opencoven/sdk-core';
 
@@ -14,57 +19,90 @@ import {
 import type { CliCommandResult, ResolvedCliRuntime } from './main.js';
 import { normalizeCliError, type CliOutput } from './output.js';
 
-function unixPeerIdentity(): { uid: number } {
-  const uid = process.geteuid?.();
-  if (!Number.isSafeInteger(uid) || (uid as number) < 0) {
-    throw new Error('Current effective user could not be identified.');
-  }
-
-  return { uid: uid as number };
+export interface ReadDiscoveredCovenHealthOptions extends OperationOptions {
+  transportSecurity?: CovenTransportSecurityProvider;
+  unix?: CovenDiscoveredUnixTransportOptions;
+  windows?: CovenDiscoveredWindowsTransportOptions;
 }
 
-function windowsIdentity(discovered: CovenDiscoveredEndpoint) {
-  const ownerIdentity =
-    discovered.owner?.kind === 'windows'
-      ? discovered.owner.identity
-      : 'S-1-5-18';
+function platformSecurityUnavailable(
+  discovered: CovenDiscoveredEndpoint,
+): Error {
+  const platform = discovered.endpoint.kind === 'unix' ? 'unix' : 'windows';
+  const requirement =
+    discovered.endpoint.kind === 'unix'
+      ? 'peer_identity'
+      : 'pipe_ownership';
 
-  return {
-    ownerIdentity,
-    ownerOnly: true,
-    pipeIdentity: discovered.endpoint.path,
-    serverProcessId: discovered.freshness?.daemonPid ?? 1,
-    processCreationTime:
-      discovered.freshness?.processCreationTime ??
-      discovered.freshness?.daemonStartedAt ??
-      '1970-01-01T00:00:00Z',
-  };
+  return Object.assign(
+    new Error(
+      discovered.endpoint.kind === 'unix'
+        ? 'Coven Unix peer-identity security provider was unavailable.'
+        : 'Coven Windows pipe-ownership security provider was unavailable.',
+    ),
+    {
+      code: 'platform_security_unavailable',
+      retryable: false,
+      diagnostics: {
+        phase: 'validate_endpoint',
+        platform,
+        requirement,
+      },
+    },
+  );
+}
+
+function createDiscoveredHealthTransport(
+  discovered: CovenDiscoveredEndpoint,
+  options: ReadDiscoveredCovenHealthOptions,
+): CovenTransport {
+  const { transportSecurity } = options;
+
+  if (discovered.endpoint.kind === 'unix') {
+    if (transportSecurity === undefined) {
+      throw platformSecurityUnavailable(discovered);
+    }
+    if (transportSecurity.platform !== 'unix') {
+      throw new CovenIpcError(
+        'unsafe_endpoint',
+        'Unix transport security is required for the discovered endpoint.',
+        { phase: 'validate_endpoint' },
+      );
+    }
+
+    return createCovenUnixTransport(discovered, {
+      ...options.unix,
+      security: transportSecurity,
+    });
+  }
+
+  if (transportSecurity === undefined) {
+    throw platformSecurityUnavailable(discovered);
+  }
+  if (transportSecurity.platform !== 'windows') {
+    throw new CovenIpcError(
+      'unsafe_endpoint',
+      'Windows transport security is required for the discovered endpoint.',
+      { phase: 'validate_endpoint' },
+    );
+  }
+
+  return createCovenWindowsTransport(discovered, {
+    ...options.windows,
+    security: transportSecurity,
+  });
 }
 
 export async function readDiscoveredCovenHealth(
   discovered: CovenDiscoveredEndpoint,
-  options: OperationOptions = {},
+  options: ReadDiscoveredCovenHealthOptions = {},
 ): Promise<CovenHealthResponse> {
-  const rawTransport =
-    discovered.endpoint.kind === 'unix'
-      ? createCovenUnixTransport(discovered, {
-          security: {
-            platform: 'unix',
-            peerIdentity: {
-              inspectConnected: () => Promise.resolve(unixPeerIdentity()),
-            },
-          },
-        })
-      : createCovenWindowsTransport(discovered, {
-          security: {
-            platform: 'windows',
-            ownership: {
-              currentUserIdentity: () => Promise.resolve(windowsIdentity(discovered).ownerIdentity),
-              inspect: () => Promise.resolve(windowsIdentity(discovered)),
-              inspectConnected: () => Promise.resolve(windowsIdentity(discovered)),
-            },
-          },
-        });
+  const rawTransport = createDiscoveredHealthTransport(discovered, options);
+  const operationOptions: OperationOptions = {
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(options.observer === undefined ? {} : { observer: options.observer }),
+  };
 
   let response: CovenHealthResponse | undefined;
   const client = createCovenClient({
@@ -76,7 +114,7 @@ export async function readDiscoveredCovenHealth(
     },
   });
 
-  await client.health(options);
+  await client.health(operationOptions);
 
   if (response === undefined) {
     throw new Error('Coven daemon health response was unavailable.');

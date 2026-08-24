@@ -52,6 +52,11 @@ The SDK intentionally does not bundle a peer-credential implementation.
 The embedding CLI or runtime must inject a reviewed native provider for its
 current platform. There is no pathname-only approximation, shell or `lsof`
 fallback, private Node-internals fallback, or permissive default.
+OpenCoven's Node CLI likewise ships no implicit adapter: it reports
+`platform_security_unavailable` and marks Coven health unhealthy until the
+embedding runtime injects a reviewed native provider. It never derives
+connected-peer or connected-pipe identity from discovery metadata, filesystem
+ownership, or shell commands.
 
 `discoverCovenEndpoint()` can inspect the typed endpoint and its available
 owner/freshness metadata. Unix `COVEN_HOME` discovery needs no executable

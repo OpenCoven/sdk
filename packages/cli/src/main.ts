@@ -10,9 +10,12 @@ import {
   type CavePairingStatus,
 } from '@opencoven/cave-client';
 import {
+  type CovenDiscoveredUnixTransportOptions,
+  type CovenDiscoveredWindowsTransportOptions,
   discoverCovenEndpoint,
   type CovenDiscoveredEndpoint,
   type CovenHealthResponse,
+  type CovenTransportSecurityProvider,
   type DiscoverCovenEndpointOptions,
 } from '@opencoven/coven-client';
 import {
@@ -89,6 +92,11 @@ export interface CliRuntime {
       discovered: CovenDiscoveredEndpoint,
       options?: OperationOptions,
     ) => Promise<CovenHealthResponse>;
+    transportSecurity?: CovenTransportSecurityProvider;
+    transport?: {
+      unix?: CovenDiscoveredUnixTransportOptions;
+      windows?: CovenDiscoveredWindowsTransportOptions;
+    };
   };
   platform?: NodeJS.Platform;
 }
@@ -315,6 +323,8 @@ function resolveRuntime(runtime: CliRuntime = {}): ResolvedCliRuntime {
     env: runtime.env ?? process.env,
     platform: runtime.platform ?? process.platform,
   };
+  const covenTransportSecurity = runtime.coven?.transportSecurity;
+  const covenTransport = runtime.coven?.transport;
 
   return {
     cave: {
@@ -323,7 +333,20 @@ function resolveRuntime(runtime: CliRuntime = {}): ResolvedCliRuntime {
     },
     coven: {
       discoverEndpoint: runtime.coven?.discoverEndpoint ?? discoverCovenEndpoint,
-      readHealth: runtime.coven?.readHealth ?? readDiscoveredCovenHealth,
+      readHealth: runtime.coven?.readHealth ??
+        ((discovered, options) =>
+          readDiscoveredCovenHealth(discovered, {
+            ...options,
+            ...(covenTransportSecurity === undefined
+              ? {}
+              : { transportSecurity: covenTransportSecurity }),
+            ...(covenTransport?.unix === undefined
+              ? {}
+              : { unix: covenTransport.unix }),
+            ...(covenTransport?.windows === undefined
+              ? {}
+              : { windows: covenTransport.windows }),
+          })),
     },
     createSecretStore: async () => await createStore(),
     createSecretStoreReference: runtime.createSecretStoreReference ?? createSecretStoreReference,
