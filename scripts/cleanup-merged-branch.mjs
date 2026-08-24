@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
  *   dryRun?: boolean,
  *   prNumber: number,
  *   remote?: string,
+ *   repository?: string,
  *   runCommand?: RunCommand,
  * }} CleanupMergedBranchOptions
  * @typedef {{
@@ -131,6 +132,24 @@ function assertCleanWorktree(runCommand, path, label) {
   }
 }
 
+function githubRepositoryFromRemote(remoteUrl) {
+  const match = /^(?:(?:git\+)?https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([^/]+\/[^/]+?)(?:\.git)?$/u.exec(
+    remoteUrl,
+  );
+
+  if (match?.[1] === undefined) {
+    throw new Error(
+      'Could not derive a GitHub owner/repository from the remote URL; pass --repo.',
+    );
+  }
+
+  return match[1];
+}
+
+function validRepository(repository) {
+  return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository);
+}
+
 /**
  * @param {CleanupMergedBranchOptions} options
  * @returns {CleanupMergedBranchResult}
@@ -142,6 +161,7 @@ export function cleanupMergedBranch({
   dryRun = false,
   prNumber,
   remote = 'origin',
+  repository,
   runCommand = defaultRunCommand,
 }) {
   if (typeof branch !== 'string' || branch.length === 0) {
@@ -149,6 +169,9 @@ export function cleanupMergedBranch({
   }
   if (!Number.isSafeInteger(prNumber) || prNumber <= 0) {
     throw new Error('A positive PR number is required.');
+  }
+  if (repository !== undefined && !validRepository(repository)) {
+    throw new Error('Repository must use the GitHub owner/name form.');
   }
 
   const repositoryRoot = runChecked(
@@ -175,16 +198,25 @@ export function cleanupMergedBranch({
     throw new Error(`Refusing to remove the currently checked out branch ${branch}.`);
   }
 
+  const githubRepository =
+    repository ??
+    githubRepositoryFromRemote(
+      runChecked(
+        runCommand,
+        'git',
+        ['remote', 'get-url', remote],
+        repositoryRoot,
+      ),
+    );
   const pullRequest = parsePullRequest(
     runChecked(
       runCommand,
       'gh',
       [
-        'pr',
-        'view',
-        String(prNumber),
-        '--json',
-        'baseRefName,headRefName,headRefOid,mergeCommit,mergedAt,number,state',
+        'api',
+        `repos/${githubRepository}/pulls/${prNumber}`,
+        '--jq',
+        '{baseRefName:.base.ref,headRefName:.head.ref,headRefOid:.head.sha,mergeCommit:{oid:.merge_commit_sha},mergedAt:.merged_at,number,state:(if .merged then "MERGED" else (.state|ascii_upcase) end)}',
       ],
       repositoryRoot,
     ),
@@ -348,6 +380,9 @@ function parseArguments(arguments_) {
       index += 1;
     } else if (argument === '--pr') {
       options.prNumber = Number(arguments_[index + 1]);
+      index += 1;
+    } else if (argument === '--repo') {
+      options.repository = arguments_[index + 1];
       index += 1;
     } else {
       throw new Error(`Unknown argument: ${argument}`);

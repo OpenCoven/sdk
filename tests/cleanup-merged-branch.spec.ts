@@ -119,12 +119,21 @@ describe('cleanup merged branch', () => {
         cwd: fixture.repository,
         deleteRemote: true,
         prNumber: 123,
+        repository: 'OpenCoven/sdk',
         runCommand: fixture.runCommand,
       });
 
       expect(result.removedWorktrees).toEqual([featureWorktree]);
       expect(result.deletedLocalBranch).toBe(true);
       expect(result.deletedRemoteBranch).toBe(true);
+      expect(
+        fixture.commands.some(
+          ({ args, command }) =>
+            command === 'gh' &&
+            args[0] === 'api' &&
+            args[1] === 'repos/OpenCoven/sdk/pulls/123',
+        ),
+      ).toBe(true);
       expect(fixture.commands).toContainEqual({
         args: [
           'push',
@@ -171,6 +180,7 @@ describe('cleanup merged branch', () => {
           branch: 'feature/merged',
           cwd: fixture.repository,
           prNumber: 123,
+          repository: 'OpenCoven/sdk',
           runCommand: fixture.runCommand,
         }),
       ).toThrow(/dirty/i);
@@ -191,6 +201,7 @@ describe('cleanup merged branch', () => {
           branch: 'feature/merged',
           cwd: fixture.repository,
           prNumber: 123,
+          repository: 'OpenCoven/sdk',
           runCommand: fixture.runCommand,
         }),
       ).toThrow(/recorded PR head/i);
@@ -213,6 +224,7 @@ describe('cleanup merged branch', () => {
           branch: 'feature/merged',
           cwd: fixture.repository,
           prNumber: 123,
+          repository: 'OpenCoven/sdk',
           runCommand: fixture.runCommand,
         }),
       ).toThrow(/does not match/i);
@@ -234,6 +246,7 @@ describe('cleanup merged branch', () => {
           cwd: fixture.repository,
           deleteRemote: true,
           prNumber: 123,
+          repository: 'OpenCoven/sdk',
           runCommand: fixture.runCommand,
         }),
       ).toThrow(/locked/i);
@@ -269,6 +282,7 @@ describe('cleanup merged branch', () => {
         cwd: fixture.repository,
         dryRun: true,
         prNumber: 123,
+        repository: 'OpenCoven/sdk',
         runCommand: fixture.runCommand,
       });
 
