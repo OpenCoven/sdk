@@ -32,9 +32,10 @@ filesystem inode as `0`; Unix discovery still requires a positive inode.
 - `new CaveClient({ transport })` and `createCaveClient(...)` preserve
   caller-owned transports for health, familiars, analytics, and reviewed
   contract-fixture helpers.
-- An optional caller-owned `readTransport` adds strict one-page Client v1
-  canonical reads through `listCanonicalFamiliars()`, `listProjects()`,
-  `listConversations()`, `getConversation()`, and `listMessages()`.
+- Five optional methods on the same caller-owned `CaveTransport` add strict
+  one-page Client v1 canonical reads through `listFamiliars()`,
+  `listProjects()`, `listConversations()`, `getConversation()`, and
+  `listConversationMessages()`.
 - `discoverCaveEndpoint(options)` validates the owner-local
   `client-v1-discovery.json` record only when called.
 - `createDiscoveredCaveClient(...)` layers runtime-only `health()`,
@@ -73,13 +74,6 @@ const transportBacked = new CaveClient({
       },
     }),
   },
-  readTransport: {
-    async getJson(path, context) {
-      return myLoopbackTransport.getJson(path, {
-        signal: context?.signal,
-      });
-    },
-  },
 });
 
 const discovered = createDiscoveredCaveClient({
@@ -99,6 +93,20 @@ try {
       onObserverError(error) {
         console.error(error);
       },
+      listFamiliars: (options, context) =>
+        canonicalTransport.listFamiliars(options, context),
+      listProjects: (options, context) =>
+        canonicalTransport.listProjects(options, context),
+      listConversations: (options, context) =>
+        canonicalTransport.listConversations(options, context),
+      getConversation: (conversationId, context) =>
+        canonicalTransport.getConversation(conversationId, context),
+      listConversationMessages: (conversationId, options, context) =>
+        canonicalTransport.listConversationMessages(
+          conversationId,
+          options,
+          context,
+        ),
     },
   });
 } catch (error) {
@@ -183,15 +191,15 @@ record replacement surfaces retryable `credential_update_in_progress`, and
 store read/delete failures stay explicit instead of being reported as a
 successful absence.
 
-Canonical reads are deliberately transport-only in this release. The
-`readTransport.getJson(path, context)` implementation owns all networking and
-receives only the composed operation signal and monotonic deadline. The client
-owns the single observer lifecycle, validates the response DTOs, and never
-discovers an authority, loads credentials, attaches a bearer, retries, or
-supplies headers for these methods. List calls use the shared core
-`normalizePageOptions()` rules: `limit` defaults to `50`, accepts `1` through
-`100`, and `cursor` is included only when supplied. Results are one
-`Page<T>`; this surface does not add implicit iteration.
+Canonical reads are deliberately caller-transport-only in this release. The
+optional `CaveTransport` method owns all I/O, authority discovery, credentials,
+authentication, and retry policy. It receives normalized page options plus the
+composed operation signal and monotonic deadline. The client owns one observer
+lifecycle and strict versioned-envelope/DTO parsing; it does not discover an
+authority, load credentials, attach a bearer, construct routes, or retry.
+List calls use the shared core `normalizePageOptions()` rules: `limit` defaults
+to `50`, accepts `1` through `100`, and `cursor` is passed only when supplied.
+Results are one `Page<T>`; this surface does not add implicit iteration.
 
 ```ts
 const projects = await transportBacked.listProjects({
@@ -200,16 +208,15 @@ const projects = await transportBacked.listProjects({
 });
 
 const conversation = await transportBacked.getConversation('conversation/1');
-console.log(projects.data, conversation.state.currentVersion);
+const messages = await transportBacked.listConversationMessages(
+  conversation.id,
+);
+console.log(projects.data, conversation.updatedAt, messages.data);
 ```
 
-These methods use `/api/client/v1/familiars`,
-`/api/client/v1/projects`, `/api/client/v1/conversations`,
-`/api/client/v1/conversations/:id`, and
-`/api/client/v1/conversations/:id/messages`. Route IDs and query components
-are encoded. The legacy `familiars()`, `familiarContract()`,
-`familiarAnalytics()`, and `CaveFamiliar` contracts remain separate and
-unchanged.
+The legacy `familiars()`, `familiarContract()`, `familiarAnalytics()`, and
+`CaveFamiliar` contracts remain separate and unchanged. The canonical
+`listFamiliars()` method coexists with the legacy plural `familiars()` method.
 
 Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,

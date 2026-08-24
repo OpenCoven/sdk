@@ -60,6 +60,9 @@ export type {
   CaveAuthorityBinding,
   CaveAuthorityBoundPairingExchange,
   CaveAnalyticsWindowKey,
+  CaveCanonicalFamiliar,
+  CaveConversation,
+  CaveConversationMessage,
   CaveContractFile,
   CaveContractReport,
   CaveContractViolation,
@@ -89,19 +92,11 @@ export type {
   CavePairingScope,
   CavePairingState,
   CavePairingStatus,
+  CaveProject,
   CavePropertyCoverage,
 } from './schemas.js';
 export type {
   CaveCredentialPersistingTransport,
   CaveTransport,
 } from './transport.js';
-export type {
-  CaveCanonicalFamiliar,
-  CaveCanonicalReadOptions,
-  CaveConversation,
-  CaveConversationDetail,
-  CaveMessage,
-  CaveProject,
-  CaveReadTransport,
-} from './types.js';
 export { CAVE_CLIENT_VERSION } from './version.js';

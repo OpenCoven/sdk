@@ -13,6 +13,7 @@
   bearer use, and bracket pairing exchange with pre/post authority proofs.
 - Treat failed post-exchange authority proof as a terminal re-pair condition
   because the single-use pairing secret has already been spent.
-- Add strict canonical familiar, project, conversation, detail, and message
-  DTOs plus five direct Client v1 read methods backed only by a caller-supplied
-  `CaveReadTransport`.
+- Add strict canonical familiar, project, conversation, and message DTOs plus
+  five optional caller-owned `CaveTransport` reads: `listFamiliars()`,
+  `listProjects()`, `listConversations()`, `getConversation()`, and
+  `listConversationMessages()`.

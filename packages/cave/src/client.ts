@@ -13,6 +13,7 @@ import {
   type OperationDefaults,
   type OperationOptions,
   type Page,
+  type PageOptions,
   type SecretStore,
   type SecretStoreReference,
 } from '@opencoven/sdk-core';
@@ -21,17 +22,14 @@ import {
   discardPairingExchangeBearer,
   parseCaveAuthorityBinding,
 } from './authority-binding.js';
-import type {
-  CaveAuthorityBinding,
-  CaveCredentialMetadata,
-  CaveCredentialStatus,
-  CaveHealth,
-  CavePairingCreated,
-  CavePairingExchange,
-  CavePairingRequest,
-  CavePairingScope,
-  CavePairingStatus,
-} from './schemas.js';
+import {
+  CaveCanonicalSchemaError,
+  parseConversationEnvelope,
+  parseConversationMessagesEnvelope,
+  parseConversationsEnvelope,
+  parseFamiliarsEnvelope,
+  parseProjectsEnvelope,
+} from './canonical-reads.js';
 import {
   forgetStoredCredential,
   inspectStoredCredentialMaterial,
@@ -39,37 +37,33 @@ import {
   storeBoundCredential,
 } from './credential-binding.js';
 import { isPairingSecretUnsentError } from './pairing-secret.js';
-import type {
-  CaveExecutionAttempt,
-  CaveExecutionSlice,
-  CaveExecutionWindow,
-  CaveFamiliar,
-  CaveFamiliarAnalytics,
-  CaveFamiliarContract,
-  CaveFamiliarWire,
-} from './schemas.js';
 import {
   CAVE_PAIRING_SCOPES,
-  CaveCanonicalSchemaError,
-  parseCanonicalFamiliarsEnvelope,
-  parseConversationEnvelope,
-  parseConversationsEnvelope,
-  parseMessagesEnvelope,
-  parseProjectsEnvelope,
+  type CaveAuthorityBinding,
+  type CaveCanonicalFamiliar,
+  type CaveConversation,
+  type CaveConversationMessage,
+  type CaveCredentialMetadata,
+  type CaveCredentialStatus,
+  type CaveExecutionAttempt,
+  type CaveExecutionSlice,
+  type CaveExecutionWindow,
+  type CaveFamiliar,
+  type CaveFamiliarAnalytics,
+  type CaveFamiliarContract,
+  type CaveFamiliarWire,
+  type CaveHealth,
+  type CavePairingCreated,
+  type CavePairingExchange,
+  type CavePairingRequest,
+  type CavePairingScope,
+  type CavePairingStatus,
+  type CaveProject,
 } from './schemas.js';
 import type {
   CaveCredentialPersistingTransport,
   CaveTransport,
 } from './transport.js';
-import type {
-  CaveCanonicalFamiliar,
-  CaveCanonicalReadOptions,
-  CaveConversation,
-  CaveConversationDetail,
-  CaveMessage,
-  CaveProject,
-  CaveReadTransport,
-} from './types.js';
 import { CAVE_CLIENT_VERSION } from './version.js';
 
 const CAVE_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveClientError');
@@ -88,7 +82,6 @@ export interface CaveCredentialBinding {
 
 interface CaveClientOptionsBase {
   operation?: OperationDefaults;
-  readTransport?: CaveReadTransport;
 }
 
 interface CaveClientOptionsWithoutCredentials extends CaveClientOptionsBase {
@@ -338,33 +331,14 @@ function invalidCanonicalResponse(
   );
 }
 
-function canonicalPagePath(
-  path: string,
-  options: ReturnType<typeof normalizePageOptions>,
-): string {
-  const query = new URLSearchParams();
-  query.set('limit', String(options.limit));
-  if (options.cursor !== undefined) {
-    query.set('cursor', options.cursor);
-  }
-
-  return `${path}?${query.toString()}`;
-}
-
-function encodeCanonicalRouteId(id: unknown, label: string): string {
+function validateCanonicalId(id: unknown, label: string): string {
   if (typeof id !== 'string' || id.trim().length === 0) {
     throw new OperationConfigurationError(
       `${label} must be a non-empty string`,
     );
   }
 
-  try {
-    return encodeURIComponent(id);
-  } catch {
-    throw new OperationConfigurationError(
-      `${label} must be URI component compatible`,
-    );
-  }
+  return id;
 }
 
 function secretStoreWriteFailed(operation: string, cause: unknown): CaveClientError {
@@ -879,13 +853,11 @@ export class CavePairingSession {
 
 export class CaveClient {
   readonly #transport: CaveTransport;
-  readonly #readTransport: CaveReadTransport | undefined;
   readonly #operation: OperationDefaults | undefined;
   readonly #credentials: CaveCredentialBinding | undefined;
 
   constructor(options: CaveClientOptions) {
     this.#transport = options.transport;
-    this.#readTransport = options.readTransport;
     this.#operation = options.operation;
     this.#credentials = options.credentials;
   }
@@ -1103,18 +1075,13 @@ export class CaveClient {
 
   async #canonicalRead<T>(
     operation: string,
-    path: string,
     options: OperationOptions,
+    read: (context: OperationContext) => Promise<unknown>,
     parse: (value: unknown) => T,
   ): Promise<T> {
     return this.#execute(operation, options, async (context) => {
       this.#ensureActive(context, operation);
-      const call = this.#readTransport?.getJson.bind(this.#readTransport);
-      if (call === undefined) {
-        throw unsupported(operation);
-      }
-
-      const response = await call(path, context);
+      const response = await read(context);
       try {
         return parse(response);
       } catch (error) {
@@ -1126,38 +1093,59 @@ export class CaveClient {
     });
   }
 
-  async listCanonicalFamiliars(
-    options: CaveCanonicalReadOptions = {},
+  async listFamiliars(
+    options: PageOptions & OperationOptions = {},
   ): Promise<Page<CaveCanonicalFamiliar>> {
     const pageOptions = normalizePageOptions(options);
+
     return this.#canonicalRead(
-      'listCanonicalFamiliars',
-      canonicalPagePath('/api/client/v1/familiars', pageOptions),
+      'listFamiliars',
       options,
-      parseCanonicalFamiliarsEnvelope,
+      (context) => {
+        const call = this.#transport.listFamiliars?.bind(this.#transport);
+        if (call === undefined) {
+          throw unsupported('listFamiliars');
+        }
+        return call(pageOptions, context);
+      },
+      parseFamiliarsEnvelope,
     );
   }
 
   async listProjects(
-    options: CaveCanonicalReadOptions = {},
+    options: PageOptions & OperationOptions = {},
   ): Promise<Page<CaveProject>> {
     const pageOptions = normalizePageOptions(options);
+
     return this.#canonicalRead(
       'listProjects',
-      canonicalPagePath('/api/client/v1/projects', pageOptions),
       options,
+      (context) => {
+        const call = this.#transport.listProjects?.bind(this.#transport);
+        if (call === undefined) {
+          throw unsupported('listProjects');
+        }
+        return call(pageOptions, context);
+      },
       parseProjectsEnvelope,
     );
   }
 
   async listConversations(
-    options: CaveCanonicalReadOptions = {},
+    options: PageOptions & OperationOptions = {},
   ): Promise<Page<CaveConversation>> {
     const pageOptions = normalizePageOptions(options);
+
     return this.#canonicalRead(
       'listConversations',
-      canonicalPagePath('/api/client/v1/conversations', pageOptions),
       options,
+      (context) => {
+        const call = this.#transport.listConversations?.bind(this.#transport);
+        if (call === undefined) {
+          throw unsupported('listConversations');
+        }
+        return call(pageOptions, context);
+      },
       parseConversationsEnvelope,
     );
   }
@@ -1165,36 +1153,43 @@ export class CaveClient {
   async getConversation(
     conversationId: string,
     options: OperationOptions = {},
-  ): Promise<CaveConversationDetail> {
-    const encodedId = encodeCanonicalRouteId(
-      conversationId,
-      'conversationId',
-    );
+  ): Promise<CaveConversation> {
+    const validatedId = validateCanonicalId(conversationId, 'conversationId');
+
     return this.#canonicalRead(
       'getConversation',
-      `/api/client/v1/conversations/${encodedId}`,
       options,
+      (context) => {
+        const call = this.#transport.getConversation?.bind(this.#transport);
+        if (call === undefined) {
+          throw unsupported('getConversation');
+        }
+        return call(validatedId, context);
+      },
       parseConversationEnvelope,
     );
   }
 
-  async listMessages(
+  async listConversationMessages(
     conversationId: string,
-    options: CaveCanonicalReadOptions = {},
-  ): Promise<Page<CaveMessage>> {
-    const encodedId = encodeCanonicalRouteId(
-      conversationId,
-      'conversationId',
-    );
+    options: PageOptions & OperationOptions = {},
+  ): Promise<Page<CaveConversationMessage>> {
+    const validatedId = validateCanonicalId(conversationId, 'conversationId');
     const pageOptions = normalizePageOptions(options);
+
     return this.#canonicalRead(
-      'listMessages',
-      canonicalPagePath(
-        `/api/client/v1/conversations/${encodedId}/messages`,
-        pageOptions,
-      ),
+      'listConversationMessages',
       options,
-      parseMessagesEnvelope,
+      (context) => {
+        const call = this.#transport.listConversationMessages?.bind(
+          this.#transport,
+        );
+        if (call === undefined) {
+          throw unsupported('listConversationMessages');
+        }
+        return call(validatedId, pageOptions, context);
+      },
+      parseConversationMessagesEnvelope,
     );
   }
 
