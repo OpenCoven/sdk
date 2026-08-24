@@ -1,6 +1,7 @@
 import type { OperationContext } from '@opencoven/sdk-core';
 
 import type {
+  CaveAuthorityBoundPairingExchange,
   CaveFamiliarsResponse,
   CaveFamiliarAnalyticsResponse,
   CaveFamiliarContractResponse,
@@ -42,4 +43,12 @@ export interface CaveTransport {
     options?: { recentLimit?: number },
     context?: OperationContext,
   ): Promise<CaveFamiliarAnalyticsResponse>;
+}
+
+export interface CaveCredentialPersistingTransport extends CaveTransport {
+  pairingExchange?(
+    requestId: string,
+    pairingSecret: string,
+    context?: OperationContext,
+  ): Promise<CaveAuthorityBoundPairingExchange>;
 }

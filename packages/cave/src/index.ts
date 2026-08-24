@@ -45,6 +45,8 @@ export {
   CAVE_PAIRING_STATUSES,
 } from './schemas.js';
 export type {
+  CaveAuthorityBinding,
+  CaveAuthorityBoundPairingExchange,
   CaveAnalyticsWindowKey,
   CaveContractFile,
   CaveContractReport,
@@ -76,5 +78,8 @@ export type {
   CavePairingStatus,
   CavePropertyCoverage,
 } from './schemas.js';
-export type { CaveTransport } from './transport.js';
+export type {
+  CaveCredentialPersistingTransport,
+  CaveTransport,
+} from './transport.js';
 export { CAVE_CLIENT_VERSION } from './version.js';

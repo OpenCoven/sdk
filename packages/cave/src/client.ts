@@ -14,7 +14,12 @@ import {
   type SecretStoreReference,
 } from '@opencoven/sdk-core';
 
+import {
+  discardPairingExchangeBearer,
+  parseCaveAuthorityBinding,
+} from './authority-binding.js';
 import type {
+  CaveAuthorityBinding,
   CaveCredentialMetadata,
   CaveCredentialStatus,
   CaveHealth,
@@ -30,7 +35,6 @@ import {
   invalidateStoredCredential,
   storeBoundCredential,
 } from './credential-binding.js';
-import type { CaveDiscoveredEndpoint } from './discovery.js';
 import { isPairingSecretUnsentError } from './pairing-secret.js';
 import type {
   CaveExecutionAttempt,
@@ -42,7 +46,10 @@ import type {
   CaveFamiliarWire,
 } from './schemas.js';
 import { CAVE_PAIRING_SCOPES } from './schemas.js';
-import type { CaveTransport } from './transport.js';
+import type {
+  CaveCredentialPersistingTransport,
+  CaveTransport,
+} from './transport.js';
 import { CAVE_CLIENT_VERSION } from './version.js';
 
 const CAVE_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveClientError');
@@ -59,11 +66,23 @@ export interface CaveCredentialBinding {
   reference: SecretStoreReference;
 }
 
-export interface CaveClientOptions {
-  transport: CaveTransport;
+interface CaveClientOptionsBase {
   operation?: OperationDefaults;
-  credentials?: CaveCredentialBinding;
 }
+
+interface CaveClientOptionsWithoutCredentials extends CaveClientOptionsBase {
+  transport: CaveTransport;
+  credentials?: undefined;
+}
+
+interface CaveClientOptionsWithCredentials extends CaveClientOptionsBase {
+  transport: CaveCredentialPersistingTransport;
+  credentials: CaveCredentialBinding;
+}
+
+export type CaveClientOptions =
+  | CaveClientOptionsWithoutCredentials
+  | CaveClientOptionsWithCredentials;
 
 export interface CaveFamiliarAnalyticsOptions extends OperationOptions {
   recentLimit?: number;
@@ -301,6 +320,52 @@ function secretStoreWriteFailed(operation: string, cause: unknown): CaveClientEr
   );
 }
 
+function invalidAuthorityBinding(
+  operation: string,
+  reason: 'authority_binding_invalid' | 'authority_binding_missing',
+): CaveClientError {
+  return new CaveClientError(
+    normalizeCaveError({ code: 'invalid_response' }, operation),
+    undefined,
+    {
+      cause: {
+        code: 'invalid_response',
+        details: { reason },
+        retryable: false,
+      },
+    },
+  );
+}
+
+async function racePrePersistencePhase<T>(
+  operation: Promise<T>,
+  termination: Promise<never>,
+  onLateSuccess: (value: T) => void,
+): Promise<T> {
+  let settled = false;
+  const tracked = Promise.resolve(operation).finally(() => {
+    settled = true;
+  });
+
+  try {
+    return await Promise.race([tracked, termination]);
+  } catch (error) {
+    if ((isOperationTimeoutError(error) || isOperationAbortedError(error)) && !settled) {
+      void tracked.then(
+        (value) => {
+          try {
+            onLateSuccess(value);
+          } catch {
+            // Best effort only.
+          }
+        },
+        () => undefined,
+      );
+    }
+    throw error;
+  }
+}
+
 function operationDuration(startedAt: number): number {
   return Math.max(0, performance.now() - startedAt);
 }
@@ -411,10 +476,6 @@ function optionalString(value: unknown): boolean {
 
 function optionalNumber(value: unknown): boolean {
   return value === undefined || (typeof value === 'number' && Number.isFinite(value));
-}
-
-function isNonNegativeSafeInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 function isFamiliarWire(value: unknown): value is CaveFamiliarWire {
@@ -724,56 +785,19 @@ function isPairingExchange(value: unknown): value is CavePairingExchange {
 
 function pairingExchangeAuthorityBinding(
   value: CavePairingExchange,
-): CaveDiscoveredEndpoint | undefined {
+):
+  | { status: 'missing' }
+  | { status: 'invalid' }
+  | { status: 'valid'; authorityBinding: CaveAuthorityBinding } {
   const candidate = (value as CavePairingExchange & { authorityBinding?: unknown }).authorityBinding;
-
-  if (!isObject(candidate) || candidate.version !== 1) {
-    return undefined;
+  if (candidate === undefined) {
+    return { status: 'missing' };
   }
 
-  if (
-    !isObject(candidate.endpoint) ||
-    candidate.endpoint.kind !== 'http' ||
-    typeof candidate.endpoint.url !== 'string'
-  ) {
-    return undefined;
-  }
-
-  if (
-    !isObject(candidate.record) ||
-    typeof candidate.record.path !== 'string' ||
-    !isNonNegativeSafeInteger(candidate.record.device) ||
-    !isNonNegativeSafeInteger(candidate.record.inode)
-  ) {
-    return undefined;
-  }
-
-  if (
-    !isObject(candidate.freshness) ||
-    !isNonNegativeSafeInteger(candidate.freshness.pid) ||
-    typeof candidate.freshness.nonce !== 'string' ||
-    typeof candidate.freshness.startedAt !== 'string'
-  ) {
-    return undefined;
-  }
-
-  return {
-    version: 1,
-    endpoint: {
-      kind: 'http',
-      url: candidate.endpoint.url,
-    },
-    record: {
-      path: candidate.record.path,
-      device: candidate.record.device,
-      inode: candidate.record.inode,
-    },
-    freshness: {
-      pid: candidate.freshness.pid,
-      nonce: candidate.freshness.nonce,
-      startedAt: candidate.freshness.startedAt,
-    },
-  };
+  const authorityBinding = parseCaveAuthorityBinding(candidate);
+  return authorityBinding === undefined
+    ? { status: 'invalid' }
+    : { status: 'valid', authorityBinding };
 }
 
 export class CavePairingSession {
@@ -1316,11 +1340,17 @@ export class CaveClient {
           let exchanged: CavePairingExchange;
 
           try {
-            const response: unknown = await call(created.requestId, secret, context);
-            if (!isPairingExchange(response)) {
-              throw invalidResponse('pairingExchange');
-            }
-            exchanged = response;
+            exchanged = await racePrePersistencePhase(
+              (async () => {
+                const response: unknown = await call(created.requestId, secret, context);
+                if (!isPairingExchange(response)) {
+                  throw invalidResponse('pairingExchange');
+                }
+                return response;
+              })(),
+              termination,
+              discardPairingExchangeBearer,
+            );
           } catch (error) {
             if (isPairingSecretUnsentError(error)) {
               restorePairingSecret(secret);
@@ -1331,26 +1361,30 @@ export class CaveClient {
           }
 
           clearPairingSecret();
-          const bearerBytes = Buffer.from(exchanged.bearer, 'utf8');
           const authorityBinding = pairingExchangeAuthorityBinding(exchanged);
+          this.#ensureActive(context, 'pairingExchange');
+          if (authorityBinding.status !== 'valid') {
+            throw invalidAuthorityBinding(
+              'pairingExchange',
+              authorityBinding.status === 'missing'
+                ? 'authority_binding_missing'
+                : 'authority_binding_invalid',
+            );
+          }
+
+          const bearerBytes = Buffer.from(exchanged.bearer, 'utf8');
           try {
-            this.#ensureActive(context, 'pairingExchange');
             const bearer = bearerBytes.toString('utf8');
-            if (authorityBinding === undefined) {
-              await credentials.store.set(credentials.reference.key, bearer);
-              this.#ensureActive(context, 'pairingExchange');
-            } else {
-              await storeBoundCredential(
-                credentials.store,
-                credentials.reference,
-                bearer,
-                authorityBinding,
-                {
-                  context,
-                  termination,
-                },
-              );
-            }
+            await storeBoundCredential(
+              credentials.store,
+              credentials.reference,
+              bearer,
+              authorityBinding.authorityBinding,
+              {
+                context,
+                termination,
+              },
+            );
           } catch (error) {
             clearPairingSecret();
             const code = errorCodeOf(error);

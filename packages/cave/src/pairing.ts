@@ -14,12 +14,14 @@ import {
   type CaveDiscoveredEndpoint,
   type DiscoverCaveEndpointOptions,
 } from './discovery.js';
+import { caveAuthorityBindingFromDiscoveredEndpoint } from './authority-binding.js';
 import { markPairingSecretUnsentError } from './pairing-secret.js';
 import {
   invalidateStoredCredential,
   loadBoundCredential,
 } from './credential-binding.js';
 import type {
+  CaveAuthorityBoundPairingExchange,
   CaveCredentialMetadata,
   CaveFamiliarsResponse,
   CaveFamiliarWire,
@@ -31,7 +33,7 @@ import type {
   CavePairingStatus,
 } from './schemas.js';
 import { CAVE_PAIRING_SCOPES } from './schemas.js';
-import type { CaveTransport } from './transport.js';
+import type { CaveCredentialPersistingTransport } from './transport.js';
 import { CAVE_CLIENT_VERSION } from './version.js';
 
 const DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024;
@@ -106,13 +108,19 @@ function transportError(
   code: string,
   message: string,
   options: {
+    cause?: unknown;
     details?: Record<string, string> | undefined;
     requestId?: string | undefined;
     retryable?: boolean;
     statusCode?: number;
   } = {},
 ): Error {
-  return Object.assign(new Error(message), {
+  const error =
+    options.cause === undefined
+      ? new Error(message)
+      : new Error(message, { cause: options.cause });
+
+  return Object.assign(error, {
     code,
     retryable: options.retryable ?? false,
     ...(options.requestId === undefined ? {} : { requestId: options.requestId }),
@@ -166,7 +174,7 @@ function pinnedPairingAuthorityError(reason: PairingAuthorityMismatchReason): Er
     'The discovered Cave authority changed before the pairing secret could be reused safely.',
     {
       details: { reason },
-      retryable: false,
+      retryable: true,
     },
   );
 }
@@ -615,6 +623,7 @@ async function requestJson(
     fetchImplementation: typeof fetch;
     headers?: Record<string, string>;
     maxResponseBytes: number;
+    pairingSecretDispatch?: 'reusable' | 'single_use';
     pinnedAuthority?: CaveDiscoveredEndpoint;
     requireBearer?: boolean;
   },
@@ -709,8 +718,8 @@ async function requestJson(
 
     ensureActive(options.context);
     throw transportError('service_unavailable', 'Cave request could not reach the authority.', {
-      retryable: true,
-      ...(typeof error === 'object' && error !== null ? { cause: error } : {}),
+      retryable: options.pairingSecretDispatch !== 'single_use',
+      cause: error,
     });
   }
 
@@ -735,7 +744,9 @@ async function requestJson(
   };
 }
 
-function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTransport {
+function createDiscoveredTransport(
+  options: DiscoveredTransportOptions,
+): CaveCredentialPersistingTransport {
   const pairingAuthorities = new Map<string, CaveDiscoveredEndpoint>();
 
   const requirePinnedAuthority = (requestId: string): CaveDiscoveredEndpoint => {
@@ -787,6 +798,7 @@ function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTra
             'x-coven-pairing-secret': pairingSecret,
           },
           maxResponseBytes: options.maxResponseBytes,
+          pairingSecretDispatch: 'reusable',
           pinnedAuthority: requirePinnedAuthority(requestId),
         },
       );
@@ -810,15 +822,17 @@ function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTra
             'x-coven-pairing-secret': pairingSecret,
           },
           maxResponseBytes: options.maxResponseBytes,
+          pairingSecretDispatch: 'single_use',
           pinnedAuthority: requirePinnedAuthority(requestId),
         },
       );
       const exchanged = parsePairingExchange(payload);
       pairingAuthorities.delete(requestId);
-      return {
+      const authorityBoundExchange: CaveAuthorityBoundPairingExchange = {
         ...exchanged,
-        authorityBinding: discovered,
+        authorityBinding: caveAuthorityBindingFromDiscoveredEndpoint(discovered),
       };
+      return authorityBoundExchange;
     },
     async familiars(context) {
       const { payload } = await requestJson('GET', '/api/client/v1/familiars', {

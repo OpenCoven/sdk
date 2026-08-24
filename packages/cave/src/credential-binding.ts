@@ -6,7 +6,9 @@ import {
   type SecretStoreReference,
 } from '@opencoven/sdk-core';
 
+import { caveAuthorityBindingFromDiscoveredEndpoint } from './authority-binding.js';
 import type { CaveDiscoveredEndpoint } from './discovery.js';
+import type { CaveAuthorityBinding } from './schemas.js';
 
 const CAVE_CREDENTIAL_BINDING_SCHEMA = 'opencoven.cave.credential-binding.v1' as const;
 const CAVE_CREDENTIAL_BINDING_KEY_PREFIX = 'opencoven.cave.credential-binding.v1.' as const;
@@ -39,7 +41,7 @@ interface CaveCredentialBindingRecord {
   transactionId?: string;
   endpoint: string;
   record: {
-    path: string;
+    identity: string;
     device: number;
     inode: number;
   };
@@ -121,7 +123,7 @@ function bindingFailureKey(reference: SecretStoreReference): string {
 }
 
 function bindingRecord(
-  discovered: CaveDiscoveredEndpoint,
+  authorityBinding: CaveAuthorityBinding,
   state: CaveStoredCredentialBindingState,
   transactionId?: string,
 ): CaveCredentialBindingRecord {
@@ -129,16 +131,16 @@ function bindingRecord(
     schema: CAVE_CREDENTIAL_BINDING_SCHEMA,
     state,
     ...(transactionId === undefined ? {} : { transactionId }),
-    endpoint: discovered.endpoint.url,
+    endpoint: authorityBinding.endpoint.url,
     record: {
-      path: discovered.record.path,
-      device: discovered.record.device,
-      inode: discovered.record.inode,
+      identity: authorityBinding.record.identity,
+      device: authorityBinding.record.device,
+      inode: authorityBinding.record.inode,
     },
     freshness: {
-      pid: discovered.freshness.pid,
-      nonce: discovered.freshness.nonce,
-      startedAt: discovered.freshness.startedAt,
+      pid: authorityBinding.freshness.pid,
+      nonce: authorityBinding.freshness.nonce,
+      startedAt: authorityBinding.freshness.startedAt,
     },
   };
 }
@@ -182,7 +184,7 @@ function parseBindingRecord(serialized: string): CaveCredentialBindingRecord | u
 
   if (
     !isObject(parsed.record) ||
-    !isNonEmptyString(parsed.record.path) ||
+    !isNonEmptyString(parsed.record.identity) ||
     !isNonNegativeSafeInteger(parsed.record.device) ||
     !isNonNegativeSafeInteger(parsed.record.inode)
   ) {
@@ -204,7 +206,7 @@ function parseBindingRecord(serialized: string): CaveCredentialBindingRecord | u
     ...(parsed.transactionId === undefined ? {} : { transactionId: parsed.transactionId }),
     endpoint: parsed.endpoint,
     record: {
-      path: parsed.record.path,
+      identity: parsed.record.identity,
       device: parsed.record.device,
       inode: parsed.record.inode,
     },
@@ -245,27 +247,27 @@ function parseMarkerRecord(
 }
 
 function mismatchReason(
-  discovered: CaveDiscoveredEndpoint,
+  current: CaveAuthorityBinding,
   stored: CaveCredentialBindingRecord,
 ): CaveStoredCredentialMismatchReason | undefined {
   if (
-    discovered.endpoint.url !== stored.endpoint ||
-    discovered.record.path !== stored.record.path
+    current.endpoint.url !== stored.endpoint ||
+    current.record.identity !== stored.record.identity
   ) {
     return 'authority_mismatch';
   }
 
   if (
-    discovered.record.device !== stored.record.device ||
-    discovered.record.inode !== stored.record.inode
+    current.record.device !== stored.record.device ||
+    current.record.inode !== stored.record.inode
   ) {
     return 'record_replaced';
   }
 
   if (
-    discovered.freshness.pid !== stored.freshness.pid ||
-    discovered.freshness.nonce !== stored.freshness.nonce ||
-    discovered.freshness.startedAt !== stored.freshness.startedAt
+    current.freshness.pid !== stored.freshness.pid ||
+    current.freshness.nonce !== stored.freshness.nonce ||
+    current.freshness.startedAt !== stored.freshness.startedAt
   ) {
     return 'authority_restarted';
   }
@@ -455,7 +457,7 @@ export async function storeBoundCredential(
   store: SecretStore,
   reference: SecretStoreReference,
   bearer: string,
-  discovered: CaveDiscoveredEndpoint,
+  authorityBinding: CaveAuthorityBinding,
   options: CredentialBindingMutationOptions = {},
 ): Promise<void> {
   const metadataKey = bindingMetadataKey(reference);
@@ -482,7 +484,7 @@ export async function storeBoundCredential(
       store.set(
         metadataKey,
         JSON.stringify(
-          bindingRecord(discovered, 'pending', transactionId),
+          bindingRecord(authorityBinding, 'pending', transactionId),
         ),
       ),
       options,
@@ -492,7 +494,7 @@ export async function storeBoundCredential(
       store.set(
         metadataKey,
         JSON.stringify(
-          bindingRecord(discovered, 'bound', transactionId),
+          bindingRecord(authorityBinding, 'bound', transactionId),
         ),
       ),
       options,
@@ -516,6 +518,7 @@ export async function loadBoundCredential(
   isBearer: (value: string) => boolean,
   options: CredentialBindingMutationOptions = {},
 ): Promise<LoadedCaveCredential> {
+  const currentAuthority = caveAuthorityBindingFromDiscoveredEndpoint(discovered);
   const failureSerialized = await awaitStoreCall(
     store.get(bindingFailureKey(reference)),
     options,
@@ -612,7 +615,7 @@ export async function loadBoundCredential(
     };
   }
 
-  const reason = mismatchReason(discovered, stored);
+  const reason = mismatchReason(currentAuthority, stored);
   if (reason !== undefined) {
     return {
       status: 'invalid',

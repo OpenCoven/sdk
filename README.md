@@ -148,7 +148,16 @@ and stored-credential checks happen only when you call those methods.
 `session.exchange()` requires an injected credential store; there is no
 implicit fallback store. It is also local single-flight: once an exchange
 attempt begins, later `poll()`/`exchange()` calls fail locally unless the
-attempt failed before any transport send.
+attempt failed before any transport send. Pre-send authority mismatches keep
+the pairing secret ready and surface retryable `reconcile_required`; once an
+exchange request reaches a transport, a later timeout, abort, or discovered
+fetch rejection still spends that session locally.
+
+When you inject `credentials` into `new CaveClient({ transport, credentials })`,
+the transport must satisfy `CaveCredentialPersistingTransport` and return the
+non-secret `authorityBinding` metadata from `pairingExchange()`. The public
+binding carries the endpoint URL, an opaque record identity, device/inode, and
+freshness, without exposing the canonical discovery-record path directly.
 
 ## Coordinated health
 

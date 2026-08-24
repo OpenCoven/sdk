@@ -919,7 +919,7 @@ describe('CLI discovery and doctor helpers', () => {
     await expect(discoverPinned()).resolves.toEqual(caveDiscovery);
     await expect(discoverPinned()).rejects.toMatchObject({
       code: 'reconcile_required',
-      retryable: false,
+      retryable: true,
       details: {
         reason: 'record_replaced',
       },
@@ -945,7 +945,7 @@ describe('CLI discovery and doctor helpers', () => {
 
     await expect(mismatchPinned()).rejects.toMatchObject({
       code: 'reconcile_required',
-      retryable: false,
+      retryable: true,
       details: {
         reason: 'authority_mismatch',
       },

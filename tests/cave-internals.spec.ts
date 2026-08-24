@@ -8,6 +8,7 @@ import {
 } from '@opencoven/sdk-core';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+import { caveAuthorityBindingFromDiscoveredEndpoint } from '../packages/cave/src/authority-binding.js';
 import {
   forgetStoredCredential,
   inspectStoredCredentialMaterial,
@@ -47,6 +48,7 @@ const discovered: CaveDiscoveredEndpoint = {
 const BINDING_KEY_PREFIX = 'opencoven.cave.credential-binding.v1.';
 const STAGING_KEY_PREFIX = 'opencoven.cave.credential-binding.staging.v1.';
 const FAILURE_KEY_PREFIX = 'opencoven.cave.credential-binding.failure.v1.';
+const authorityBinding = caveAuthorityBindingFromDiscoveredEndpoint(discovered);
 
 interface MutableStore extends SecretStore {
   deleted: string[];
@@ -145,7 +147,7 @@ describe('Cave credential binding helpers', () => {
     const reference = createSecretStoreReference('chat.cave');
     const store = storeWithState();
 
-    await storeBoundCredential(store, reference, 'bearer', discovered);
+    await storeBoundCredential(store, reference, 'bearer', authorityBinding);
     const metadataKey = storedKeyWithPrefix(store, BINDING_KEY_PREFIX);
 
     expect(String(store.values.get(metadataKey))).toContain('"state":"bound"');
@@ -159,15 +161,28 @@ describe('Cave credential binding helpers', () => {
     await expect(forgetStoredCredential(store, reference)).resolves.toBe(true);
     expect(store.values.size).toBe(0);
 
-    await storeBoundCredential(store, reference, 'bearer', discovered);
+    await storeBoundCredential(store, reference, 'bearer', authorityBinding);
     await expect(invalidateStoredCredential(store, reference)).resolves.toBeUndefined();
     expect(store.values.size).toBe(0);
+  });
+
+  test('stores an opaque authority record identity instead of the discovery path', async () => {
+    const reference = createSecretStoreReference('chat.cave.identity');
+    const store = storeWithState();
+
+    await storeBoundCredential(store, reference, 'bearer', authorityBinding);
+    const metadataKey = storedKeyWithPrefix(store, BINDING_KEY_PREFIX);
+    const serialized = String(store.values.get(metadataKey));
+
+    expect(serialized).toContain('"identity":"sha256:');
+    expect(serialized).not.toContain(discovered.record.path);
+    expect(serialized).not.toContain('"path"');
   });
 
   test('reports invalid bound-credential states and reconciliation reasons', async () => {
     const reference = createSecretStoreReference('chat.cave.status');
     const seeded = storeWithState();
-    await storeBoundCredential(seeded, reference, 'bearer', discovered);
+    await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
     const metadataKey = storedKeyWithPrefix(seeded, BINDING_KEY_PREFIX);
     const failureKey = `${FAILURE_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
     const stagingKey = `${STAGING_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
@@ -382,7 +397,7 @@ describe('Cave credential binding helpers', () => {
   test('swallows invalidation delete failures and reports whether any credential material was forgotten', async () => {
     const reference = createSecretStoreReference('chat.cave.delete');
     const first = storeWithState();
-    await storeBoundCredential(first, reference, 'bearer', discovered);
+    await storeBoundCredential(first, reference, 'bearer', authorityBinding);
     const metadataKey = storedKeyWithPrefix(first, BINDING_KEY_PREFIX);
 
     const bearerDeleteFailure: SecretStore = {

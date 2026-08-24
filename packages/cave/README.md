@@ -103,21 +103,34 @@ instances.
 Constructor operation defaults are overridden by per-call values. There is no
 default timeout. The transport context is optional for source compatibility
 and contains a composed signal plus the earliest monotonic deadline. A timeout
-returns promptly even if the transport ignores the signal, but only a
-cooperative transport stops underlying I/O. Do not log `error.cause` blindly.
+returns promptly even if the transport ignores the signal. If `exchange()`
+times out or is aborted before credential persistence begins, any later
+transport result is discarded before the bearer can be written. Once
+persistence starts, the client still waits for the cancellation-aware rollback
+path to finish before rejecting. Only a cooperative transport stops
+underlying I/O. Do not log `error.cause` blindly.
 The same controls apply to `createPairing()`, `session.poll()`,
 `session.exchange()`, `credentialStatus()`, `forgetCredential()`,
 `familiars()`, `familiarContract()`, and `familiarAnalytics()`. The discovered
 helper currently owns Client v1 `health`, `pairing`, `credentialStatus`, and
 `familiars`; custom transports can continue to provide the familiar contract
 and analytics routes independently. `session.exchange()` requires an injected
-credential store; the client never falls back to implicit in-memory storage.
+credential store; the client never falls back to implicit in-memory storage. A
+caller-supplied transport that uses `credentials` must satisfy
+`CaveCredentialPersistingTransport` and return `authorityBinding` from
+`pairingExchange()`. The binding is non-secret metadata only: endpoint URL,
+opaque record identity, record device/inode, and freshness. The discovered
+transport hashes the canonical discovery-record path into that opaque identity
+instead of exposing the raw filesystem path in the public contract.
 A successful `session.poll()` keeps the session ready for one later
 `session.exchange()`. While a poll is in flight, later `poll()`/`exchange()`
 calls fail locally with retryable `operation_in_progress` instead of sending
 the pairing secret twice. Once an exchange attempt begins, later
 `poll()`/`exchange()` calls fail locally unless the attempt failed before any
-transport send.
+transport send. Pre-send pinned-authority failures keep the pairing secret
+ready and surface retryable `reconcile_required`. Discovered fetch/network
+rejections during `session.exchange()` are terminal for that session because
+the client cannot prove whether the request was sent.
 
 Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,

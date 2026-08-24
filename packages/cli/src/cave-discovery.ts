@@ -45,7 +45,7 @@ function pinnedCaveAuthorityError(reason: CaveAuthorityMismatchReason): Error {
     {
       code: 'reconcile_required',
       details: { reason },
-      retryable: false,
+      retryable: true,
     },
   );
 }

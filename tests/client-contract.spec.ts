@@ -1,6 +1,10 @@
 import * as cave from '@opencoven/cave-client';
 import * as coven from '@opencoven/coven-client';
-import type { OperationContext, OperationEvent } from '@opencoven/sdk-core';
+import {
+  createSecretStoreReference,
+  type OperationContext,
+  type OperationEvent,
+} from '@opencoven/sdk-core';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 interface HealthClient {
@@ -9,6 +13,56 @@ interface HealthClient {
 
 interface ClientConstructor {
   new (options: { transport: unknown }): HealthClient;
+}
+
+function pairingCredential(): cave.CaveCredentialMetadata {
+  return {
+    id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+    appName: 'OpenCoven Chat',
+    installationId: 'chat-install-1',
+    scopes: ['chat:read'],
+    createdAt: 1_755_730_812_617,
+    lastUsedAt: null,
+    revokedAt: null,
+    revocationReason: null,
+  };
+}
+
+function authorityBinding(): cave.CaveAuthorityBinding {
+  return {
+    version: 1,
+    endpoint: {
+      kind: 'http',
+      url: 'http://127.0.0.1:3020',
+    },
+    record: {
+      identity:
+        'sha256:2ebc3bc10d73758b0a0d5f6d1c4ec15c064c530d10e845ca8451e6d8f5f5c6d0',
+      device: 7,
+      inode: 9,
+    },
+    freshness: {
+      pid: 42,
+      nonce: '018f4f1a-77c2-7a31-8a15-55a25aaba003',
+      startedAt: '2026-08-24T02:03:51.419Z',
+    },
+  };
+}
+
+function recordingSecretStore() {
+  const retained = new Map<string, string>();
+
+  return {
+    retained,
+    store: {
+      get: vi.fn((key: string) => Promise.resolve(retained.get(key))),
+      set: vi.fn((key: string, value: string) => {
+        retained.set(key, value);
+        return Promise.resolve();
+      }),
+      delete: vi.fn((key: string) => Promise.resolve(retained.delete(key))),
+    },
+  };
 }
 
 afterEach(() => {
@@ -94,6 +148,187 @@ describe('constrained client transports', () => {
       },
     });
     expect(pairingExchange).not.toHaveBeenCalled();
+  });
+
+  test('persists credentials from public authority-bound custom transports', async () => {
+    const { retained, store } = recordingSecretStore();
+    const reference = createSecretStoreReference('cave-client-authority-bound');
+    const credential = pairingCredential();
+    const transport = {
+      health: () => Promise.resolve({ data: { status: 'ok' as const } }),
+      pairingCreate: () =>
+        Promise.resolve({
+          requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+          secret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          expiresAt: 1_755_731_112_617,
+        }),
+      pairingExchange: () =>
+        Promise.resolve({
+          bearer: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+          credential,
+          authorityBinding: authorityBinding(),
+        } satisfies cave.CaveAuthorityBoundPairingExchange),
+    } satisfies cave.CaveCredentialPersistingTransport;
+
+    const client = new cave.CaveClient({
+      transport,
+      credentials: {
+        store,
+        reference,
+      },
+    });
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await expect(session.exchange()).resolves.toEqual(credential);
+    expect(retained.get(reference.key)).toBe('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB');
+    expect(store.set).toHaveBeenCalled();
+  });
+
+  test('fails before durable writes when a custom transport omits authority binding', async () => {
+    const { retained, store } = recordingSecretStore();
+    const reference = createSecretStoreReference('cave-client-missing-binding');
+    const credential = pairingCredential();
+    const missingBindingTransport = {
+      health: () => Promise.resolve({ data: { status: 'ok' as const } }),
+      pairingCreate: () =>
+        Promise.resolve({
+          requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+          secret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          expiresAt: 1_755_731_112_617,
+        }),
+      pairingExchange: vi.fn(() =>
+        Promise.resolve({
+          bearer: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+          credential,
+        } satisfies cave.CavePairingExchange),
+      ),
+    } satisfies cave.CaveTransport;
+
+    // @ts-expect-error authorityBinding is required when credentials are configured
+    const missingBindingOptions: cave.CaveClientOptions = {
+      transport: missingBindingTransport,
+      credentials: {
+        store,
+        reference,
+      },
+    };
+    void missingBindingOptions;
+
+    const client = new cave.CaveClient({
+      transport: missingBindingTransport as unknown as cave.CaveCredentialPersistingTransport,
+      credentials: {
+        store,
+        reference,
+      },
+    });
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: {
+        code: 'invalid_response',
+        retryable: false,
+        operation: 'pairingExchange',
+      },
+      details: {
+        reason: 'authority_binding_missing',
+      },
+    });
+    expect(store.set).not.toHaveBeenCalled();
+    expect(retained.size).toBe(0);
+    expect(missingBindingTransport.pairingExchange).toHaveBeenCalledTimes(1);
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: {
+        code: 'conflict',
+        retryable: false,
+        operation: 'pairingExchange',
+      },
+      details: {
+        reason: 'pairing_replayed',
+      },
+    });
+    expect(missingBindingTransport.pairingExchange).toHaveBeenCalledTimes(1);
+  });
+
+  test('times out non-cooperative exchange transports promptly without late persistence', async () => {
+    vi.useFakeTimers();
+    const { retained, store } = recordingSecretStore();
+    const reference = createSecretStoreReference('cave-client-timeout-no-late-persist');
+    const credential = pairingCredential();
+    let resolveExchange: ((value: cave.CaveAuthorityBoundPairingExchange) => void) | undefined;
+    const pairingExchange = vi.fn(
+      () =>
+        new Promise<cave.CaveAuthorityBoundPairingExchange>((resolve) => {
+          resolveExchange = resolve;
+        }),
+    );
+    const transport = {
+      health: () => Promise.resolve({ data: { status: 'ok' as const } }),
+      pairingCreate: () =>
+        Promise.resolve({
+          requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+          secret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          expiresAt: 1_755_731_112_617,
+        }),
+      pairingExchange,
+    } satisfies cave.CaveCredentialPersistingTransport;
+
+    const client = new cave.CaveClient({
+      transport,
+      credentials: {
+        store,
+        reference,
+      },
+    });
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    const exchange = session.exchange({ timeoutMs: 10 }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(10);
+
+    await expect(exchange).resolves.toMatchObject({
+      normalized: {
+        code: 'timeout',
+        retryable: true,
+        operation: 'pairingExchange',
+      },
+      cause: {
+        code: 'timeout',
+      },
+    });
+    expect(store.set).not.toHaveBeenCalled();
+
+    resolveExchange?.({
+      bearer: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+      credential,
+      authorityBinding: authorityBinding(),
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(store.set).not.toHaveBeenCalled();
+    expect(retained.size).toBe(0);
+    expect(pairingExchange).toHaveBeenCalledTimes(1);
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: {
+        code: 'conflict',
+        retryable: false,
+        operation: 'pairingExchange',
+      },
+      details: {
+        reason: 'pairing_replayed',
+      },
+    });
   });
 
   test('requests Coven health through a caller-supplied constrained transport', async () => {

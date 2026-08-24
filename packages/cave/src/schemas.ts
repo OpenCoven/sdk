@@ -1,3 +1,8 @@
+import type {
+  CaveDiscoveredEndpoint,
+  CaveEndpointFreshness,
+} from './discovery.js';
+
 export interface CaveHealth {
   status: 'ok';
   instanceId?: string;
@@ -78,6 +83,21 @@ export interface CaveCredentialMetadata {
 export interface CavePairingExchange {
   bearer: string;
   credential: CaveCredentialMetadata;
+}
+
+export interface CaveAuthorityBinding {
+  version: CaveDiscoveredEndpoint['version'];
+  endpoint: CaveDiscoveredEndpoint['endpoint'];
+  record: {
+    identity: string;
+    device: number;
+    inode: number;
+  };
+  freshness: CaveEndpointFreshness;
+}
+
+export interface CaveAuthorityBoundPairingExchange extends CavePairingExchange {
+  authorityBinding: CaveAuthorityBinding;
 }
 
 export type CaveCredentialAccess =
