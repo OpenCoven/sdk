@@ -9,7 +9,17 @@ const cave = new CaveClient({
           new Error('Cave health was aborted', { cause: context.signal.reason }),
         );
       }
-      return Promise.resolve({ data: { status: 'ok' } });
+      return Promise.resolve({
+        apiVersion: '1.0',
+        capabilities: ['health'],
+        minimumClientVersion: '0.1.0',
+        operations: ['health.read'],
+        data: {
+          instanceId: 'example-cave',
+          pairingRequired: true,
+          releaseVersion: '0.3.9',
+        },
+      });
     },
   },
 });

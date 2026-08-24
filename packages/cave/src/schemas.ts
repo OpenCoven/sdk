@@ -1,12 +1,25 @@
 export interface CaveHealth {
   status: 'ok';
+  apiVersion: string;
+  minimumClientVersion: string;
+  capabilities: readonly string[];
+  operations: readonly string[];
+  instanceId: string;
+  pairingRequired: boolean;
+  releaseVersion: string;
 }
 
 export interface CaveHealthResponse {
-  apiVersion?: string;
-  minimumClientVersion?: string;
+  apiVersion: string;
+  capabilities: readonly string[];
+  minimumClientVersion: string;
+  operations: readonly string[];
   requestId?: string;
-  data: CaveHealth;
+  data: {
+    instanceId: string;
+    pairingRequired: boolean;
+    releaseVersion: string;
+  };
 }
 
 /**

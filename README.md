@@ -204,12 +204,16 @@ Automatic retries are intentionally not performed.
   security disposition, and release validation before production adoption.
 
 Reviewed Cave and Coven fixture bytes are committed under their client
-packages and verified locally. Refresh them with
+packages and verified locally. The Cave fixture provenance manifest pins
+`OpenCoven/coven-cave` commit
+`e2b5b9d10d8498895ba9ff39ce6185f4ed873b57`, producer paths, and SHA-256.
+Refresh fixture bytes with
 `pnpm sync:contracts -- --cave-root <path> --coven-root <path>` before running
-the contract verifier. No authority source tree is imported at runtime.
-
-The 0.1 program adds producer provenance and producer/vendor/pack/consumer
-parity so a local digest cannot remain green while its authority has advanced.
+the offline contract verifier. Explicitly prove a checkout is at the pinned
+producer commit and byte-identical with
+`pnpm verify:cave-authority -- --cave-root <path>`. No authority source tree is
+imported at runtime, and packed-package verification compares all three
+vendored Cave contract artifacts byte for byte.
 
 ## Validation
 

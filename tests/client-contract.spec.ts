@@ -11,6 +11,29 @@ interface ClientConstructor {
   new (options: { transport: unknown }): HealthClient;
 }
 
+const VALID_CAVE_HEALTH_RESPONSE = {
+  apiVersion: '1.0',
+  capabilities: ['health'],
+  minimumClientVersion: '0.1.0',
+  operations: ['health.read'],
+  data: {
+    instanceId: 'test-cave',
+    pairingRequired: true,
+    releaseVersion: '0.3.9',
+  },
+} as const;
+
+const VALID_CAVE_HEALTH = {
+  status: 'ok',
+  apiVersion: VALID_CAVE_HEALTH_RESPONSE.apiVersion,
+  minimumClientVersion: VALID_CAVE_HEALTH_RESPONSE.minimumClientVersion,
+  capabilities: VALID_CAVE_HEALTH_RESPONSE.capabilities,
+  operations: VALID_CAVE_HEALTH_RESPONSE.operations,
+  instanceId: VALID_CAVE_HEALTH_RESPONSE.data.instanceId,
+  pairingRequired: VALID_CAVE_HEALTH_RESPONSE.data.pairingRequired,
+  releaseVersion: VALID_CAVE_HEALTH_RESPONSE.data.releaseVersion,
+} as const;
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -23,7 +46,7 @@ describe('constrained client transports', () => {
         ? undefined
         : new CaveClient({
             transport: {
-              health: () => Promise.resolve({ data: { status: 'ok' } }),
+              health: () => Promise.resolve(VALID_CAVE_HEALTH_RESPONSE),
             },
           });
 
@@ -32,17 +55,17 @@ describe('constrained client transports', () => {
         ? client.health()
         : Promise.resolve(undefined);
 
-    await expect(response).resolves.toEqual({ status: 'ok' });
+    await expect(response).resolves.toEqual(VALID_CAVE_HEALTH);
   });
 
   test('creates Cave health clients through the public factory', async () => {
     const client = cave.createCaveClient({
       transport: {
-        health: () => Promise.resolve({ data: { status: 'ok' } }),
+        health: () => Promise.resolve(VALID_CAVE_HEALTH_RESPONSE),
       },
     });
 
-    await expect(client.health()).resolves.toEqual({ status: 'ok' });
+    await expect(client.health()).resolves.toEqual(VALID_CAVE_HEALTH);
   });
 
   test('requests Coven health through a caller-supplied constrained transport', async () => {
@@ -132,7 +155,7 @@ describe('constrained client transports', () => {
 
   test('keeps zero-argument transports source compatible', async () => {
     const caveTransport = {
-      health: () => Promise.resolve({ data: { status: 'ok' as const } }),
+      health: () => Promise.resolve(VALID_CAVE_HEALTH_RESPONSE),
     } satisfies cave.CaveTransport;
     const covenTransport = {
       health: () =>
@@ -148,9 +171,9 @@ describe('constrained client transports', () => {
         }),
     } satisfies coven.CovenTransport;
 
-    await expect(new cave.CaveClient({ transport: caveTransport }).health()).resolves.toEqual({
-      status: 'ok',
-    });
+    await expect(
+      new cave.CaveClient({ transport: caveTransport }).health(),
+    ).resolves.toEqual(VALID_CAVE_HEALTH);
     await expect(new coven.CovenClient({ transport: covenTransport }).health()).resolves.toEqual({
       status: 'ok',
     });
@@ -163,7 +186,7 @@ describe('constrained client transports', () => {
       transport: {
         health(receivedContext) {
           context = receivedContext;
-          return Promise.resolve({ data: { status: 'ok' } });
+          return Promise.resolve(VALID_CAVE_HEALTH_RESPONSE);
         },
       },
     });
@@ -181,7 +204,7 @@ describe('constrained client transports', () => {
       transport: {
         health(receivedContext) {
           context = receivedContext;
-          return Promise.resolve({ data: { status: 'ok' } });
+          return Promise.resolve(VALID_CAVE_HEALTH_RESPONSE);
         },
       },
     });

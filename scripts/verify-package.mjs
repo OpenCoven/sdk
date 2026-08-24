@@ -188,6 +188,21 @@ function assertPackedChangelogs(tarballs) {
   }
 }
 
+function assertPackedContractFixtures(tarballs) {
+  for (const path of [
+    'fixtures/contract-fixture.json',
+    'fixtures/contract-fixture.sha256',
+    'fixtures/contract-fixture.provenance.json',
+  ]) {
+    const packed = readTarballFile(tarballs.cave, path);
+    const source = readFileSync(resolve(root, 'packages/cave', path), 'utf8');
+
+    if (packed !== source) {
+      throw new Error(`Packed @opencoven/cave-client ${path} differs from source.`);
+    }
+  }
+}
+
 function assertInstalledPackageDirectoryMap() {
   for (const { packageName, workspaceDirectory } of PUBLIC_PACKAGES) {
     if (installedPackageNames[workspaceDirectory] !== packageName.split('/')[1]) {
@@ -314,7 +329,17 @@ const cave = new CaveClient({
     health: async (context?: OperationContext) => {
       void context?.signal;
       void context?.deadline;
-      return { data: { status: 'ok' } };
+      return {
+        apiVersion: '1.0',
+        capabilities: ['health'],
+        minimumClientVersion: '0.1.0',
+        operations: ['health.read'],
+        data: {
+          instanceId: 'packed-consumer-cave',
+          pairingRequired: true,
+          releaseVersion: '0.3.9',
+        },
+      };
     },
   },
 });
@@ -494,6 +519,8 @@ try {
   process.stdout.write('Packed license metadata verified.\n');
   assertPackedChangelogs(tarballs);
   process.stdout.write('Packed changelog metadata verified.\n');
+  assertPackedContractFixtures(tarballs);
+  process.stdout.write('Packed Cave contract fixtures verified.\n');
 
   const releaseArtifactRoot = resolve(artifactRoot, 'release');
   createReleaseArtifacts({

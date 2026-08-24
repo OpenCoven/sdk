@@ -18,17 +18,50 @@ describe('Cave contract fixture parsing', () => {
     const fixture = readFileSync(fixturePath, 'utf8');
     const digest = readFileSync(digestPath, 'utf8');
 
-    expect(parseVerifiedCaveContractFixture(fixture, digest)).toMatchObject({
+    const parsed = parseVerifiedCaveContractFixture(fixture, digest);
+
+    expect(parsed).toMatchObject({
       contract: {
         apiVersion: '1.0',
+        capabilities: [
+          'health',
+          'pairing',
+          'credentials',
+          'familiars',
+          'projects',
+          'conversations',
+          'conversation-messages',
+          'cursors',
+        ],
+        discovery: {
+          fileName: 'client-v1-discovery.json',
+          mode: '0600',
+          version: 1,
+        },
         minimumClientVersion: '0.1.0',
+        pairingRequired: true,
+        pairingSecretHeader: 'x-coven-pairing-secret',
       },
       examples: {
-        status: {
-          status: 'ok',
+        healthEnvelope: {
+          data: {
+            instanceId: '00000000-0000-4000-8000-000000000000',
+            pairingRequired: true,
+            releaseVersion: '0.0.0',
+          },
         },
       },
     });
+    expect(parsed.contract.operations).toContainEqual(expect.objectContaining({
+      id: 'health.read',
+      ingress: 'public',
+      method: 'GET',
+      path: '/api/client/v1/health',
+      scope: null,
+    }));
+    expect(parsed.examples.healthEnvelope.operations).toEqual(
+      parsed.contract.operations.map(({ id }) => id),
+    );
   });
 
   test('rejects a required-field mutation when the digest is left stale', () => {
@@ -61,5 +94,27 @@ describe('Cave contract fixture parsing', () => {
     expect(() =>
       parseVerifiedCaveContractFixture(mutatedFixtureBytes, `${mutatedDigest}\n`),
     ).toThrowError('fixture.contract.minimumClientVersion must be a string.');
+  });
+
+  test('accepts safe additive fixture fields without weakening required fields', () => {
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
+      contract: Record<string, unknown>;
+      examples: {
+        health: Record<string, unknown>;
+      };
+    };
+    fixture.contract.futureDeclaration = { enabled: true };
+    fixture.examples.health.futureMetadata = 'compatible';
+
+    expect(parseCaveContractFixture(fixture)).toMatchObject({
+      contract: {
+        apiVersion: '1.0',
+      },
+      examples: {
+        health: {
+          instanceId: '00000000-0000-4000-8000-000000000000',
+        },
+      },
+    });
   });
 });
