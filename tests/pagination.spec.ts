@@ -39,6 +39,16 @@ describe('page option normalization', () => {
     expect(normalizePageOptions()).toEqual({ limit: 50 });
   });
 
+  test('rejects a supplied null page limit at runtime', () => {
+    const normalizeRuntimeInput = normalizePageOptions as unknown as (
+      options?: unknown,
+    ) => unknown;
+
+    expect(() => normalizeRuntimeInput({ limit: null })).toThrow(
+      expect.objectContaining({ code: 'invalid_options' }),
+    );
+  });
+
   test.each([1, 100])('accepts page limit %d', (limit) => {
     expect(normalizePageOptions({ limit })).toEqual({ limit });
   });

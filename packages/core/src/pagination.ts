@@ -129,7 +129,8 @@ export function normalizePageOptions(
   }
 
   const requestedLimit: unknown = options.limit;
-  const limit = requestedLimit ?? DEFAULT_PAGE_LIMIT;
+  const limit =
+    requestedLimit === undefined ? DEFAULT_PAGE_LIMIT : requestedLimit;
   if (
     typeof limit !== 'number' ||
     !Number.isSafeInteger(limit) ||
