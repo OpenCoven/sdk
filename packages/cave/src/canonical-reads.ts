@@ -126,8 +126,15 @@ function optionalBoolean(
   return value === undefined ? undefined : canonicalBoolean(value, field);
 }
 
-function parseDeclarationIds(value: unknown, field: string): string[] {
+function parseDeclarationIds(
+  value: unknown,
+  field: string,
+  options: { requireNonEmpty?: boolean } = {},
+): string[] {
   if (!Array.isArray(value)) {
+    throw new CaveCanonicalSchemaError(field);
+  }
+  if (options.requireNonEmpty === true && value.length === 0) {
     throw new CaveCanonicalSchemaError(field);
   }
 
@@ -173,7 +180,9 @@ function parseEnvelope(value: unknown): JsonObject {
     'minimumClientVersion',
   );
   parseDeclarationIds(envelope.capabilities, 'capabilities');
-  parseDeclarationIds(envelope.operations, 'operations');
+  parseDeclarationIds(envelope.operations, 'operations', {
+    requireNonEmpty: true,
+  });
 
   if (apiVersion !== CAVE_API_VERSION) {
     throw new CaveCanonicalSchemaError('apiVersion');

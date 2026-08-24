@@ -594,6 +594,7 @@ describe('Cave caller-supplied canonical reads', () => {
     ['capabilities', { capabilities: 'projects' }],
     ['capabilities[0]', { capabilities: [1] }],
     ['operations', { operations: undefined }],
+    ['operations', { operations: [] }],
     ['operations', { operations: 'projects.list' }],
     [
       'operations[1]',
@@ -627,6 +628,7 @@ describe('Cave caller-supplied canonical reads', () => {
 
   test.each([
     ['operations', { operations: undefined }],
+    ['operations', { operations: [] }],
     ['operations', { operations: 'projects.list' }],
     [
       'operations[1]',
