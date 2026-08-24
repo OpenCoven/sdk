@@ -440,6 +440,49 @@ describe('Cave credential binding helpers', () => {
     });
   });
 
+  test('preserves a replacement written while an older instance proof is pending', async () => {
+    const reference = createSecretStoreReference('chat.cave.instance-proof-race');
+    const store = storeWithState();
+    await storeBoundCredential(store, reference, 'bearer-old', authorityBinding);
+
+    let resolveProof!: (matches: boolean) => void;
+    let markProofStarted!: () => void;
+    const proofStarted = new Promise<void>((resolve) => {
+      markProofStarted = resolve;
+    });
+    const proof = new Promise<boolean>((resolve) => {
+      resolveProof = resolve;
+    });
+    const loading = loadBoundCredential(
+      store,
+      reference,
+      discovered,
+      (value) => value.startsWith('bearer-'),
+      {
+        invalidateInvalid: true,
+        verifyAuthorityInstance: () => {
+          markProofStarted();
+          return proof;
+        },
+      },
+    );
+
+    await proofStarted;
+    await storeBoundCredential(store, reference, 'bearer-new', authorityBinding);
+    resolveProof(false);
+
+    await expect(loading).resolves.toEqual({
+      status: 'invalid',
+      reason: 'authority_restarted',
+    });
+    await expect(
+      loadBoundCredential(store, reference, discovered, (value) => value === 'bearer-new'),
+    ).resolves.toEqual({
+      status: 'ready',
+      bearer: 'bearer-new',
+    });
+  });
+
   test('rejects oversized and exact-schema-violating stored records', async () => {
     const reference = createSecretStoreReference('chat.cave.strict-schema');
     const cases = [

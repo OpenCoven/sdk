@@ -201,6 +201,10 @@ binding carries the Cave instance ID, endpoint URL, an opaque record identity,
 device/inode, and freshness, without exposing the canonical discovery-record
 path directly. Discovered authenticated calls prove the stored instance ID
 through an unauthenticated health request before attaching the bearer.
+That separate preflight detects observable restarts but cannot atomically bind
+the later HTTP request to the proven process. Final 0.1 security disposition
+and real-authority conformance remain blocked on
+[OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
 
 ## Explicit Coven discovery
 

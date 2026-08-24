@@ -17,7 +17,6 @@ import {
 import { caveAuthorityBindingFromDiscoveredEndpoint } from './authority-binding.js';
 import { markPairingSecretUnsentError } from './pairing-secret.js';
 import {
-  invalidateStoredCredential,
   loadBoundCredential,
 } from './credential-binding.js';
 import type {
@@ -688,6 +687,7 @@ async function requestJson(
       (value) => BASE64URL_43_RE.test(value),
       {
         ...(options.context === undefined ? {} : { context: options.context }),
+        invalidateInvalid: true,
         verifyAuthorityInstance: async (instanceId) => {
           const { payload } = await requestJson('GET', '/api/client/v1/health', {
             ...(options.context === undefined ? {} : { context: options.context }),
@@ -704,14 +704,6 @@ async function requestJson(
     ensureActive(options.context);
 
     if (credential.status === 'missing' || credential.status === 'invalid_bearer') {
-      if (credential.status === 'invalid_bearer') {
-        await invalidateStoredCredential(
-          credentials.store,
-          credentials.reference,
-          options.context === undefined ? {} : { context: options.context },
-        );
-      }
-
       throw transportError('unauthorized', 'A stored Cave credential was not available.', {
         retryable: false,
         statusCode: 401,
@@ -719,11 +711,6 @@ async function requestJson(
     }
 
     if (credential.status === 'invalid') {
-      await invalidateStoredCredential(
-        credentials.store,
-        credentials.reference,
-        options.context === undefined ? {} : { context: options.context },
-      );
       throw transportError(
         'reconcile_required',
         'The stored Cave credential must be paired again before reuse safely.',

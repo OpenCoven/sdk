@@ -149,7 +149,12 @@ opaque identity instead of exposing the raw filesystem path in the public
 contract. It brackets the single-use exchange with unauthenticated health
 proofs and persists the bearer only if the instance ID remains stable. A
 failed post-exchange proof is non-retryable for that spent session and requires
-a new pairing.
+a new pairing. These separate loopback health requests are defense in depth:
+the current Client v1 contract cannot atomically bind the subsequent
+pairing-secret or bearer request to the process that answered health. The 0.1
+release remains blocked on the producer protocol work in
+[OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996)
+and real-authority conformance.
 A successful `session.poll()` keeps the session ready for one later
 `session.exchange()`. While a poll is in flight, later `poll()`/`exchange()`
 calls fail locally with retryable `operation_in_progress` instead of sending

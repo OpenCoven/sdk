@@ -86,6 +86,7 @@ export type StoredCaveCredentialMaterial =
 
 interface CredentialBindingMutationOptions {
   context?: OperationContext;
+  invalidateInvalid?: boolean;
   mutationGraceMs?: number;
   termination?: Promise<never>;
   verifyAuthorityInstance?: (instanceId: string) => Promise<boolean>;
@@ -763,10 +764,18 @@ export async function loadBoundCredential(
   options: CredentialBindingMutationOptions = {},
 ): Promise<LoadedCaveCredential> {
   const raw = await readStoreValue(store, reference.key, options);
+  const invalidateObserved = async (): Promise<void> => {
+    if (options.invalidateInvalid !== true) {
+      return;
+    }
+
+    await invalidateStoredCredentialIfExact(store, reference, raw, options);
+  };
   if (raw === undefined) {
     return { status: 'missing' };
   }
   if (typeof raw !== 'string') {
+    await invalidateObserved();
     return {
       status: 'invalid',
       reason: 'authority_binding_invalid',
@@ -775,6 +784,7 @@ export async function loadBoundCredential(
 
   const stored = parseStoredCredentialRecord(raw);
   if (stored === undefined) {
+    await invalidateObserved();
     return {
       status: 'invalid',
       reason: 'authority_binding_invalid',
@@ -782,6 +792,7 @@ export async function loadBoundCredential(
   }
 
   if (!isBearer(stored.bearer)) {
+    await invalidateObserved();
     return { status: 'invalid_bearer' };
   }
 
@@ -791,6 +802,7 @@ export async function loadBoundCredential(
   );
   const reason = mismatchReason(currentAuthority, stored.authorityBinding);
   if (reason !== undefined) {
+    await invalidateObserved();
     return {
       status: 'invalid',
       reason,
@@ -801,6 +813,7 @@ export async function loadBoundCredential(
     options.verifyAuthorityInstance !== undefined &&
     !(await options.verifyAuthorityInstance(stored.authorityBinding.instanceId))
   ) {
+    await invalidateObserved();
     return {
       status: 'invalid',
       reason: 'authority_restarted',
@@ -813,23 +826,16 @@ export async function loadBoundCredential(
   };
 }
 
-export async function invalidateStoredCredential(
+async function invalidateStoredCredentialIfExact(
   store: SecretStore,
   reference: SecretStoreReference,
-  options: CredentialBindingMutationOptions = {},
+  expected: unknown,
+  options: CredentialBindingMutationOptions,
 ): Promise<void> {
   await serializeReferenceMutation(store, reference, async () => {
-    let observed: unknown;
-
-    try {
-      observed = await readStoreValue(store, reference.key, options);
-    } catch {
-      return;
-    }
-
-    if (observed !== undefined) {
+    if (expected !== undefined) {
       try {
-        await deleteCurrentValueIfExact(store, reference, observed, options);
+        await deleteCurrentValueIfExact(store, reference, expected, options);
       } catch {
         // Best-effort fail closed.
       }
@@ -837,6 +843,22 @@ export async function invalidateStoredCredential(
 
     await clearLegacyCredentialState(store, reference, options);
   });
+}
+
+export async function invalidateStoredCredential(
+  store: SecretStore,
+  reference: SecretStoreReference,
+  options: CredentialBindingMutationOptions = {},
+): Promise<void> {
+  let observed: unknown;
+
+  try {
+    observed = await readStoreValue(store, reference.key, options);
+  } catch {
+    return;
+  }
+
+  await invalidateStoredCredentialIfExact(store, reference, observed, options);
 }
 
 export async function forgetStoredCredential(
