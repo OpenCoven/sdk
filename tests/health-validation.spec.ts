@@ -48,6 +48,41 @@ const VALID_COVEN_HEALTH_RESPONSE = {
   },
 } as const;
 
+const CURRENT_CAVE_HEALTH_RESPONSE = {
+  apiVersion: '1.0',
+  minimumClientVersion: '0.1.0',
+  capabilities: [
+    'health',
+    'pairing',
+    'credentials',
+    'familiars',
+    'projects',
+    'conversations',
+    'conversation-messages',
+    'cursors',
+  ],
+  operations: [
+    'health.read',
+    'pairing.create',
+    'pairing.poll',
+    'pairing.exchange',
+    'pairing.admin.list',
+    'pairing.admin.decide',
+    'credentials.admin.list',
+    'credentials.admin.revoke',
+    'familiars.list',
+    'projects.list',
+    'conversations.list',
+    'conversations.read',
+    'messages.list',
+  ],
+  data: {
+    instanceId: '00000000-0000-4000-8000-000000000000',
+    pairingRequired: true,
+    releaseVersion: '0.3.9',
+  },
+} as const;
+
 function createCovenHealthResponseWithEventCursor(eventCursor: string) {
   return {
     ...VALID_COVEN_HEALTH_RESPONSE,
@@ -164,6 +199,23 @@ describe('health validation', () => {
     });
 
     await expect(client.health()).resolves.toEqual({ status: 'ok' });
+  });
+
+  test('accepts current Cave client-v1 health envelopes additively', async () => {
+    const client = new CaveClient({
+      transport: {
+        health: () => Promise.resolve(CURRENT_CAVE_HEALTH_RESPONSE),
+      },
+    });
+
+    await expect(client.health()).resolves.toEqual({
+      status: 'ok',
+      instanceId: '00000000-0000-4000-8000-000000000000',
+      pairingRequired: true,
+      releaseVersion: '0.3.9',
+      capabilities: [...CURRENT_CAVE_HEALTH_RESPONSE.capabilities],
+      operations: [...CURRENT_CAVE_HEALTH_RESPONSE.operations],
+    });
   });
 
   test('rejects Cave health responses that require a newer client version', async () => {

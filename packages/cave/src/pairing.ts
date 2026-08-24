@@ -1,0 +1,672 @@
+import {
+  assessCompatibility,
+  type OperationContext,
+  type OperationDefaults,
+  type SecretStore,
+  type SecretStoreReference,
+} from '@opencoven/sdk-core';
+
+import { createCaveClient, type CaveClient } from './client.js';
+import { discoverCaveEndpoint, type DiscoverCaveEndpointOptions } from './discovery.js';
+import type {
+  CaveCredentialMetadata,
+  CaveFamiliarsResponse,
+  CaveFamiliarWire,
+  CaveHealthData,
+  CaveHealthResponse,
+  CavePairingCreated,
+  CavePairingExchange,
+  CavePairingScope,
+  CavePairingStatus,
+} from './schemas.js';
+import { CAVE_PAIRING_SCOPES } from './schemas.js';
+import type { CaveTransport } from './transport.js';
+import { CAVE_CLIENT_VERSION } from './version.js';
+
+const DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024;
+const CAVE_API_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
+const DECLARATION_ID_PATTERN = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/u;
+const DECLARATION_ID_MAX_CHARACTERS = 64;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const BASE64URL_43_RE = /^[A-Za-z0-9_-]{43}$/u;
+const CAVE_ERROR_CODES = new Set([
+  'invalid_request',
+  'unauthorized',
+  'scope_denied',
+  'not_found',
+  'conflict',
+  'rate_limited',
+  'pairing_pending',
+  'pairing_denied',
+  'pairing_expired',
+  'incompatible_version',
+  'service_unavailable',
+  'reconcile_required',
+  'internal_error',
+]);
+const CAVE_PAIRING_SCOPE_SET = new Set<string>(CAVE_PAIRING_SCOPES);
+
+export interface CaveCredentialBinding {
+  store: SecretStore;
+  reference: SecretStoreReference;
+}
+
+export interface CaveDiscoveredClientOptions {
+  credentials: CaveCredentialBinding;
+  discovery?: DiscoverCaveEndpointOptions;
+  fetch?: typeof fetch;
+  maxResponseBytes?: number;
+  operation?: OperationDefaults;
+}
+
+interface DiscoveredTransportOptions {
+  credentials: CaveCredentialBinding;
+  discovery: DiscoverCaveEndpointOptions | undefined;
+  fetchImplementation: typeof fetch;
+  maxResponseBytes: number;
+}
+
+interface EnvelopeBase {
+  apiVersion: string;
+  minimumClientVersion: string;
+  requestId?: string | undefined;
+  capabilities?: string[] | undefined;
+  operations?: string[] | undefined;
+}
+
+type JsonObject = Record<string, unknown>;
+
+function transportError(
+  code: string,
+  message: string,
+  options: {
+    details?: Record<string, string> | undefined;
+    requestId?: string | undefined;
+    retryable?: boolean;
+    statusCode?: number;
+  } = {},
+): Error {
+  return Object.assign(new Error(message), {
+    code,
+    retryable: options.retryable ?? false,
+    ...(options.requestId === undefined ? {} : { requestId: options.requestId }),
+    ...(options.statusCode === undefined ? {} : { statusCode: options.statusCode }),
+    ...(options.details === undefined ? {} : { details: options.details }),
+  });
+}
+
+function isObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function ensureActive(context: OperationContext | undefined): void {
+  if (context?.signal.aborted === true) {
+    throw (context.signal as AbortSignal & { reason?: unknown }).reason ?? new Error('aborted');
+  }
+}
+
+function expectObject(value: unknown, label: string): JsonObject {
+  if (!isObject(value)) {
+    throw transportError('invalid_response', `${label} must be an object.`);
+  }
+
+  return value;
+}
+
+function expectString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw transportError('invalid_response', `${label} must be a non-empty string.`);
+  }
+
+  return value;
+}
+
+function expectTimestampNumber(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw transportError('invalid_response', `${label} must be a non-negative safe integer.`);
+  }
+
+  return value;
+}
+
+function parseNullableTimestamp(value: unknown, label: string): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  return expectTimestampNumber(value, label);
+}
+
+function parseScopeList(value: unknown): CavePairingScope[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw transportError('invalid_response', 'credential.scopes must be a non-empty array.');
+  }
+
+  const scopes: CavePairingScope[] = [];
+  for (const scope of value) {
+    if (typeof scope !== 'string' || !CAVE_PAIRING_SCOPE_SET.has(scope) || scopes.includes(scope as CavePairingScope)) {
+      throw transportError('invalid_response', 'credential.scopes contained an unsupported value.');
+    }
+    scopes.push(scope as CavePairingScope);
+  }
+
+  return scopes;
+}
+
+function parseAdvertisedIds(value: unknown, label: string): string[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value) || value.length === 0) {
+    throw transportError('invalid_response', `${label} must be a non-empty array.`);
+  }
+
+  const parsed: string[] = [];
+  for (const entry of value) {
+    if (
+      typeof entry !== 'string' ||
+      entry.length > DECLARATION_ID_MAX_CHARACTERS ||
+      !DECLARATION_ID_PATTERN.test(entry) ||
+      parsed.includes(entry)
+    ) {
+      throw transportError('invalid_response', `${label} contained an invalid declaration id.`);
+    }
+    parsed.push(entry);
+  }
+
+  return parsed;
+}
+
+function parseEnvelopeBase(value: unknown): EnvelopeBase {
+  const envelope = expectObject(value, 'Client v1 envelope');
+  const apiVersion = expectString(envelope.apiVersion, 'apiVersion');
+  const minimumClientVersion = expectString(
+    envelope.minimumClientVersion,
+    'minimumClientVersion',
+  );
+
+  if (!CAVE_API_VERSION_PATTERN.test(apiVersion) || apiVersion.split('.')[0] !== '1') {
+    throw transportError('incompatible_version', 'Cave apiVersion was not compatible.');
+  }
+
+  try {
+    const compatibility = assessCompatibility(minimumClientVersion, CAVE_CLIENT_VERSION);
+    if (!compatibility.compatible) {
+      throw transportError('incompatible_version', 'Cave minimumClientVersion was not compatible.');
+    }
+  } catch {
+    throw transportError('invalid_response', 'Cave minimumClientVersion was malformed.');
+  }
+
+  const requestId =
+    envelope.requestId === undefined ? undefined : expectString(envelope.requestId, 'requestId');
+  const capabilities = parseAdvertisedIds(envelope.capabilities, 'capabilities');
+  const operations = parseAdvertisedIds(envelope.operations, 'operations');
+
+  return {
+    apiVersion,
+    minimumClientVersion,
+    ...(requestId === undefined ? {} : { requestId }),
+    ...(capabilities === undefined ? {} : { capabilities }),
+    ...(operations === undefined ? {} : { operations }),
+  };
+}
+
+function parseHealthData(value: unknown): CaveHealthData {
+  const data = expectObject(value, 'health.data');
+  if (data.status === 'ok') {
+    return { status: 'ok' };
+  }
+
+  return {
+    instanceId: expectString(data.instanceId, 'health.data.instanceId'),
+    pairingRequired:
+      data.pairingRequired === true
+        ? true
+        : (() => {
+            throw transportError('invalid_response', 'health.data.pairingRequired must be true.');
+          })(),
+    releaseVersion: expectString(data.releaseVersion, 'health.data.releaseVersion'),
+  };
+}
+
+function parseHealthResponse(value: unknown): CaveHealthResponse {
+  const base = parseEnvelopeBase(value);
+  const envelope = expectObject(value, 'health response');
+
+  return {
+    apiVersion: base.apiVersion,
+    minimumClientVersion: base.minimumClientVersion,
+    ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
+    ...(base.capabilities === undefined ? {} : { capabilities: [...base.capabilities] }),
+    ...(base.operations === undefined ? {} : { operations: [...base.operations] }),
+    data: parseHealthData(envelope.data),
+  };
+}
+
+function parseCredentialMetadata(value: unknown): CaveCredentialMetadata {
+  const credential = expectObject(value, 'credential');
+  const id = expectString(credential.id, 'credential.id');
+  if (!UUID_RE.test(id)) {
+    throw transportError('invalid_response', 'credential.id must be a UUID.');
+  }
+
+  return {
+    id,
+    appName: expectString(credential.appName, 'credential.appName'),
+    installationId: expectString(credential.installationId, 'credential.installationId'),
+    scopes: parseScopeList(credential.scopes),
+    createdAt: expectTimestampNumber(credential.createdAt, 'credential.createdAt'),
+    lastUsedAt: parseNullableTimestamp(credential.lastUsedAt, 'credential.lastUsedAt'),
+    revokedAt: parseNullableTimestamp(credential.revokedAt, 'credential.revokedAt'),
+    revocationReason:
+      credential.revocationReason === null
+        ? null
+        : expectString(credential.revocationReason, 'credential.revocationReason'),
+  };
+}
+
+function parsePairingCreated(value: unknown): CavePairingCreated {
+  const envelope = expectObject(value, 'pairing.create response');
+  parseEnvelopeBase(envelope);
+  const data = expectObject(envelope.data, 'pairing.create data');
+  const requestId = expectString(data.requestId, 'pairing.create.requestId');
+  const secret = expectString(data.secret, 'pairing.create.secret');
+  if (!UUID_RE.test(requestId) || !BASE64URL_43_RE.test(secret)) {
+    throw transportError('invalid_response', 'pairing.create response was malformed.');
+  }
+
+  return {
+    requestId,
+    secret,
+    expiresAt: expectTimestampNumber(data.expiresAt, 'pairing.create.expiresAt'),
+  };
+}
+
+function parsePairingStatus(value: unknown): CavePairingStatus {
+  const envelope = expectObject(value, 'pairing.poll response');
+  parseEnvelopeBase(envelope);
+  const data = expectObject(envelope.data, 'pairing.poll data');
+  const id = expectString(data.id, 'pairing.poll.id');
+  const status = expectString(data.status, 'pairing.poll.status');
+  if (!UUID_RE.test(id) || !['pending', 'approved', 'denied', 'expired'].includes(status)) {
+    throw transportError('invalid_response', 'pairing.poll response was malformed.');
+  }
+
+  return {
+    id,
+    status: status as CavePairingStatus['status'],
+    expiresAt: expectTimestampNumber(data.expiresAt, 'pairing.poll.expiresAt'),
+  };
+}
+
+function parsePairingExchange(value: unknown): CavePairingExchange {
+  const envelope = expectObject(value, 'pairing.exchange response');
+  parseEnvelopeBase(envelope);
+  const data = expectObject(envelope.data, 'pairing.exchange data');
+  const bearer = expectString(data.bearer, 'pairing.exchange.bearer');
+  if (!BASE64URL_43_RE.test(bearer)) {
+    throw transportError('invalid_response', 'pairing.exchange bearer was malformed.');
+  }
+
+  return {
+    bearer,
+    credential: parseCredentialMetadata(data.credential),
+  };
+}
+
+function parseFamiliar(value: unknown): CaveFamiliarWire {
+  const familiar = expectObject(value, 'familiar');
+
+  return {
+    id: expectString(familiar.id, 'familiar.id'),
+    display_name: expectString(familiar.displayName, 'familiar.displayName'),
+    role: expectString(familiar.role, 'familiar.role'),
+    ...(familiar.description === undefined
+      ? {}
+      : { description: expectString(familiar.description, 'familiar.description') }),
+    ...(familiar.pronouns === undefined
+      ? {}
+      : { pronouns: expectString(familiar.pronouns, 'familiar.pronouns') }),
+    ...(familiar.status === undefined
+      ? {}
+      : { status: expectString(familiar.status, 'familiar.status') }),
+    ...(familiar.lastSeenAt === undefined
+      ? {}
+      : { last_seen: expectString(familiar.lastSeenAt, 'familiar.lastSeenAt') }),
+    ...(familiar.activeSessions === undefined
+      ? {}
+      : {
+          active_sessions: expectTimestampNumber(
+            familiar.activeSessions,
+            'familiar.activeSessions',
+          ),
+        }),
+  };
+}
+
+function parseFamiliarsResponse(value: unknown): CaveFamiliarsResponse {
+  const envelope = expectObject(value, 'familiars response');
+  parseEnvelopeBase(envelope);
+  const data = expectObject(envelope.data, 'familiars data');
+  if (!Array.isArray(data.familiars)) {
+    throw transportError('invalid_response', 'familiars data was malformed.');
+  }
+
+  return {
+    ok: true,
+    familiars: data.familiars.map(parseFamiliar),
+  };
+}
+
+function parseErrorDetails(value: unknown): Record<string, string> | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const details = expectObject(value, 'error.details');
+  return Object.fromEntries(
+    Object.entries(details).map(([key, entry]) => [key, expectString(entry, `error.details.${key}`)]),
+  );
+}
+
+function parseProxyFailure(status: number, payload: JsonObject): Error {
+  const message = typeof payload.error === 'string' ? payload.error : 'Cave proxy refused the request.';
+  const code =
+    status === 401 || status === 403
+      ? 'unauthorized'
+      : status === 404
+        ? 'not_found'
+        : status === 409
+          ? 'conflict'
+          : status === 410
+            ? 'pairing_expired'
+            : status === 429
+              ? 'rate_limited'
+              : status >= 500
+                ? 'service_unavailable'
+                : 'invalid_request';
+
+  return transportError(code, message, {
+    retryable: status === 429 || status >= 500,
+    statusCode: status,
+  });
+}
+
+function parseErrorPayload(status: number, value: unknown): Error {
+  const payload = expectObject(value, 'error response');
+  if (payload.ok === false && typeof payload.error === 'string') {
+    return parseProxyFailure(status, payload);
+  }
+
+  const base = parseEnvelopeBase(payload);
+  const error = expectObject(payload.error, 'error envelope');
+  const code = expectString(error.code, 'error.code');
+  if (!CAVE_ERROR_CODES.has(code)) {
+    throw transportError('invalid_response', 'error.code was not supported.', {
+      statusCode: status,
+      ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
+    });
+  }
+
+  const details = parseErrorDetails(error.details);
+  return transportError(code, expectString(error.message, 'error.message'), {
+    ...(details === undefined ? {} : { details }),
+    ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
+    retryable:
+      typeof error.retryable === 'boolean'
+        ? error.retryable
+        : (() => {
+            throw transportError('invalid_response', 'error.retryable must be a boolean.', {
+              statusCode: status,
+              ...(base.requestId === undefined ? {} : { requestId: base.requestId }),
+            });
+          })(),
+    statusCode: status,
+  });
+}
+
+async function readResponseText(
+  response: Response,
+  context: OperationContext | undefined,
+  maxResponseBytes: number,
+): Promise<string> {
+  const declaredLength = response.headers.get('content-length');
+  if (
+    declaredLength !== null &&
+    /^\d+$/u.test(declaredLength) &&
+    Number(declaredLength) > maxResponseBytes
+  ) {
+    throw transportError('body_limit', 'Cave response exceeded its size limit.', {
+      statusCode: response.status,
+    });
+  }
+
+  const reader = response.body?.getReader();
+  if (reader === undefined) {
+    throw transportError('invalid_response', 'Cave response body was missing.', {
+      statusCode: response.status,
+    });
+  }
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  try {
+    while (true) {
+      ensureActive(context);
+      const readResult = await (
+        reader as ReadableStreamDefaultReader<Uint8Array>
+      ).read();
+      const { done, value } = readResult;
+      if (done) {
+        break;
+      }
+      if (value !== undefined) {
+        total += value.byteLength;
+        if (total > maxResponseBytes) {
+          try {
+            await reader.cancel();
+          } catch {
+            // Best effort only.
+          }
+          throw transportError('body_limit', 'Cave response exceeded its size limit.', {
+            statusCode: response.status,
+          });
+        }
+        chunks.push(value);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
+  } catch {
+    throw transportError('invalid_response', 'Cave response was not valid UTF-8.', {
+      statusCode: response.status,
+    });
+  }
+}
+
+function stringifyJsonBody(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    throw transportError('invalid_request', 'Cave request body could not be serialized.', {
+      retryable: false,
+    });
+  }
+}
+
+async function requestJson(
+  method: 'GET' | 'POST',
+  route: string,
+  options: {
+    body?: string;
+    context?: OperationContext;
+    credentials?: CaveCredentialBinding;
+    discovery: DiscoverCaveEndpointOptions | undefined;
+    fetchImplementation: typeof fetch;
+    headers?: Record<string, string>;
+    maxResponseBytes: number;
+    requireBearer?: boolean;
+  },
+): Promise<unknown> {
+  ensureActive(options.context);
+  const discovered = await discoverCaveEndpoint({
+    ...(options.discovery ?? {}),
+    ...(options.context?.signal === undefined ? {} : { signal: options.context.signal }),
+    ...(options.context?.deadline === undefined ? {} : { deadline: options.context.deadline }),
+  });
+  ensureActive(options.context);
+
+  const url = new URL(route, discovered.endpoint.url).toString();
+  const headers = new Headers(options.headers);
+
+  if (options.requireBearer === true) {
+    const credentials = options.credentials;
+    if (credentials === undefined) {
+      throw transportError('unsupported_operation', 'A stored Cave credential was required.', {
+        retryable: false,
+      });
+    }
+    const bearer = await credentials.store.get(credentials.reference.key);
+    ensureActive(options.context);
+    if (typeof bearer !== 'string' || !BASE64URL_43_RE.test(bearer)) {
+      throw transportError('unauthorized', 'A stored Cave credential was not available.', {
+        retryable: false,
+        statusCode: 401,
+      });
+    }
+    headers.set('authorization', `Bearer ${bearer}`);
+  }
+
+  let response: Response;
+  try {
+    response = await options.fetchImplementation(url, {
+      method,
+      headers,
+      redirect: 'error',
+      ...(options.context?.signal === undefined ? {} : { signal: options.context.signal }),
+      ...(options.body === undefined ? {} : { body: options.body }),
+    });
+  } catch (error) {
+    throw transportError('service_unavailable', 'Cave request could not reach the authority.', {
+      retryable: true,
+      ...(typeof error === 'object' && error !== null ? { cause: error } : {}),
+    });
+  }
+
+  ensureActive(options.context);
+  const text = await readResponseText(response, options.context, options.maxResponseBytes);
+  let payload: unknown;
+  try {
+    payload = JSON.parse(text) as unknown;
+  } catch {
+    throw transportError('invalid_response', 'Cave response was not valid JSON.', {
+      statusCode: response.status,
+    });
+  }
+
+  if (response.status < 200 || response.status >= 300) {
+    throw parseErrorPayload(response.status, payload);
+  }
+
+  return payload;
+}
+
+function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTransport {
+  return {
+    async health(context) {
+      const payload = await requestJson('GET', '/api/client/v1/health', {
+        ...(context === undefined ? {} : { context }),
+        discovery: options.discovery,
+        fetchImplementation: options.fetchImplementation,
+        maxResponseBytes: options.maxResponseBytes,
+      });
+      return parseHealthResponse(payload);
+    },
+    async pairingCreate(request, context) {
+      const payload = await requestJson('POST', '/api/client/v1/pairing/requests', {
+        body: stringifyJsonBody(request),
+        ...(context === undefined ? {} : { context }),
+        discovery: options.discovery,
+        fetchImplementation: options.fetchImplementation,
+        headers: {
+          'content-type': 'application/json',
+        },
+        maxResponseBytes: options.maxResponseBytes,
+      });
+      return parsePairingCreated(payload);
+    },
+    async pairingPoll(requestId, pairingSecret, context) {
+      const payload = await requestJson(
+        'GET',
+        `/api/client/v1/pairing/requests/${requestId}`,
+        {
+          ...(context === undefined ? {} : { context }),
+          discovery: options.discovery,
+          fetchImplementation: options.fetchImplementation,
+          headers: {
+            'x-coven-pairing-secret': pairingSecret,
+          },
+          maxResponseBytes: options.maxResponseBytes,
+        },
+      );
+      return parsePairingStatus(payload);
+    },
+    async pairingExchange(requestId, pairingSecret, context) {
+      const payload = await requestJson(
+        'POST',
+        `/api/client/v1/pairing/requests/${requestId}/exchange`,
+        {
+          body: '',
+          ...(context === undefined ? {} : { context }),
+          discovery: options.discovery,
+          fetchImplementation: options.fetchImplementation,
+          headers: {
+            'x-coven-pairing-secret': pairingSecret,
+          },
+          maxResponseBytes: options.maxResponseBytes,
+        },
+      );
+      return parsePairingExchange(payload);
+    },
+    async familiars(context) {
+      const payload = await requestJson('GET', '/api/client/v1/familiars', {
+        ...(context === undefined ? {} : { context }),
+        credentials: options.credentials,
+        discovery: options.discovery,
+        fetchImplementation: options.fetchImplementation,
+        maxResponseBytes: options.maxResponseBytes,
+        requireBearer: true,
+      });
+      return parseFamiliarsResponse(payload);
+    },
+  };
+}
+
+export function createDiscoveredCaveClient(
+  options: CaveDiscoveredClientOptions,
+): CaveClient {
+  const fetchImplementation = options.fetch ?? globalThis.fetch;
+  if (typeof fetchImplementation !== 'function') {
+    throw transportError('unsupported_operation', 'A Fetch implementation is required.', {
+      retryable: false,
+    });
+  }
+
+  return createCaveClient({
+    credentials: options.credentials,
+    ...(options.operation === undefined ? {} : { operation: options.operation }),
+    transport: createDiscoveredTransport({
+      credentials: options.credentials,
+      discovery: options.discovery,
+      fetchImplementation,
+      maxResponseBytes: options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+    }),
+  });
+}

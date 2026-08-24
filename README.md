@@ -22,29 +22,30 @@ part of an intentional release process.
 | Path | Package | Purpose |
 | --- | --- | --- |
 | `packages/core` | `@opencoven/sdk-core` | Transport-neutral errors, compatibility types, and in-memory secrets |
-| `packages/cave` | `@opencoven/cave-client` | Constrained caller-supplied Cave transport |
+| `packages/cave` | `@opencoven/cave-client` | Constrained Cave transport plus runtime discovery/pairing helpers |
 | `packages/coven` | `@opencoven/coven-client` | Constrained caller-supplied Coven transport |
 | `packages/sdk` | `@opencoven/sdk` | Optional Cave/Coven coordination |
 | `packages/cli` | `@opencoven/dev-cli` | Sole owner of the `opencoven` binary |
 
 The SDK performs no discovery, credential lookup, network, filesystem, or
-daemon I/O at import time. Callers provide transports explicitly; Cave and
-Coven models, transports, and normalized errors remain distinct.
+daemon I/O at import time. Cave pairing/discovery is runtime-only and opt-in;
+low-level Cave and Coven models, transports, and normalized errors remain
+distinct.
 
 ## Choosing a package
 
 | Need | Package |
 | --- | --- |
 | Shared errors, compatibility, or in-memory secrets | `@opencoven/sdk-core` |
-| Cave health and reviewed Cave contract fixtures | `@opencoven/cave-client` |
+| Cave health, runtime pairing/discovery, and reviewed Cave contract fixtures | `@opencoven/cave-client` |
 | Coven daemon health | `@opencoven/coven-client` |
 | Optional Cave/Coven coordination | `@opencoven/sdk` |
 | Deterministic developer CLI output | `@opencoven/dev-cli` |
 
 ## Caller-supplied transports
 
-Clients never discover an endpoint or credential. Supply the narrow transport
-needed by the operation:
+Low-level clients still accept caller-supplied transports for the exact
+operations you need:
 
 ```ts
 import { CaveClient, isCaveClientError } from '@opencoven/cave-client';
@@ -83,6 +84,39 @@ There is no default timeout. A configured timeout rejects promptly even when a
 transport ignores the supplied signal; only a cooperative transport can stop
 its underlying I/O. Transports receive an optional context with the composed
 `signal` and absolute monotonic `deadline`.
+
+## Runtime Cave discovery and pairing
+
+`@opencoven/cave-client` also ships an opt-in Client v1 helper that discovers
+the local Cave endpoint at runtime, validates the owner-local discovery file,
+and persists the exchanged bearer only through an injected `SecretStore`:
+
+```ts
+import { createDiscoveredCaveClient } from '@opencoven/cave-client';
+import {
+  createMemorySecretStore,
+  createSecretStoreReference,
+} from '@opencoven/sdk-core';
+
+const cave = createDiscoveredCaveClient({
+  credentials: {
+    store: createMemorySecretStore(),
+    reference: createSecretStoreReference('chat.cave'),
+  },
+});
+
+const session = await cave.createPairing({
+  appName: 'OpenCoven Chat',
+  installationId: 'chat-install-1',
+  scopes: ['chat:read', 'chat:write'],
+});
+
+await session.poll();
+await session.exchange();
+```
+
+The discovered helper performs no import-time I/O. Discovery, pairing, health,
+and stored-credential checks happen only when you call those methods.
 
 ## Coordinated health
 

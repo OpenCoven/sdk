@@ -42,6 +42,8 @@ describe('public package entry points', () => {
     expect(hasFunction(cave, 'parseCaveContractFixture')).toBe(true);
     expect(hasFunction(cave, 'parseVerifiedCaveContractFixture')).toBe(true);
     expect(hasFunction(cave, 'verifyCaveContractFixtureDigest')).toBe(true);
+    expect(hasFunction(cave, 'createDiscoveredCaveClient')).toBe(true);
+    expect(hasFunction(cave, 'discoverCaveEndpoint')).toBe(true);
     expect(hasFunction(cave, 'normalizeCaveError')).toBe(true);
     expect(hasFunction(cave, 'isCaveClientError')).toBe(true);
     expect(hasFunction(coven, 'CovenClient')).toBe(true);
@@ -61,6 +63,27 @@ describe('public package entry points', () => {
     const instance = sdk.createOpenCovenSdk({});
 
     expect(instance.healthReport.bind(instance)).toBeTypeOf('function');
+  });
+
+  test('adds pairing and credential helpers without removing existing Cave APIs', () => {
+    const client = new cave.CaveClient({
+      transport: {
+        health: () => Promise.resolve({ data: { status: 'ok' as const } }),
+      },
+      credentials: {
+        store: core.createMemorySecretStore(),
+        reference: core.createSecretStoreReference('cave-credential'),
+      },
+    });
+
+    expect(client.createPairing.bind(client)).toBeTypeOf('function');
+    expect(client.credentialStatus.bind(client)).toBeTypeOf('function');
+    expect(client.forgetCredential.bind(client)).toBeTypeOf('function');
+    expect((cave as { CAVE_PAIRING_SCOPES?: unknown }).CAVE_PAIRING_SCOPES).toEqual(
+      expect.any(Array),
+    );
+    expect(client.familiars.bind(client)).toBeTypeOf('function');
+    expect(client.familiarAnalytics.bind(client)).toBeTypeOf('function');
   });
 
   test('normalizes Cave unauthorized errors with an explicit operation', () => {

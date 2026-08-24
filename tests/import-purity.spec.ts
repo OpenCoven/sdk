@@ -92,6 +92,58 @@ describe('workspace entrypoints', () => {
         });
       }
 
+      if (entrypoint === '@opencoven/cave-client') {
+        const discovery = imported as {
+          createDiscoveredCaveClient?: (options: {
+            credentials: {
+              store: {
+                get(key: string): Promise<string | undefined>;
+                set(key: string, value: string): Promise<void>;
+                delete(key: string): Promise<boolean>;
+              };
+              reference: { key: string };
+            };
+            discovery: { root: string };
+            fetch: typeof fetch;
+          }) => unknown;
+        };
+        const core = await import('@opencoven/sdk-core');
+        const createDiscoveredCaveClient = discovery.createDiscoveredCaveClient;
+        const createMemorySecretStore = (
+          core as {
+            createMemorySecretStore?: () => {
+              get(key: string): Promise<string | undefined>;
+              set(key: string, value: string): Promise<void>;
+              delete(key: string): Promise<boolean>;
+            };
+          }
+        ).createMemorySecretStore;
+        const createSecretStoreReference = (
+          core as {
+            createSecretStoreReference?: (key: string) => { key: string };
+          }
+        ).createSecretStoreReference;
+
+        expect(createDiscoveredCaveClient?.({
+          credentials: {
+            store: createMemorySecretStore?.() ?? {
+              get: () => Promise.resolve(undefined),
+              set: () => Promise.resolve(),
+              delete: () => Promise.resolve(false),
+            },
+            reference:
+              createSecretStoreReference?.('cave-credential') ?? { key: 'cave-credential' },
+          },
+          discovery: {
+            root: '/Users/example/.coven/cave',
+          },
+          fetch: () =>
+            Promise.reject(
+              new Error('fetch must not be called while constructing a discovered client'),
+            ),
+        })).toBeDefined();
+      }
+
       expect(unexpectedIo).not.toHaveBeenCalled();
     });
   }
