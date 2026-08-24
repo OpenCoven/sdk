@@ -43,6 +43,13 @@ function actionPins(source: string) {
 }
 
 describe('workflow action pins', () => {
+  test('runs branch validation once through pull requests and still verifies main pushes', () => {
+    expect(workflow).toMatch(
+      /^on:\n\s{2}push:\n\s{4}branches:\n\s{6}- main\n\s{2}pull_request:\n/m,
+    );
+    expect(workflow).not.toContain("- '**'");
+  });
+
   test('uses an explicit read-only GitHub token scope', () => {
     expect(workflow).toMatch(/^permissions:\n\s{2}contents: read\n/m);
   });
