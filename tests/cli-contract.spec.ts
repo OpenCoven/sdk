@@ -1109,6 +1109,65 @@ describe('opencoven CLI output', () => {
     expect(result.stdout).not.toContain('bearer-value');
   });
 
+  test('keeps the process referenced while waiting to poll Cave pairing again', async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    let polls = 0;
+
+    try {
+      const result = await runCli(
+        ['--json', 'cave', 'pair'],
+        runtime({
+          cave: {
+            createClient: () => ({
+              createPairing: () =>
+                Promise.resolve({
+                  requestId: 'referenced-pair-request',
+                  expiresAt: Date.now() + 1_000,
+                  poll: () => {
+                    polls += 1;
+                    return Promise.resolve({
+                      id: 'referenced-pair-request',
+                      status: polls === 1 ? 'pending' as const : 'approved' as const,
+                      expiresAt: Date.now() + 1_000,
+                    });
+                  },
+                  exchange: () => Promise.resolve(caveCredential),
+                }),
+            }),
+          },
+          now: () => Date.now(),
+          sleep: undefined,
+          timing: {
+            cavePairPollIntervalMs: 5,
+            cavePairTimeoutMs: 1_000,
+          },
+        }),
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(polls).toBe(2);
+
+      const delayCall = setTimeoutSpy.mock.calls.findIndex(
+        ([, milliseconds]) => milliseconds === 5,
+      );
+      expect(delayCall).toBeGreaterThanOrEqual(0);
+
+      const delayTimer = setTimeoutSpy.mock.results[delayCall]?.value as
+        | ReturnType<typeof setTimeout>
+        | undefined;
+      expect(delayTimer).toBeDefined();
+      expect(
+        (
+          delayTimer as ReturnType<typeof setTimeout> & {
+            hasRef(): boolean;
+          }
+        ).hasRef(),
+      ).toBe(true);
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
+  });
+
   test.each([
     {
       argv: ['--json', 'cave', 'pair'] as const,

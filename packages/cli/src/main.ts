@@ -162,10 +162,7 @@ interface InvalidArguments {
 }
 
 function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, milliseconds);
-    (timer as ReturnType<typeof setTimeout> & { unref?: () => void }).unref?.();
-  });
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function defaultFetch(): typeof fetch {
