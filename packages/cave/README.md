@@ -51,29 +51,72 @@ import {
   CaveClient,
   createDiscoveredCaveClient,
   isCaveClientError,
+  type CaveTransport,
 } from '@opencoven/cave-client';
 import {
   createMemorySecretStore,
   createSecretStoreReference,
 } from '@opencoven/sdk-core';
 
+const canonicalMetadata = {
+  apiVersion: '1.0',
+  capabilities: ['canonical-reads'],
+  minimumClientVersion: CAVE_CLIENT_VERSION,
+} as const;
+
+const transport = {
+  health: async () => ({
+    apiVersion: '1.0',
+    capabilities: ['health', 'pairing'],
+    minimumClientVersion: CAVE_CLIENT_VERSION,
+    operations: ['health.read', 'pairing.create'],
+    data: {
+      instanceId: 'cave-instance-id',
+      pairingRequired: true,
+      releaseVersion: '0.3.9',
+    },
+  }),
+  listFamiliars: async () => ({
+    ...canonicalMetadata,
+    data: { familiars: [] },
+  }),
+  listProjects: async () => ({
+    ...canonicalMetadata,
+    data: { projects: [] },
+  }),
+  listConversations: async () => ({
+    ...canonicalMetadata,
+    data: { conversations: [] },
+  }),
+  getConversation: async (conversationId) => ({
+    ...canonicalMetadata,
+    data: {
+      conversation: {
+        id: conversationId,
+        familiarId: 'familiar-id',
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  }),
+  listConversationMessages: async () => ({
+    ...canonicalMetadata,
+    data: { messages: [] },
+  }),
+} satisfies CaveTransport;
+
 const transportBacked = new CaveClient({
   operation: {
     timeoutMs: 5_000,
-  },
-  transport: {
-    health: async (context) => ({
-      apiVersion: '1.0',
-      capabilities: ['health', 'pairing'],
-      minimumClientVersion: CAVE_CLIENT_VERSION,
-      operations: ['health.read', 'pairing.create'],
-      data: {
-        instanceId: 'cave-instance-id',
-        pairingRequired: true,
-        releaseVersion: '0.3.9',
+    observer: {
+      onEvent(event) {
+        console.log(event.phase);
       },
-    }),
+      onObserverError(error) {
+        console.error(error);
+      },
+    },
   },
+  transport,
 });
 
 const discovered = createDiscoveredCaveClient({
@@ -86,28 +129,6 @@ const discovered = createDiscoveredCaveClient({
 try {
   await transportBacked.health({
     signal: new AbortController().signal,
-    observer: {
-      onEvent(event) {
-        console.log(event.phase);
-      },
-      onObserverError(error) {
-        console.error(error);
-      },
-      listFamiliars: (options, context) =>
-        canonicalTransport.listFamiliars(options, context),
-      listProjects: (options, context) =>
-        canonicalTransport.listProjects(options, context),
-      listConversations: (options, context) =>
-        canonicalTransport.listConversations(options, context),
-      getConversation: (conversationId, context) =>
-        canonicalTransport.getConversation(conversationId, context),
-      listConversationMessages: (conversationId, options, context) =>
-        canonicalTransport.listConversationMessages(
-          conversationId,
-          options,
-          context,
-        ),
-    },
   });
 } catch (error) {
   if (isCaveClientError(error)) {

@@ -485,14 +485,51 @@ describe('Cave caller-supplied canonical reads', () => {
   });
 
   test.each([
-    { apiVersion: '2.0' },
-    { minimumClientVersion: '99.0.0' },
-  ])('preserves incompatible version metadata', async (replacement) => {
+    ['success', '1.1'],
+    ['success', '2.0'],
+    ['success', 'version-one'],
+    ['error', '1.1'],
+    ['error', 'version-one'],
+  ])('rejects an otherwise-valid %s envelope with apiVersion %s', async (
+    envelopeKind,
+    apiVersion,
+  ) => {
+    const response =
+      envelopeKind === 'success'
+        ? {
+            ...successEnvelope({ projects: [PROJECT] }),
+            apiVersion,
+          }
+        : {
+            apiVersion,
+            minimumClientVersion: '0.1.0',
+            capabilities: ['projects'],
+            error: {
+              code: 'reconcile_required',
+              message: 'Reload canonical state.',
+              retryable: false,
+            },
+          };
+    const { client } = clientWith({
+      listProjects: () => Promise.resolve(response),
+    });
+
+    const error = await caveErrorOf(() => client.listProjects());
+
+    expect(error.normalized).toMatchObject({
+      code: 'invalid_response',
+      operation: 'listProjects',
+      retryable: false,
+    });
+    expect(error.details).toEqual({ field: 'apiVersion' });
+  });
+
+  test('preserves incompatible minimum client version metadata', async () => {
     const { client } = clientWith({
       listProjects: () =>
         Promise.resolve({
           ...successEnvelope({ projects: [] }),
-          ...replacement,
+          minimumClientVersion: '99.0.0',
         }),
     });
 
@@ -571,7 +608,7 @@ describe('Cave caller-supplied canonical reads', () => {
     expect(error.details).toEqual({ field: 'cursor.hasMore' });
   });
 
-  test('preserves resolved explicit Cave error envelopes before success parsing', async () => {
+  test('preserves exact 1.0 explicit Cave error envelopes before success parsing', async () => {
     const events: OperationEvent[] = [];
     const { client } = clientWith(
       {

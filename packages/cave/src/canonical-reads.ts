@@ -13,8 +13,7 @@ import type {
 } from './schemas.js';
 import { CAVE_CLIENT_VERSION } from './version.js';
 
-const CAVE_API_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
-const SUPPORTED_CAVE_API_MAJOR = '1';
+const CAVE_API_VERSION = '1.0';
 const DECLARATION_ID_PATTERN = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/u;
 const DECLARATION_ID_MAX_CHARACTERS = 64;
 
@@ -155,14 +154,8 @@ function parseEnvelope(value: unknown): JsonObject {
   );
   parseCapabilities(envelope.capabilities);
 
-  if (!CAVE_API_VERSION_PATTERN.test(apiVersion)) {
+  if (apiVersion !== CAVE_API_VERSION) {
     throw new CaveCanonicalSchemaError('apiVersion');
-  }
-  if (apiVersion.split('.')[0] !== SUPPORTED_CAVE_API_MAJOR) {
-    throw new CaveCanonicalResponseError(
-      'incompatible_version',
-      'Cave apiVersion was not compatible.',
-    );
   }
 
   let compatibility: ReturnType<typeof assessCompatibility>;
