@@ -1099,6 +1099,55 @@ describe('discovered Cave pairing helpers', () => {
   });
 
   describe('discovered Cave canonical reads', () => {
+    test.each([
+      ['getConversation', '.', (client: ReturnType<typeof createDiscoveredCaveClient>) =>
+        client.getConversation('.')],
+      ['getConversation', '..', (client: ReturnType<typeof createDiscoveredCaveClient>) =>
+        client.getConversation('..')],
+      [
+        'listConversationMessages',
+        '.',
+        (client: ReturnType<typeof createDiscoveredCaveClient>) =>
+          client.listConversationMessages('.'),
+      ],
+      [
+        'listConversationMessages',
+        '..',
+        (client: ReturnType<typeof createDiscoveredCaveClient>) =>
+          client.listConversationMessages('..'),
+      ],
+    ])(
+      'rejects %s dot-only id %s before discovery, credential load, proof, or network I/O',
+      async (_operation, _conversationId, invoke) => {
+        const store = createMemorySecretStore();
+        const get = vi.spyOn(store, 'get');
+        const discoverEndpoint = vi.fn(() =>
+          Promise.reject(new Error('discovery must not be reached')),
+        );
+        const fetchImplementation = vi.fn<typeof fetch>(() =>
+          Promise.reject(new Error('network must not be reached')),
+        );
+        const client = createDiscoveredCaveClient({
+          credentials: {
+            store,
+            reference: createSecretStoreReference(
+              `canonical-dot-id-${randomUUID()}`,
+            ),
+          },
+          discoverEndpoint,
+          fetch: fetchImplementation,
+        });
+
+        await expect(invoke(client)).rejects.toMatchObject({
+          code: 'invalid_options',
+          message: 'conversationId must not be a dot path segment',
+        });
+        expect(discoverEndpoint).not.toHaveBeenCalled();
+        expect(get).not.toHaveBeenCalled();
+        expect(fetchImplementation).not.toHaveBeenCalled();
+      },
+    );
+
     test('uses exact canonical routes, deterministic queries, encoded ids, and bearer-only authenticated requests', async () => {
       const root = createScratchRoot('canonical-routes');
       await writeDiscoveryRecord(root, discoveryRecord());

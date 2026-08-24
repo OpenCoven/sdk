@@ -178,6 +178,9 @@ describe('Cave canonical route construction', () => {
     expect(canonicalConversationRoute('conversation/one?#')).toBe(
       '/api/client/v1/conversations/conversation%2Fone%3F%23',
     );
+    expect(canonicalConversationRoute('conversation.v1')).toBe(
+      '/api/client/v1/conversations/conversation.v1',
+    );
     expect(
       canonicalConversationMessagesRoute('conversation/one?#', {
         limit: 1,
@@ -887,10 +890,59 @@ describe('Cave caller-supplied canonical reads', () => {
     await expect(
       client.listConversationMessages('', {}),
     ).rejects.toMatchObject({ code: 'invalid_options' });
+    for (const conversationId of ['.', '..']) {
+      await expect(
+        client.getConversation(conversationId),
+      ).rejects.toMatchObject({
+        code: 'invalid_options',
+        message: 'conversationId must not be a dot path segment',
+      });
+      await expect(
+        client.listConversationMessages(conversationId),
+      ).rejects.toMatchObject({
+        code: 'invalid_options',
+        message: 'conversationId must not be a dot path segment',
+      });
+    }
 
     expect(listProjects).not.toHaveBeenCalled();
     expect(getConversation).not.toHaveBeenCalled();
     expect(listConversationMessages).not.toHaveBeenCalled();
+  });
+
+  test('preserves non-dot-only producer ids containing dots', async () => {
+    const getConversation = vi.fn<
+      (
+        conversationId: string,
+        context?: OperationContext,
+      ) => Promise<unknown>
+    >(() =>
+      Promise.resolve(successEnvelope({ conversation: CONVERSATION })),
+    );
+    const listConversationMessages = vi.fn<
+      (
+        conversationId: string,
+        options: PageOptions,
+        context?: OperationContext,
+      ) => Promise<unknown>
+    >(() =>
+      Promise.resolve(successEnvelope({ messages: [] })),
+    );
+    const { client } = clientWith({
+      getConversation,
+      listConversationMessages,
+    });
+
+    await expect(client.getConversation('conversation.v1')).resolves.toEqual(
+      CONVERSATION,
+    );
+    await expect(
+      client.listConversationMessages('conversation.v1'),
+    ).resolves.toEqual({ data: [] });
+    expect(getConversation.mock.calls[0]?.[0]).toBe('conversation.v1');
+    expect(listConversationMessages.mock.calls[0]?.[0]).toBe(
+      'conversation.v1',
+    );
   });
 
   test('uses one standard observer lifecycle and passes caller controls to the transport', async () => {

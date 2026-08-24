@@ -337,6 +337,11 @@ function validateCanonicalId(id: unknown, label: string): string {
       `${label} must be a non-empty string`,
     );
   }
+  if (id === '.' || id === '..') {
+    throw new OperationConfigurationError(
+      `${label} must not be a dot path segment`,
+    );
+  }
 
   return id;
 }
