@@ -1,8 +1,11 @@
 # SDK Historical Plan Reconciliation
 
-**Status:** Evidence ledger  
-**Date:** 2026-08-22  
-**Audited base:** `OpenCoven/sdk@3ab5b3132837282c812c0bf80074e4a15f35b161`  
+**Status:** Evidence ledger
+
+**Date:** 2026-08-22
+
+**Audited base:** `OpenCoven/sdk@3ab5b3132837282c812c0bf80074e4a15f35b161`
+
 **Tracker:** [OpenCoven/sdk#32](https://github.com/OpenCoven/sdk/issues/32)
 
 ## 1. Purpose
@@ -25,7 +28,8 @@ Unchecked checkboxes in a document classified as historical preserve the origina
 
 ## 3. Phase 0 reconciliation plan
 
-**Plan:** [`2026-08-18-sdk-phase-0-reconciliation.md`](2026-08-18-sdk-phase-0-reconciliation.md)  
+**Plan:** [`2026-08-18-sdk-phase-0-reconciliation.md`](2026-08-18-sdk-phase-0-reconciliation.md)
+
 **Status:** **Completed**
 
 ### Intended outcome
@@ -50,7 +54,8 @@ The later discovery work in [PR #30](https://github.com/OpenCoven/sdk/pull/30) i
 
 ## 4. Public release safeguards plan
 
-**Plan:** [`2026-08-18-sdk-public-release-safeguards.md`](2026-08-18-sdk-public-release-safeguards.md)  
+**Plan:** [`2026-08-18-sdk-public-release-safeguards.md`](2026-08-18-sdk-public-release-safeguards.md)
+
 **Status:** **Completed**
 
 ### Intended outcome
@@ -72,7 +77,8 @@ Actual release authorization and registry mutation are tracked separately under 
 
 ## 5. Release-readiness implementation plan
 
-**Plan:** [`2026-08-19-sdk-release-readiness.md`](2026-08-19-sdk-release-readiness.md)  
+**Plan:** [`2026-08-19-sdk-release-readiness.md`](2026-08-19-sdk-release-readiness.md)
+
 **Status:** **Mechanism completed; first publication unperformed**
 
 ### Intended outcome
@@ -86,7 +92,7 @@ Build a fixed-group, fail-closed, checksummed release mechanism with protected d
 | [PR #14](https://github.com/OpenCoven/sdk/pull/14) | Introduced the two-key locked release design and operationally ready release controls while keeping packages private. |
 | [PR #22](https://github.com/OpenCoven/sdk/pull/22) | Landed the final locked release-readiness implementation, checksummed exact artifacts, protected OIDC/provenance workflow, support/security/bootstrap/rollback documentation, and expanded verification. |
 | [PR #23](https://github.com/OpenCoven/sdk/pull/23) | Recorded the merge commit and successful post-merge canonical verification. |
-| [PRs #24–#27](https://github.com/OpenCoven/sdk/pulls?q=is%3Apr+is%3Aclosed) | Repaired dependency/action maintenance assertions so secure pins remain bumpable and aligned Node typings with the supported runtime. |
+| [PR #24](https://github.com/OpenCoven/sdk/pull/24), [#25](https://github.com/OpenCoven/sdk/pull/25), [#26](https://github.com/OpenCoven/sdk/pull/26), and [#27](https://github.com/OpenCoven/sdk/pull/27) | Repaired dependency/action maintenance assertions so secure pins remain bumpable and aligned Node typings with the supported runtime. |
 
 ### Deliberately unperformed
 
@@ -106,7 +112,8 @@ Those external gates are now consolidated in [#41](https://github.com/OpenCoven/
 
 ## 6. Beads backlog plan
 
-**Plan:** [`2026-08-20-sdk-beads-backlog.md`](2026-08-20-sdk-beads-backlog.md)  
+**Plan:** [`2026-08-20-sdk-beads-backlog.md`](2026-08-20-sdk-beads-backlog.md)
+
 **Status:** **Superseded as the active tracker; retained as historical reconstruction**
 
 ### Merged evidence
@@ -127,7 +134,8 @@ The Beads ledger remains useful local provenance. New active planning and cross-
 
 ## 7. Phase 1 discovery/pairing plan
 
-**Plan location:** `OpenCoven/chat/docs/superpowers/plans/2026-08-20-phase-1b-sdk-discovery-pairing.md`  
+**Plan location:** `OpenCoven/chat/docs/superpowers/plans/2026-08-20-phase-1b-sdk-discovery-pairing.md`
+
 **Status:** **Partially completed and superseded for remaining work**
 
 ### Completed SDK lane
