@@ -33,7 +33,7 @@ export interface CaveConversation {
   title?: string;
   origin?: string;
   status?: string;
-  exitCode?: number;
+  exitCode?: number | null;
   pending?: boolean;
   createdAt?: string;
   updatedAt: string;

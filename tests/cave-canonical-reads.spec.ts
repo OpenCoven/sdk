@@ -17,6 +17,13 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 const CURSOR = 'eyJwYWdlIjoyfQ';
 const NEXT_CURSOR = 'eyJwYWdlIjozfQ';
+const CANONICAL_OPERATIONS = [
+  'familiars.list',
+  'projects.list',
+  'conversations.list',
+  'conversations.read',
+  'messages.list',
+] as const;
 
 const VALID_HEALTH_RESPONSE = {
   apiVersion: '1.0',
@@ -87,8 +94,26 @@ function successEnvelope(
     apiVersion: '1.0',
     minimumClientVersion: '0.1.0',
     capabilities: ['canonical-reads'],
+    operations: CANONICAL_OPERATIONS,
     data,
     ...(cursor === undefined ? {} : { cursor }),
+  };
+}
+
+function errorEnvelope(
+  replacement: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    apiVersion: '1.0',
+    minimumClientVersion: '0.1.0',
+    capabilities: ['conversation-messages'],
+    operations: CANONICAL_OPERATIONS,
+    error: {
+      code: 'reconcile_required',
+      message: 'Reload canonical state.',
+      retryable: false,
+    },
+    ...replacement,
   };
 }
 
@@ -344,6 +369,65 @@ describe('Cave caller-supplied canonical reads', () => {
     ).toEqual(message);
   });
 
+  test('preserves a present null conversation exitCode in list and detail reads', async () => {
+    const conversation = { ...CONVERSATION, exitCode: null };
+    const { client } = clientWith({
+      listConversations: () =>
+        Promise.resolve(successEnvelope({ conversations: [conversation] })),
+      getConversation: () =>
+        Promise.resolve(successEnvelope({ conversation })),
+    });
+
+    await expect(client.listConversations()).resolves.toEqual({
+      data: [conversation],
+    });
+    await expect(
+      client.getConversation('conversation-1'),
+    ).resolves.toEqual(conversation);
+  });
+
+  test.each([
+    ['listConversations', Number.NaN],
+    ['listConversations', Number.POSITIVE_INFINITY],
+    ['listConversations', Number.NEGATIVE_INFINITY],
+    ['listConversations', 1.5],
+    ['listConversations', Number.MAX_SAFE_INTEGER + 1],
+    ['getConversation', Number.NaN],
+    ['getConversation', Number.POSITIVE_INFINITY],
+    ['getConversation', Number.NEGATIVE_INFINITY],
+    ['getConversation', 1.5],
+    ['getConversation', Number.MAX_SAFE_INTEGER + 1],
+  ])('rejects malformed numeric exitCode from %s', async (
+    operation,
+    exitCode,
+  ) => {
+    const conversation = { ...CONVERSATION, exitCode };
+    const { client } = clientWith({
+      listConversations: () =>
+        Promise.resolve(successEnvelope({ conversations: [conversation] })),
+      getConversation: () =>
+        Promise.resolve(successEnvelope({ conversation })),
+    });
+    const invoke =
+      operation === 'listConversations'
+        ? () => client.listConversations()
+        : () => client.getConversation('conversation-1');
+
+    const error = await caveErrorOf(invoke);
+
+    expect(error.normalized).toMatchObject({
+      code: 'invalid_response',
+      operation,
+      retryable: false,
+    });
+    expect(error.details).toEqual({
+      field:
+        operation === 'listConversations'
+          ? 'data.conversations[0].exitCode'
+          : 'data.conversation.exitCode',
+    });
+  });
+
   test('requires conversation updatedAt while allowing createdAt to be absent', async () => {
     const withoutCreatedAt = {
       id: 'conversation-2',
@@ -454,12 +538,69 @@ describe('Cave caller-supplied canonical reads', () => {
   });
 
   test.each([
+    ['activeSessions', Number.NaN],
+    ['activeSessions', Number.POSITIVE_INFINITY],
+    ['activeSessions', -1],
+    ['activeSessions', 1.5],
+    ['activeSessions', Number.MAX_SAFE_INTEGER + 1],
+    ['attachmentCount', Number.NaN],
+    ['attachmentCount', Number.POSITIVE_INFINITY],
+    ['attachmentCount', -1],
+    ['attachmentCount', 1.5],
+    ['attachmentCount', Number.MAX_SAFE_INTEGER + 1],
+    ['toolCount', Number.NaN],
+    ['toolCount', Number.POSITIVE_INFINITY],
+    ['toolCount', -1],
+    ['toolCount', 1.5],
+    ['toolCount', Number.MAX_SAFE_INTEGER + 1],
+  ])('rejects malformed count %s value %s', async (field, value) => {
+    const familiar = { ...FAMILIAR, [field]: value };
+    const message = { ...MESSAGE, [field]: value };
+    const operation =
+      field === 'activeSessions'
+        ? 'listFamiliars'
+        : 'listConversationMessages';
+    const data =
+      field === 'activeSessions'
+        ? { familiars: [familiar] }
+        : { messages: [message] };
+    const method = vi.fn(() => Promise.resolve(successEnvelope(data)));
+    const { client } = clientWith({ [operation]: method });
+    const invoke =
+      operation === 'listFamiliars'
+        ? () => client.listFamiliars()
+        : () => client.listConversationMessages('conversation-1');
+
+    const error = await caveErrorOf(invoke);
+
+    expect(error.normalized).toMatchObject({
+      code: 'invalid_response',
+      operation,
+      retryable: false,
+    });
+    expect(error.details).toEqual({
+      field:
+        field === 'activeSessions'
+          ? `data.familiars[0].${field}`
+          : `data.messages[0].${field}`,
+    });
+  });
+
+  test.each([
     ['apiVersion', { apiVersion: undefined }],
     ['apiVersion', { apiVersion: 'version-one' }],
     ['minimumClientVersion', { minimumClientVersion: 1 }],
     ['minimumClientVersion', { minimumClientVersion: 'version-one' }],
     ['capabilities', { capabilities: 'projects' }],
     ['capabilities[0]', { capabilities: [1] }],
+    ['operations', { operations: undefined }],
+    ['operations', { operations: 'projects.list' }],
+    [
+      'operations[1]',
+      { operations: ['projects.list', 'projects.list'] },
+    ],
+    ['operations[0]', { operations: ['PROJECTS.LIST'] }],
+    ['operations[0]', { operations: ['a'.repeat(65)] }],
     ['data', { data: undefined }],
     ['data.projects', { data: { projects: 'not-an-array' } }],
   ])('rejects malformed success envelope field %s', async (
@@ -472,6 +613,34 @@ describe('Cave caller-supplied canonical reads', () => {
     };
     const { client } = clientWith({
       listProjects: () => Promise.resolve(response),
+    });
+
+    const error = await caveErrorOf(() => client.listProjects());
+
+    expect(error.normalized).toMatchObject({
+      code: 'invalid_response',
+      operation: 'listProjects',
+      retryable: false,
+    });
+    expect(error.details).toEqual({ field });
+  });
+
+  test.each([
+    ['operations', { operations: undefined }],
+    ['operations', { operations: 'projects.list' }],
+    [
+      'operations[1]',
+      { operations: ['projects.list', 'projects.list'] },
+    ],
+    ['operations[0]', { operations: ['PROJECTS.LIST'] }],
+    ['operations[0]', { operations: ['a'.repeat(65)] }],
+  ])('validates explicit error envelope metadata field %s before normalization', async (
+    field,
+    replacement,
+  ) => {
+    const { client } = clientWith({
+      listProjects: () =>
+        Promise.resolve(errorEnvelope(replacement)),
     });
 
     const error = await caveErrorOf(() => client.listProjects());
@@ -501,14 +670,8 @@ describe('Cave caller-supplied canonical reads', () => {
             apiVersion,
           }
         : {
+            ...errorEnvelope(),
             apiVersion,
-            minimumClientVersion: '0.1.0',
-            capabilities: ['projects'],
-            error: {
-              code: 'reconcile_required',
-              message: 'Reload canonical state.',
-              retryable: false,
-            },
           };
     const { client } = clientWith({
       listProjects: () => Promise.resolve(response),
@@ -613,19 +776,18 @@ describe('Cave caller-supplied canonical reads', () => {
     const { client } = clientWith(
       {
         listConversationMessages: () =>
-          Promise.resolve({
-            apiVersion: '1.0',
-            minimumClientVersion: '0.1.0',
-            capabilities: ['conversation-messages'],
-            error: {
-              code: 'reconcile_required',
-              message: 'Reload canonical state.',
-              retryable: false,
-              details: {
-                reason: 'resume_from_canonical_state',
+          Promise.resolve(
+            errorEnvelope({
+              error: {
+                code: 'reconcile_required',
+                message: 'Reload canonical state.',
+                retryable: false,
+                details: {
+                  reason: 'resume_from_canonical_state',
+                },
               },
-            },
-          }),
+            }),
+          ),
       },
       {
         observer: {

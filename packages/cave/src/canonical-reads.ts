@@ -76,19 +76,39 @@ function optionalString(
   return value === undefined ? undefined : canonicalString(value, field);
 }
 
-function canonicalNumber(value: unknown, field: string): number {
-  if (typeof value !== 'number') {
+function canonicalSafeInteger(value: unknown, field: string): number {
+  if (!Number.isSafeInteger(value)) {
     throw new CaveCanonicalSchemaError(field);
   }
 
-  return value;
+  return value as number;
 }
 
-function optionalNumber(
+function optionalNullableSafeInteger(
+  value: unknown,
+  field: string,
+): number | null | undefined {
+  if (value === undefined || value === null) {
+    return value;
+  }
+
+  return canonicalSafeInteger(value, field);
+}
+
+function canonicalCount(value: unknown, field: string): number {
+  const count = canonicalSafeInteger(value, field);
+  if (count < 0) {
+    throw new CaveCanonicalSchemaError(field);
+  }
+
+  return count;
+}
+
+function optionalCount(
   value: unknown,
   field: string,
 ): number | undefined {
-  return value === undefined ? undefined : canonicalNumber(value, field);
+  return value === undefined ? undefined : canonicalCount(value, field);
 }
 
 function canonicalBoolean(value: unknown, field: string): boolean {
@@ -106,27 +126,27 @@ function optionalBoolean(
   return value === undefined ? undefined : canonicalBoolean(value, field);
 }
 
-function parseCapabilities(value: unknown): string[] {
+function parseDeclarationIds(value: unknown, field: string): string[] {
   if (!Array.isArray(value)) {
-    throw new CaveCanonicalSchemaError('capabilities');
+    throw new CaveCanonicalSchemaError(field);
   }
 
-  const capabilities: string[] = [];
+  const declarations: string[] = [];
   for (const [index, entry] of value.entries()) {
     if (typeof entry !== 'string') {
-      throw new CaveCanonicalSchemaError(`capabilities[${index}]`);
+      throw new CaveCanonicalSchemaError(`${field}[${index}]`);
     }
     if (
       entry.length > DECLARATION_ID_MAX_CHARACTERS ||
       !DECLARATION_ID_PATTERN.test(entry) ||
-      capabilities.includes(entry)
+      declarations.includes(entry)
     ) {
-      throw new CaveCanonicalSchemaError(`capabilities[${index}]`);
+      throw new CaveCanonicalSchemaError(`${field}[${index}]`);
     }
-    capabilities.push(entry);
+    declarations.push(entry);
   }
 
-  return capabilities;
+  return declarations;
 }
 
 function parseErrorDetails(
@@ -152,7 +172,8 @@ function parseEnvelope(value: unknown): JsonObject {
     envelope.minimumClientVersion,
     'minimumClientVersion',
   );
-  parseCapabilities(envelope.capabilities);
+  parseDeclarationIds(envelope.capabilities, 'capabilities');
+  parseDeclarationIds(envelope.operations, 'operations');
 
   if (apiVersion !== CAVE_API_VERSION) {
     throw new CaveCanonicalSchemaError('apiVersion');
@@ -261,7 +282,7 @@ function parseFamiliar(
     familiar.lastSeenAt,
     `${field}.lastSeenAt`,
   );
-  const activeSessions = optionalNumber(
+  const activeSessions = optionalCount(
     familiar.activeSessions,
     `${field}.activeSessions`,
   );
@@ -308,7 +329,10 @@ function parseConversation(
   const title = optionalString(conversation.title, `${field}.title`);
   const origin = optionalString(conversation.origin, `${field}.origin`);
   const status = optionalString(conversation.status, `${field}.status`);
-  const exitCode = optionalNumber(conversation.exitCode, `${field}.exitCode`);
+  const exitCode = optionalNullableSafeInteger(
+    conversation.exitCode,
+    `${field}.exitCode`,
+  );
   const pending = optionalBoolean(conversation.pending, `${field}.pending`);
   const createdAt = optionalString(
     conversation.createdAt,
@@ -356,11 +380,11 @@ function parseMessage(
     role: canonicalString(message.role, `${field}.role`),
     text: canonicalString(message.text, `${field}.text`),
     createdAt: canonicalString(message.createdAt, `${field}.createdAt`),
-    attachmentCount: canonicalNumber(
+    attachmentCount: canonicalCount(
       message.attachmentCount,
       `${field}.attachmentCount`,
     ),
-    toolCount: canonicalNumber(message.toolCount, `${field}.toolCount`),
+    toolCount: canonicalCount(message.toolCount, `${field}.toolCount`),
     ...(isError === undefined ? {} : { isError }),
     ...(cancelled === undefined ? {} : { cancelled }),
   };

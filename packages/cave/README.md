@@ -62,6 +62,13 @@ const canonicalMetadata = {
   apiVersion: '1.0',
   capabilities: ['canonical-reads'],
   minimumClientVersion: CAVE_CLIENT_VERSION,
+  operations: [
+    'familiars.list',
+    'projects.list',
+    'conversations.list',
+    'conversations.read',
+    'messages.list',
+  ],
 } as const;
 
 const transport = {
@@ -146,6 +153,13 @@ await session.poll();
 const credential = await session.exchange();
 console.log(credential.id, credential.scopes);
 ```
+
+Canonical success and explicit error envelopes require `apiVersion`,
+`minimumClientVersion`, `capabilities`, and `operations`. Declaration IDs are
+bounded, canonical, and unique. `CaveConversation.exitCode` is absent when the
+producer omits it, preserves a present `null`, and otherwise requires a finite
+safe integer. `activeSessions`, `attachmentCount`, and `toolCount` require
+finite, safe, nonnegative integers.
 
 `health()` accepts additive Cave API updates on supported major version `1` and
 rejects incompatible API or minimum-client versions. It returns normalized

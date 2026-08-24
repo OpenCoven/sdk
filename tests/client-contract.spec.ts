@@ -131,6 +131,7 @@ describe('constrained client transports', () => {
       apiVersion: '1.0',
       minimumClientVersion: '0.1.0',
       capabilities: ['canonical-reads'],
+      operations: ['familiars.list'],
     } as const;
     const transport = {
       health: () => Promise.resolve(VALID_CAVE_HEALTH_RESPONSE),
