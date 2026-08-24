@@ -24,6 +24,7 @@ change these gates only as part of the intentional, reviewed release process.
 - [Support policy](SUPPORT.md)
 - [Security policy](SECURITY.md)
 - [Release process](RELEASING.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## Current delivery program
 

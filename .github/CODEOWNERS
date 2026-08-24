@@ -1,0 +1,9 @@
+* @BunsDev
+
+/.github/workflows/ @BunsDev
+/.changeset/ @BunsDev
+/release.config.json @BunsDev
+/scripts/*release* @BunsDev
+/packages/coven/src/discovery.ts @BunsDev
+/packages/coven/src/transport-unix.ts @BunsDev
+/packages/coven/src/transport-windows.ts @BunsDev
