@@ -57,6 +57,7 @@ type PageReadOptions = NormalizedPageOptions & { signal: AbortSignal };
 interface IteratorLifecycle {
   started: boolean;
   terminal: boolean;
+  effectiveSignal?: AbortSignal;
   closeError?: OperationAbortedError;
 }
 
@@ -191,6 +192,7 @@ async function* generatePages<T>(
   let cursor = normalized.cursor;
   let pagesRead = 0;
 
+  lifecycle.effectiveSignal = scope.context.signal;
   if (cursor !== undefined) {
     seenCursors.add(cursor);
   }
@@ -282,10 +284,18 @@ async function* generatePages<T>(
       if (lifecycle.started && !lifecycle.terminal) {
         const error =
           lifecycle.closeError ??
+          (scope.context.signal.aborted
+            ? (scope.context.signal.reason as unknown)
+            : undefined) ??
           new OperationAbortedError(PAGINATION_DESCRIPTOR);
+        const phase = isOperationTimeoutError(error)
+          ? 'timeout'
+          : isOperationAbortedError(error)
+            ? 'abort'
+            : 'failure';
         lifecycle.terminal = true;
         notifyOperationObserver(operationOptions.observer, {
-          phase: 'abort',
+          phase,
           system: PAGINATION_DESCRIPTOR.system,
           operation: PAGINATION_DESCRIPTOR.operation,
           durationMs: operationDuration(startedAt),
@@ -355,7 +365,11 @@ export function iteratePages<T>(
   );
   const close = iterator.return.bind(iterator);
   iterator.return = (value) => {
-    if (lifecycle.started && !lifecycle.terminal) {
+    if (
+      lifecycle.started &&
+      !lifecycle.terminal &&
+      lifecycle.effectiveSignal?.aborted !== true
+    ) {
       const error = new OperationAbortedError(PAGINATION_DESCRIPTOR);
       lifecycle.closeError ??= error;
       closureController.abort(lifecycle.closeError);

@@ -1,6 +1,8 @@
 import {
   iteratePages,
   normalizePageOptions,
+  OperationAbortedError,
+  OperationTimeoutError,
   type BoundedPageOptions,
   type OperationEvent,
   type OperationObserver,
@@ -722,6 +724,100 @@ describe('bounded page iteration', () => {
     });
     expect(listeners.size).toBe(0);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('return preserves a timeout that fires while suspended at a yield', async () => {
+    vi.useFakeTimers();
+    const events: OperationEvent[] = [];
+    let transportSignal: AbortSignal | undefined;
+    const iterator = iteratePages(
+      (options) => {
+        transportSignal = options.signal;
+        return Promise.resolve({
+          data: ['item'],
+          cursor: { next: FIRST_CURSOR, hasMore: true },
+        });
+      },
+      {
+        maxPages: 2,
+        timeoutMs: 10,
+        observer: collectingObserver(events),
+      },
+    );
+
+    await expect(iterator.next()).resolves.toEqual({ value: 'item', done: false });
+    expect(transportSignal).toBeDefined();
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(transportSignal?.aborted).toBe(true);
+    const timeoutReason = transportSignal?.reason as unknown;
+    expect(timeoutReason).toBeInstanceOf(OperationTimeoutError);
+    expect(timeoutReason).toMatchObject({
+      code: 'timeout',
+      retryable: true,
+    });
+
+    await expect(iterator.return(undefined)).resolves.toEqual({
+      value: undefined,
+      done: true,
+    });
+
+    expect(transportSignal?.reason).toBe(timeoutReason);
+    expect(events.map(({ phase }) => phase)).toEqual(['start', 'timeout']);
+    expect(events[1]).toMatchObject({
+      phase: 'timeout',
+      error: {
+        code: 'timeout',
+        retryable: true,
+      },
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('return preserves a caller abort that wins while suspended at a yield', async () => {
+    const events: OperationEvent[] = [];
+    const controller = new AbortController();
+    const callerReason = new Error('caller stopped');
+    let transportSignal: AbortSignal | undefined;
+    const iterator = iteratePages(
+      (options) => {
+        transportSignal = options.signal;
+        return Promise.resolve({
+          data: ['item'],
+          cursor: { next: FIRST_CURSOR, hasMore: true },
+        });
+      },
+      {
+        maxPages: 2,
+        signal: controller.signal,
+        observer: collectingObserver(events),
+      },
+    );
+
+    await expect(iterator.next()).resolves.toEqual({ value: 'item', done: false });
+    controller.abort(callerReason);
+
+    expect(transportSignal?.aborted).toBe(true);
+    const abortReason = transportSignal?.reason as unknown;
+    expect(abortReason).toBeInstanceOf(OperationAbortedError);
+    expect((abortReason as Error).cause).toBe(callerReason);
+
+    await expect(iterator.return(undefined)).resolves.toEqual({
+      value: undefined,
+      done: true,
+    });
+
+    expect(transportSignal?.reason).toBe(abortReason);
+    expect((transportSignal?.reason as Error).cause).toBe(callerReason);
+    expect(events.map(({ phase }) => phase)).toEqual(['start', 'abort']);
+    expect(events[1]).toMatchObject({
+      phase: 'abort',
+      error: {
+        code: 'aborted',
+        retryable: false,
+      },
+    });
   });
 
   test('disposes operation controls when abort observation throws', async () => {
