@@ -17,6 +17,7 @@ export interface CleanupMergedBranchOptions {
   dryRun?: boolean;
   prNumber: number;
   remote?: string;
+  repository?: string;
   runCommand?: CleanupRunCommand;
 }
 
