@@ -38,7 +38,9 @@ package does not read environment variables, keychains, or files.
 `dispose()`, and deterministic post-disposal errors without changing the
 legacy store. Disposal removes retained references, but JavaScript strings
 cannot be reliably zeroized. Neither memory store is persistent credential
-storage.
+storage. Higher-level clients may keep companion non-secret metadata beside a
+secret through the same store contract, so callers should treat a secret-store
+entry as scoped application state rather than as a single raw value slot.
 
 ## License
 

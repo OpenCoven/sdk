@@ -9,10 +9,13 @@ A constrained Cave client with two entry points:
 Importing the package performs no filesystem, network, or credential I/O. The
 discovered helper reads Cave's `client-v1-discovery.json` only when an
 operation is called, validates owner-local discovery metadata, and stores the
-paired bearer only through an injected `SecretStore`. Pairing sessions pin to
-the exact discovered authority record and freshness; if rediscovery shows a
-restart, record replacement, or authority mismatch, `poll()`/`exchange()`
-fail locally before the pairing secret is sent.
+paired bearer plus non-secret authority-binding metadata only through an
+injected `SecretStore`. Pairing sessions pin to the exact discovered authority
+record and freshness; if rediscovery shows a restart, record replacement, or
+authority mismatch, `poll()`/`exchange()` fail locally before the pairing
+secret is sent. Stored bearers are rediscovered against the same authority
+identity before every authenticated discovered call and are cleared locally
+rather than sent to a different Cave.
 
 ```ts
 import {

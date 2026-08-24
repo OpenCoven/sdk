@@ -14,6 +14,10 @@ import {
   type CaveDiscoveredEndpoint,
   type DiscoverCaveEndpointOptions,
 } from './discovery.js';
+import {
+  invalidateStoredCredential,
+  loadBoundCredential,
+} from './credential-binding.js';
 import type {
   CaveCredentialMetadata,
   CaveFamiliarsResponse,
@@ -259,13 +263,15 @@ function parseEnvelopeBase(value: unknown): EnvelopeBase {
     throw transportError('incompatible_version', 'Cave apiVersion was not compatible.');
   }
 
+  let compatibility: ReturnType<typeof assessCompatibility>;
   try {
-    const compatibility = assessCompatibility(minimumClientVersion, CAVE_CLIENT_VERSION);
-    if (!compatibility.compatible) {
-      throw transportError('incompatible_version', 'Cave minimumClientVersion was not compatible.');
-    }
+    compatibility = assessCompatibility(minimumClientVersion, CAVE_CLIENT_VERSION);
   } catch {
     throw transportError('invalid_response', 'Cave minimumClientVersion was malformed.');
+  }
+
+  if (!compatibility.compatible) {
+    throw transportError('incompatible_version', 'Cave minimumClientVersion was not compatible.');
   }
 
   const requestId =
@@ -390,7 +396,7 @@ function parseFamiliar(value: unknown): CaveFamiliarWire {
 
   return {
     id: expectString(familiar.id, 'familiar.id'),
-    display_name: expectString(familiar.displayName, 'familiar.displayName'),
+    display_name: expectString(familiar.display_name, 'familiar.display_name'),
     role: expectString(familiar.role, 'familiar.role'),
     ...(familiar.description === undefined
       ? {}
@@ -401,15 +407,23 @@ function parseFamiliar(value: unknown): CaveFamiliarWire {
     ...(familiar.status === undefined
       ? {}
       : { status: expectString(familiar.status, 'familiar.status') }),
-    ...(familiar.lastSeenAt === undefined
+    ...(familiar.last_seen === undefined
       ? {}
-      : { last_seen: expectString(familiar.lastSeenAt, 'familiar.lastSeenAt') }),
-    ...(familiar.activeSessions === undefined
+      : { last_seen: expectString(familiar.last_seen, 'familiar.last_seen') }),
+    ...(familiar.active_sessions === undefined
       ? {}
       : {
           active_sessions: expectTimestampNumber(
-            familiar.activeSessions,
-            'familiar.activeSessions',
+            familiar.active_sessions,
+            'familiar.active_sessions',
+          ),
+        }),
+    ...(familiar.memory_freshness === undefined
+      ? {}
+      : {
+          memory_freshness: expectString(
+            familiar.memory_freshness,
+            'familiar.memory_freshness',
           ),
         }),
   };
@@ -616,15 +630,39 @@ async function requestJson(
         retryable: false,
       });
     }
-    const bearer = await credentials.store.get(credentials.reference.key);
+    const credential = await loadBoundCredential(
+      credentials.store,
+      credentials.reference,
+      discovered,
+      (value) => BASE64URL_43_RE.test(value),
+    );
     ensureActive(options.context);
-    if (typeof bearer !== 'string' || !BASE64URL_43_RE.test(bearer)) {
+    if (credential.status === 'missing' || credential.status === 'invalid_bearer') {
+      if (credential.status === 'invalid_bearer') {
+        await invalidateStoredCredential(credentials.store, credentials.reference);
+      }
+
       throw transportError('unauthorized', 'A stored Cave credential was not available.', {
         retryable: false,
         statusCode: 401,
       });
     }
-    headers.set('authorization', `Bearer ${bearer}`);
+
+    if (credential.status === 'invalid') {
+      await invalidateStoredCredential(credentials.store, credentials.reference);
+      throw transportError(
+        'reconcile_required',
+        'The stored Cave credential must be paired again before reuse safely.',
+        {
+          details: {
+            reason: credential.reason,
+          },
+          retryable: false,
+        },
+      );
+    }
+
+    headers.set('authorization', `Bearer ${credential.bearer}`);
   }
 
   let response: Response;
@@ -728,7 +766,7 @@ function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTra
       return status;
     },
     async pairingExchange(requestId, pairingSecret, context) {
-      const { payload } = await requestJson(
+      const { payload, discovered } = await requestJson(
         'POST',
         `/api/client/v1/pairing/requests/${requestId}/exchange`,
         {
@@ -745,7 +783,10 @@ function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTra
       );
       const exchanged = parsePairingExchange(payload);
       pairingAuthorities.delete(requestId);
-      return exchanged;
+      return {
+        ...exchanged,
+        authorityBinding: discovered,
+      };
     },
     async familiars(context) {
       const { payload } = await requestJson('GET', '/api/client/v1/familiars', {

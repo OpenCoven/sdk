@@ -23,6 +23,11 @@ import type {
   CavePairingScope,
   CavePairingStatus,
 } from './schemas.js';
+import {
+  forgetStoredCredential,
+  storeBoundCredential,
+} from './credential-binding.js';
+import type { CaveDiscoveredEndpoint } from './discovery.js';
 import type {
   CaveExecutionAttempt,
   CaveExecutionSlice,
@@ -347,6 +352,10 @@ function optionalNumber(value: unknown): boolean {
   return value === undefined || (typeof value === 'number' && Number.isFinite(value));
 }
 
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
 function isFamiliarWire(value: unknown): value is CaveFamiliarWire {
   if (!isObject(value)) {
     return false;
@@ -650,6 +659,60 @@ function isPairingExchange(value: unknown): value is CavePairingExchange {
     BASE64URL_43_RE.test(value.bearer) &&
     isCredentialMetadata(value.credential)
   );
+}
+
+function pairingExchangeAuthorityBinding(
+  value: CavePairingExchange,
+): CaveDiscoveredEndpoint | undefined {
+  const candidate = (value as CavePairingExchange & { authorityBinding?: unknown }).authorityBinding;
+
+  if (!isObject(candidate) || candidate.version !== 1) {
+    return undefined;
+  }
+
+  if (
+    !isObject(candidate.endpoint) ||
+    candidate.endpoint.kind !== 'http' ||
+    typeof candidate.endpoint.url !== 'string'
+  ) {
+    return undefined;
+  }
+
+  if (
+    !isObject(candidate.record) ||
+    typeof candidate.record.path !== 'string' ||
+    !isNonNegativeSafeInteger(candidate.record.device) ||
+    !isNonNegativeSafeInteger(candidate.record.inode)
+  ) {
+    return undefined;
+  }
+
+  if (
+    !isObject(candidate.freshness) ||
+    !isNonNegativeSafeInteger(candidate.freshness.pid) ||
+    typeof candidate.freshness.nonce !== 'string' ||
+    typeof candidate.freshness.startedAt !== 'string'
+  ) {
+    return undefined;
+  }
+
+  return {
+    version: 1,
+    endpoint: {
+      kind: 'http',
+      url: candidate.endpoint.url,
+    },
+    record: {
+      path: candidate.record.path,
+      device: candidate.record.device,
+      inode: candidate.record.inode,
+    },
+    freshness: {
+      pid: candidate.freshness.pid,
+      nonce: candidate.freshness.nonce,
+      startedAt: candidate.freshness.startedAt,
+    },
+  };
 }
 
 export class CavePairingSession {
@@ -1080,12 +1143,20 @@ export class CaveClient {
           }
 
           const bearerBytes = Buffer.from(exchanged.bearer, 'utf8');
+          const authorityBinding = pairingExchangeAuthorityBinding(exchanged);
           try {
             this.#ensureActive(context, 'pairingExchange');
-            await credentials.store.set(
-              credentials.reference.key,
-              bearerBytes.toString('utf8'),
-            );
+            const bearer = bearerBytes.toString('utf8');
+            if (authorityBinding === undefined) {
+              await credentials.store.set(credentials.reference.key, bearer);
+            } else {
+              await storeBoundCredential(
+                credentials.store,
+                credentials.reference,
+                bearer,
+                authorityBinding,
+              );
+            }
           } catch (error) {
             clearPairingSecret();
             throw secretStoreWriteFailed('pairingExchange', error);
@@ -1132,6 +1203,9 @@ export class CaveClient {
         if (code === 'unauthorized') {
           return { status: 'revoked', health };
         }
+        if (code === 'reconcile_required') {
+          return { status: 'missing' };
+        }
         if (code === 'scope_denied') {
           return { status: 'valid', access: 'scope_denied', health };
         }
@@ -1154,7 +1228,7 @@ export class CaveClient {
       }
 
       this.#ensureActive(context, 'forgetCredential');
-      return await credentials.store.delete(credentials.reference.key);
+      return await forgetStoredCredential(credentials.store, credentials.reference);
     });
   }
 }
