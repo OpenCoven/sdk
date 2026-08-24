@@ -32,6 +32,7 @@
     "verify-contracts": "node ./scripts/verify-contracts.mjs",
     "verify-package": "node ./scripts/verify-package.mjs",
     "verify:contracts": "node ./scripts/verify-contracts.mjs",
+    "verify:cave-authority": "node ./scripts/verify-cave-contract-authority.mjs",
     "verify:compat": "corepack pnpm@10.34.0 build && corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 verify:package",
     "verify:package": "node ./scripts/verify-package.mjs",
     "verify:release": "node ./scripts/verify-release-readiness.mjs",

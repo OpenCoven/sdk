@@ -48,6 +48,18 @@ const VALID_COVEN_HEALTH_RESPONSE = {
   },
 } as const;
 
+const VALID_CAVE_HEALTH_RESPONSE = {
+  apiVersion: '1.0',
+  capabilities: ['health', 'pairing'],
+  minimumClientVersion: '0.1.0',
+  operations: ['health.read', 'pairing.create'],
+  data: {
+    instanceId: 'instance-1',
+    pairingRequired: true,
+    releaseVersion: '0.3.9',
+  },
+} as const;
+
 function createCovenHealthResponseWithEventCursor(eventCursor: string) {
   return {
     ...VALID_COVEN_HEALTH_RESPONSE,
@@ -156,23 +168,79 @@ describe('health validation', () => {
     const client = new CaveClient({
       transport: {
         health: () => Promise.resolve({
-          apiVersion: '1.0',
+          ...VALID_CAVE_HEALTH_RESPONSE,
           minimumClientVersion: '0.0.0',
-          data: { status: 'ok' },
         }),
       },
     });
 
-    await expect(client.health()).resolves.toEqual({ status: 'ok' });
+    await expect(client.health()).resolves.toEqual({
+      status: 'ok',
+      apiVersion: '1.0',
+      minimumClientVersion: '0.0.0',
+      capabilities: ['health', 'pairing'],
+      operations: ['health.read', 'pairing.create'],
+      instanceId: 'instance-1',
+      pairingRequired: true,
+      releaseVersion: '0.3.9',
+    });
+  });
+
+  test('accepts compatible additive Cave fields and declarations', async () => {
+    const client = new CaveClient({
+      transport: {
+        health: () =>
+          Promise.resolve({
+            apiVersion: '1.1',
+            capabilities: ['health', 'future-safe-family'],
+            minimumClientVersion: '0.1.0',
+            operations: ['health.read', 'future.safe.read'],
+            data: {
+              instanceId: 'instance-2',
+              pairingRequired: false,
+              releaseVersion: '0.4.0',
+              futureSafeField: true,
+            },
+            futureEnvelopeField: 'ignored',
+          }),
+      },
+    });
+
+    await expect(client.health()).resolves.toMatchObject({
+      apiVersion: '1.1',
+      capabilities: ['health', 'future-safe-family'],
+      operations: ['health.read', 'future.safe.read'],
+      instanceId: 'instance-2',
+    });
+  });
+
+  test('never parses a proxy rejection as a Client v1 health envelope', async () => {
+    const client = new CaveClient({
+      transport: {
+        health: () =>
+          Promise.resolve({
+            ok: false,
+            reason: 'origin_not_allowed',
+            error: 'Proxy rejected the request.',
+          } as never),
+      },
+    });
+
+    await expect(client.health()).rejects.toMatchObject({
+      normalized: {
+        code: 'origin_not_allowed',
+        operation: 'health',
+        system: 'cave',
+      },
+    });
   });
 
   test('rejects Cave health responses that require a newer client version', async () => {
     const client = new CaveClient({
       transport: {
         health: () => Promise.resolve({
-          apiVersion: '1.0',
+          ...VALID_CAVE_HEALTH_RESPONSE,
           minimumClientVersion: '999.0.0',
-          data: { status: 'ok' },
         }),
       },
     });
@@ -199,23 +267,25 @@ describe('health validation', () => {
     const client = new CaveClient({
       transport: {
         health: () => Promise.resolve({
+          ...VALID_CAVE_HEALTH_RESPONSE,
           apiVersion: '1.1',
-          minimumClientVersion: '0.1.0',
-          data: { status: 'ok' },
         }),
       },
     });
 
-    await expect(client.health()).resolves.toEqual({ status: 'ok' });
+    await expect(client.health()).resolves.toMatchObject({
+      status: 'ok',
+      apiVersion: '1.1',
+      instanceId: 'instance-1',
+    });
   });
 
   test('rejects incompatible Cave apiVersion major versions', async () => {
     const client = new CaveClient({
       transport: {
         health: () => Promise.resolve({
+          ...VALID_CAVE_HEALTH_RESPONSE,
           apiVersion: '2.0',
-          minimumClientVersion: '0.1.0',
-          data: { status: 'ok' },
         }),
       },
     });
@@ -239,12 +309,16 @@ describe('health validation', () => {
     {},
     { data: {} },
     { data: null },
-    { data: { status: 'error' } },
-    { apiVersion: 'v1', data: { status: 'ok' } },
-    { apiVersion: 1, data: { status: 'ok' } },
-    { minimumClientVersion: 1, data: { status: 'ok' } },
-    { minimumClientVersion: 'not-semver', data: { status: 'ok' } },
-    { requestId: 1, data: { status: 'ok' } },
+    { ...VALID_CAVE_HEALTH_RESPONSE, capabilities: 'health' },
+    { ...VALID_CAVE_HEALTH_RESPONSE, capabilities: [] },
+    { ...VALID_CAVE_HEALTH_RESPONSE, operations: [1] },
+    { ...VALID_CAVE_HEALTH_RESPONSE, operations: [''] },
+    { ...VALID_CAVE_HEALTH_RESPONSE, data: { pairingRequired: true } },
+    { ...VALID_CAVE_HEALTH_RESPONSE, apiVersion: 'v1' },
+    { ...VALID_CAVE_HEALTH_RESPONSE, apiVersion: 1 },
+    { ...VALID_CAVE_HEALTH_RESPONSE, minimumClientVersion: 1 },
+    { ...VALID_CAVE_HEALTH_RESPONSE, minimumClientVersion: 'not-semver' },
+    { ...VALID_CAVE_HEALTH_RESPONSE, requestId: 1 },
   ])('normalizes invalid Cave health responses: %j', async (invalidResponse) => {
     const client = new CaveClient({
       transport: {

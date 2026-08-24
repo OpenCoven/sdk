@@ -109,11 +109,18 @@ function validateHealthResponse(response: unknown): response is CaveHealthRespon
     return false;
   }
 
-  if (response.apiVersion !== undefined && typeof response.apiVersion !== 'string') {
+  if (typeof response.apiVersion !== 'string') {
     return false;
   }
 
-  if (response.minimumClientVersion !== undefined && typeof response.minimumClientVersion !== 'string') {
+  if (typeof response.minimumClientVersion !== 'string') {
+    return false;
+  }
+
+  if (
+    !isDeclarationArray(response.capabilities) ||
+    !isDeclarationArray(response.operations)
+  ) {
     return false;
   }
 
@@ -125,7 +132,13 @@ function validateHealthResponse(response: unknown): response is CaveHealthRespon
     return false;
   }
 
-  return response.data.status === 'ok';
+  return (
+    typeof response.data.instanceId === 'string' &&
+    response.data.instanceId.length > 0 &&
+    typeof response.data.pairingRequired === 'boolean' &&
+    typeof response.data.releaseVersion === 'string' &&
+    response.data.releaseVersion.length > 0
+  );
 }
 
 
@@ -158,6 +171,14 @@ function refusalOf(response: Record<string, unknown>, operation: string): CaveCl
 
 function isString(value: unknown): value is string {
   return typeof value === 'string';
+}
+
+function isDeclarationArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((entry) => typeof entry === 'string' && entry.length > 0)
+  );
 }
 
 function optionalString(value: unknown): boolean {
@@ -406,53 +427,66 @@ export class CaveClient {
     return this.#execute('health', options, async (context) => {
       const response: unknown = await this.#transport.health(context);
 
+      if (isObject(response)) {
+        const refusal = refusalOf(response, 'health');
+
+        if (refusal !== null) {
+          throw refusal;
+        }
+      }
+
       if (!validateHealthResponse(response)) {
         throw invalidHealthResponse();
       }
 
-      if (response.minimumClientVersion !== undefined) {
-        let compatibility: CompatibilityAssessment;
+      let compatibility: CompatibilityAssessment;
 
-        try {
-          compatibility = assessCompatibility(
-            response.minimumClientVersion,
-            CAVE_CLIENT_VERSION,
-          );
-        } catch {
-          throw invalidHealthResponse();
-        }
-
-        if (!compatibility.compatible) {
-          throw new CaveClientError(
-            normalizeCaveError(
-              {
-                code: 'incompatible_version',
-              },
-              'health',
-            ),
-            compatibility,
-          );
-        }
+      try {
+        compatibility = assessCompatibility(
+          response.minimumClientVersion,
+          CAVE_CLIENT_VERSION,
+        );
+      } catch {
+        throw invalidHealthResponse();
       }
 
-      if (response.apiVersion !== undefined) {
-        if (!CAVE_API_VERSION_PATTERN.test(response.apiVersion)) {
-          throw invalidHealthResponse();
-        }
-
-        if (response.apiVersion.split('.')[0] !== SUPPORTED_CAVE_API_MAJOR) {
-          throw new CaveClientError(
-            normalizeCaveError(
-              {
-                code: 'incompatible_version',
-              },
-              'health',
-            ),
-          );
-        }
+      if (!compatibility.compatible) {
+        throw new CaveClientError(
+          normalizeCaveError(
+            {
+              code: 'incompatible_version',
+            },
+            'health',
+          ),
+          compatibility,
+        );
       }
 
-      return response.data;
+      if (!CAVE_API_VERSION_PATTERN.test(response.apiVersion)) {
+        throw invalidHealthResponse();
+      }
+
+      if (response.apiVersion.split('.')[0] !== SUPPORTED_CAVE_API_MAJOR) {
+        throw new CaveClientError(
+          normalizeCaveError(
+            {
+              code: 'incompatible_version',
+            },
+            'health',
+          ),
+        );
+      }
+
+      return Object.freeze({
+        status: 'ok',
+        apiVersion: response.apiVersion,
+        minimumClientVersion: response.minimumClientVersion,
+        capabilities: Object.freeze([...response.capabilities]),
+        operations: Object.freeze([...response.operations]),
+        instanceId: response.data.instanceId,
+        pairingRequired: response.data.pairingRequired,
+        releaseVersion: response.data.releaseVersion,
+      });
     });
   }
 

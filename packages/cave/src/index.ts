@@ -12,7 +12,19 @@ export {
   verifyCaveContractFixtureDigest,
 } from './contract-fixture.js';
 export type { CaveClientOptions, CaveFamiliarAnalyticsOptions } from './client.js';
-export type { CaveContractFixture } from './contract-fixture.js';
+export type {
+  CaveContractCursor,
+  CaveContractEnvelopeMetadata,
+  CaveContractFixture,
+  CaveContractHealthData,
+  CaveContractIdentity,
+  CaveContractOperation,
+  CaveContractPairingCreatedData,
+  CaveContractPairingExchangeData,
+  CaveContractPairingStatusData,
+  CaveContractPublicRoute,
+  CaveContractRevision,
+} from './contract-fixture.js';
 export { CAVE_ANALYTICS_WINDOWS, CAVE_FAMILIAR_PROPERTIES } from './schemas.js';
 export type {
   CaveAnalyticsWindowKey,

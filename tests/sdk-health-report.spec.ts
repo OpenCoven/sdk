@@ -3,6 +3,7 @@ import {
   CaveClientError,
   isCaveClientError,
   type CaveHealth,
+  type CaveHealthResponse,
 } from '@opencoven/cave-client';
 import {
   COVEN_DAEMON_PROTOCOL,
@@ -26,10 +27,33 @@ interface DuplicateCovenModule {
   CovenClient: typeof CovenClient;
 }
 
+const VALID_CAVE_HEALTH_RESPONSE = {
+  apiVersion: '1.0',
+  capabilities: ['health'],
+  minimumClientVersion: '0.1.0',
+  operations: ['health.read'],
+  data: {
+    instanceId: 'test-cave',
+    pairingRequired: true,
+    releaseVersion: '0.3.9',
+  },
+} as const satisfies CaveHealthResponse;
+
+const VALID_CAVE_HEALTH = {
+  status: 'ok',
+  apiVersion: VALID_CAVE_HEALTH_RESPONSE.apiVersion,
+  minimumClientVersion: VALID_CAVE_HEALTH_RESPONSE.minimumClientVersion,
+  capabilities: VALID_CAVE_HEALTH_RESPONSE.capabilities,
+  operations: VALID_CAVE_HEALTH_RESPONSE.operations,
+  instanceId: VALID_CAVE_HEALTH_RESPONSE.data.instanceId,
+  pairingRequired: VALID_CAVE_HEALTH_RESPONSE.data.pairingRequired,
+  releaseVersion: VALID_CAVE_HEALTH_RESPONSE.data.releaseVersion,
+} as const satisfies CaveHealth;
+
 function createCaveClient(): CaveClient {
   return new CaveClient({
     transport: {
-      health: () => Promise.resolve({ data: { status: 'ok' } }),
+      health: () => Promise.resolve(VALID_CAVE_HEALTH_RESPONSE),
     },
   });
 }
@@ -79,7 +103,7 @@ describe('unified health reporting', () => {
 
     await expect(createOpenCovenSdk({}).health()).resolves.toEqual({});
     await expect(sdk.health()).resolves.toEqual({
-      cave: { status: 'ok' },
+      cave: VALID_CAVE_HEALTH,
       coven: { status: 'ok' },
     });
   });
@@ -100,7 +124,7 @@ describe('unified health reporting', () => {
     await expect(sdk.healthReport()).resolves.toEqual({
       cave: {
         status: 'healthy',
-        health: { status: 'ok' },
+        health: VALID_CAVE_HEALTH,
       },
       coven: {
         status: 'healthy',
@@ -139,7 +163,7 @@ describe('unified health reporting', () => {
   test('starts configured checks concurrently', async () => {
     let caveStarted = false;
     let covenStarted = false;
-    let resolveCave: ((value: { data: { status: 'ok' } }) => void) | undefined;
+    let resolveCave: ((value: CaveHealthResponse) => void) | undefined;
     let resolveCoven:
       | ((value: {
           ok: true;
@@ -177,7 +201,7 @@ describe('unified health reporting', () => {
     expect(caveStarted).toBe(true);
     expect(covenStarted).toBe(true);
 
-    resolveCave?.({ data: { status: 'ok' } });
+    resolveCave?.(VALID_CAVE_HEALTH_RESPONSE);
     resolveCoven?.({
       ok: true,
       apiVersion: COVEN_DAEMON_PROTOCOL,
@@ -204,7 +228,7 @@ describe('unified health reporting', () => {
 
     const cave = new InvalidCaveClient({
       transport: {
-        health: () => Promise.resolve({ data: { status: 'ok' } }),
+        health: () => Promise.resolve(VALID_CAVE_HEALTH_RESPONSE),
       },
     });
 
@@ -297,7 +321,7 @@ describe('unified health reporting', () => {
           health: () =>
             new Promise((resolve) => {
               setTimeout(() => {
-                resolve({ data: { status: 'ok' } });
+                resolve(VALID_CAVE_HEALTH_RESPONSE);
               }, 30);
             }),
         },
@@ -498,7 +522,7 @@ describe('unified health reporting', () => {
     const sdk = createOpenCovenSdk({
       cave: new NonCooperativeCaveClient({
         transport: {
-          health: () => Promise.resolve({ data: { status: 'ok' } }),
+          health: () => Promise.resolve(VALID_CAVE_HEALTH_RESPONSE),
         },
       }),
     });

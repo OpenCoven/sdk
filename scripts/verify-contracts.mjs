@@ -8,7 +8,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fixtureChecks = [
   {
     path: 'packages/cave/fixtures/contract-fixture.json',
-    digest: 'f3391374bdea6d0542054cd1f2d54ccb0d91e6d4e8c54325390a8cdf42e0fad4',
+    digest: '15be473203a68555ed69f267ff2b1d8dd0933d7eb1d3fe3f01246c25a8e61d38',
   },
   {
     path: 'packages/coven/fixtures/health.json',
@@ -38,6 +38,25 @@ const caveDigest = readFileSync(caveDigestPath, 'utf8');
 
 if (caveDigest !== `${fixtureChecks[0].digest}\n`) {
   throw new Error('packages/cave/fixtures/contract-fixture.sha256 does not match the approved digest.');
+}
+
+const caveProvenancePath = resolve(
+  root,
+  'packages/cave/fixtures/contract-fixture.provenance.json',
+);
+const caveProvenance = JSON.parse(readFileSync(caveProvenancePath, 'utf8'));
+const expectedCaveProvenance = {
+  repository: 'https://github.com/OpenCoven/coven-cave',
+  commit: 'e2b5b9d10d8498895ba9ff39ce6185f4ed873b57',
+  fixturePath: 'src/lib/server/client-v1/contract-fixture.json',
+  digestPath: 'src/lib/server/client-v1/contract-fixture.sha256',
+  sha256: fixtureChecks[0].digest,
+};
+
+if (JSON.stringify(caveProvenance) !== JSON.stringify(expectedCaveProvenance)) {
+  throw new Error(
+    'packages/cave/fixtures/contract-fixture.provenance.json does not match the reviewed Cave authority.',
+  );
 }
 
 process.stdout.write('Contract fixtures verified.\n');
