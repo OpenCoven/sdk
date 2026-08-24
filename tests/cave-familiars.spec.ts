@@ -2,6 +2,10 @@ import { CaveClient, isCaveClientError } from '@opencoven/cave-client';
 import type { OperationContext } from '@opencoven/sdk-core';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+type CaveTransportOverrides = Record<string, unknown> & {
+  health?: never;
+};
+
 /**
  * The familiar operations mirror routes Cave already serves. What these hold
  * is the boundary: that a refusal is raised rather than read as emptiness,
@@ -61,7 +65,7 @@ const ANALYTICS = {
   backfill: { state: 'partial', imported: 12, remaining: 4 },
 } as const;
 
-function clientWith(overrides: Record<string, unknown>): CaveClient {
+function clientWith(overrides: CaveTransportOverrides): CaveClient {
   return new CaveClient({
     transport: {
       health: () => Promise.resolve({
