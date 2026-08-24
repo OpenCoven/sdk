@@ -26,8 +26,8 @@ describe('reviewed authority fixtures', () => {
       examples: Record<string, unknown>;
     };
 
-    expect(digest(fixture)).toBe('15be473203a68555ed69f267ff2b1d8dd0933d7eb1d3fe3f01246c25a8e61d38');
-    expect(readFileSync(digestFile, 'utf8')).toBe('15be473203a68555ed69f267ff2b1d8dd0933d7eb1d3fe3f01246c25a8e61d38\n');
+    expect(digest(fixture)).toBe('b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd');
+    expect(readFileSync(digestFile, 'utf8')).toBe('b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd\n');
     expect(parsed.contract.identityKinds).toEqual([
       'client',
       'credential',

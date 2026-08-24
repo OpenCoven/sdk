@@ -364,7 +364,7 @@ secure-store, and platform-security errors require repair before rerunning.
 Reviewed Cave and Coven fixture bytes are committed under their client
 packages and verified locally. The Cave fixture provenance manifest pins
 `OpenCoven/coven-cave` commit
-`e2b5b9d10d8498895ba9ff39ce6185f4ed873b57`, producer paths, and SHA-256.
+`4adc97b1bdafd1012ce4c66de598e82f49329f79`, producer paths, and SHA-256.
 Refresh fixture bytes with
 `pnpm sync:contracts -- --cave-root <path> --coven-root <path>` before running
 the offline contract verifier. Explicitly prove a checkout is at the pinned

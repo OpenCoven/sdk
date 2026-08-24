@@ -310,7 +310,7 @@ Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,
 `verifyCaveContractFixtureDigest`, and `digestCaveContractFixture`.
 The vendored fixture is byte-identical to `OpenCoven/coven-cave` commit
-`e2b5b9d10d8498895ba9ff39ce6185f4ed873b57`; its source paths and SHA-256 are
+`4adc97b1bdafd1012ce4c66de598e82f49329f79`; its source paths and SHA-256 are
 recorded in `fixtures/contract-fixture.provenance.json`.
 
 Migration note: transports that returned `{ data: { status: "ok" } }` must now
