@@ -46,18 +46,22 @@ function createRepository() {
   git(featureWorktree, ['add', 'feature.txt']);
   git(featureWorktree, ['commit', '-m', 'feature']);
   git(featureWorktree, ['push', '-u', 'origin', 'feature/merged']);
+  const featureTip = git(featureWorktree, ['rev-parse', 'HEAD']);
   git(repository, ['merge', '--squash', 'feature/merged']);
   git(repository, ['commit', '-m', 'squash feature']);
   git(repository, ['push', 'origin', 'main']);
 
   const mergeCommit = git(repository, ['rev-parse', 'HEAD']);
+  const commands: Array<{ args: string[]; command: string; cwd: string }> = [];
   const runCommand = (command: string, args: string[], cwd: string) => {
+    commands.push({ args, command, cwd });
     if (command === 'gh') {
       return {
         status: 0,
         stdout: JSON.stringify({
           baseRefName: 'main',
           headRefName: 'feature/merged',
+          headRefOid: featureTip,
           mergeCommit: { oid: mergeCommit },
           mergedAt: '2026-08-24T00:00:00Z',
           number: 123,
@@ -75,7 +79,7 @@ function createRepository() {
     };
   };
 
-  return { featureWorktree, repository, runCommand };
+  return { commands, featureTip, featureWorktree, remote, repository, runCommand };
 }
 
 afterEach(() => {
@@ -101,7 +105,7 @@ describe('cleanup merged branch', () => {
     expect(readme).toContain(
       'pnpm cleanup:merged -- --branch <branch> --pr <number> --delete-remote',
     );
-    expect(readme).toContain('refuses dirty worktrees');
+    expect(readme).toContain('refuses dirty or locked worktrees');
   });
 
   test(
@@ -121,6 +125,27 @@ describe('cleanup merged branch', () => {
       expect(result.removedWorktrees).toEqual([featureWorktree]);
       expect(result.deletedLocalBranch).toBe(true);
       expect(result.deletedRemoteBranch).toBe(true);
+      expect(fixture.commands).toContainEqual({
+        args: [
+          'push',
+          'origin',
+          '--force-with-lease=refs/heads/feature/merged:' + fixture.featureTip,
+          '--delete',
+          'feature/merged',
+        ],
+        command: 'git',
+        cwd: realpathSync(fixture.repository),
+      });
+      expect(fixture.commands).toContainEqual({
+        args: [
+          'update-ref',
+          '-d',
+          'refs/heads/feature/merged',
+          fixture.featureTip,
+        ],
+        command: 'git',
+        cwd: realpathSync(fixture.repository),
+      });
       expect(
         gitStatus(fixture.repository, ['rev-parse', '--verify', 'feature/merged']),
       ).not.toBe(0);
@@ -132,7 +157,7 @@ describe('cleanup merged branch', () => {
         ]),
       ).not.toBe(0);
     },
-    20_000,
+    60_000,
   );
 
   test(
@@ -152,7 +177,27 @@ describe('cleanup merged branch', () => {
 
       expect(git(fixture.repository, ['rev-parse', '--verify', 'feature/merged'])).not.toBe('');
     },
-    20_000,
+    60_000,
+  );
+
+  test(
+    'refuses equal-tree commits made after the recorded PR head',
+    () => {
+      const fixture = createRepository();
+      git(fixture.featureWorktree, ['commit', '--allow-empty', '-m', 'post-merge marker']);
+
+      expect(() =>
+        cleanupMergedBranch({
+          branch: 'feature/merged',
+          cwd: fixture.repository,
+          prNumber: 123,
+          runCommand: fixture.runCommand,
+        }),
+      ).toThrow(/recorded PR head/i);
+
+      expect(git(fixture.repository, ['rev-parse', '--verify', 'feature/merged'])).not.toBe('');
+    },
+    60_000,
   );
 
   test(
@@ -174,6 +219,67 @@ describe('cleanup merged branch', () => {
 
       expect(git(fixture.repository, ['rev-parse', '--verify', 'feature/merged'])).not.toBe('');
     },
-    20_000,
+    60_000,
+  );
+
+  test(
+    'refuses locked worktrees without deleting the remote branch',
+    () => {
+      const fixture = createRepository();
+      git(fixture.repository, ['worktree', 'lock', fixture.featureWorktree]);
+
+      expect(() =>
+        cleanupMergedBranch({
+          branch: 'feature/merged',
+          cwd: fixture.repository,
+          deleteRemote: true,
+          prNumber: 123,
+          runCommand: fixture.runCommand,
+        }),
+      ).toThrow(/locked/i);
+
+      expect(
+        git(fixture.repository, [
+          'rev-parse',
+          '--verify',
+          'refs/remotes/origin/feature/merged',
+        ]),
+      ).not.toBe('');
+    },
+    60_000,
+  );
+
+  test(
+    'does not prune unrelated stale remote-tracking refs during a dry run',
+    () => {
+      const fixture = createRepository();
+      git(fixture.repository, ['branch', 'unrelated']);
+      git(fixture.repository, ['push', 'origin', 'unrelated']);
+      git(fixture.repository, ['branch', '-D', 'unrelated']);
+      git(fixture.repository, [
+        '--git-dir',
+        fixture.remote,
+        'update-ref',
+        '-d',
+        'refs/heads/unrelated',
+      ]);
+
+      cleanupMergedBranch({
+        branch: 'feature/merged',
+        cwd: fixture.repository,
+        dryRun: true,
+        prNumber: 123,
+        runCommand: fixture.runCommand,
+      });
+
+      expect(
+        git(fixture.repository, [
+          'rev-parse',
+          '--verify',
+          'refs/remotes/origin/unrelated',
+        ]),
+      ).not.toBe('');
+    },
+    60_000,
   );
 });

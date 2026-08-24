@@ -67,18 +67,22 @@ function parseWorktrees(output) {
   return output
     .split(/\n\n+/u)
     .map((block) => {
-      const entries = new Map(
-        block
-          .split('\n')
-          .filter((line) => line.includes(' '))
-          .map((line) => {
-            const separator = line.indexOf(' ');
-            return [line.slice(0, separator), line.slice(separator + 1)];
-          }),
-      );
+      const entries = new Map();
+      let locked = false;
+
+      for (const line of block.split('\n')) {
+        if (line === 'locked' || line.startsWith('locked ')) {
+          locked = true;
+        }
+        if (line.includes(' ')) {
+          const separator = line.indexOf(' ');
+          entries.set(line.slice(0, separator), line.slice(separator + 1));
+        }
+      }
 
       return {
         branch: entries.get('branch'),
+        locked,
         path: entries.get('worktree'),
       };
     })
@@ -99,6 +103,8 @@ function parsePullRequest(value, branch, prNumber) {
     pullRequest.state !== 'MERGED' ||
     typeof pullRequest.mergedAt !== 'string' ||
     pullRequest.headRefName !== branch ||
+    typeof pullRequest.headRefOid !== 'string' ||
+    pullRequest.headRefOid.length === 0 ||
     typeof pullRequest.baseRefName !== 'string' ||
     pullRequest.baseRefName.length === 0 ||
     typeof pullRequest.mergeCommit?.oid !== 'string' ||
@@ -169,8 +175,6 @@ export function cleanupMergedBranch({
     throw new Error(`Refusing to remove the currently checked out branch ${branch}.`);
   }
 
-  runChecked(runCommand, 'git', ['fetch', '--prune', remote], repositoryRoot);
-
   const pullRequest = parsePullRequest(
     runChecked(
       runCommand,
@@ -180,7 +184,7 @@ export function cleanupMergedBranch({
         'view',
         String(prNumber),
         '--json',
-        'baseRefName,headRefName,mergeCommit,mergedAt,number,state',
+        'baseRefName,headRefName,headRefOid,mergeCommit,mergedAt,number,state',
       ],
       repositoryRoot,
     ),
@@ -188,18 +192,27 @@ export function cleanupMergedBranch({
     prNumber,
   );
   const mergeCommit = pullRequest.mergeCommit.oid;
-  const baseRef = `refs/remotes/${remote}/${pullRequest.baseRefName}`;
+  const prHead = pullRequest.headRefOid;
   const branchRef = `refs/heads/${branch}`;
-  const remoteBranchRef = `refs/remotes/${remote}/${branch}`;
 
   runChecked(runCommand, 'git', ['rev-parse', '--verify', branchRef], repositoryRoot);
-  runChecked(runCommand, 'git', ['rev-parse', '--verify', baseRef], repositoryRoot);
+  runChecked(
+    runCommand,
+    'git',
+    [
+      'fetch',
+      '--no-tags',
+      remote,
+      `refs/heads/${pullRequest.baseRefName}`,
+    ],
+    repositoryRoot,
+  );
 
   if (
     runStatus(
       runCommand,
       'git',
-      ['merge-base', '--is-ancestor', mergeCommit, baseRef],
+      ['merge-base', '--is-ancestor', mergeCommit, 'FETCH_HEAD'],
       repositoryRoot,
     ) !== 0
   ) {
@@ -214,6 +227,11 @@ export function cleanupMergedBranch({
     ['rev-parse', '--verify', branchRef],
     repositoryRoot,
   );
+  if (branchTip !== prHead) {
+    throw new Error(
+      `Branch ${branch} does not match PR #${prNumber}'s recorded PR head.`,
+    );
+  }
   const branchIsMerged =
     runStatus(
       runCommand,
@@ -240,20 +258,17 @@ export function cleanupMergedBranch({
     );
   }
 
-  const remoteBranchExists =
-    runStatus(
-      runCommand,
-      'git',
-      ['show-ref', '--verify', '--quiet', remoteBranchRef],
-      repositoryRoot,
-    ) === 0;
+  const remoteBranchOutput = runChecked(
+    runCommand,
+    'git',
+    ['ls-remote', '--heads', remote, `refs/heads/${branch}`],
+    repositoryRoot,
+  );
+  const remoteTip = remoteBranchOutput === ''
+    ? undefined
+    : remoteBranchOutput.split(/\s+/u)[0];
+  const remoteBranchExists = remoteTip !== undefined;
   if (remoteBranchExists) {
-    const remoteTip = runChecked(
-      runCommand,
-      'git',
-      ['rev-parse', '--verify', remoteBranchRef],
-      repositoryRoot,
-    );
     if (remoteTip !== branchTip) {
       throw new Error(
         `Remote branch ${remote}/${branch} differs from the verified local branch.`,
@@ -266,6 +281,9 @@ export function cleanupMergedBranch({
   ).filter((worktree) => worktree.branch === branchRef);
 
   for (const worktree of attachedWorktrees) {
+    if (worktree.locked) {
+      throw new Error(`Attached worktree is locked: ${worktree.path}`);
+    }
     assertCleanWorktree(runCommand, worktree.path, 'Attached');
   }
 
@@ -280,14 +298,6 @@ export function cleanupMergedBranch({
     return result;
   }
 
-  if (deleteRemote && remoteBranchExists) {
-    runChecked(
-      runCommand,
-      'git',
-      ['push', remote, '--delete', branch],
-      repositoryRoot,
-    );
-  }
   for (const worktree of attachedWorktrees) {
     runChecked(
       runCommand,
@@ -299,10 +309,23 @@ export function cleanupMergedBranch({
   runChecked(
     runCommand,
     'git',
-    ['branch', '-D', '--', branch],
+    ['update-ref', '-d', branchRef, branchTip],
     repositoryRoot,
   );
-  runChecked(runCommand, 'git', ['worktree', 'prune'], repositoryRoot);
+  if (deleteRemote && remoteBranchExists) {
+    runChecked(
+      runCommand,
+      'git',
+      [
+        'push',
+        remote,
+        `--force-with-lease=refs/heads/${branch}:${branchTip}`,
+        '--delete',
+        branch,
+      ],
+      repositoryRoot,
+    );
+  }
 
   return result;
 }

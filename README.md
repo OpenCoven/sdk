@@ -176,10 +176,12 @@ pnpm cleanup:merged -- --branch <branch> --pr <number> --dry-run
 pnpm cleanup:merged -- --branch <branch> --pr <number> --delete-remote
 ```
 
-The command verifies the exact merged PR, confirms its merge commit is on the
-remote base branch, accepts squash merges only when the branch tree matches the
-recorded merge tree, refuses dirty worktrees or changed remote branches, and
-then removes only the named worktree and branch. Remote deletion is opt-in.
+The command verifies the exact merged PR and recorded head commit, confirms its
+merge commit is on the remote base branch, accepts squash merges only when the
+recorded head tree matches the merge tree, refuses dirty or locked worktrees and
+changed remote branches, and then removes only the named worktree and branch.
+Local and remote ref deletion use expected commit IDs to reject concurrent
+changes. Remote deletion is opt-in.
 
 ## Local security checks
 
