@@ -18,6 +18,7 @@
   "scripts": {
     "build": "corepack pnpm@10.34.0 --recursive --filter './packages/*' build && corepack pnpm@10.34.0 --recursive --filter './examples/*' build",
     "changeset": "changeset",
+    "cleanup:merged": "node ./scripts/cleanup-merged-branch.mjs",
     "typecheck": "corepack pnpm@10.34.0 exec tsc --pretty false --noEmit -p tsconfig.eslint.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
