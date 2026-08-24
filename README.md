@@ -186,6 +186,10 @@ attempt failed before any transport send. Pre-send authority mismatches keep
 the pairing secret ready and surface retryable `reconcile_required`; once an
 exchange request reaches a transport, a later timeout, abort, or discovered
 fetch rejection still spends that session locally.
+The discovered exchange brackets the single-use request with unauthenticated
+health proofs and stores the credential only when the Cave `instanceId`
+remains stable. A failed post-exchange proof is terminal for that session and
+requires a new pairing.
 If a second reader observes a staged credential write mid-commit, authenticated
 calls fail locally with retryable `credential_update_in_progress` rather than
 deleting the credential that is still being committed.
@@ -193,8 +197,10 @@ deleting the credential that is still being committed.
 When you inject `credentials` into `new CaveClient({ transport, credentials })`,
 the transport must satisfy `CaveCredentialPersistingTransport` and return the
 non-secret `authorityBinding` metadata from `pairingExchange()`. The public
-binding carries the endpoint URL, an opaque record identity, device/inode, and
-freshness, without exposing the canonical discovery-record path directly.
+binding carries the Cave instance ID, endpoint URL, an opaque record identity,
+device/inode, and freshness, without exposing the canonical discovery-record
+path directly. Discovered authenticated calls prove the stored instance ID
+through an unauthenticated health request before attaching the bearer.
 
 ## Explicit Coven discovery
 

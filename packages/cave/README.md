@@ -15,8 +15,10 @@ to the exact discovered authority
 record and freshness; if rediscovery shows a restart, record replacement, or
 authority mismatch, `poll()`/`exchange()` fail locally before the pairing
 secret is sent. Stored bearers are rediscovered against the same authority
-identity before every authenticated discovered call and are cleared locally
-rather than sent to a different Cave.
+identity and proven against the stored Cave `instanceId` through an
+unauthenticated health request before every authenticated discovered call.
+Mismatched credentials are cleared locally rather than sent to a different
+Cave.
 
 On Windows, `discoverCaveEndpoint()` also requires a reviewed native
 `options.dependencies.windowsPathTrust` validator for the discovery root and
@@ -140,10 +142,14 @@ and analytics routes independently. `session.exchange()` requires an injected
 credential store; the client never falls back to implicit in-memory storage. A
 caller-supplied transport that uses `credentials` must satisfy
 `CaveCredentialPersistingTransport` and return `authorityBinding` from
-`pairingExchange()`. The binding is non-secret metadata only: endpoint URL,
-opaque record identity, record device/inode, and freshness. The discovered
-transport hashes the canonical discovery-record path into that opaque identity
-instead of exposing the raw filesystem path in the public contract.
+`pairingExchange()`. The binding is non-secret metadata only: Cave instance
+ID, endpoint URL, opaque record identity, record device/inode, and freshness.
+The discovered transport hashes the canonical discovery-record path into that
+opaque identity instead of exposing the raw filesystem path in the public
+contract. It brackets the single-use exchange with unauthenticated health
+proofs and persists the bearer only if the instance ID remains stable. A
+failed post-exchange proof is non-retryable for that spent session and requires
+a new pairing.
 A successful `session.poll()` keeps the session ready for one later
 `session.exchange()`. While a poll is in flight, later `poll()`/`exchange()`
 calls fail locally with retryable `operation_in_progress` instead of sending

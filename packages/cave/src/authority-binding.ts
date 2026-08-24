@@ -21,9 +21,11 @@ function recordIdentity(path: string): string {
 
 export function caveAuthorityBindingFromDiscoveredEndpoint(
   discovered: CaveDiscoveredEndpoint,
+  instanceId: string,
 ): CaveAuthorityBinding {
   return {
     version: discovered.version,
+    instanceId,
     endpoint: {
       kind: 'http',
       url: discovered.endpoint.url,
@@ -42,7 +44,7 @@ export function caveAuthorityBindingFromDiscoveredEndpoint(
 }
 
 export function parseCaveAuthorityBinding(value: unknown): CaveAuthorityBinding | undefined {
-  if (!isObject(value) || value.version !== 1) {
+  if (!isObject(value) || value.version !== 1 || !isNonEmptyString(value.instanceId)) {
     return undefined;
   }
 
@@ -74,6 +76,7 @@ export function parseCaveAuthorityBinding(value: unknown): CaveAuthorityBinding 
 
   return {
     version: 1,
+    instanceId: value.instanceId,
     endpoint: {
       kind: 'http',
       url: value.endpoint.url,

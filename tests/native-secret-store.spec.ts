@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -167,6 +168,7 @@ describe('native secret store', () => {
       `${JSON.stringify({
         version: 1,
         pid: process.pid,
+        processToken: 'previous-process-token',
         token: 'stale-owner-token',
         createdAt: staleTime.getTime(),
       })}\n`,
@@ -203,6 +205,63 @@ describe('native secret store', () => {
     await expect(store.get('cave-credential')).resolves.toBe('credential-value');
     expect(existsSync(staleLockPath)).toBe(false);
   });
+
+  test('does not steal an old lock from the matching live process instance', async () => {
+    const lockDirectory = join(TEST_LOCK_DIRECTORY, 'live-old-lock');
+    const secrets = new Map<string, string>();
+    const setPassword = vi.fn((value: string) => {
+      secrets.set(`${SERVICE}:cave-credential`, value);
+    });
+    const store = await createNativeSecretStore({
+      ...moduleWithEntry(
+        class {
+          getPassword(): string | undefined {
+            return secrets.get(`${SERVICE}:cave-credential`);
+          }
+
+          setPassword(value: string): void {
+            setPassword(value);
+          }
+
+          deletePassword(): void {
+            secrets.delete(`${SERVICE}:cave-credential`);
+          }
+        },
+      ),
+      lockDirectory,
+    });
+    await store.set('cave-credential', 'initial');
+    const processOwner = JSON.parse(
+      readFileSync(join(lockDirectory, `process-${String(process.pid)}.json`), 'utf8'),
+    ) as { processToken: string };
+    const activeLockPath = lockPath(lockDirectory, SERVICE, 'cave-credential');
+    mkdirSync(activeLockPath, { recursive: true, mode: 0o700 });
+    const staleTime = new Date(Date.now() - 60_000);
+    writeFileSync(
+      join(activeLockPath, 'owner.json'),
+      `${JSON.stringify({
+        version: 1,
+        pid: process.pid,
+        processToken: processOwner.processToken,
+        token: 'active-owner-token',
+        createdAt: staleTime.getTime(),
+      })}\n`,
+      { mode: 0o600 },
+    );
+    utimesSync(activeLockPath, staleTime, staleTime);
+
+    try {
+      await expect(store.set('cave-credential', 'replacement')).rejects.toMatchObject({
+        code: 'secure_store_unavailable',
+        operation: 'set',
+      });
+      expect(setPassword).toHaveBeenCalledTimes(1);
+      expect(secrets.get(`${SERVICE}:cave-credential`)).toBe('initial');
+      expect(existsSync(activeLockPath)).toBe(true);
+    } finally {
+      rmSync(activeLockPath, { force: true, recursive: true });
+    }
+  }, 10_000);
 
   test('fails closed when the native mutation lock root is not a directory', async () => {
     const lockDirectory = join(TEST_LOCK_DIRECTORY, 'not-a-directory');

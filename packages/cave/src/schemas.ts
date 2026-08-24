@@ -85,6 +85,7 @@ export interface CavePairingExchange {
 
 export interface CaveAuthorityBinding {
   version: CaveDiscoveredEndpoint['version'];
+  instanceId: string;
   endpoint: CaveDiscoveredEndpoint['endpoint'];
   record: {
     identity: string;

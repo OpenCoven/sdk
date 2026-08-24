@@ -134,6 +134,7 @@ function expectStoredCredentialRecord(
     bearer,
     authorityBinding: {
       version: 1,
+      instanceId: CURRENT_HEALTH_ENVELOPE.data.instanceId,
     },
   });
 }
@@ -248,13 +249,23 @@ async function replaceDiscoveryRecord(
 
 function queuedFetch(
   handlers: Array<(url: string, init: RequestInit | undefined) => Response | Promise<Response>>,
+  options: { automaticHealth?: boolean } = {},
 ) {
   return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = requestUrl(input);
+    if (
+      options.automaticHealth !== false &&
+      new URL(url).pathname === '/api/client/v1/health'
+    ) {
+      expect(header(init, 'authorization')).toBeNull();
+      return jsonResponse(200, CURRENT_HEALTH_ENVELOPE);
+    }
+
     const handler = handlers.shift();
     if (handler === undefined) {
-      throw new Error(`Unexpected fetch for ${requestUrl(input)}`);
+      throw new Error(`Unexpected fetch for ${url}`);
     }
-    return handler(requestUrl(input), init);
+    return handler(url, init);
   });
 }
 
@@ -863,7 +874,6 @@ describe('discovered Cave pairing helpers', () => {
           }),
         );
       },
-      () => jsonResponse(200, CURRENT_HEALTH_ENVELOPE),
       (url, init) => {
         expect(url).toBe('http://127.0.0.1:3020/api/client/v1/familiars');
         expect(init?.method).toBe('GET');
@@ -902,7 +912,7 @@ describe('discovered Cave pairing helpers', () => {
     await expect(client.forgetCredential()).resolves.toBe(true);
     await expect(credentials.store.get(credentials.reference.key)).resolves.toBeUndefined();
     await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
-    expect(fetchImplementation).toHaveBeenCalledTimes(5);
+    expect(fetchImplementation).toHaveBeenCalledTimes(8);
   });
 
   test('maps a discovered non-empty familiar roster from the wire spelling', async () => {
@@ -998,7 +1008,6 @@ describe('discovered Cave pairing helpers', () => {
             },
           }),
         ),
-      () => jsonResponse(200, CURRENT_HEALTH_ENVELOPE),
       (_url, init) => {
         expect(header(init, 'authorization')).toBe(`Bearer ${BEARER}`);
         return jsonResponse(
@@ -1040,7 +1049,7 @@ describe('discovered Cave pairing helpers', () => {
           }),
         );
       },
-    ]);
+    ], { automaticHealth: false });
     const { client } = discoveredClient(root, fetchImplementation);
     const session = await client.createPairing({
       appName: 'OpenCoven Chat',
@@ -1208,7 +1217,7 @@ describe('discovered Cave pairing helpers', () => {
     });
     await expect(session.exchange()).resolves.toEqual(credential);
     expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
-    expect(fetchImplementation).toHaveBeenCalledTimes(3);
+    expect(fetchImplementation).toHaveBeenCalledTimes(5);
   });
 
   test('spends the pairing secret after a terminal poll status', async () => {
@@ -1324,7 +1333,7 @@ describe('discovered Cave pairing helpers', () => {
 
     await expect(session.exchange()).resolves.toEqual(credential);
     expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
-    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(fetchImplementation).toHaveBeenCalledTimes(4);
   });
 
   test('treats generic discovered exchange fetch failures as terminal for the session', async () => {
@@ -1371,8 +1380,84 @@ describe('discovered Cave pairing helpers', () => {
     });
     await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
     await expect(credentials.store.get(credentials.reference.key)).resolves.toBeUndefined();
-    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(fetchImplementation).toHaveBeenCalledTimes(3);
   });
+
+  test.each([
+    {
+      name: 'failed',
+      reason: 'authority_proof_failed',
+      response: () => jsonResponse(503, errorEnvelope('service_unavailable', 503, true)),
+    },
+    {
+      name: 'changed',
+      reason: 'authority_restarted',
+      response: () =>
+        jsonResponse(200, {
+          ...CURRENT_HEALTH_ENVELOPE,
+          data: {
+            ...CURRENT_HEALTH_ENVELOPE.data,
+            instanceId: '00000000-0000-4000-8000-000000000099',
+          },
+        }),
+    },
+  ])(
+    'requires a new pairing when the post-exchange authority proof is $name',
+    async ({ reason, response }) => {
+      const root = createScratchRoot(`pairing-post-exchange-proof-${reason}`);
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const fetchImplementation = queuedFetch([
+        () =>
+          jsonResponse(
+            201,
+            successEnvelope({
+              requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+              secret: PAIRING_SECRET,
+              expiresAt: 1_755_731_112_617,
+            }),
+          ),
+        () => jsonResponse(200, CURRENT_HEALTH_ENVELOPE),
+        (_url, init) => {
+          expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+          return jsonResponse(
+            200,
+            successEnvelope({
+              bearer: BEARER,
+              credential: pairingCredential(),
+            }),
+          );
+        },
+        response,
+      ], { automaticHealth: false });
+      const { client, credentials } = discoveredClient(root, fetchImplementation);
+      const session = await client.createPairing({
+        appName: 'OpenCoven Chat',
+        installationId: 'chat-install-1',
+        scopes: ['chat:read'],
+      });
+
+      await expect(session.exchange()).rejects.toMatchObject({
+        normalized: {
+          code: 'reconcile_required',
+          retryable: false,
+          operation: 'pairingExchange',
+        },
+        details: { reason },
+      });
+      await expect(session.exchange()).rejects.toMatchObject({
+        normalized: {
+          code: 'conflict',
+          retryable: false,
+          operation: 'pairingExchange',
+        },
+        details: {
+          reason: 'pairing_replayed',
+        },
+      });
+      await expect(credentials.store.get(credentials.reference.key)).resolves.toBeUndefined();
+      expect(fetchImplementation).toHaveBeenCalledTimes(4);
+    },
+  );
 
   test('keeps a successful poll ready for one later exchange', async () => {
     const root = createScratchRoot('pairing-poll-then-exchange');
@@ -1445,7 +1530,7 @@ describe('discovered Cave pairing helpers', () => {
     });
     await expect(session.exchange()).resolves.toEqual(credential);
     expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
-    expect(fetchImplementation).toHaveBeenCalledTimes(3);
+    expect(fetchImplementation).toHaveBeenCalledTimes(5);
   });
 
   test('fails exchange locally while a poll is already using the pairing secret', async () => {
@@ -1543,7 +1628,7 @@ describe('discovered Cave pairing helpers', () => {
     });
     await expect(session.exchange()).resolves.toEqual(credential);
     expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
-    expect(fetchImplementation).toHaveBeenCalledTimes(3);
+    expect(fetchImplementation).toHaveBeenCalledTimes(5);
   });
 
   test('fails concurrent polls locally without a second transport send', async () => {
@@ -1751,7 +1836,7 @@ describe('discovered Cave pairing helpers', () => {
 
       await expect(session.exchange()).resolves.toEqual(credential);
       expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
-      expect(fetchImplementation).toHaveBeenCalledTimes(3);
+      expect(fetchImplementation).toHaveBeenCalledTimes(5);
 
       expect(resolveFirstPoll).toBeDefined();
       resolveFirstPoll?.(
@@ -1777,7 +1862,7 @@ describe('discovered Cave pairing helpers', () => {
           reason: 'pairing_replayed',
         },
       });
-      expect(fetchImplementation).toHaveBeenCalledTimes(3);
+      expect(fetchImplementation).toHaveBeenCalledTimes(5);
     },
   );
 
@@ -1840,7 +1925,67 @@ describe('discovered Cave pairing helpers', () => {
       },
     });
     await expect(credentials.store.get(credentials.reference.key)).resolves.toBeUndefined();
-    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(fetchImplementation).toHaveBeenCalledTimes(4);
+  });
+
+  test('proves the Cave instance before sending a stored bearer after PID reuse', async () => {
+    const root = createScratchRoot('pairing-stored-credential-instance-changed');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const fetchImplementation = queuedFetch([
+      () =>
+        jsonResponse(
+          201,
+          successEnvelope({
+            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+            secret: PAIRING_SECRET,
+            expiresAt: 1_755_731_112_617,
+          }),
+        ),
+      () => jsonResponse(200, CURRENT_HEALTH_ENVELOPE),
+      () =>
+        jsonResponse(
+          200,
+          successEnvelope({
+            bearer: BEARER,
+            credential: pairingCredential(),
+          }),
+        ),
+      (_url, init) => {
+        expect(header(init, 'authorization')).toBeNull();
+        return jsonResponse(200, CURRENT_HEALTH_ENVELOPE);
+      },
+      (_url, init) => {
+        expect(header(init, 'authorization')).toBeNull();
+        return jsonResponse(200, {
+          ...CURRENT_HEALTH_ENVELOPE,
+          data: {
+            ...CURRENT_HEALTH_ENVELOPE.data,
+            instanceId: '00000000-0000-4000-8000-000000000099',
+          },
+        });
+      },
+    ], { automaticHealth: false });
+    const { client, credentials } = discoveredClient(root, fetchImplementation);
+
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await session.exchange();
+    await expect(client.familiars()).rejects.toMatchObject({
+      normalized: {
+        code: 'reconcile_required',
+        retryable: false,
+        operation: 'familiars',
+      },
+      details: {
+        reason: 'authority_restarted',
+      },
+    });
+    await expect(credentials.store.get(credentials.reference.key)).resolves.toBeUndefined();
+    expect(fetchImplementation).toHaveBeenCalledTimes(5);
   });
 
   test('returns missing after discovery record replacement without invoking the bearer transport', async () => {
@@ -1873,10 +2018,6 @@ describe('discovered Cave pairing helpers', () => {
             },
           }),
         ),
-      (_url, init) => {
-        expect(header(init, 'authorization')).toBeNull();
-        return jsonResponse(200, CURRENT_HEALTH_ENVELOPE);
-      },
     ]);
     const { client, credentials } = discoveredClient(root, fetchImplementation);
 
@@ -1891,7 +2032,7 @@ describe('discovered Cave pairing helpers', () => {
 
     await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
     await expect(credentials.store.get(credentials.reference.key)).resolves.toBeUndefined();
-    expect(fetchImplementation).toHaveBeenCalledTimes(3);
+    expect(fetchImplementation).toHaveBeenCalledTimes(5);
   });
 
   test('normalizes fetch-stage timeouts instead of reporting service unavailability', async () => {
@@ -2002,7 +2143,7 @@ describe('discovered Cave pairing helpers', () => {
             ...CURRENT_HEALTH_ENVELOPE,
             minimumClientVersion: '999.0.0',
           }),
-      ]),
+      ], { automaticHealth: false }),
     );
 
     await expect(client.health()).rejects.toMatchObject({
@@ -2021,7 +2162,7 @@ describe('discovered Cave pairing helpers', () => {
             ...CURRENT_HEALTH_ENVELOPE,
             minimumClientVersion: 'not-semver',
           }),
-      ]),
+      ], { automaticHealth: false }),
     );
 
     await expect(client.health()).rejects.toMatchObject({
@@ -2041,7 +2182,7 @@ describe('discovered Cave pairing helpers', () => {
     const client = inlineDiscoveredClient(
       queuedFetch([
         () => jsonResponse(200, emptyAdvertisedArrays),
-      ]),
+      ], { automaticHealth: false }),
     );
 
     await expect(client.health()).resolves.toEqual(caveHealth(emptyAdvertisedArrays));
@@ -2066,7 +2207,7 @@ describe('discovered Cave pairing helpers', () => {
     const client = inlineDiscoveredClient(
       queuedFetch([
         () => jsonResponse(200, envelope),
-      ]),
+      ], { automaticHealth: false }),
     );
 
     await expect(client.health()).rejects.toMatchObject({
@@ -2191,7 +2332,7 @@ describe('discovered Cave pairing helpers', () => {
         reason: 'pairing_replayed',
       },
     });
-    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(fetchImplementation).toHaveBeenCalledTimes(3);
 
     expect(resolveExchange).toBeDefined();
     resolveExchange?.(
@@ -2206,7 +2347,7 @@ describe('discovered Cave pairing helpers', () => {
 
     await expect(firstExchange).resolves.toEqual(credential);
     expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
-    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(fetchImplementation).toHaveBeenCalledTimes(4);
   });
 
   test('fails later exchange retries locally after a malformed exchange response', async () => {
@@ -2255,7 +2396,7 @@ describe('discovered Cave pairing helpers', () => {
         reason: 'pairing_replayed',
       },
     });
-    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(fetchImplementation).toHaveBeenCalledTimes(3);
   });
 
   test.each([
@@ -2342,7 +2483,7 @@ describe('discovered Cave pairing helpers', () => {
       });
       await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
       expect(slowStore.retained.size).toBe(0);
-      expect(fetchImplementation).toHaveBeenCalledTimes(2);
+      expect(fetchImplementation).toHaveBeenCalledTimes(4);
     },
   );
 
@@ -2375,7 +2516,6 @@ describe('discovered Cave pairing helpers', () => {
               credential: pairingCredential(),
             }),
           ),
-        () => jsonResponse(200, CURRENT_HEALTH_ENVELOPE),
         (_url, init) => {
           expect(header(init, 'authorization')).toBe(`Bearer ${BEARER}`);
           return jsonResponse(
@@ -2412,7 +2552,7 @@ describe('discovered Cave pairing helpers', () => {
           operation: 'familiars',
         },
       });
-      expect(fetchImplementation).toHaveBeenCalledTimes(2);
+      expect(fetchImplementation).toHaveBeenCalledTimes(4);
 
       await vi.advanceTimersByTimeAsync(75);
 
@@ -2423,7 +2563,7 @@ describe('discovered Cave pairing helpers', () => {
         health: caveHealth(),
       });
       expectStoredCredentialRecord(slowStore.retained.get(reference.key));
-      expect(fetchImplementation).toHaveBeenCalledTimes(4);
+      expect(fetchImplementation).toHaveBeenCalledTimes(7);
     } finally {
       vi.useRealTimers();
     }
@@ -2515,7 +2655,7 @@ describe('discovered Cave pairing helpers', () => {
       });
       await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
       expect(slowStore.retained.size).toBe(0);
-      expect(fetchImplementation).toHaveBeenCalledTimes(2);
+      expect(fetchImplementation).toHaveBeenCalledTimes(4);
     },
   );
 
@@ -2605,7 +2745,7 @@ describe('discovered Cave pairing helpers', () => {
       },
     });
     await expect(store.get(reference.key)).resolves.toBeUndefined();
-    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(fetchImplementation).toHaveBeenCalledTimes(4);
   });
 
   test('fails closed on malformed stored records without sending a bearer', async () => {
@@ -2676,7 +2816,6 @@ describe('discovered Cave pairing helpers', () => {
             },
           }),
         ),
-      () => jsonResponse(200, CURRENT_HEALTH_ENVELOPE),
       () => jsonResponse(401, errorEnvelope('unauthorized', 401)),
     ]);
     const { client } = discoveredClient(root, fetchImplementation);
@@ -2750,7 +2889,7 @@ describe('discovered Cave pairing helpers', () => {
           },
         });
       },
-    ]);
+    ], { automaticHealth: false });
     const redirectClient = createDiscoveredCaveClient({
       credentials: {
         store: createMemorySecretStore(),
@@ -2798,7 +2937,7 @@ describe('discovered Cave pairing helpers', () => {
         expect(init?.method).toBe('GET');
         return jsonResponse(200, CURRENT_HEALTH_ENVELOPE);
       },
-    ]);
+    ], { automaticHealth: false });
     const client = createDiscoveredCaveClient({
       credentials: {
         store: createMemorySecretStore(),

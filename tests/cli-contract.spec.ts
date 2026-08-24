@@ -1515,8 +1515,22 @@ describe('opencoven CLI output', () => {
         )
         .mockResolvedValueOnce(
           caveResponse(200, {
+            instanceId: caveHealth.instanceId,
+            pairingRequired: caveHealth.pairingRequired,
+            releaseVersion: caveHealth.releaseVersion,
+          }),
+        )
+        .mockResolvedValueOnce(
+          caveResponse(200, {
             bearer: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
             credential: caveCredential,
+          }),
+        )
+        .mockResolvedValueOnce(
+          caveResponse(200, {
+            instanceId: caveHealth.instanceId,
+            pairingRequired: caveHealth.pairingRequired,
+            releaseVersion: caveHealth.releaseVersion,
           }),
         );
 
@@ -1593,7 +1607,7 @@ describe('opencoven CLI output', () => {
         ok: false,
         version: cliVersion,
       });
-      expect(fetchImplementation).toHaveBeenCalledTimes(3);
+      expect(fetchImplementation).toHaveBeenCalledTimes(5);
     } finally {
       vi.useRealTimers();
     }

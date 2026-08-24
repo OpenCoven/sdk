@@ -9,3 +9,7 @@
   atomic compare-and-delete when the configured secret store supports it.
 - Accept unavailable (`0`) Windows inode metadata only when reviewed native
   path trust succeeds.
+- Bind stored credentials to the Cave health `instanceId`, prove it before
+  bearer use, and bracket pairing exchange with pre/post authority proofs.
+- Treat failed post-exchange authority proof as a terminal re-pair condition
+  because the single-use pairing secret has already been spent.

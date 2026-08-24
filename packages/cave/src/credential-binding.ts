@@ -16,6 +16,7 @@ const CAVE_STORED_CREDENTIAL_RECORD_MAX_BYTES = 8 * 1024;
 const CAVE_STORED_CREDENTIAL_BEARER_MAX_LENGTH = 4 * 1024;
 const CAVE_STORED_CREDENTIAL_ENDPOINT_MAX_LENGTH = 2 * 1024;
 const CAVE_STORED_CREDENTIAL_IDENTITY_MAX_LENGTH = 512;
+const CAVE_STORED_CREDENTIAL_INSTANCE_ID_MAX_LENGTH = 512;
 const CAVE_STORED_CREDENTIAL_NONCE_MAX_LENGTH = 512;
 const CAVE_STORED_CREDENTIAL_STARTED_AT_MAX_LENGTH = 128;
 const FNV_OFFSET_BASIS_64 = 0xcbf29ce484222325n;
@@ -87,6 +88,7 @@ interface CredentialBindingMutationOptions {
   context?: OperationContext;
   mutationGraceMs?: number;
   termination?: Promise<never>;
+  verifyAuthorityInstance?: (instanceId: string) => Promise<boolean>;
 }
 
 interface CaveStoredCredentialRecord {
@@ -296,13 +298,17 @@ function queuedStoreDelete(store: SecretStore, key: string): Promise<boolean> {
 function parseStoredAuthorityBinding(value: unknown): CaveAuthorityBinding | undefined {
   if (
     !isPlainObject(value) ||
-    !hasExactKeys(value, ['version', 'endpoint', 'record', 'freshness']) ||
+    !hasExactKeys(value, ['version', 'instanceId', 'endpoint', 'record', 'freshness']) ||
     value.version !== 1
   ) {
     return undefined;
   }
 
   if (
+    !isBoundedNonEmptyString(
+      value.instanceId,
+      CAVE_STORED_CREDENTIAL_INSTANCE_ID_MAX_LENGTH,
+    ) ||
     !isPlainObject(value.endpoint) ||
     !hasExactKeys(value.endpoint, ['kind', 'url']) ||
     value.endpoint.kind !== 'http' ||
@@ -333,6 +339,7 @@ function parseStoredAuthorityBinding(value: unknown): CaveAuthorityBinding | und
 
   return {
     version: 1,
+    instanceId: value.instanceId,
     endpoint: {
       kind: 'http',
       url: value.endpoint.url,
@@ -387,6 +394,7 @@ function parseStoredCredentialRecord(serialized: string): CaveStoredCredentialRe
 function canonicalAuthorityBinding(authorityBinding: CaveAuthorityBinding): CaveAuthorityBinding {
   return {
     version: authorityBinding.version,
+    instanceId: authorityBinding.instanceId,
     endpoint: {
       kind: authorityBinding.endpoint.kind,
       url: authorityBinding.endpoint.url,
@@ -440,6 +448,7 @@ function mismatchReason(
   }
 
   if (
+    current.instanceId !== stored.instanceId ||
     current.freshness.pid !== stored.freshness.pid ||
     current.freshness.nonce !== stored.freshness.nonce ||
     current.freshness.startedAt !== stored.freshness.startedAt
@@ -776,12 +785,25 @@ export async function loadBoundCredential(
     return { status: 'invalid_bearer' };
   }
 
-  const currentAuthority = caveAuthorityBindingFromDiscoveredEndpoint(discovered);
+  const currentAuthority = caveAuthorityBindingFromDiscoveredEndpoint(
+    discovered,
+    stored.authorityBinding.instanceId,
+  );
   const reason = mismatchReason(currentAuthority, stored.authorityBinding);
   if (reason !== undefined) {
     return {
       status: 'invalid',
       reason,
+    };
+  }
+
+  if (
+    options.verifyAuthorityInstance !== undefined &&
+    !(await options.verifyAuthorityInstance(stored.authorityBinding.instanceId))
+  ) {
+    return {
+      status: 'invalid',
+      reason: 'authority_restarted',
     };
   }
 

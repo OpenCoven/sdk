@@ -58,7 +58,10 @@ const OWNER_KEY_PREFIX = 'opencoven.cave.credential-binding.owner.v1.';
 const FNV_OFFSET_BASIS_64 = 0xcbf29ce484222325n;
 const FNV_PRIME_64 = 0x100000001b3n;
 const textEncoder = new TextEncoder();
-const authorityBinding = caveAuthorityBindingFromDiscoveredEndpoint(discovered);
+const authorityBinding = caveAuthorityBindingFromDiscoveredEndpoint(
+  discovered,
+  '00000000-0000-4000-8000-000000000000',
+);
 
 type DuplicateCredentialBindingModule = typeof CredentialBindingModule;
 
@@ -458,6 +461,14 @@ describe('Cave credential binding helpers', () => {
         version: 1,
         bearer: 'b'.repeat(4_097),
         authorityBinding,
+      }),
+      JSON.stringify({
+        version: 1,
+        bearer: 'bearer',
+        authorityBinding: {
+          ...authorityBinding,
+          instanceId: '',
+        },
       }),
       JSON.stringify({
         version: 1,
@@ -1234,6 +1245,12 @@ describe('Cave authority binding helpers', () => {
   test('parses valid authority bindings and rejects malformed shapes', () => {
     expect(parseCaveAuthorityBinding(authorityBinding)).toEqual(authorityBinding);
     expect(parseCaveAuthorityBinding({ version: 2 })).toBeUndefined();
+    expect(
+      parseCaveAuthorityBinding({
+        ...authorityBinding,
+        instanceId: '',
+      }),
+    ).toBeUndefined();
     expect(
       parseCaveAuthorityBinding({
         ...authorityBinding,

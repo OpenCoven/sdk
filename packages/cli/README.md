@@ -40,11 +40,14 @@ opencoven coven health
 - `opencoven cave pair [--json]` creates, polls, and exchanges one Cave
   pairing request inside one absolute workflow deadline and stores the bearer
   together with authority metadata in one versioned native-keyring record.
+  Unauthenticated health proofs bracket the exchange, and persistence requires
+  the Cave instance ID to remain stable.
 - `opencoven cave status [--json]` validates the stored Cave credential against
-  the current authority binding and returns `valid`, `missing`, `disconnected`,
-  or `revoked`. Reads see either the previous committed credential, the new
-  committed credential, or no credential at all; malformed records fail closed
-  before any bearer is sent.
+  the current authority binding and instance ID before attaching its bearer,
+  then returns `valid`, `missing`, `disconnected`, or `revoked`. Reads see
+  either the previous committed credential, the new committed credential, or
+  no credential at all; malformed records fail closed before any bearer is
+  sent.
 - `opencoven cave forget [--json]` deletes the stored Cave credential and its
   authority metadata; missing credentials are a successful no-op, but
   concurrent credential replacement or secure-store read/delete failures stay
@@ -76,8 +79,10 @@ code `secure_store_unavailable`. Keyring mutations use owner-local, non-secret
 filesystem lock records so separate CLI processes cannot delete a newly
 replaced credential. Credential values remain exclusively in the native
 keyring; no bearer or keychain payload is written to the lock directory.
-Owner-bearing locks older than the bounded mutation window are recovered so
-PID reuse after a crashed process cannot strand credential operations.
+Per-process random markers distinguish a new OpenCoven process that reused a
+crashed process's PID, while a matching live owner is never displaced solely
+because its operation is old. Dead owners and reused OpenCoven PIDs are
+recovered; malformed owner records are recovered only after a bounded age.
 
 ## Native Cave discovery security
 

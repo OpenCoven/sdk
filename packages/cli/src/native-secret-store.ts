@@ -9,7 +9,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 
 import type { SecretStore } from '@opencoven/sdk-core';
 
@@ -34,6 +34,10 @@ const NATIVE_SECRET_STORE_LOCK_TIMEOUT_MS = 5_000;
 const NATIVE_SECRET_STORE_LOCK_RETRY_MS = 25;
 const NATIVE_SECRET_STORE_STALE_LOCK_MS = 30_000;
 const NATIVE_SECRET_STORE_LOCK_OWNER_FILE = 'owner.json';
+const NATIVE_SECRET_STORE_PROCESS_OWNER_PREFIX = 'process-';
+const NATIVE_SECRET_STORE_PROCESS_TOKEN = Symbol.for(
+  '@opencoven/dev-cli/native-secret-store-process-token',
+);
 
 export interface NativeSecretStoreOptions {
   lockDirectory?: string;
@@ -44,6 +48,7 @@ export interface NativeSecretStoreOptions {
 interface NativeSecretStoreLockOwner {
   version: 1;
   pid: number;
+  processToken: string;
   token: string;
   createdAt: number;
 }
@@ -84,6 +89,22 @@ function errorCode(error: unknown): string | undefined {
   }
 }
 
+function currentProcessToken(): string {
+  const existing: unknown = Reflect.get(globalThis, NATIVE_SECRET_STORE_PROCESS_TOKEN);
+  if (typeof existing === 'string' && existing.length > 0) {
+    return existing;
+  }
+
+  const token = randomUUID();
+  Object.defineProperty(globalThis, NATIVE_SECRET_STORE_PROCESS_TOKEN, {
+    configurable: false,
+    enumerable: false,
+    value: token,
+    writable: false,
+  });
+  return token;
+}
+
 function lockPathFor(lockDirectory: string, service: string, key: string): string {
   const digest = createHash('sha256')
     .update(service)
@@ -109,6 +130,8 @@ function parseLockOwner(serialized: string): NativeSecretStoreLockOwner | undefi
   return owner.version === 1 &&
     Number.isSafeInteger(owner.pid) &&
     (owner.pid as number) > 0 &&
+    typeof owner.processToken === 'string' &&
+    owner.processToken.length > 0 &&
     typeof owner.token === 'string' &&
     owner.token.length > 0 &&
     Number.isSafeInteger(owner.createdAt) &&
@@ -116,6 +139,7 @@ function parseLockOwner(serialized: string): NativeSecretStoreLockOwner | undefi
     ? {
         version: 1,
         pid: owner.pid as number,
+        processToken: owner.processToken,
         token: owner.token,
         createdAt: owner.createdAt as number,
       }
@@ -145,6 +169,46 @@ async function ensureLockDirectory(lockDirectory: string): Promise<void> {
   await chmod(lockDirectory, 0o700);
 }
 
+function processOwnerPath(lockDirectory: string, pid: number): string {
+  return resolve(lockDirectory, `${NATIVE_SECRET_STORE_PROCESS_OWNER_PREFIX}${String(pid)}.json`);
+}
+
+async function registerCurrentProcess(lockDirectory: string): Promise<string> {
+  const processToken = currentProcessToken();
+  const ownerPath = processOwnerPath(lockDirectory, process.pid);
+  await writeFile(
+    ownerPath,
+    `${JSON.stringify({
+      version: 1,
+      pid: process.pid,
+      processToken,
+    })}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  );
+  await chmod(ownerPath, 0o600);
+  return processToken;
+}
+
+async function activeProcessToken(
+  lockDirectory: string,
+  pid: number,
+): Promise<string | undefined> {
+  try {
+    const parsed: unknown = JSON.parse(
+      await readFile(processOwnerPath(lockDirectory, pid), 'utf8'),
+    );
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return undefined;
+    }
+    const processToken: unknown = Reflect.get(parsed, 'processToken');
+    return typeof processToken === 'string' && processToken.length > 0
+      ? processToken
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function recoverAbandonedLock(lockPath: string): Promise<boolean> {
   let identity;
   try {
@@ -171,17 +235,15 @@ async function recoverAbandonedLock(lockPath: string): Promise<boolean> {
     }
   }
 
-  const lockAgeMs = Date.now() - identity.mtimeMs;
-  if (
-    owner !== undefined &&
-    processIsAlive(owner.pid) &&
-    lockAgeMs < NATIVE_SECRET_STORE_STALE_LOCK_MS
-  ) {
-    return false;
+  if (owner !== undefined && processIsAlive(owner.pid)) {
+    const activeToken = await activeProcessToken(dirname(lockPath), owner.pid);
+    if (activeToken === undefined || activeToken === owner.processToken) {
+      return false;
+    }
   }
   if (
     owner === undefined &&
-    lockAgeMs < NATIVE_SECRET_STORE_STALE_LOCK_MS
+    Date.now() - identity.mtimeMs < NATIVE_SECRET_STORE_STALE_LOCK_MS
   ) {
     return false;
   }
@@ -209,11 +271,13 @@ async function acquireNativeSecretStoreLock(
   key: string,
 ): Promise<() => Promise<void>> {
   await ensureLockDirectory(lockDirectory);
+  const processToken = await registerCurrentProcess(lockDirectory);
   const lockPath = lockPathFor(lockDirectory, service, key);
   const token = randomUUID();
   const owner: NativeSecretStoreLockOwner = {
     version: 1,
     pid: process.pid,
+    processToken,
     token,
     createdAt: Date.now(),
   };

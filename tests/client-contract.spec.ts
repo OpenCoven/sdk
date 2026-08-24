@@ -31,6 +31,7 @@ function pairingCredential(): cave.CaveCredentialMetadata {
 function authorityBinding(): cave.CaveAuthorityBinding {
   return {
     version: 1,
+    instanceId: 'test-cave',
     endpoint: {
       kind: 'http',
       url: 'http://127.0.0.1:3020',
@@ -72,6 +73,7 @@ function expectStoredCredentialRecord(serialized: string | undefined): void {
     bearer: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
     authorityBinding: {
       version: 1,
+      instanceId: 'test-cave',
     },
   });
 }

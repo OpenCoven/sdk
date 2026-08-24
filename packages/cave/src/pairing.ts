@@ -179,6 +179,21 @@ function pinnedPairingAuthorityError(reason: PairingAuthorityMismatchReason): Er
   );
 }
 
+function spentPairingAuthorityProofError(
+  reason: 'authority_proof_failed' | 'authority_restarted',
+  cause?: unknown,
+): Error {
+  return transportError(
+    'reconcile_required',
+    'The Cave authority could not be proven after the pairing secret was spent; pair again.',
+    {
+      ...(cause === undefined ? {} : { cause }),
+      details: { reason },
+      retryable: false,
+    },
+  );
+}
+
 function assertPinnedPairingAuthority(
   current: CaveDiscoveredEndpoint,
   expected: CaveDiscoveredEndpoint | undefined,
@@ -671,7 +686,20 @@ async function requestJson(
       credentials.reference,
       discovered,
       (value) => BASE64URL_43_RE.test(value),
-      options.context === undefined ? {} : { context: options.context },
+      {
+        ...(options.context === undefined ? {} : { context: options.context }),
+        verifyAuthorityInstance: async (instanceId) => {
+          const { payload } = await requestJson('GET', '/api/client/v1/health', {
+            ...(options.context === undefined ? {} : { context: options.context }),
+            discoverEndpoint: options.discoverEndpoint,
+            discovery: options.discovery,
+            fetchImplementation: options.fetchImplementation,
+            maxResponseBytes: options.maxResponseBytes,
+            pinnedAuthority: discovered,
+          });
+          return parseHealthResponse(payload).data.instanceId === instanceId;
+        },
+      },
     );
     ensureActive(options.context);
 
@@ -818,6 +846,21 @@ function createDiscoveredTransport(
       return status;
     },
     async pairingExchange(requestId, pairingSecret, context) {
+      let expectedInstanceId: string;
+      try {
+        const expectedHealth = await requestJson('GET', '/api/client/v1/health', {
+          ...(context === undefined ? {} : { context }),
+          discoverEndpoint: options.discoverEndpoint,
+          discovery: options.discovery,
+          fetchImplementation: options.fetchImplementation,
+          maxResponseBytes: options.maxResponseBytes,
+          pinnedAuthority: requirePinnedAuthority(requestId),
+        });
+        expectedInstanceId = parseHealthResponse(expectedHealth.payload).data.instanceId;
+      } catch (error) {
+        throw markPairingSecretUnsentError(error);
+      }
+
       const { payload, discovered } = await requestJson(
         'POST',
         `/api/client/v1/pairing/requests/${requestId}/exchange`,
@@ -837,9 +880,31 @@ function createDiscoveredTransport(
       );
       const exchanged = parsePairingExchange(payload);
       pairingAuthorities.delete(requestId);
+      let verifiedHealth: RequestJsonResult;
+      let verifiedInstanceId: string;
+      try {
+        verifiedHealth = await requestJson('GET', '/api/client/v1/health', {
+          ...(context === undefined ? {} : { context }),
+          discoverEndpoint: options.discoverEndpoint,
+          discovery: options.discovery,
+          fetchImplementation: options.fetchImplementation,
+          maxResponseBytes: options.maxResponseBytes,
+          pinnedAuthority: discovered,
+        });
+        verifiedInstanceId = parseHealthResponse(verifiedHealth.payload).data.instanceId;
+      } catch (error) {
+        throw spentPairingAuthorityProofError('authority_proof_failed', error);
+      }
+      if (verifiedInstanceId !== expectedInstanceId) {
+        throw spentPairingAuthorityProofError('authority_restarted');
+      }
+
       const authorityBoundExchange: CaveAuthorityBoundPairingExchange = {
         ...exchanged,
-        authorityBinding: caveAuthorityBindingFromDiscoveredEndpoint(discovered),
+        authorityBinding: caveAuthorityBindingFromDiscoveredEndpoint(
+          verifiedHealth.discovered,
+          verifiedInstanceId,
+        ),
       };
       return authorityBoundExchange;
     },
