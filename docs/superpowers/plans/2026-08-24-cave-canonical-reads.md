@@ -2,6 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** Tasks 1–4 are implementation-complete on
+`feat/cave-canonical-reads`. Task 5 documentation is complete; full
+verification, exact-SHA review, PR, required checks, merge, and evidence remain
+pending.
+
 **Goal:** Add the five live Cave Client v1 canonical read operations, strict DTO parsing, and explicitly bounded pagination to the public SDK without changing the existing legacy Familiar Contract and analytics APIs.
 
 **Architecture:** `@opencoven/sdk-core` owns reusable page/cursor option validation and bounded iteration. `@opencoven/cave-client` owns Cave-specific DTOs, envelope parsing, transport methods, and discovered bearer-authenticated routes. Existing `familiars()`, `familiarContract()`, and `familiarAnalytics()` remain source-compatible; the new paired Client v1 surface uses `listFamiliars()`, `listProjects()`, `listConversations()`, `getConversation()`, and `listConversationMessages()`.
@@ -35,11 +40,13 @@
 
 - List options accept only `limit?: number` and `cursor?: string`.
 - The SDK defaults `limit` to `50`; values must be safe integers from `1` through `100`. It rejects rather than clamps.
-- Cursors are opaque canonical base64url strings. The SDK validates bounded spelling but never decodes producer semantics.
+- Cursors are opaque strict canonical base64url strings, bounded to 512 characters. The SDK validates spelling and canonical trailing bits but never decodes producer semantics.
 - A page cursor is top-level and has `{ current?: string, next?: string, previous?: string, hasMore: boolean }`.
 - Every iterator requires either a positive `maxPages` or a caller-owned `AbortSignal`; passing neither is `invalid_options`.
 - Iterators stop on `hasMore: false`, reject missing/repeated `next` cursors while `hasMore: true`, and never auto-retry `reconcile_required`.
 - `reconcile_required` remains a first-class non-retryable Cave error for query-layer canonical reload.
+- Iterators are lazy, fetch one page at a time, and never prefetch, retry, or default to a whole-corpus walk.
+- There is no iterator for the single-item conversation detail route.
 - Canonical familiar DTOs are named `CaveCanonicalFamiliar` so the existing legacy `CaveFamiliar` API remains unchanged.
 - Conversation summary requires `id`, `familiarId`, and `updatedAt`; `createdAt` is optional.
 - Message `parentId` is required and nullable.
@@ -53,7 +60,7 @@
 - Modify: `packages/core/README.md`
 - Modify: `packages/core/CHANGELOG.md`
 
-- [ ] **Step 1: Write failing page-option and iterator tests**
+- [x] **Step 1: Write failing page-option and iterator tests**
 
 Add tests covering default `50`, accepted `1` and `100`, rejection of zero/fractions/values above `100`, canonical base64url cursor spelling, mandatory `maxPages` or signal, exact stop at `hasMore: false`, max-page exhaustion, abort, and repeated/missing next cursors.
 
@@ -79,7 +86,7 @@ test('rejects a repeated next cursor instead of looping', async () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify it fails**
+- [x] **Step 2: Run the focused test and verify it fails**
 
 Run:
 
@@ -89,7 +96,7 @@ corepack pnpm@10.34.0 exec vitest run tests/pagination.spec.ts
 
 Expected: failure because the pagination module and exports do not exist.
 
-- [ ] **Step 3: Implement strict shared contracts**
+- [x] **Step 3: Implement strict shared contracts**
 
 Implement:
 
@@ -131,7 +138,7 @@ export async function* iteratePages<T>(
 
 Use repository-standard normalized errors. Do not clamp invalid limits, decode cursor payloads, auto-retry pages, or hide aborts.
 
-- [ ] **Step 4: Run focused and core contract tests**
+- [x] **Step 4: Run focused and core contract tests**
 
 Run:
 
@@ -142,7 +149,7 @@ corepack pnpm@10.34.0 typecheck
 
 Expected: all selected tests and typecheck pass.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add packages/core/src/pagination.ts packages/core/src/index.ts packages/core/README.md packages/core/CHANGELOG.md tests/pagination.spec.ts tests/public-contract.spec.ts
@@ -161,7 +168,7 @@ git commit -m "feat: add bounded pagination primitives" -m "Co-authored-by: Copi
 - Modify: `tests/client-contract.spec.ts`
 - Modify: `tests/public-contract.spec.ts`
 
-- [ ] **Step 1: Write failing public transport and hostile-response tests**
+- [x] **Step 1: Write failing public transport and hostile-response tests**
 
 Cover all five methods, absent optional transport methods, unknown additive fields, malformed required fields, wrong types, optional fields, required-nullable `parentId`, conversation timestamp rules, malformed cursor envelopes, and explicit error envelopes.
 
@@ -173,6 +180,7 @@ const client = new CaveClient({
       apiVersion: '1.0',
       minimumClientVersion: '0.1.0',
       capabilities: ['projects'],
+      operations: ['projects.list'],
       data: {
         projects: [{
           id: 'project-1',
@@ -193,7 +201,7 @@ await expect(client.listProjects()).resolves.toEqual({
 });
 ```
 
-- [ ] **Step 2: Run the focused tests and verify failure**
+- [x] **Step 2: Run the focused tests and verify failure**
 
 Run:
 
@@ -203,7 +211,7 @@ corepack pnpm@10.34.0 exec vitest run tests/cave-canonical-reads.spec.ts tests/c
 
 Expected: failure because canonical DTOs, transports, and methods are missing.
 
-- [ ] **Step 3: Implement Cave-specific DTO and envelope parsing**
+- [x] **Step 3: Implement Cave-specific DTO and envelope parsing**
 
 Add:
 
@@ -238,7 +246,7 @@ export interface CaveConversation {
   title?: string;
   origin?: string;
   status?: string;
-  exitCode?: number;
+  exitCode?: number | null;
   pending?: boolean;
   createdAt?: string;
   updatedAt: string;
@@ -274,7 +282,7 @@ listConversationMessages?(
 
 The client methods return `Page<T>` or one `CaveConversation`. Keep legacy Familiar methods byte-for-byte compatible.
 
-- [ ] **Step 4: Run focused tests, typecheck, and lint**
+- [x] **Step 4: Run focused tests, typecheck, and lint**
 
 Run:
 
@@ -286,7 +294,7 @@ corepack pnpm@10.34.0 lint
 
 Expected: new and legacy client contracts pass.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 ```bash
 git add packages/cave/src/canonical-reads.ts packages/cave/src/schemas.ts packages/cave/src/transport.ts packages/cave/src/client.ts packages/cave/src/index.ts tests/cave-canonical-reads.spec.ts tests/client-contract.spec.ts tests/public-contract.spec.ts
@@ -301,7 +309,7 @@ git commit -m "feat: add Cave canonical read contracts" -m "Co-authored-by: Copi
 - Modify: `tests/cave-discovery-pairing.spec.ts`
 - Modify: `tests/cave-canonical-reads.spec.ts`
 
-- [ ] **Step 1: Write failing discovered-route tests**
+- [x] **Step 1: Write failing discovered-route tests**
 
 Cover exact paths and query ordering, `encodeURIComponent` path segments, redirect refusal, response limits, no Authorization on the instance proof, Authorization only on the canonical request, wrong/missing credential, revoked credential, instance replacement, `not_found`, `scope_denied`, and message `reconcile_required` with `details.reason=resume_from_canonical_state`.
 
@@ -316,7 +324,7 @@ expect(requestedUrl).toBe(
 );
 ```
 
-- [ ] **Step 2: Run the discovered tests and verify failure**
+- [x] **Step 2: Run the discovered tests and verify failure**
 
 Run:
 
@@ -326,13 +334,13 @@ corepack pnpm@10.34.0 exec vitest run tests/cave-discovery-pairing.spec.ts tests
 
 Expected: failure because discovered transport methods are absent.
 
-- [ ] **Step 3: Implement safe query and route construction**
+- [x] **Step 3: Implement safe query and route construction**
 
 Use `URLSearchParams` with deterministic `limit` then `cursor` insertion. Use encoded conversation IDs for path segments. Route through the existing `requestJson(..., { requireBearer: true })` path so discovery validation, stored-instance proof, exact invalidation, deadlines, redirect refusal, body bounds, and bearer attachment remain centralized.
 
 Do not add arbitrary paths, methods, headers, or a generic fetch escape hatch. Do not route the legacy `familiars()` method through the new paged API.
 
-- [ ] **Step 4: Run the complete Cave security suite**
+- [x] **Step 4: Run the complete Cave security suite**
 
 Run:
 
@@ -344,7 +352,7 @@ corepack pnpm@10.34.0 lint
 
 Expected: canonical and existing pairing/credential suites pass.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 ```bash
 git add packages/cave/src/canonical-reads.ts packages/cave/src/pairing.ts tests/cave-canonical-reads.spec.ts tests/cave-discovery-pairing.spec.ts
@@ -362,7 +370,7 @@ git commit -m "feat: add discovered Cave canonical reads" -m "Co-authored-by: Co
 - Modify: `tests/packed-package.spec.ts`
 - Modify: `tests/cave-contract-fixture.spec.ts`
 
-- [ ] **Step 1: Write failing iterator and packed-consumer tests**
+- [x] **Step 1: Write failing iterator and packed-consumer tests**
 
 Add `iterateFamiliars`, `iterateProjects`, `iterateConversations`, and `iterateConversationMessages`. Test empty, exact one page, multiple pages, explicit `maxPages`, signal-only bounds, abort between pages, no implicit whole-corpus download, repeated cursor refusal, and propagation of `reconcile_required`.
 
@@ -376,7 +384,7 @@ expect(transport.listProjects).toHaveBeenCalledTimes(2);
 
 Packed tests must import these methods and public types from the package root with no source checkout or deep import.
 
-- [ ] **Step 2: Run focused iterator and packed tests and verify failure**
+- [x] **Step 2: Run focused iterator and packed tests and verify failure**
 
 Run:
 
@@ -386,13 +394,13 @@ corepack pnpm@10.34.0 exec vitest run tests/cave-canonical-reads.spec.ts tests/c
 
 Expected: failure because iterator methods and packed signatures are missing.
 
-- [ ] **Step 3: Implement Cave iterator wrappers**
+- [x] **Step 3: Implement Cave iterator wrappers**
 
 Each wrapper delegates to `iteratePages` and its corresponding one-page method. Preserve the operation signal, limit, cursor, and max-page bound. Do not add iteration for the single-item detail route.
 
 Verify fixture limits remain `defaultPageSize: 50`, `maxPageSize: 100`, and bounded cursor characters. If the current vendored fixture differs from producer `main`, refresh only through the repository's contract import workflow and record provenance.
 
-- [ ] **Step 4: Run packed and full affected checks**
+- [x] **Step 4: Run packed and full affected checks**
 
 Run:
 
@@ -406,7 +414,7 @@ corepack pnpm@10.34.0 lint
 
 Expected: packed root imports and contract limits pass.
 
-- [ ] **Step 5: Commit Task 4**
+- [x] **Step 5: Commit Task 4**
 
 ```bash
 git add packages/cave/src/client.ts packages/cave/src/index.ts tests/cave-canonical-reads.spec.ts tests/client-contract.spec.ts tests/public-contract.spec.ts tests/packed-package.spec.ts tests/cave-contract-fixture.spec.ts
@@ -423,19 +431,22 @@ git commit -m "feat: bound Cave canonical iteration" -m "Co-authored-by: Copilot
 - Modify: `README.md`
 - Modify: `docs/ROADMAP.md`
 - Modify: `docs/superpowers/plans/2026-08-22-sdk-0.1-delivery-program.md`
+- Modify: `docs/superpowers/plans/2026-08-24-cave-canonical-reads.md`
 
-- [ ] **Step 1: Document the exact supported surface**
+- [x] **Step 1: Document the exact supported surface**
 
 Document:
 
 - the five one-page methods and four bounded iterators;
-- default/max page sizes and rejection rather than clamping;
-- cursor opacity and no semantic decoding;
-- route ordering and mutable conversation/message limitations;
+- default `50`, maximum `100`, safe-integer limits, and rejection rather than clamping;
+- strict canonical base64url cursor spelling, the 512-character bound, opacity, and no semantic decoding;
+- exact deterministic routes, `limit`-then-`cursor` query ordering, encoded conversation path segments, and mutable conversation/message limitations;
 - `reconcile_required` as a canonical reload instruction, never an automatic retry;
-- explicit `maxPages` or signal requirement;
+- explicit positive `maxPages` or caller-owned signal requirement, lazy one-page-at-a-time iteration, and no prefetch/retry/whole-corpus default;
+- required Client v1 success/error metadata, explicit error preservation, nullable `exitCode`, required-nullable message `parentId`, and strict nonnegative counts;
 - existing legacy Familiar Contract/analytics methods as a separate extension surface;
 - current instance preflight as defense in depth, with atomic producer binding still tracked by `OpenCoven/coven-cave#4996`.
+- packed root-import and tarball verification coverage.
 
 - [ ] **Step 2: Run exact full verification**
 
@@ -452,10 +463,10 @@ Expected: all tests, coverage thresholds, builds, contract/package/release check
 
 Review the full branch against SDK #36 and the producer route contract. Fix every correctness, security, pagination, compatibility, and documentation finding; rerun `corepack pnpm@10.34.0 verify` after the final fix.
 
-- [ ] **Step 4: Commit final docs and review fixes**
+- [x] **Step 4: Commit documentation (and commit later review fixes separately if needed)**
 
 ```bash
-git add README.md packages/core/README.md packages/core/CHANGELOG.md packages/cave/README.md packages/cave/CHANGELOG.md docs/ROADMAP.md docs/superpowers/plans/2026-08-22-sdk-0.1-delivery-program.md
+git add README.md packages/core/README.md packages/core/CHANGELOG.md packages/cave/README.md packages/cave/CHANGELOG.md docs/ROADMAP.md docs/superpowers/plans/2026-08-22-sdk-0.1-delivery-program.md docs/superpowers/plans/2026-08-24-cave-canonical-reads.md
 git commit -m "docs: describe Cave canonical reads" -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 ```
 

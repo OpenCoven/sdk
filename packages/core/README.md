@@ -32,12 +32,15 @@ propagates because no safe reporting sink remains.
 
 `normalizePageOptions()` defaults `limit` to `50` and accepts safe integers from
 `1` through `100`. Invalid limits are rejected rather than clamped. Cursors are
-opaque canonical base64url strings of at most 512 characters; the SDK validates
-their spelling without decoding producer semantics.
+opaque, strictly canonical base64url strings of at most 512 characters; the SDK
+validates their spelling and canonical trailing bits without decoding producer
+semantics.
 
-`iteratePages()` streams page items without retrying. Every iterator requires a
-positive `maxPages` or a caller-owned `AbortSignal`, stops before requesting a
-page beyond `maxPages`, and refuses missing or repeated continuation cursors.
+`iteratePages()` is lazy and requests one page at a time only as the caller
+consumes it. It does not prefetch, retry, or default to walking the whole
+corpus. Every iterator requires a positive safe-integer `maxPages` or a
+caller-owned `AbortSignal`, stops before requesting a page beyond `maxPages`,
+and refuses missing or repeated continuation cursors.
 
 ## Secrets
 
