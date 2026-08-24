@@ -26,7 +26,7 @@ function gitStatus(cwd: string, args: string[]): number {
   return spawnSync('git', args, { cwd, encoding: 'utf8' }).status ?? 1;
 }
 
-function createRepository() {
+function createRepository({ advanceBase = false } = {}) {
   const root = mkdtempSync(resolve(tmpdir(), 'opencoven-cleanup-merged-'));
   const remote = resolve(root, 'remote.git');
   const repository = resolve(root, 'repository');
@@ -50,6 +50,12 @@ function createRepository() {
   git(featureWorktree, ['commit', '-m', 'feature']);
   git(featureWorktree, ['push', '-u', 'origin', 'feature/merged']);
   const featureTip = git(featureWorktree, ['rev-parse', 'HEAD']);
+  if (advanceBase) {
+    writeFileSync(resolve(repository, 'base-advance.txt'), 'new base work\n');
+    git(repository, ['add', 'base-advance.txt']);
+    git(repository, ['commit', '-m', 'advance base before merge']);
+    git(repository, ['push', 'origin', 'main']);
+  }
   git(repository, ['merge', '--squash', 'feature/merged']);
   git(repository, ['commit', '-m', 'squash feature']);
   git(repository, ['push', 'origin', 'main']);
@@ -189,6 +195,28 @@ describe('cleanup merged branch', () => {
           'refs/remotes/origin/feature/merged',
         ]),
       ).not.toBe(0);
+    },
+    60_000,
+  );
+
+  test(
+    'accepts an exact merged PR head when the base advanced before squash merge',
+    () => {
+      const fixture = createRepository({ advanceBase: true });
+
+      expect(
+        cleanupMergedBranch({
+          branch: 'feature/merged',
+          cwd: fixture.repository,
+          dryRun: true,
+          prNumber: 123,
+          repository: 'OpenCoven/sdk',
+          runCommand: fixture.runCommand,
+        }),
+      ).toMatchObject({
+        deletedLocalBranch: true,
+        dryRun: true,
+      });
     },
     60_000,
   );

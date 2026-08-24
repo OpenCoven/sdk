@@ -264,32 +264,6 @@ export function cleanupMergedBranch({
       `Branch ${branch} does not match PR #${prNumber}'s recorded PR head.`,
     );
   }
-  const branchIsMerged =
-    runStatus(
-      runCommand,
-      'git',
-      ['merge-base', '--is-ancestor', branchTip, mergeCommit],
-      repositoryRoot,
-    ) === 0;
-  const branchTree = runChecked(
-    runCommand,
-    'git',
-    ['rev-parse', `${branchTip}^{tree}`],
-    repositoryRoot,
-  );
-  const mergeTree = runChecked(
-    runCommand,
-    'git',
-    ['rev-parse', `${mergeCommit}^{tree}`],
-    repositoryRoot,
-  );
-
-  if (!branchIsMerged && branchTree !== mergeTree) {
-    throw new Error(
-      `Branch ${branch} does not match PR #${prNumber}'s recorded merge commit.`,
-    );
-  }
-
   const remoteBranchOutput = runChecked(
     runCommand,
     'git',
