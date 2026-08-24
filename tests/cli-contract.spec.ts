@@ -1094,6 +1094,171 @@ describe('opencoven CLI output', () => {
     });
   });
 
+  test('returns timeout when cave pair create settles on the absolute deadline', async () => {
+    let now = fakeClockStart;
+    const expiresAt = fakeClockStart + 10_000;
+    const poll = vi.fn(() =>
+      Promise.resolve({
+        id: 'late-create-request',
+        status: 'pending' as const,
+        expiresAt,
+      }),
+    );
+    const exchange = vi.fn(() => Promise.resolve(caveCredential));
+
+    const result = await runCli(
+      ['--json', 'cave', 'pair'],
+      runtime({
+        now: () => now,
+        timing: {
+          cavePairTimeoutMs: 50,
+        },
+        cave: {
+          createClient: () => ({
+            createPairing: () => {
+              now = fakeClockStart + 50;
+              return Promise.resolve({
+                requestId: 'late-create-request',
+                expiresAt,
+                poll,
+                exchange,
+              });
+            },
+          }),
+        },
+      }),
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toEqual({
+      command: 'cave pair',
+      data: {
+        attempts: 0,
+        expiresAt,
+        requestId: 'late-create-request',
+      },
+      error: {
+        code: 'timeout',
+        message: 'The Cave operation timed out.',
+        retryable: true,
+      },
+      ok: false,
+      version: cliVersion,
+    });
+    expect(poll).not.toHaveBeenCalled();
+    expect(exchange).not.toHaveBeenCalled();
+  });
+
+  test('returns timeout when cave pair poll settles on the absolute deadline', async () => {
+    let now = fakeClockStart;
+    const expiresAt = fakeClockStart + 10_000;
+    const poll = vi.fn(() => {
+      now = fakeClockStart + 50;
+      return Promise.resolve({
+        id: 'late-poll-request',
+        status: 'pending' as const,
+        expiresAt,
+      });
+    });
+    const exchange = vi.fn(() => Promise.resolve(caveCredential));
+
+    const result = await runCli(
+      ['--json', 'cave', 'pair'],
+      runtime({
+        now: () => now,
+        timing: {
+          cavePairTimeoutMs: 50,
+        },
+        cave: {
+          createClient: () => ({
+            createPairing: () =>
+              Promise.resolve({
+                requestId: 'late-poll-request',
+                expiresAt,
+                poll,
+                exchange,
+              }),
+          }),
+        },
+      }),
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toEqual({
+      command: 'cave pair',
+      data: {
+        attempts: 1,
+        expiresAt,
+        requestId: 'late-poll-request',
+      },
+      error: {
+        code: 'timeout',
+        message: 'The Cave operation timed out.',
+        retryable: true,
+      },
+      ok: false,
+      version: cliVersion,
+    });
+    expect(poll).toHaveBeenCalledTimes(1);
+    expect(exchange).not.toHaveBeenCalled();
+  });
+
+  test('returns timeout when cave pair exchange settles on the absolute deadline', async () => {
+    let now = fakeClockStart;
+    const expiresAt = fakeClockStart + 10_000;
+    const poll = vi.fn(() =>
+      Promise.resolve({
+        id: 'late-exchange-request',
+        status: 'approved' as const,
+        expiresAt,
+      }),
+    );
+    const exchange = vi.fn(() => {
+      now = fakeClockStart + 50;
+      return Promise.resolve(caveCredential);
+    });
+
+    const result = await runCli(
+      ['--json', 'cave', 'pair'],
+      runtime({
+        now: () => now,
+        timing: {
+          cavePairTimeoutMs: 50,
+        },
+        cave: {
+          createClient: () => ({
+            createPairing: () =>
+              Promise.resolve({
+                requestId: 'late-exchange-request',
+                expiresAt,
+                poll,
+                exchange,
+              }),
+          }),
+        },
+      }),
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toEqual({
+      command: 'cave pair',
+      data: {
+        attempts: 1,
+        expiresAt,
+        requestId: 'late-exchange-request',
+      },
+      error: {
+        code: 'timeout',
+        message: 'The Cave operation timed out.',
+        retryable: true,
+      },
+      ok: false,
+      version: cliVersion,
+    });
+    expect(poll).toHaveBeenCalledTimes(1);
+    expect(exchange).toHaveBeenCalledTimes(1);
+  });
+
   test('preserves one absolute Cave pairing deadline across polls and stops before exchange', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(fakeClockStart);

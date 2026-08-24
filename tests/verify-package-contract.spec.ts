@@ -64,8 +64,14 @@ describe('packed package verifier contract', () => {
     const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
 
     expect(verifier).toContain('function assertPackedCliNativeDependency(fixtureRoot, tarballs)');
+    expect(verifier).toContain("import { createRequire } from 'node:module';");
+    expect(verifier).toContain('function readInstalledPackageManifest(requireFromPath, packageName)');
     expect(verifier).toContain("cliManifest.dependencies?.['@napi-rs/keyring'] !== '1.3.0'");
-    expect(verifier).toContain(
+    expect(verifier).toContain("resolve(fixtureRoot, 'package.json')");
+    expect(verifier).toContain("const resolvedEntryPath = packageRequire.resolve(packageName);");
+    expect(verifier).toContain("cliPackage.manifest.dependencies?.['@napi-rs/keyring'] !== '1.3.0'");
+    expect(verifier).toContain("cliPackage.manifestPath,\n    '@napi-rs/keyring',");
+    expect(verifier).not.toContain(
       "resolve(cliPackageRoot, 'node_modules', '@napi-rs', 'keyring', 'package.json')",
     );
     expect(verifier).toContain('Object.keys(keyringManifest.optionalDependencies ?? {}).length === 0');

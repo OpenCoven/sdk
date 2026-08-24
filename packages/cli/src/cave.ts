@@ -39,6 +39,30 @@ function pairFailureFromStatus(status: CavePairingState) {
   );
 }
 
+function pairTimeoutError(cause?: unknown): Error {
+  return Object.assign(
+    new Error('The Cave operation timed out.', cause === undefined ? undefined : { cause }),
+    {
+      code: 'timeout',
+      retryable: true,
+    },
+  );
+}
+
+function throwIfPairBudgetExhausted(now: number, deadline: number): void {
+  if (now >= deadline) {
+    throw pairTimeoutError();
+  }
+}
+
+function pairBudgetBoundaryError(
+  error: unknown,
+  now: number,
+  deadline: number,
+): unknown {
+  return now >= deadline ? pairTimeoutError(error) : error;
+}
+
 function renderPairHuman(output: CliOutput): readonly string[] {
   const data = output.data;
   const requestId = typeof data?.requestId === 'string' ? data.requestId : 'unknown';
@@ -177,10 +201,13 @@ async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
         ),
     );
   } catch (error) {
-    const normalized = normalizeCliError(error, {
-      system: 'cave',
-      operation: 'pair',
-    });
+    const normalized = normalizeCliError(
+      pairBudgetBoundaryError(error, runtime.now(), commandDeadline),
+      {
+        system: 'cave',
+        operation: 'pair',
+      },
+    );
     const output: CliOutput = {
       command: 'cave pair',
       error: normalized,
@@ -223,15 +250,11 @@ async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
   }
 
   if (startedAt >= deadline) {
-    const error = createCliError(
-      'pairing_pending',
-      'Cave pairing is still pending approval.',
-      {
-        action:
-          'Approve the pairing request in Cave and rerun `opencoven cave pair` before the request expires.',
-      },
-    );
-    const data = pairingData(requestId, expiresAt, attempts, 'pending');
+    const error = normalizeCliError(pairTimeoutError(), {
+      system: 'cave',
+      operation: 'pair',
+    });
+    const data = pairingData(requestId, expiresAt, attempts);
     const output: CliOutput = {
       command: 'cave pair',
       data,
@@ -260,11 +283,15 @@ async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
         'cave pair',
         async (timeoutMs) => await session.poll({ timeoutMs }),
       );
+      throwIfPairBudgetExhausted(runtime.now(), deadline);
     } catch (error) {
-      const normalized = normalizeCliError(error, {
-        system: 'cave',
-        operation: 'pair',
-      });
+      const normalized = normalizeCliError(
+        pairBudgetBoundaryError(error, runtime.now(), deadline),
+        {
+          system: 'cave',
+          operation: 'pair',
+        },
+      );
       const data = pairingData(requestId, expiresAt, attempts);
       const output: CliOutput = {
         command: 'cave pair',
@@ -291,6 +318,7 @@ async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
           'cave pair',
           async (timeoutMs) => await session.exchange({ timeoutMs }),
         );
+        throwIfPairBudgetExhausted(runtime.now(), deadline);
         const data = {
           ...pairingData(requestId, expiresAt, attempts, 'approved'),
           credential,
@@ -309,10 +337,13 @@ async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
         };
         return { exitCode: 0, output };
       } catch (error) {
-        const normalized = normalizeCliError(error, {
-          system: 'cave',
-          operation: 'pair',
-        });
+        const normalized = normalizeCliError(
+          pairBudgetBoundaryError(error, runtime.now(), deadline),
+          {
+            system: 'cave',
+            operation: 'pair',
+          },
+        );
         const data = pairingData(requestId, expiresAt, attempts);
         const output: CliOutput = {
           command: 'cave pair',

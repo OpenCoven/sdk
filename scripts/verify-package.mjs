@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
@@ -159,6 +160,40 @@ function assertPackedCliFailurePaths(binary, cwd) {
   }
 }
 
+function readInstalledPackageManifest(requireFromPath, packageName) {
+  const packageRequire = createRequire(requireFromPath);
+  const resolvedEntryPath = packageRequire.resolve(packageName);
+  let currentDirectory = dirname(resolvedEntryPath);
+
+  while (true) {
+    const manifestPath = resolve(currentDirectory, 'package.json');
+
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+
+      if (manifest.name === packageName) {
+        return { manifest, manifestPath };
+      }
+    } catch (error) {
+      if (!error || typeof error !== 'object' || error.code !== 'ENOENT') {
+        throw error;
+      }
+    }
+
+    const parentDirectory = dirname(currentDirectory);
+
+    if (parentDirectory === currentDirectory) {
+      break;
+    }
+
+    currentDirectory = parentDirectory;
+  }
+
+  throw new Error(
+    `Could not locate installed ${packageName} package metadata from ${requireFromPath}.`,
+  );
+}
+
 
 function assertPackedCliNativeDependency(fixtureRoot, tarballs) {
   const cliManifest = JSON.parse(readTarballFile(tarballs.cli, 'package.json'));
@@ -166,12 +201,17 @@ function assertPackedCliNativeDependency(fixtureRoot, tarballs) {
     throw new Error('Packed @opencoven/dev-cli must depend directly on @napi-rs/keyring 1.3.0.');
   }
 
-  const cliPackageRoot = resolve(fixtureRoot, 'node_modules', '@opencoven', 'dev-cli');
-  const keyringManifest = JSON.parse(
-    readFileSync(
-      resolve(cliPackageRoot, 'node_modules', '@napi-rs', 'keyring', 'package.json'),
-      'utf8',
-    ),
+  const cliPackage = readInstalledPackageManifest(
+    resolve(fixtureRoot, 'package.json'),
+    '@opencoven/dev-cli',
+  );
+  if (cliPackage.manifest.dependencies?.['@napi-rs/keyring'] !== '1.3.0') {
+    throw new Error('Installed @opencoven/dev-cli must depend directly on @napi-rs/keyring 1.3.0.');
+  }
+
+  const { manifest: keyringManifest } = readInstalledPackageManifest(
+    cliPackage.manifestPath,
+    '@napi-rs/keyring',
   );
 
   if (
