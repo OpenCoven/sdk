@@ -256,6 +256,46 @@ describe('bounded page iteration', () => {
     expect(readPage).toHaveBeenCalledOnce();
   });
 
+  test('honors abort after the final item before natural completion', async () => {
+    const controller = new AbortController();
+    const iterator = iteratePages(
+      () =>
+        Promise.resolve({
+          data: ['one'],
+          cursor: { hasMore: false },
+        }),
+      { signal: controller.signal },
+    );
+
+    await expect(iterator.next()).resolves.toEqual({ value: 'one', done: false });
+    controller.abort('caller stopped');
+
+    await expect(iterator.next()).rejects.toMatchObject({
+      code: 'aborted',
+      retryable: false,
+    });
+  });
+
+  test('honors abort after the final item before maxPages completion', async () => {
+    const controller = new AbortController();
+    const iterator = iteratePages(
+      () =>
+        Promise.resolve({
+          data: ['one'],
+          cursor: { next: FIRST_CURSOR, hasMore: true },
+        }),
+      { maxPages: 1, signal: controller.signal },
+    );
+
+    await expect(iterator.next()).resolves.toEqual({ value: 'one', done: false });
+    controller.abort('caller stopped');
+
+    await expect(iterator.next()).rejects.toMatchObject({
+      code: 'aborted',
+      retryable: false,
+    });
+  });
+
   test('rejects hasMore without a next cursor', async () => {
     const iterator = iteratePages(
       () => Promise.resolve({

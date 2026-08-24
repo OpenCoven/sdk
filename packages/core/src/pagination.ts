@@ -192,6 +192,7 @@ async function* generatePages<T>(
       }
 
       if (page.cursor === undefined || !page.cursor.hasMore) {
+        ensureActive(scope);
         return;
       }
 
@@ -205,6 +206,7 @@ async function* generatePages<T>(
         throw new PaginationResponseError('page cursor did not advance');
       }
       if (pagesRead >= (maxPages ?? Number.POSITIVE_INFINITY)) {
+        ensureActive(scope);
         return;
       }
 
