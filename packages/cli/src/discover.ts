@@ -1,5 +1,6 @@
 import type { CaveDiscoveredEndpoint } from '@opencoven/cave-client';
 
+import { assertCliCavePlatformSecurity } from './cave-platform-security.js';
 import { runWithCliTimeout } from './command-timing.js';
 import type { CliCommandResult, ResolvedCliRuntime } from './main.js';
 import { createCliError, normalizeCliError, type CliOutput } from './output.js';
@@ -57,11 +58,13 @@ export async function runDiscover(runtime: ResolvedCliRuntime): Promise<CliComma
     runWithCliTimeout(
       'discover',
       timeoutMs,
-      async () =>
-        await runtime.cave.discoverEndpoint({
+      async () => {
+        assertCliCavePlatformSecurity(runtime);
+        return await runtime.cave.discoverEndpoint({
           ...runtime.discoveryOptions.cave,
           timeoutMs,
-        }),
+        });
+      },
     ),
     runWithCliTimeout(
       'discover',

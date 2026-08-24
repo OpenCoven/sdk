@@ -180,6 +180,8 @@ function messageForCode(code: string, context: CliErrorContext): string {
     case 'platform_security_unavailable':
       return context.system === 'coven'
         ? 'Required native Coven platform security is unavailable.'
+        : context.system === 'cave'
+          ? 'Required native Cave platform security is unavailable.'
         : 'Required native platform security is unavailable.';
     case 'timeout':
       if (context.system === 'coven') {
@@ -260,6 +262,8 @@ function actionForCode(code: string, context: CliErrorContext): string | undefin
     case 'platform_security_unavailable':
       return context.system === 'coven'
         ? 'Use a reviewed OpenCoven CLI/runtime that injects the required native Coven transport-security adapter for this platform and retry.'
+        : context.system === 'cave'
+          ? 'Use a reviewed OpenCoven CLI/runtime with native Windows Cave path ownership/ACL validation, or inject CliRuntime.cave.discovery.dependencies.windowsPathTrust, then retry.'
         : 'Use a reviewed runtime that injects the required native platform security adapter and retry.';
     case 'invalid_response':
       return 'Update the local service to a reviewed build and retry.';

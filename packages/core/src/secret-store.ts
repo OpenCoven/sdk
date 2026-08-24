@@ -14,6 +14,9 @@ export interface SecretStoreReference {
   readonly key: string;
 }
 
+const SECRET_STORE_LOGICAL_ID = Symbol.for('@opencoven/sdk-core/secret-store-logical-id');
+let nextMemorySecretStoreLogicalId = 0;
+
 export class InvalidSecretKeyError extends TypeError {
   readonly code = 'invalid_secret_key';
   readonly retryable = false;
@@ -49,6 +52,12 @@ export function createSecretStoreReference(key: string): SecretStoreReference {
 class MemorySecretStore implements SecretStore {
   readonly #secrets = new Map<string, string>();
 
+  constructor() {
+    Object.defineProperty(this, SECRET_STORE_LOGICAL_ID, {
+      value: `memory:${String(++nextMemorySecretStoreLogicalId)}`,
+    });
+  }
+
   get(key: string): Promise<string | undefined> {
     return Promise.resolve(this.#secrets.get(key));
   }
@@ -66,6 +75,12 @@ class MemorySecretStore implements SecretStore {
 class ManagedMemorySecretStore implements ManagedSecretStore {
   readonly #secrets = new Map<string, string>();
   #disposed = false;
+
+  constructor() {
+    Object.defineProperty(this, SECRET_STORE_LOGICAL_ID, {
+      value: `memory:${String(++nextMemorySecretStoreLogicalId)}`,
+    });
+  }
 
   get disposed(): boolean {
     return this.#disposed;

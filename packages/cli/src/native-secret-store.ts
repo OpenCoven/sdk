@@ -15,6 +15,7 @@ interface KeyringModule {
 }
 
 const NATIVE_SECRET_STORE_BRAND = Symbol.for('@opencoven/dev-cli/native-secret-store');
+const SECRET_STORE_LOGICAL_ID = Symbol.for('@opencoven/sdk-core/secret-store-logical-id');
 const NATIVE_SECRET_STORE_PROBE_ACCOUNT = 'opencoven.cli.secure-store.probe';
 
 export interface NativeSecretStoreOptions {
@@ -53,6 +54,9 @@ class NativeSecretStore implements SecretStore {
     this.#service = service;
     this.#Entry = Entry;
     Object.defineProperty(this, NATIVE_SECRET_STORE_BRAND, { value: true });
+    Object.defineProperty(this, SECRET_STORE_LOGICAL_ID, {
+      value: `native:${service}`,
+    });
   }
 
   get(key: string): Promise<string | undefined> {

@@ -55,12 +55,14 @@ describe('workspace contract', () => {
     expect(rootReadme).toContain('opencoven doctor');
     expect(rootReadme).toContain('@napi-rs/keyring');
     expect(rootReadme).toContain('platform_security_unavailable');
+    expect(rootReadme).toContain('windowsPathTrust');
 
     expect(caveReadme).toContain('discoverCaveEndpoint');
     expect(caveReadme).toContain('createDiscoveredCaveClient');
     expect(caveReadme).toContain('credentialStatus()');
     expect(caveReadme).toContain('forgetCredential()');
     expect(caveReadme).toContain('authority');
+    expect(caveReadme).toContain('windowsPathTrust');
 
     expect(covenReadme).toContain('createDiscoveredCovenClient');
     expect(covenReadme).toContain('createCovenUnixTransport');
@@ -72,6 +74,7 @@ describe('workspace contract', () => {
     expect(cliReadme).toContain('1.3.0');
     expect(cliReadme).toContain('platform_security_unavailable');
     expect(cliReadme).toContain('secret-free');
+    expect(cliReadme).toContain('CliRuntime.cave.discovery.dependencies.windowsPathTrust');
 
     expect(sdkReadme).toContain('createOpenCovenSdk');
     expect(sdkReadme).toContain('healthReport()');

@@ -403,15 +403,15 @@ describe('CLI output helpers', () => {
       },
     },
     {
-      label: 'generic platform security unavailable',
+      label: 'cave platform security unavailable',
       error: { code: 'platform_security_unavailable' },
       context: { system: 'cave', operation: 'pair' },
       expected: {
         code: 'platform_security_unavailable',
-        message: 'Required native platform security is unavailable.',
+        message: 'Required native Cave platform security is unavailable.',
         retryable: false,
         action:
-          'Use a reviewed runtime that injects the required native platform security adapter and retry.',
+          'Use a reviewed OpenCoven CLI/runtime with native Windows Cave path ownership/ACL validation, or inject CliRuntime.cave.discovery.dependencies.windowsPathTrust, then retry.',
       },
     },
     {

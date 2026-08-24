@@ -1,6 +1,5 @@
 import {
   createDiscoveredCaveClient,
-  discoverCaveEndpoint,
   type CaveCredentialStatus,
   type CaveDiscoveredClientOptions,
   type CaveDiscoveredEndpoint,
@@ -25,6 +24,7 @@ import {
 } from '@opencoven/sdk-core';
 
 import { runCaveCommand } from './cave.js';
+import { createDefaultCliCaveDiscoverEndpoint } from './cave-platform-security.js';
 import {
   resolveCliCommandTiming,
   type CliCommandTiming,
@@ -77,6 +77,7 @@ export interface CliRuntime {
   createSecretStore?: () => Promise<SecretStore> | SecretStore;
   createSecretStoreReference?: typeof createSecretStoreReference;
   cave?: {
+    discovery?: CaveDiscoveredClientOptions['discovery'];
     discoverEndpoint?: (
       options?: CaveDiscoveredClientOptions['discovery'],
     ) => Promise<CaveDiscoveredEndpoint>;
@@ -312,15 +313,18 @@ function resolveRuntime(runtime: CliRuntime = {}): ResolvedCliRuntime {
   const resolvedFetch = runtime.fetch ?? defaultFetch();
   const createStore = runtime.createSecretStore ??
     (() => createNativeSecretStore({ service: NATIVE_SECRET_STORE_SERVICE }));
+  const platform = runtime.platform ?? process.platform;
+  const caveDiscoveryDefaults = runtime.cave?.discovery ?? {};
   const caveDiscoveryOptions = {
+    ...caveDiscoveryDefaults,
     cwd: runtime.cwd ?? process.cwd(),
     env: runtime.env ?? process.env,
-    platform: runtime.platform ?? process.platform,
+    platform,
   };
   const covenDiscoveryOptions = {
     cwd: runtime.cwd ?? process.cwd(),
     env: runtime.env ?? process.env,
-    platform: runtime.platform ?? process.platform,
+    platform,
   };
   const covenTransportSecurity = runtime.coven?.transportSecurity;
   const covenTransport = runtime.coven?.transport;
@@ -328,7 +332,7 @@ function resolveRuntime(runtime: CliRuntime = {}): ResolvedCliRuntime {
   return {
     cave: {
       createClient: runtime.cave?.createClient ?? createDiscoveredCaveClient,
-      discoverEndpoint: runtime.cave?.discoverEndpoint ?? discoverCaveEndpoint,
+      discoverEndpoint: runtime.cave?.discoverEndpoint ?? createDefaultCliCaveDiscoverEndpoint(),
     },
     coven: {
       discoverEndpoint: runtime.coven?.discoverEndpoint ?? discoverCovenEndpoint,
@@ -357,7 +361,7 @@ function resolveRuntime(runtime: CliRuntime = {}): ResolvedCliRuntime {
     env: runtime.env ?? process.env,
     fetch: resolvedFetch,
     now: runtime.now ?? (() => Date.now()),
-    platform: runtime.platform ?? process.platform,
+    platform,
     sleep: runtime.sleep ?? delay,
     timing: resolveCliCommandTiming(runtime.timing),
     version: DEV_CLI_VERSION,

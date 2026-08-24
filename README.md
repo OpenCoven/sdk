@@ -66,6 +66,11 @@ fails closed with `secure_store_unavailable` and has no file, shell, or
 environment fallback. `coven health` requires a real reviewed native
 platform-security adapter; the default Node CLI reports
 `platform_security_unavailable` rather than fabricating peer ownership proof.
+On Windows, the default CLI also fails Cave `discover`, `doctor`, `pair`,
+`status`, and `forget` closed with `platform_security_unavailable` until a
+reviewed native path ownership/ACL validator is injected through
+`CliRuntime.cave.discovery.dependencies.windowsPathTrust`; the CLI never
+trusts discovery metadata, file ownership metadata alone, or shell output.
 
 ## Caller-supplied transports
 

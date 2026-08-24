@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CAVE_PAIRING_SCOPES, createDiscoveredCaveClient } from '@opencoven/cave-client';
+import {
+  CAVE_PAIRING_SCOPES,
+  createDiscoveredCaveClient,
+  type CaveDiscoveryFileHandle,
+  type CaveDiscoveryPathIdentity,
+} from '@opencoven/cave-client';
 import { createMemorySecretStore } from '@opencoven/sdk-core';
 import {
   createNativeSecretStore,
@@ -100,6 +105,52 @@ const covenHealth = {
     structuredErrors: true,
   },
 } as const;
+
+function windowsDiscoveryRecord(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    version: 1,
+    endpoint: caveDiscovery.endpoint.url,
+    pid: caveDiscovery.freshness.pid,
+    nonce: caveDiscovery.freshness.nonce,
+    startedAt: caveDiscovery.freshness.startedAt,
+    ...overrides,
+  });
+}
+
+function windowsDiscoveryIdentity(
+  overrides: Partial<CaveDiscoveryPathIdentity> = {},
+): CaveDiscoveryPathIdentity {
+  return {
+    device: 7,
+    inode: 9,
+    mode: 0o100600,
+    ownerUid: 501,
+    size: 0,
+    symbolicLink: false,
+    regularFile: true,
+    directory: false,
+    ...overrides,
+  };
+}
+
+function windowsDiscoveryHandle(
+  serialized: string,
+  stats: CaveDiscoveryPathIdentity,
+): CaveDiscoveryFileHandle {
+  const bytes = Buffer.from(serialized, 'utf8');
+  let offset = 0;
+
+  return {
+    read(buffer, bufferOffset, length) {
+      const chunk = bytes.subarray(offset, offset + length);
+      buffer.set(chunk, bufferOffset);
+      offset += chunk.length;
+      return Promise.resolve({ bytesRead: chunk.length });
+    },
+    close: () => Promise.resolve(),
+    stat: () => Promise.resolve(stats),
+  };
+}
 
 function createProbeableStore(
   probe: () => Promise<void> = () => Promise.resolve(),
@@ -755,6 +806,242 @@ describe('opencoven CLI output', () => {
       ok: false,
       version: cliVersion,
     });
+  });
+
+  test('fails Cave discovery closed on Windows without native path trust', async () => {
+    const result = await runCli(
+      ['--json', 'discover'],
+      runtime({
+        cwd: 'C:\\workspace',
+        env: {
+          USERPROFILE: 'C:\\Users\\Alice',
+        },
+        platform: 'win32',
+        cave: {
+          discoverEndpoint: undefined,
+        },
+      }),
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toEqual({
+      command: 'discover',
+      data: {
+        cave: {
+          status: 'error',
+          error: {
+            code: 'platform_security_unavailable',
+            message: 'Required native Cave platform security is unavailable.',
+            retryable: false,
+            action:
+              'Use a reviewed OpenCoven CLI/runtime with native Windows Cave path ownership/ACL validation, or inject CliRuntime.cave.discovery.dependencies.windowsPathTrust, then retry.',
+            details: {
+              platform: 'windows',
+              requirement: 'path_ownership_acl',
+            },
+          },
+        },
+        coven: {
+          status: 'ok',
+          discovery: covenDiscovery,
+        },
+      },
+      error: {
+        code: 'discovery_failed',
+        message: 'One or more runtime discovery probes failed.',
+      },
+      ok: false,
+      version: cliVersion,
+    });
+  });
+
+  test('accepts injected Windows Cave path trust and rejects mismatches for default discovery', async () => {
+    const discoveryRoot = 'C:\\Users\\Alice\\.coven\\cave';
+    const recordPath = `${discoveryRoot}\\client-v1-discovery.json`;
+    const recordBytes = windowsDiscoveryRecord();
+    const rootIdentity = windowsDiscoveryIdentity({
+      regularFile: false,
+      directory: true,
+      mode: 0o040700,
+      size: 0,
+    });
+    const recordIdentity = windowsDiscoveryIdentity({
+      size: Buffer.byteLength(recordBytes),
+    });
+    const lstat = (path: string) => {
+      if (path === discoveryRoot) {
+        return Promise.resolve(rootIdentity);
+      }
+      if (path === recordPath) {
+        return Promise.resolve(recordIdentity);
+      }
+      return Promise.reject(Object.assign(new Error(`missing ${path}`), { code: 'ENOENT' }));
+    };
+    const validate = vi.fn(() => Promise.resolve(true));
+
+    const success = await runCli(
+      ['--json', 'discover'],
+      runtime({
+        cwd: 'C:\\workspace',
+        env: {
+          USERPROFILE: 'C:\\Users\\Alice',
+        },
+        platform: 'win32',
+        cave: {
+          discoverEndpoint: undefined,
+          discovery: {
+            dependencies: {
+              isProcessAlive: () => true,
+              lstat,
+              openFile: () => Promise.resolve(windowsDiscoveryHandle(recordBytes, recordIdentity)),
+              realpath: (path: string) => Promise.resolve(path),
+              windowsPathTrust: {
+                validate,
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    expect(success.exitCode).toBe(0);
+    expect(JSON.parse(success.stdout)).toEqual({
+      command: 'discover',
+      data: {
+        cave: {
+          status: 'ok',
+          discovery: {
+            endpoint: caveDiscovery.endpoint,
+            freshness: {
+              pid: caveDiscovery.freshness.pid,
+              startedAt: caveDiscovery.freshness.startedAt,
+            },
+            record: {
+              path: recordPath,
+              device: recordIdentity.device,
+              inode: recordIdentity.inode,
+            },
+          },
+        },
+        coven: {
+          status: 'ok',
+          discovery: covenDiscovery,
+        },
+      },
+      ok: true,
+      version: cliVersion,
+    });
+    expect(validate).toHaveBeenNthCalledWith(1, discoveryRoot, 'root');
+    expect(validate).toHaveBeenNthCalledWith(2, recordPath, 'record');
+
+    const mismatch = await runCli(
+      ['--json', 'discover'],
+      runtime({
+        cwd: 'C:\\workspace',
+        env: {
+          USERPROFILE: 'C:\\Users\\Alice',
+        },
+        platform: 'win32',
+        cave: {
+          discoverEndpoint: undefined,
+          discovery: {
+            dependencies: {
+              isProcessAlive: () => true,
+              lstat,
+              openFile: () => Promise.resolve(windowsDiscoveryHandle(recordBytes, recordIdentity)),
+              realpath: (path: string) => Promise.resolve(path),
+              windowsPathTrust: {
+                validate: () => Promise.resolve(false),
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    expect(mismatch.exitCode).toBe(1);
+    expect(JSON.parse(mismatch.stdout)).toEqual({
+      command: 'discover',
+      data: {
+        cave: {
+          status: 'error',
+          error: {
+            code: 'owner_mismatch',
+            message: 'The discovered Cave runtime is not owned by the current user.',
+            retryable: false,
+            action: 'Repair the local runtime ownership or permissions and retry.',
+          },
+        },
+        coven: {
+          status: 'ok',
+          discovery: covenDiscovery,
+        },
+      },
+      error: {
+        code: 'discovery_failed',
+        message: 'One or more runtime discovery probes failed.',
+      },
+      ok: false,
+      version: cliVersion,
+    });
+  });
+
+  test('reports missing Windows Cave path trust in doctor and skips Cave health', async () => {
+    const result = await runCli(
+      ['--json', 'doctor'],
+      runtime({
+        cwd: 'C:\\workspace',
+        env: {
+          USERPROFILE: 'C:\\Users\\Alice',
+        },
+        platform: 'win32',
+        cave: {
+          discoverEndpoint: undefined,
+        },
+      }),
+    );
+    const output = parseObjectJson(result.stdout);
+    const data = output.data;
+    if (!isObject(data)) {
+      throw new TypeError('Doctor output data was not an object.');
+    }
+    const summary = data.summary;
+    if (!isObject(summary)) {
+      throw new TypeError('Doctor summary was not an object.');
+    }
+    const checksValue = data.checks;
+    if (!Array.isArray(checksValue)) {
+      throw new TypeError('Doctor checks were not an array.');
+    }
+    const checks = checksValue.filter(isObject);
+
+    expect(result.exitCode).toBe(1);
+    expect(output.error).toEqual({
+      code: 'unhealthy',
+      message: 'One or more diagnostics failed.',
+    });
+    expect(summary).toEqual({
+      healthy: false,
+      ok: 3,
+      error: 1,
+      skipped: 1,
+    });
+    expect(
+      checks.some(
+        (check) =>
+          check.id === 'cave.discovery' &&
+          check.status === 'error' &&
+          isObject(check.error) &&
+          check.error.code === 'platform_security_unavailable',
+      ),
+    ).toBe(true);
+    expect(
+      checks.some(
+        (check) =>
+          check.id === 'cave.health' &&
+          check.status === 'skipped',
+      ),
+    ).toBe(true);
   });
 
   test('creates, polls, exchanges, and reports Cave pairing without leaking the bearer', async () => {
@@ -1834,6 +2121,55 @@ describe('opencoven CLI output', () => {
       ok: false,
       version: cliVersion,
     });
+  });
+
+  test('fails Windows Cave commands before secret-store or client access when trust is unavailable', async () => {
+    const createSecretStore = vi.fn(() => createProbeableStore());
+    const createClient = vi.fn(() => ({
+      credentialStatus: () => Promise.resolve({ status: 'valid', access: 'chat:read', health: caveHealth }),
+      createPairing: never,
+      forgetCredential: () => Promise.resolve(false),
+      health: () => Promise.resolve(caveHealth),
+    }));
+    const fetchImplementation = vi.fn<typeof fetch>();
+
+    const result = await runCli(
+      ['--json', 'cave', 'status'],
+      runtime({
+        cwd: 'C:\\workspace',
+        env: {
+          USERPROFILE: 'C:\\Users\\Alice',
+        },
+        platform: 'win32',
+        createSecretStore,
+        fetch: fetchImplementation,
+        cave: {
+          createClient,
+          discoverEndpoint: undefined,
+        },
+      }),
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout)).toEqual({
+      command: 'cave status',
+      error: {
+        code: 'platform_security_unavailable',
+        message: 'Required native Cave platform security is unavailable.',
+        retryable: false,
+        action:
+          'Use a reviewed OpenCoven CLI/runtime with native Windows Cave path ownership/ACL validation, or inject CliRuntime.cave.discovery.dependencies.windowsPathTrust, then retry.',
+        details: {
+          platform: 'windows',
+          requirement: 'path_ownership_acl',
+        },
+      },
+      ok: false,
+      version: cliVersion,
+    });
+    expect(createSecretStore).not.toHaveBeenCalled();
+    expect(createClient).not.toHaveBeenCalled();
+    expect(fetchImplementation).not.toHaveBeenCalled();
   });
 
   test('pins the doctor Cave health client to the already discovered authority', async () => {

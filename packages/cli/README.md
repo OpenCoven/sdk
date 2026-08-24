@@ -44,6 +44,11 @@ opencoven coven health
   the current authority binding and returns `valid`, `missing`, or `revoked`.
 - `opencoven cave forget [--json]` deletes the stored Cave credential and its
   authority metadata; missing credentials are a successful no-op.
+- On Windows, `discover`, `doctor`, `cave pair`, `cave status`, and
+  `cave forget` fail closed with `platform_security_unavailable` before Cave
+  discovery, secret-store access, or network I/O unless a reviewed native Cave
+  path ownership/ACL validator is injected through
+  `CliRuntime.cave.discovery.dependencies.windowsPathTrust`.
 - `opencoven coven health [--json]` checks the discovered Coven daemon through
   the reviewed SDK transport and fails closed with
   `platform_security_unavailable` until a reviewed native adapter is injected.
@@ -62,6 +67,16 @@ against a dedicated keyring account so constructor and backend availability are
 exercised without overwriting or deleting a user's real credential. If the
 native binding or backend is unavailable, commands fail with the stable error
 code `secure_store_unavailable`.
+
+## Native Cave discovery security
+
+The CLI never trusts Windows Cave discovery from pathname metadata, shell
+commands, or unchecked ACL guesses. Until a reviewed native validator ships in
+the production CLI, default Windows Cave discovery fails closed with
+`platform_security_unavailable`. Embedders and tests can keep the default Cave
+discovery flow by injecting
+`CliRuntime.cave.discovery.dependencies.windowsPathTrust`, plus any other
+reviewed discovery dependencies they need.
 
 ## Native Coven transport security
 

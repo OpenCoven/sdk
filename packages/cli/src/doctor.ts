@@ -1,6 +1,9 @@
 import { createMemorySecretStore } from '@opencoven/sdk-core';
 
 import {
+  missingCliCavePlatformSecurity,
+} from './cave-platform-security.js';
+import {
   createPinnedCliCaveDiscoverEndpoint,
 } from './cave-discovery.js';
 import {
@@ -79,32 +82,9 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
   const deadline = createCliDeadline(runtime.now, runtime.timing.doctorTimeoutMs);
 
   let caveDiscovery: Awaited<ReturnType<ResolvedCliRuntime['cave']['discoverEndpoint']>> | undefined;
-  try {
-    caveDiscovery = await runWithinCliDeadline(
-      runtime.now,
-      deadline,
-      'doctor',
-      async (timeoutMs) =>
-        await runtime.cave.discoverEndpoint({
-          ...runtime.discoveryOptions.cave,
-          timeoutMs,
-        }),
-    );
-    checks.push({
-      id: 'cave.discovery',
-      status: 'ok',
-      summary: 'Discovered the Cave client endpoint.',
-      data: {
-        endpoint: caveDiscovery.endpoint,
-        freshness: {
-          pid: caveDiscovery.freshness.pid,
-          startedAt: caveDiscovery.freshness.startedAt,
-        },
-        record: caveDiscovery.record,
-      },
-    });
-  } catch (error) {
-    const normalized = normalizeCliError(error, {
+  const cavePlatformSecurityError = missingCliCavePlatformSecurity(runtime);
+  if (cavePlatformSecurityError !== undefined) {
+    const normalized = normalizeCliError(cavePlatformSecurityError, {
       system: 'cave',
       operation: 'discover',
     });
@@ -114,19 +94,6 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
       summary: 'Cave runtime discovery failed.',
       error: normalized,
     });
-    if (normalized.code === 'timeout') {
-      doctorTimedOut(
-        checks,
-        'cave.health',
-        'secure-store',
-        'coven.discovery',
-        'coven.health',
-      );
-      return doctorResult(runtime, checks);
-    }
-  }
-
-  if (caveDiscovery === undefined) {
     checks.push({
       id: 'cave.health',
       status: 'skipped',
@@ -134,54 +101,108 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
     });
   } else {
     try {
-      const client = await runWithinCliDeadline(
+      caveDiscovery = await runWithinCliDeadline(
         runtime.now,
         deadline,
         'doctor',
-        async () =>
-          await runtime.cave.createClient({
-            credentials: createCaveCredentialBinding(
-              createMemorySecretStore(),
-              runtime.createSecretStoreReference,
-            ),
-            discoverEndpoint: createPinnedCliCaveDiscoverEndpoint(runtime, caveDiscovery),
-            ...(runtime.discoveryOptions.cave === undefined
-              ? {}
-              : { discovery: runtime.discoveryOptions.cave }),
-            fetch: runtime.fetch,
+        async (timeoutMs) =>
+          await runtime.cave.discoverEndpoint({
+            ...runtime.discoveryOptions.cave,
+            timeoutMs,
           }),
       );
-      const health = await runWithinCliDeadline(
-        runtime.now,
-        deadline,
-        'doctor',
-        async (timeoutMs) => await client.health({ timeoutMs }),
-      );
       checks.push({
-        id: 'cave.health',
+        id: 'cave.discovery',
         status: 'ok',
-        summary: 'Cave health is compatible.',
-        data: { ...health },
+        summary: 'Discovered the Cave client endpoint.',
+        data: {
+          endpoint: caveDiscovery.endpoint,
+          freshness: {
+            pid: caveDiscovery.freshness.pid,
+            startedAt: caveDiscovery.freshness.startedAt,
+          },
+          record: caveDiscovery.record,
+        },
       });
     } catch (error) {
       const normalized = normalizeCliError(error, {
         system: 'cave',
-        operation: 'health',
+        operation: 'discover',
       });
       checks.push({
-        id: 'cave.health',
+        id: 'cave.discovery',
         status: 'error',
-        summary: 'Cave health check failed.',
+        summary: 'Cave runtime discovery failed.',
         error: normalized,
       });
       if (normalized.code === 'timeout') {
         doctorTimedOut(
           checks,
+          'cave.health',
           'secure-store',
           'coven.discovery',
           'coven.health',
         );
         return doctorResult(runtime, checks);
+      }
+    }
+    if (caveDiscovery === undefined) {
+      checks.push({
+        id: 'cave.health',
+        status: 'skipped',
+        summary: 'Not run because Cave discovery failed.',
+      });
+    } else {
+      try {
+        const client = await runWithinCliDeadline(
+          runtime.now,
+          deadline,
+          'doctor',
+          async () =>
+            await runtime.cave.createClient({
+              credentials: createCaveCredentialBinding(
+                createMemorySecretStore(),
+                runtime.createSecretStoreReference,
+              ),
+              discoverEndpoint: createPinnedCliCaveDiscoverEndpoint(runtime, caveDiscovery),
+              ...(runtime.discoveryOptions.cave === undefined
+                ? {}
+                : { discovery: runtime.discoveryOptions.cave }),
+              fetch: runtime.fetch,
+            }),
+        );
+        const health = await runWithinCliDeadline(
+          runtime.now,
+          deadline,
+          'doctor',
+          async (timeoutMs) => await client.health({ timeoutMs }),
+        );
+        checks.push({
+          id: 'cave.health',
+          status: 'ok',
+          summary: 'Cave health is compatible.',
+          data: { ...health },
+        });
+      } catch (error) {
+        const normalized = normalizeCliError(error, {
+          system: 'cave',
+          operation: 'health',
+        });
+        checks.push({
+          id: 'cave.health',
+          status: 'error',
+          summary: 'Cave health check failed.',
+          error: normalized,
+        });
+        if (normalized.code === 'timeout') {
+          doctorTimedOut(
+            checks,
+            'secure-store',
+            'coven.discovery',
+            'coven.health',
+          );
+          return doctorResult(runtime, checks);
+        }
       }
     }
   }

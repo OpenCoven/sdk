@@ -3,6 +3,7 @@
 import { constants as fsConstants } from 'node:fs';
 
 import {
+  OperationTimeoutError,
   createSecretStoreReference,
   type SecretStore,
 } from '@opencoven/sdk-core';
@@ -48,6 +49,7 @@ const discovered: CaveDiscoveredEndpoint = {
 const BINDING_KEY_PREFIX = 'opencoven.cave.credential-binding.v1.';
 const STAGING_KEY_PREFIX = 'opencoven.cave.credential-binding.staging.v1.';
 const FAILURE_KEY_PREFIX = 'opencoven.cave.credential-binding.failure.v1.';
+const OWNER_KEY_PREFIX = 'opencoven.cave.credential-binding.owner.v1.';
 const authorityBinding = caveAuthorityBindingFromDiscoveredEndpoint(discovered);
 
 interface MutableStore extends SecretStore {
@@ -72,6 +74,86 @@ function storeWithState(entries: Iterable<readonly [string, unknown]> = []): Mut
       deleted.push(key);
       return values.delete(key);
     },
+  };
+}
+
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, reject, resolve };
+}
+
+function createControlledMutationStore(blockedMutations: readonly number[] = []) {
+  const values = new Map<string, string>();
+  const blocked = new Map<number, ReturnType<typeof deferred<void>>>();
+  const log: Array<{ mutation: number; method: 'set' | 'delete'; key: string; phase: 'start' | 'finish' }> = [];
+  const startedResolvers = new Map<number, () => void>();
+  const started = new Map<number, Promise<void>>();
+  let mutationIndex = 0;
+
+  for (const mutation of blockedMutations) {
+    blocked.set(mutation, deferred<void>());
+  }
+
+  const waitForMutationStart = (target: number): Promise<void> => {
+    const existing = started.get(target);
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    const promise = new Promise<void>((resolve) => {
+      startedResolvers.set(target, resolve);
+    });
+    started.set(target, promise);
+    return promise;
+  };
+
+  const signalMutationStart = (target: number): void => {
+    startedResolvers.get(target)?.();
+    startedResolvers.delete(target);
+    if (!started.has(target)) {
+      started.set(target, Promise.resolve());
+    }
+  };
+
+  const store: SecretStore = {
+    async get(key) {
+      return values.get(key);
+    },
+    async set(key, value) {
+      mutationIndex += 1;
+      const current = mutationIndex;
+      log.push({ mutation: current, method: 'set', key, phase: 'start' });
+      signalMutationStart(current);
+      await blocked.get(current)?.promise;
+      values.set(key, value);
+      log.push({ mutation: current, method: 'set', key, phase: 'finish' });
+    },
+    async delete(key) {
+      mutationIndex += 1;
+      const current = mutationIndex;
+      log.push({ mutation: current, method: 'delete', key, phase: 'start' });
+      signalMutationStart(current);
+      await blocked.get(current)?.promise;
+      const deleted = values.delete(key);
+      log.push({ mutation: current, method: 'delete', key, phase: 'finish' });
+      return deleted;
+    },
+  };
+
+  return {
+    log,
+    store,
+    unblockMutation(mutation: number): void {
+      blocked.get(mutation)?.resolve();
+    },
+    values,
+    waitForMutationStart,
   };
 }
 
@@ -185,6 +267,7 @@ describe('Cave credential binding helpers', () => {
     await storeBoundCredential(seeded, reference, 'bearer', authorityBinding);
     const metadataKey = storedKeyWithPrefix(seeded, BINDING_KEY_PREFIX);
     const failureKey = `${FAILURE_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+    const ownerKey = `${OWNER_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
     const stagingKey = `${STAGING_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
 
     await expect(
@@ -277,6 +360,22 @@ describe('Cave credential binding helpers', () => {
     });
 
     await expect(
+      loadBoundCredential(
+        storeWithState([
+          [reference.key, 'bearer'],
+          [metadataKey, seeded.values.get(metadataKey)],
+          [ownerKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.owner.v1', transactionId: 'tx-other' })],
+        ]),
+        reference,
+        discovered,
+        (value) => value === 'bearer',
+      ),
+    ).resolves.toEqual({
+      status: 'invalid',
+      reason: 'authority_binding_incomplete',
+    });
+
+    await expect(
       inspectStoredCredentialMaterial(
         storeWithState([
           [failureKey, JSON.stringify({ schema: 'opencoven.cave.credential-binding.failure.v1', transactionId: 'tx-2' })],
@@ -293,6 +392,18 @@ describe('Cave credential binding helpers', () => {
         (value) => value === 'bearer',
       ),
     ).resolves.toEqual({ status: 'invalid_bearer' });
+
+    await expect(
+      inspectStoredCredentialMaterial(
+        storeWithState([
+          [reference.key, 'bearer'],
+          [metadataKey, seeded.values.get(metadataKey)],
+          [ownerKey, '{bad-json'],
+        ]),
+        reference,
+        (value) => value === 'bearer',
+      ),
+    ).resolves.toEqual({ status: 'incomplete' });
 
     await expect(
       loadBoundCredential(
@@ -436,6 +547,182 @@ describe('Cave credential binding helpers', () => {
     const bindingOnlyStore = storeWithState([[metadataKey, first.values.get(metadataKey)]]);
     await expect(forgetStoredCredential(bindingOnlyStore, reference)).resolves.toBe(true);
     await expect(forgetStoredCredential(storeWithState(), reference)).resolves.toBe(false);
+  });
+
+  test('preserves a later concurrent credential store after an earlier timeout rollback', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const reference = createSecretStoreReference('chat.cave.concurrent.store');
+      const controlled = createControlledMutationStore([5]);
+      let rejectTermination!: (reason?: unknown) => void;
+      const termination = new Promise<never>((_, reject) => {
+        rejectTermination = reject;
+      });
+
+      const first = storeBoundCredential(
+        controlled.store,
+        reference,
+        'bearer-first',
+        authorityBinding,
+        {
+          mutationGraceMs: 1,
+          termination,
+        },
+      ).catch((error: unknown) => error);
+
+      await controlled.waitForMutationStart(5);
+      const second = storeBoundCredential(
+        controlled.store,
+        reference,
+        'bearer-second',
+        authorityBinding,
+      );
+
+      rejectTermination(new OperationTimeoutError({ system: 'cave', operation: 'pairingExchange' }, 1));
+      await vi.advanceTimersByTimeAsync(5);
+      controlled.unblockMutation(5);
+
+      const firstError = await first;
+      expect(firstError).toBeInstanceOf(OperationTimeoutError);
+      await expect(second).resolves.toBeUndefined();
+      await expect(
+        loadBoundCredential(
+          controlled.store,
+          reference,
+          discovered,
+          (value) => value.startsWith('bearer-'),
+        ),
+      ).resolves.toEqual({
+        status: 'ready',
+        bearer: 'bearer-second',
+      });
+      await expect(controlled.store.get(reference.key)).resolves.toBe('bearer-second');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('serializes concurrent forget and store operations on the same reference', async () => {
+    const reference = createSecretStoreReference('chat.cave.concurrent.forget');
+    const controlled = createControlledMutationStore([4]);
+
+    const storePromise = storeBoundCredential(
+      controlled.store,
+      reference,
+      'bearer-store',
+      authorityBinding,
+    );
+    await controlled.waitForMutationStart(4);
+
+    const forgetPromise = forgetStoredCredential(controlled.store, reference);
+    controlled.unblockMutation(4);
+
+    await expect(storePromise).resolves.toBeUndefined();
+    await expect(forgetPromise).resolves.toBe(true);
+    await expect(
+      loadBoundCredential(
+        controlled.store,
+        reference,
+        discovered,
+        (value) => value === 'bearer-store',
+      ),
+    ).resolves.toEqual({ status: 'missing' });
+  });
+
+  test('keeps a newer committed credential when rollback ownership no longer matches', async () => {
+    const reference = createSecretStoreReference('chat.cave.rollback.owner');
+    const committed = storeWithState();
+    await storeBoundCredential(committed, reference, 'bearer-current', authorityBinding);
+    const metadataKey = storedKeyWithPrefix(committed, BINDING_KEY_PREFIX);
+    const ownerKey = `${OWNER_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+    const failureKey = `${FAILURE_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+    const stagingKey = `${STAGING_KEY_PREFIX}${metadataKey.slice(BINDING_KEY_PREFIX.length)}`;
+    const deleted: string[] = [];
+    const values = new Map<string, string>();
+    let writeCount = 0;
+
+    const store: SecretStore = {
+      async get(key) {
+        return values.get(key);
+      },
+      async set(key, value) {
+        writeCount += 1;
+        if (writeCount === 5) {
+          const originalStaging = values.get(stagingKey);
+          values.clear();
+          for (const [entryKey, entryValue] of committed.values) {
+            values.set(entryKey, String(entryValue));
+          }
+          if (originalStaging !== undefined) {
+            values.set(stagingKey, originalStaging);
+          }
+          throw new Error('late bound write failed');
+        }
+
+        values.set(key, value);
+      },
+      async delete(key) {
+        deleted.push(key);
+        return values.delete(key);
+      },
+    };
+
+    const error = await storeBoundCredential(
+      store,
+      reference,
+      'bearer-first',
+      authorityBinding,
+    ).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(values.get(reference.key)).toBe('bearer-current');
+    expect(values.get(metadataKey)).toBe(committed.values.get(metadataKey));
+    expect(values.get(ownerKey)).toBe(committed.values.get(ownerKey));
+    expect(values.has(failureKey)).toBe(false);
+    expect(values.has(stagingKey)).toBe(false);
+    expect(deleted).toContain(failureKey);
+    expect(deleted).toContain(stagingKey);
+    expect(deleted).not.toContain(reference.key);
+    expect(deleted).not.toContain(metadataKey);
+    expect(deleted).not.toContain(ownerKey);
+  });
+
+  test('allows distinct references to mutate in parallel', async () => {
+    const firstReference = createSecretStoreReference('chat.cave.parallel.first');
+    const secondReference = createSecretStoreReference('chat.cave.parallel.second');
+    const controlled = createControlledMutationStore([1]);
+
+    const first = storeBoundCredential(
+      controlled.store,
+      firstReference,
+      'bearer-first',
+      authorityBinding,
+    );
+    await controlled.waitForMutationStart(1);
+
+    let secondSettled = false;
+    const second = storeBoundCredential(
+      controlled.store,
+      secondReference,
+      'bearer-second',
+      authorityBinding,
+    ).then(() => {
+      secondSettled = true;
+    });
+    const secondOutcome = await Promise.race([
+      second.then(() => 'done' as const),
+      new Promise<'pending'>((resolve) => {
+        setTimeout(() => resolve('pending'), 0);
+      }),
+    ]);
+    expect(secondOutcome).toBe('done');
+    expect(secondSettled).toBe(true);
+
+    controlled.unblockMutation(1);
+    await expect(first).resolves.toBeUndefined();
+    await expect(second).resolves.toBeUndefined();
+    await expect(controlled.store.get(secondReference.key)).resolves.toBe('bearer-second');
   });
 });
 

@@ -7,6 +7,9 @@ import type {
 
 import type { CaveCliPairingSession, CliCommandResult, ResolvedCliRuntime } from './main.js';
 import {
+  assertCliCavePlatformSecurity,
+} from './cave-platform-security.js';
+import {
   createCliDeadline,
   remainingCliTime,
   runWithinCliDeadline,
@@ -21,6 +24,26 @@ import {
 import { createCliError, normalizeCliError, type CliOutput } from './output.js';
 
 const PAIR_EXPIRY_GUARD_MS = 250;
+
+function createCaveClientErrorContext(error: unknown) {
+  if (typeof error === 'object' && error !== null) {
+    try {
+      if (Reflect.get(error, 'code') === 'platform_security_unavailable') {
+        return {
+          system: 'cave' as const,
+          operation: 'discover',
+        };
+      }
+    } catch {
+      // Fall back to secure-store context below.
+    }
+  }
+
+  return {
+    system: 'secure-store' as const,
+    operation: 'store',
+  };
+}
 
 function pairDeadline(deadline: number, expiresAt: number): number {
   return Math.min(deadline, expiresAt - PAIR_EXPIRY_GUARD_MS);
@@ -127,6 +150,7 @@ async function createCaveClient(
   deadline: number,
   operation: 'cave pair' | 'cave status' | 'cave forget',
 ) {
+  assertCliCavePlatformSecurity(runtime);
   const store = await runWithinCliDeadline(
     runtime.now,
     deadline,
@@ -170,10 +194,7 @@ async function runPair(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
   try {
     client = await createCaveClient(runtime, commandDeadline, 'cave pair');
   } catch (error) {
-    const normalized = normalizeCliError(error, {
-      system: 'secure-store',
-      operation: 'store',
-    });
+    const normalized = normalizeCliError(error, createCaveClientErrorContext(error));
     const output: CliOutput = {
       command: 'cave pair',
       error: normalized,
@@ -481,10 +502,7 @@ async function runStatus(runtime: ResolvedCliRuntime): Promise<CliCommandResult>
   try {
     client = await createCaveClient(runtime, deadline, 'cave status');
   } catch (error) {
-    const normalized = normalizeCliError(error, {
-      system: 'secure-store',
-      operation: 'store',
-    });
+    const normalized = normalizeCliError(error, createCaveClientErrorContext(error));
     const output: CliOutput = {
       command: 'cave status',
       error: normalized,
@@ -608,10 +626,7 @@ async function runForget(runtime: ResolvedCliRuntime): Promise<CliCommandResult>
   try {
     client = await createCaveClient(runtime, deadline, 'cave forget');
   } catch (error) {
-    const normalized = normalizeCliError(error, {
-      system: 'secure-store',
-      operation: 'store',
-    });
+    const normalized = normalizeCliError(error, createCaveClientErrorContext(error));
     const output: CliOutput = {
       command: 'cave forget',
       error: normalized,

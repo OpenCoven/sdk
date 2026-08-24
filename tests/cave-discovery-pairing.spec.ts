@@ -2189,9 +2189,10 @@ describe('discovered Cave pairing helpers', () => {
     ['staging write', 1],
     ['pending binding write', 2],
     ['bearer write', 3],
-    ['bound binding write', 4],
-    ['failure marker clear', 5],
-    ['staging clear', 6],
+    ['owner marker write', 4],
+    ['bound binding write', 5],
+    ['failure marker clear', 6],
+    ['staging clear', 7],
   ] as const)(
     'rolls back and stays fail-closed when %s times out',
     async (_label, delayedMutation) => {
@@ -2285,9 +2286,10 @@ describe('discovered Cave pairing helpers', () => {
     ['staging write', 1],
     ['pending binding write', 2],
     ['bearer write', 3],
-    ['bound binding write', 4],
-    ['failure marker clear', 5],
-    ['staging clear', 6],
+    ['owner marker write', 4],
+    ['bound binding write', 5],
+    ['failure marker clear', 6],
+    ['staging clear', 7],
   ] as const)(
     'rolls back and stays fail-closed when %s is aborted',
     async (_label, delayedMutation) => {
@@ -2388,7 +2390,7 @@ describe('discovered Cave pairing helpers', () => {
       get: vi.fn((key: string) => Promise.resolve(retained.get(key))),
       set: vi.fn((key: string, value: string) => {
         writeCount += 1;
-        if (writeCount === 3) {
+        if (writeCount === 4) {
           return Promise.reject(new Error('store write failed'));
         }
         retained.set(key, value);
@@ -2443,7 +2445,7 @@ describe('discovered Cave pairing helpers', () => {
     const exchange = session.exchange().catch((error: unknown) => error);
     const error = await exchange;
 
-    expect(store.set).toHaveBeenCalledTimes(4);
+    expect(store.set).toHaveBeenCalledTimes(5);
     expect(store.delete).toHaveBeenCalledTimes(3);
     expect(error).toMatchObject({
       normalized: {

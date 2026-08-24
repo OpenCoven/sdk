@@ -18,9 +18,17 @@ const CAVE_CREDENTIAL_BINDING_STAGING_KEY_PREFIX =
 const CAVE_CREDENTIAL_BINDING_FAILURE_SCHEMA = 'opencoven.cave.credential-binding.failure.v1' as const;
 const CAVE_CREDENTIAL_BINDING_FAILURE_KEY_PREFIX =
   'opencoven.cave.credential-binding.failure.v1.' as const;
+const CAVE_CREDENTIAL_BINDING_OWNER_SCHEMA = 'opencoven.cave.credential-binding.owner.v1' as const;
+const CAVE_CREDENTIAL_BINDING_OWNER_KEY_PREFIX =
+  'opencoven.cave.credential-binding.owner.v1.' as const;
 const CAVE_CREDENTIAL_STORE_GRACE_MS = 250;
 const FNV_OFFSET_BASIS_64 = 0xcbf29ce484222325n;
 const FNV_PRIME_64 = 0x100000001b3n;
+const SECRET_STORE_LOGICAL_ID = Symbol.for('@opencoven/sdk-core/secret-store-logical-id');
+const referenceMutationQueues = new Map<string, Promise<void>>();
+const concreteMutationQueues = new Map<string, Promise<void>>();
+const secretStoreLogicalIds = new WeakMap<object, string>();
+let nextSecretStoreLogicalId = 0;
 
 export type CaveStoredCredentialMismatchReason =
   | 'authority_mismatch'
@@ -56,6 +64,11 @@ interface CaveCredentialBindingMarkerRecord {
   schema:
     | typeof CAVE_CREDENTIAL_BINDING_STAGING_SCHEMA
     | typeof CAVE_CREDENTIAL_BINDING_FAILURE_SCHEMA;
+  transactionId: string;
+}
+
+interface CaveCredentialBindingOwnerRecord {
+  schema: typeof CAVE_CREDENTIAL_BINDING_OWNER_SCHEMA;
   transactionId: string;
 }
 
@@ -122,6 +135,106 @@ function bindingFailureKey(reference: SecretStoreReference): string {
   return `${CAVE_CREDENTIAL_BINDING_FAILURE_KEY_PREFIX}${hashCredentialReferenceKey(reference.key)}`;
 }
 
+function bindingOwnerKey(reference: SecretStoreReference): string {
+  return `${CAVE_CREDENTIAL_BINDING_OWNER_KEY_PREFIX}${hashCredentialReferenceKey(reference.key)}`;
+}
+
+function logicalStoreId(store: SecretStore): string {
+  if (typeof store === 'object' && store !== null) {
+    try {
+      const provided: unknown = Reflect.get(store, SECRET_STORE_LOGICAL_ID);
+      if (typeof provided === 'string' && provided.length > 0) {
+        return provided;
+      }
+    } catch {
+      // Fall back to process-local identity tracking below.
+    }
+
+    const existing = secretStoreLogicalIds.get(store);
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    const allocated = `store:${String(++nextSecretStoreLogicalId)}`;
+    secretStoreLogicalIds.set(store, allocated);
+    return allocated;
+  }
+
+  return `store:${String(++nextSecretStoreLogicalId)}`;
+}
+
+function runSerializedTask<T>(
+  queues: Map<string, Promise<void>>,
+  key: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  const previous = queues.get(key) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(task);
+  const tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  queues.set(key, tail);
+
+  return run.finally(() => {
+    if (queues.get(key) === tail) {
+      queues.delete(key);
+    }
+  });
+}
+
+function referenceMutationKey(
+  store: SecretStore,
+  reference: SecretStoreReference,
+): string {
+  return `${logicalStoreId(store)}:${hashCredentialReferenceKey(reference.key)}`;
+}
+
+function concreteMutationKey(store: SecretStore, key: string): string {
+  return `${logicalStoreId(store)}:${key}`;
+}
+
+function serializeReferenceMutation<T>(
+  store: SecretStore,
+  reference: SecretStoreReference,
+  task: () => Promise<T>,
+): Promise<T> {
+  return runSerializedTask(
+    referenceMutationQueues,
+    referenceMutationKey(store, reference),
+    task,
+  );
+}
+
+function queuedStoreSet(
+  store: SecretStore,
+  key: string,
+  value: string,
+): Promise<void> {
+  return runSerializedTask(
+    concreteMutationQueues,
+    concreteMutationKey(store, key),
+    async () => {
+      await Promise.resolve();
+      return await store.set(key, value);
+    },
+  );
+}
+
+function queuedStoreDelete(
+  store: SecretStore,
+  key: string,
+): Promise<boolean> {
+  return runSerializedTask(
+    concreteMutationQueues,
+    concreteMutationKey(store, key),
+    async () => {
+      await Promise.resolve();
+      return await store.delete(key);
+    },
+  );
+}
+
 function bindingRecord(
   authorityBinding: CaveAuthorityBinding,
   state: CaveStoredCredentialBindingState,
@@ -153,6 +266,13 @@ function markerRecord(
 ): CaveCredentialBindingMarkerRecord {
   return {
     schema,
+    transactionId,
+  };
+}
+
+function ownerRecord(transactionId: string): CaveCredentialBindingOwnerRecord {
+  return {
+    schema: CAVE_CREDENTIAL_BINDING_OWNER_SCHEMA,
     transactionId,
   };
 }
@@ -242,6 +362,29 @@ function parseMarkerRecord(
 
   return {
     schema,
+    transactionId: parsed.transactionId,
+  };
+}
+
+function parseOwnerRecord(serialized: string): CaveCredentialBindingOwnerRecord | undefined {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(serialized) as unknown;
+  } catch {
+    return undefined;
+  }
+
+  if (
+    !isObject(parsed) ||
+    parsed.schema !== CAVE_CREDENTIAL_BINDING_OWNER_SCHEMA ||
+    !isNonEmptyString(parsed.transactionId)
+  ) {
+    return undefined;
+  }
+
+  return {
+    schema: CAVE_CREDENTIAL_BINDING_OWNER_SCHEMA,
     transactionId: parsed.transactionId,
   };
 }
@@ -381,6 +524,17 @@ async function awaitRollbackCall<T>(
   return settled.value;
 }
 
+async function safeRollbackString(
+  operation: Promise<string | undefined>,
+): Promise<string | undefined> {
+  try {
+    const value = await awaitRollbackCall(operation);
+    return typeof value === 'string' ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function rollbackFailureError(
   cause: unknown,
   failures: readonly RollbackFailure[],
@@ -417,12 +571,14 @@ async function rollbackCredentialWrite(
   store: SecretStore,
   reference: SecretStoreReference,
   transactionId: string,
+  bearer: string,
   cause: unknown,
 ): Promise<void> {
   const failures: RollbackFailure[] = [];
   const metadataKey = bindingMetadataKey(reference);
   const stagingKey = bindingStagingKey(reference);
   const failureKey = bindingFailureKey(reference);
+  const ownerKey = bindingOwnerKey(reference);
 
   const attempt = async (step: string, operation: Promise<unknown>): Promise<void> => {
     try {
@@ -434,7 +590,8 @@ async function rollbackCredentialWrite(
 
   await attempt(
     'set_failure_marker',
-    store.set(
+    queuedStoreSet(
+      store,
       failureKey,
       JSON.stringify(
         markerRecord(
@@ -444,9 +601,47 @@ async function rollbackCredentialWrite(
       ),
     ),
   );
-  await attempt('delete_bearer', store.delete(reference.key));
-  await attempt('delete_binding', store.delete(metadataKey));
-  await attempt('delete_staging', store.delete(stagingKey));
+  const owner = parseOwnerRecord(
+    (await safeRollbackString(store.get(ownerKey))) ?? '',
+  );
+  const binding = parseBindingRecord(
+    (await safeRollbackString(store.get(metadataKey))) ?? '',
+  );
+
+  if (owner?.transactionId === transactionId) {
+    await attempt('delete_bearer', queuedStoreDelete(store, reference.key));
+    await attempt('delete_owner', queuedStoreDelete(store, ownerKey));
+  } else if (owner === undefined && binding?.transactionId === transactionId) {
+    const currentBearer = await safeRollbackString(store.get(reference.key));
+    if (currentBearer === bearer) {
+      await attempt('delete_bearer', queuedStoreDelete(store, reference.key));
+    }
+  }
+
+  if (binding?.transactionId === transactionId) {
+    await attempt('delete_binding', queuedStoreDelete(store, metadataKey));
+  }
+
+  const staging = parseMarkerRecord(
+    (await safeRollbackString(store.get(stagingKey))) ?? '',
+    CAVE_CREDENTIAL_BINDING_STAGING_SCHEMA,
+  );
+  if (staging?.transactionId === transactionId) {
+    await attempt('delete_staging', queuedStoreDelete(store, stagingKey));
+  }
+
+  const currentOwner = parseOwnerRecord(
+    (await safeRollbackString(store.get(ownerKey))) ?? '',
+  );
+  const currentBinding = parseBindingRecord(
+    (await safeRollbackString(store.get(metadataKey))) ?? '',
+  );
+  if (
+    (currentOwner !== undefined && currentOwner.transactionId !== transactionId) ||
+    (currentBinding?.transactionId !== undefined && currentBinding.transactionId !== transactionId)
+  ) {
+    await attempt('delete_failure_marker', queuedStoreDelete(store, failureKey));
+  }
 
   if (failures.length > 0) {
     throw rollbackFailureError(cause, failures);
@@ -460,55 +655,69 @@ export async function storeBoundCredential(
   authorityBinding: CaveAuthorityBinding,
   options: CredentialBindingMutationOptions = {},
 ): Promise<void> {
-  const metadataKey = bindingMetadataKey(reference);
-  const stagingKey = bindingStagingKey(reference);
-  const failureKey = bindingFailureKey(reference);
-  const transactionId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-  let writeStarted = false;
+  return await serializeReferenceMutation(store, reference, async () => {
+    const metadataKey = bindingMetadataKey(reference);
+    const stagingKey = bindingStagingKey(reference);
+    const failureKey = bindingFailureKey(reference);
+    const ownerKey = bindingOwnerKey(reference);
+    const transactionId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    let writeStarted = false;
 
-  try {
-    writeStarted = true;
-    await awaitStoreCall(
-      store.set(
-        stagingKey,
-        JSON.stringify(
-          markerRecord(
-            CAVE_CREDENTIAL_BINDING_STAGING_SCHEMA,
-            transactionId,
+    try {
+      writeStarted = true;
+      await awaitStoreCall(
+        queuedStoreSet(
+          store,
+          stagingKey,
+          JSON.stringify(
+            markerRecord(
+              CAVE_CREDENTIAL_BINDING_STAGING_SCHEMA,
+              transactionId,
+            ),
           ),
         ),
-      ),
-      options,
-    );
-    await awaitStoreCall(
-      store.set(
-        metadataKey,
-        JSON.stringify(
-          bindingRecord(authorityBinding, 'pending', transactionId),
+        options,
+      );
+      await awaitStoreCall(
+        queuedStoreSet(
+          store,
+          metadataKey,
+          JSON.stringify(
+            bindingRecord(authorityBinding, 'pending', transactionId),
+          ),
         ),
-      ),
-      options,
-    );
-    await awaitStoreCall(store.set(reference.key, bearer), options);
-    await awaitStoreCall(
-      store.set(
-        metadataKey,
-        JSON.stringify(
-          bindingRecord(authorityBinding, 'bound', transactionId),
+        options,
+      );
+      await awaitStoreCall(queuedStoreSet(store, reference.key, bearer), options);
+      await awaitStoreCall(
+        queuedStoreSet(
+          store,
+          ownerKey,
+          JSON.stringify(ownerRecord(transactionId)),
         ),
-      ),
-      options,
-    );
-    await awaitStoreCall(store.delete(failureKey), options);
-    await awaitStoreCall(store.delete(stagingKey), options);
-  } catch (error) {
-    if (!writeStarted) {
+        options,
+      );
+      await awaitStoreCall(
+        queuedStoreSet(
+          store,
+          metadataKey,
+          JSON.stringify(
+            bindingRecord(authorityBinding, 'bound', transactionId),
+          ),
+        ),
+        options,
+      );
+      await awaitStoreCall(queuedStoreDelete(store, failureKey), options);
+      await awaitStoreCall(queuedStoreDelete(store, stagingKey), options);
+    } catch (error) {
+      if (!writeStarted) {
+        throw error;
+      }
+
+      await rollbackCredentialWrite(store, reference, transactionId, bearer, error);
       throw error;
     }
-
-    await rollbackCredentialWrite(store, reference, transactionId, error);
-    throw error;
-  }
+  });
 }
 
 export async function loadBoundCredential(
@@ -571,10 +780,14 @@ export async function loadBoundCredential(
     store.get(bindingMetadataKey(reference)),
     options,
   );
+  const ownerSerialized = await awaitStoreCall(
+    store.get(bindingOwnerKey(reference)),
+    options,
+  );
   const bearer = await awaitStoreCall(store.get(reference.key), options);
 
   if (bearer === undefined) {
-    return serialized === undefined
+    return serialized === undefined && ownerSerialized === undefined
       ? { status: 'missing' }
       : {
           status: 'invalid',
@@ -589,7 +802,9 @@ export async function loadBoundCredential(
   if (serialized === undefined) {
     return {
       status: 'invalid',
-      reason: 'authority_binding_missing',
+      reason: ownerSerialized === undefined
+        ? 'authority_binding_missing'
+        : 'authority_binding_incomplete',
     };
   }
 
@@ -606,6 +821,27 @@ export async function loadBoundCredential(
       status: 'invalid',
       reason: 'authority_binding_invalid',
     };
+  }
+
+  if (ownerSerialized !== undefined) {
+    if (typeof ownerSerialized !== 'string') {
+      return {
+        status: 'invalid',
+        reason: 'authority_binding_invalid',
+      };
+    }
+
+    const owner = parseOwnerRecord(ownerSerialized);
+    if (
+      owner === undefined ||
+      stored.transactionId === undefined ||
+      owner.transactionId !== stored.transactionId
+    ) {
+      return {
+        status: 'invalid',
+        reason: 'authority_binding_incomplete',
+      };
+    }
   }
 
   if (stored.state !== 'bound') {
@@ -634,18 +870,21 @@ export async function invalidateStoredCredential(
   reference: SecretStoreReference,
   options: CredentialBindingMutationOptions = {},
 ): Promise<void> {
-  for (const key of [
-    reference.key,
-    bindingMetadataKey(reference),
-    bindingStagingKey(reference),
-    bindingFailureKey(reference),
-  ]) {
-    try {
-      await awaitStoreCall(store.delete(key), options);
-    } catch {
-      // Best-effort fail closed.
+  await serializeReferenceMutation(store, reference, async () => {
+    for (const key of [
+      reference.key,
+      bindingMetadataKey(reference),
+      bindingOwnerKey(reference),
+      bindingStagingKey(reference),
+      bindingFailureKey(reference),
+    ]) {
+      try {
+        await awaitStoreCall(queuedStoreDelete(store, key), options);
+      } catch {
+        // Best-effort fail closed.
+      }
     }
-  }
+  });
 }
 
 export async function forgetStoredCredential(
@@ -653,21 +892,30 @@ export async function forgetStoredCredential(
   reference: SecretStoreReference,
   options: CredentialBindingMutationOptions = {},
 ): Promise<boolean> {
-  const bearerDeleted = await awaitStoreCall(store.delete(reference.key), options);
-  const bindingDeleted = await awaitStoreCall(
-    store.delete(bindingMetadataKey(reference)),
-    options,
-  );
-  const stagingDeleted = await awaitStoreCall(
-    store.delete(bindingStagingKey(reference)),
-    options,
-  );
-  const failureDeleted = await awaitStoreCall(
-    store.delete(bindingFailureKey(reference)),
-    options,
-  );
+  return await serializeReferenceMutation(store, reference, async () => {
+    const bearerDeleted = await awaitStoreCall(
+      queuedStoreDelete(store, reference.key),
+      options,
+    );
+    const bindingDeleted = await awaitStoreCall(
+      queuedStoreDelete(store, bindingMetadataKey(reference)),
+      options,
+    );
+    const ownerDeleted = await awaitStoreCall(
+      queuedStoreDelete(store, bindingOwnerKey(reference)),
+      options,
+    );
+    const stagingDeleted = await awaitStoreCall(
+      queuedStoreDelete(store, bindingStagingKey(reference)),
+      options,
+    );
+    const failureDeleted = await awaitStoreCall(
+      queuedStoreDelete(store, bindingFailureKey(reference)),
+      options,
+    );
 
-  return bearerDeleted || bindingDeleted || stagingDeleted || failureDeleted;
+    return bearerDeleted || bindingDeleted || ownerDeleted || stagingDeleted || failureDeleted;
+  });
 }
 
 export async function inspectStoredCredentialMaterial(
@@ -696,10 +944,33 @@ export async function inspectStoredCredentialMaterial(
     store.get(bindingMetadataKey(reference)),
     options,
   );
+  const ownerSerialized = await awaitStoreCall(
+    store.get(bindingOwnerKey(reference)),
+    options,
+  );
   const bearer = await awaitStoreCall(store.get(reference.key), options);
 
   if (bearer === undefined) {
-    return metadata === undefined ? { status: 'missing' } : { status: 'incomplete' };
+    return metadata === undefined && ownerSerialized === undefined
+      ? { status: 'missing' }
+      : { status: 'incomplete' };
+  }
+
+  if (ownerSerialized !== undefined) {
+    if (typeof ownerSerialized !== 'string') {
+      return { status: 'incomplete' };
+    }
+
+    const owner = parseOwnerRecord(ownerSerialized);
+    const stored = typeof metadata === 'string' ? parseBindingRecord(metadata) : undefined;
+    if (
+      owner === undefined ||
+      stored === undefined ||
+      stored.transactionId === undefined ||
+      stored.transactionId !== owner.transactionId
+    ) {
+      return { status: 'incomplete' };
+    }
   }
 
   return typeof bearer === 'string' && isBearer(bearer)

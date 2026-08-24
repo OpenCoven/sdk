@@ -17,6 +17,11 @@ secret is sent. Stored bearers are rediscovered against the same authority
 identity before every authenticated discovered call and are cleared locally
 rather than sent to a different Cave.
 
+On Windows, `discoverCaveEndpoint()` also requires a reviewed native
+`options.dependencies.windowsPathTrust` validator for the discovery root and
+record path. Metadata-only checks, shell commands, and fabricated ACL trust are
+rejected; the helper fails closed until a real validator is injected.
+
 ## Shipped surface
 
 - `new CaveClient({ transport })` and `createCaveClient(...)` preserve
