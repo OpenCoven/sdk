@@ -45,6 +45,50 @@ describe('constrained client transports', () => {
     await expect(client.health()).resolves.toEqual({ status: 'ok' });
   });
 
+  test('fails Cave pairing exchange locally when no credential store is configured', async () => {
+    const pairingExchange = vi.fn(() =>
+      Promise.resolve({
+        bearer: 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+        credential: {
+          id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+          appName: 'OpenCoven Chat',
+          installationId: 'chat-install-1',
+          scopes: ['chat:read'] as cave.CavePairingScope[],
+          createdAt: 1_755_730_812_617,
+          lastUsedAt: null,
+          revokedAt: null,
+          revocationReason: null,
+        },
+      }),
+    );
+    const client = new cave.CaveClient({
+      transport: {
+        health: () => Promise.resolve({ data: { status: 'ok' as const } }),
+        pairingCreate: () =>
+          Promise.resolve({
+            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+            secret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+            expiresAt: 1_755_731_112_617,
+          }),
+        pairingExchange,
+      },
+    });
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: {
+        code: 'unsupported_operation',
+        retryable: false,
+        operation: 'pairingExchange',
+      },
+    });
+    expect(pairingExchange).not.toHaveBeenCalled();
+  });
+
   test('requests Coven health through a caller-supplied constrained transport', async () => {
     const CovenClient = (coven as { CovenClient?: ClientConstructor }).CovenClient;
     const client =

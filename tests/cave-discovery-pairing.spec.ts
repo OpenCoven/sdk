@@ -1,4 +1,4 @@
-import { chmod, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -152,6 +152,35 @@ async function writeDiscoveryRecord(
   return path;
 }
 
+async function replaceDiscoveryRecord(
+  root: string,
+  record: Record<string, unknown> | string,
+  options: {
+    directoryMode?: number;
+    fileMode?: number;
+  } = {},
+): Promise<string> {
+  const directoryMode = options.directoryMode ?? 0o700;
+  const fileMode = options.fileMode ?? 0o600;
+  await mkdir(root, { recursive: true, mode: directoryMode });
+  await chmod(root, directoryMode);
+
+  const path = join(root, DISCOVERY_FILE_NAME);
+  const replacementPath = join(root, `${DISCOVERY_FILE_NAME}.${randomUUID()}`);
+  await writeFile(
+    replacementPath,
+    typeof record === 'string' ? record : `${JSON.stringify(record)}\n`,
+    {
+      mode: fileMode,
+    },
+  );
+  await chmod(replacementPath, fileMode);
+  await rm(path, { force: true });
+  await rename(replacementPath, path);
+  await chmod(path, fileMode);
+  return path;
+}
+
 function queuedFetch(
   handlers: Array<(url: string, init: RequestInit | undefined) => Response | Promise<Response>>,
 ) {
@@ -178,6 +207,27 @@ function queuedFetch(
 
 function header(init: RequestInit | undefined, name: string): string | null {
   return new Headers(init?.headers).get(name);
+}
+
+function abortingFetch(
+  errorFactory: () => Error = () =>
+    Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }),
+  onStart?: () => void,
+) {
+  return vi.fn((_input: string | URL | Request, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      onStart?.();
+      const signal = init?.signal;
+      const rejectAbort = () => reject(errorFactory());
+
+      if (signal?.aborted === true) {
+        rejectAbort();
+        return;
+      }
+
+      signal?.addEventListener('abort', rejectAbort, { once: true });
+    }),
+  );
 }
 
 function discoveryDependencies() {
@@ -218,6 +268,52 @@ function discoveredClient(
     }),
     credentials,
   };
+}
+
+function inlineDiscoveredClient(fetchImplementation: typeof fetch) {
+  const root = '/Users/example/.coven/cave';
+  const recordPath = join(root, DISCOVERY_FILE_NAME);
+  const serialized = `${JSON.stringify(discoveryRecord())}\n`;
+
+  return createDiscoveredCaveClient({
+    credentials: {
+      store: createMemorySecretStore(),
+      reference: createSecretStoreReference(`cave-inline-${randomUUID()}`),
+    },
+    discovery: {
+      root,
+      timeoutMs: 100,
+      dependencies: {
+        getEffectiveUid: () => DEFAULT_UID,
+        isProcessAlive: () => true,
+        lstat: (path: string) => {
+          if (path === root) {
+            return Promise.resolve(
+              identity({
+                directory: true,
+                regularFile: false,
+                mode: 0o040700,
+                size: 0,
+              }),
+            );
+          }
+
+          if (path === recordPath) {
+            return Promise.resolve(
+              identity({
+                size: Buffer.byteLength(serialized),
+              }),
+            );
+          }
+
+          throw Object.assign(new Error(`missing path ${path}`), { code: 'ENOENT' });
+        },
+        openFile: () => Promise.resolve(memoryHandle(serialized)),
+        realpath: (path: string) => Promise.resolve(path),
+      },
+    },
+    fetch: fetchImplementation,
+  });
 }
 
 interface DiscoveryIdentity {
@@ -293,7 +389,8 @@ afterEach(async () => {
 describe('discoverCaveEndpoint', () => {
   test('resolves the discovery file from COVEN_CAVE_HOME and validates the current record', async () => {
     const root = createScratchRoot('discover-valid');
-    await writeDiscoveryRecord(root, discoveryRecord());
+    const path = await writeDiscoveryRecord(root, discoveryRecord());
+    const stats = await lstat(path);
 
     await expect(
       discoverCaveEndpoint({
@@ -315,6 +412,11 @@ describe('discoverCaveEndpoint', () => {
         pid: DISCOVERY_PID,
         nonce: DISCOVERY_NONCE,
         startedAt: DISCOVERY_STARTED_AT,
+      },
+      record: {
+        path,
+        device: stats.dev,
+        inode: stats.ino,
       },
     });
   });
@@ -662,6 +764,226 @@ describe('discovered Cave pairing helpers', () => {
     await expect(credentials.store.get(credentials.reference.key)).resolves.toBeUndefined();
     await expect(client.credentialStatus()).resolves.toEqual({ status: 'missing' });
     expect(fetchImplementation).toHaveBeenCalledTimes(5);
+  });
+
+  test('fails closed on discovery record replacement before polling and never sends the pairing secret', async () => {
+    const root = createScratchRoot('pairing-record-replaced');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const fetchImplementation = queuedFetch([
+      (_url, init) => {
+        expect(header(init, 'x-coven-pairing-secret')).toBeNull();
+        return jsonResponse(
+          201,
+          successEnvelope({
+            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+            secret: PAIRING_SECRET,
+            expiresAt: 1_755_731_112_617,
+          }),
+        );
+      },
+    ]);
+    const { client } = discoveredClient(root, fetchImplementation);
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await replaceDiscoveryRecord(root, discoveryRecord());
+
+    await expect(session.poll()).rejects.toMatchObject({
+      normalized: {
+        code: 'reconcile_required',
+        retryable: false,
+        operation: 'pairingPoll',
+      },
+      details: {
+        reason: 'record_replaced',
+      },
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+  });
+
+  test('fails closed on authority restarts before exchanging and never sends the pairing secret', async () => {
+    const root = createScratchRoot('pairing-authority-restarted');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const fetchImplementation = queuedFetch([
+      (_url, init) => {
+        expect(header(init, 'x-coven-pairing-secret')).toBeNull();
+        return jsonResponse(
+          201,
+          successEnvelope({
+            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+            secret: PAIRING_SECRET,
+            expiresAt: 1_755_731_112_617,
+          }),
+        );
+      },
+    ]);
+    const { client } = discoveredClient(root, fetchImplementation);
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await writeDiscoveryRecord(
+      root,
+      discoveryRecord({
+        nonce: '018f4f1a-77c2-7a31-8a15-55a25aaba099',
+        startedAt: '2026-08-24T02:06:12.004Z',
+      }),
+    );
+
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: {
+        code: 'reconcile_required',
+        retryable: false,
+        operation: 'pairingExchange',
+      },
+      details: {
+        reason: 'authority_restarted',
+      },
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+  });
+
+  test('fails closed on authority mismatches before polling and never sends the pairing secret', async () => {
+    const root = createScratchRoot('pairing-authority-mismatch');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const fetchImplementation = queuedFetch([
+      (_url, init) => {
+        expect(header(init, 'x-coven-pairing-secret')).toBeNull();
+        return jsonResponse(
+          201,
+          successEnvelope({
+            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+            secret: PAIRING_SECRET,
+            expiresAt: 1_755_731_112_617,
+          }),
+        );
+      },
+    ]);
+    const { client } = discoveredClient(root, fetchImplementation);
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await writeDiscoveryRecord(root, discoveryRecord({ endpoint: 'http://127.0.0.1:3021' }));
+
+    await expect(session.poll()).rejects.toMatchObject({
+      normalized: {
+        code: 'reconcile_required',
+        retryable: false,
+        operation: 'pairingPoll',
+      },
+      details: {
+        reason: 'authority_mismatch',
+      },
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+  });
+
+  test('normalizes fetch-stage timeouts instead of reporting service unavailability', async () => {
+    vi.useFakeTimers();
+    let signalFetchStarted: (() => void) | undefined;
+    const fetchStarted = new Promise<void>((resolve) => {
+      signalFetchStarted = resolve;
+    });
+    const fetchImplementation = abortingFetch(undefined, () => signalFetchStarted?.());
+    const client = inlineDiscoveredClient(fetchImplementation);
+
+    const result = client.health({ timeoutMs: 10 }).catch((error: unknown) => error);
+    await fetchStarted;
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    await expect(result).resolves.toMatchObject({
+      normalized: {
+        code: 'timeout',
+        retryable: true,
+        operation: 'health',
+      },
+      cause: {
+        code: 'timeout',
+        retryable: true,
+      },
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+  });
+
+  test('normalizes fetch-stage caller aborts instead of reporting service unavailability', async () => {
+    let signalFetchStarted: (() => void) | undefined;
+    const fetchStarted = new Promise<void>((resolve) => {
+      signalFetchStarted = resolve;
+    });
+    const fetchImplementation = abortingFetch(undefined, () => signalFetchStarted?.());
+    const client = inlineDiscoveredClient(fetchImplementation);
+    const controller = new AbortController();
+
+    const result = client.health({ signal: controller.signal }).catch((error: unknown) => error);
+    await fetchStarted;
+    controller.abort(new Error('stop'));
+
+    await expect(result).resolves.toMatchObject({
+      normalized: {
+        code: 'aborted',
+        retryable: false,
+        operation: 'health',
+      },
+      cause: {
+        code: 'aborted',
+      },
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+  });
+
+  test('stops late response work after a discovered fetch times out', async () => {
+    vi.useFakeTimers();
+
+    let resolveFetch: ((response: Response) => void) | undefined;
+    let signalFetchStarted: (() => void) | undefined;
+    const fetchStarted = new Promise<void>((resolve) => {
+      signalFetchStarted = resolve;
+    });
+    const getReader = vi.fn(() => ({
+      read: vi.fn(),
+      releaseLock: vi.fn(),
+    }));
+    const fetchImplementation = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          signalFetchStarted?.();
+          resolveFetch = resolve;
+        }),
+    );
+    const client = inlineDiscoveredClient(fetchImplementation);
+
+    const result = client.health({ timeoutMs: 10 }).catch((error: unknown) => error);
+    await fetchStarted;
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    await expect(result).resolves.toMatchObject({
+      normalized: {
+        code: 'timeout',
+        operation: 'health',
+      },
+    });
+
+    resolveFetch?.({
+      status: 200,
+      headers: new Headers({ 'content-length': '2' }),
+      body: {
+        getReader,
+      },
+    } as unknown as Response);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(getReader).not.toHaveBeenCalled();
   });
 
   test.each([

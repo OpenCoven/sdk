@@ -30,6 +30,7 @@ export type {
   CaveDiscoveryErrorCode,
   CaveDiscoveryFileHandle,
   CaveDiscoveryPathIdentity,
+  CaveDiscoveryRecordIdentity,
   CaveDiscoveredEndpoint,
   CaveEndpointFreshness,
   CaveWindowsPathTrustValidator,

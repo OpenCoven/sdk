@@ -89,7 +89,10 @@ its underlying I/O. Transports receive an optional context with the composed
 
 `@opencoven/cave-client` also ships an opt-in Client v1 helper that discovers
 the local Cave endpoint at runtime, validates the owner-local discovery file,
-and persists the exchanged bearer only through an injected `SecretStore`:
+and persists the exchanged bearer only through an injected `SecretStore`.
+Pairing sessions pin to the exact discovered authority record and freshness, so
+`poll()`/`exchange()` fail locally before sending the pairing secret if
+rediscovery shows a restart, record replacement, or authority mismatch:
 
 ```ts
 import { createDiscoveredCaveClient } from '@opencoven/cave-client';
@@ -117,6 +120,8 @@ await session.exchange();
 
 The discovered helper performs no import-time I/O. Discovery, pairing, health,
 and stored-credential checks happen only when you call those methods.
+`session.exchange()` requires an injected credential store; there is no
+implicit fallback store.
 
 ## Coordinated health
 

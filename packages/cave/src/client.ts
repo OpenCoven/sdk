@@ -1025,11 +1025,27 @@ export class CaveClient {
       expiresAt: created.expiresAt,
       poll: async (pollOptions = {}) =>
         this.#execute('pairingPoll', pollOptions, async (context) => {
-          const status = await this.#runPairingPoll(
-            created.requestId,
-            requirePairingSecret('pairingPoll'),
-            context,
-          );
+          let status: CavePairingStatus;
+          try {
+            status = await this.#runPairingPoll(
+              created.requestId,
+              requirePairingSecret('pairingPoll'),
+              context,
+            );
+          } catch (error) {
+            if (
+              isCaveClientError(error) &&
+              (
+                error.code === 'pairing_denied' ||
+                error.code === 'pairing_expired' ||
+                error.code === 'conflict' ||
+                error.code === 'reconcile_required'
+              )
+            ) {
+              clearPairingSecret();
+            }
+            throw error;
+          }
           if (status.status === 'denied' || status.status === 'expired') {
             clearPairingSecret();
           }
@@ -1037,6 +1053,12 @@ export class CaveClient {
         }),
       exchange: async (exchangeOptions = {}) =>
         this.#execute('pairingExchange', exchangeOptions, async (context) => {
+          const credentials = this.#credentials;
+          if (credentials === undefined) {
+            clearPairingSecret();
+            throw unsupported('pairingExchange');
+          }
+
           const secret = requirePairingSecret('pairingExchange');
           let exchanged: CavePairingExchange;
 
@@ -1045,17 +1067,16 @@ export class CaveClient {
           } catch (error) {
             if (
               isCaveClientError(error) &&
-              (error.code === 'pairing_denied' || error.code === 'pairing_expired' || error.code === 'conflict')
+              (
+                error.code === 'pairing_denied' ||
+                error.code === 'pairing_expired' ||
+                error.code === 'conflict' ||
+                error.code === 'reconcile_required'
+              )
             ) {
               clearPairingSecret();
             }
             throw error;
-          }
-
-          const credentials = this.#credentials;
-          if (credentials === undefined) {
-            clearPairingSecret();
-            throw unsupported('pairingExchange');
           }
 
           const bearerBytes = Buffer.from(exchanged.bearer, 'utf8');

@@ -1,5 +1,7 @@
 import {
   assessCompatibility,
+  isOperationAbortedError,
+  isOperationTimeoutError,
   type OperationContext,
   type OperationDefaults,
   type SecretStore,
@@ -7,7 +9,11 @@ import {
 } from '@opencoven/sdk-core';
 
 import { createCaveClient, type CaveClient } from './client.js';
-import { discoverCaveEndpoint, type DiscoverCaveEndpointOptions } from './discovery.js';
+import {
+  discoverCaveEndpoint,
+  type CaveDiscoveredEndpoint,
+  type DiscoverCaveEndpointOptions,
+} from './discovery.js';
 import type {
   CaveCredentialMetadata,
   CaveFamiliarsResponse,
@@ -75,6 +81,15 @@ interface EnvelopeBase {
 }
 
 type JsonObject = Record<string, unknown>;
+type PairingAuthorityMismatchReason =
+  | 'authority_mismatch'
+  | 'authority_restarted'
+  | 'record_replaced';
+
+interface RequestJsonResult {
+  discovered: CaveDiscoveredEndpoint;
+  payload: unknown;
+}
 
 function transportError(
   code: string,
@@ -102,6 +117,60 @@ function isObject(value: unknown): value is JsonObject {
 function ensureActive(context: OperationContext | undefined): void {
   if (context?.signal.aborted === true) {
     throw (context.signal as AbortSignal & { reason?: unknown }).reason ?? new Error('aborted');
+  }
+}
+
+function pairingAuthorityMismatchReason(
+  expected: CaveDiscoveredEndpoint,
+  current: CaveDiscoveredEndpoint,
+): PairingAuthorityMismatchReason | undefined {
+  if (
+    current.endpoint.url !== expected.endpoint.url ||
+    current.record.path !== expected.record.path
+  ) {
+    return 'authority_mismatch';
+  }
+
+  if (
+    current.record.device !== expected.record.device ||
+    current.record.inode !== expected.record.inode
+  ) {
+    return 'record_replaced';
+  }
+
+  if (
+    current.freshness.pid !== expected.freshness.pid ||
+    current.freshness.nonce !== expected.freshness.nonce ||
+    current.freshness.startedAt !== expected.freshness.startedAt
+  ) {
+    return 'authority_restarted';
+  }
+
+  return undefined;
+}
+
+function pinnedPairingAuthorityError(reason: PairingAuthorityMismatchReason): Error {
+  return transportError(
+    'reconcile_required',
+    'The discovered Cave authority changed before the pairing secret could be reused safely.',
+    {
+      details: { reason },
+      retryable: false,
+    },
+  );
+}
+
+function assertPinnedPairingAuthority(
+  current: CaveDiscoveredEndpoint,
+  expected: CaveDiscoveredEndpoint | undefined,
+): void {
+  if (expected === undefined) {
+    throw pinnedPairingAuthorityError('authority_mismatch');
+  }
+
+  const reason = pairingAuthorityMismatchReason(expected, current);
+  if (reason !== undefined) {
+    throw pinnedPairingAuthorityError(reason);
   }
 }
 
@@ -456,9 +525,19 @@ async function readResponseText(
   try {
     while (true) {
       ensureActive(context);
-      const readResult = await (
-        reader as ReadableStreamDefaultReader<Uint8Array>
-      ).read();
+      let readResult: { done: boolean; value: Uint8Array | undefined };
+      try {
+        readResult = await (
+          reader as ReadableStreamDefaultReader<Uint8Array>
+        ).read();
+      } catch (error) {
+        if (isOperationTimeoutError(error) || isOperationAbortedError(error)) {
+          throw error;
+        }
+
+        ensureActive(context);
+        throw error;
+      }
       const { done, value } = readResult;
       if (done) {
         break;
@@ -512,9 +591,10 @@ async function requestJson(
     fetchImplementation: typeof fetch;
     headers?: Record<string, string>;
     maxResponseBytes: number;
+    pinnedAuthority?: CaveDiscoveredEndpoint;
     requireBearer?: boolean;
   },
-): Promise<unknown> {
+): Promise<RequestJsonResult> {
   ensureActive(options.context);
   const discovered = await discoverCaveEndpoint({
     ...(options.discovery ?? {}),
@@ -522,6 +602,9 @@ async function requestJson(
     ...(options.context?.deadline === undefined ? {} : { deadline: options.context.deadline }),
   });
   ensureActive(options.context);
+  if (options.pinnedAuthority !== undefined) {
+    assertPinnedPairingAuthority(discovered, options.pinnedAuthority);
+  }
 
   const url = new URL(route, discovered.endpoint.url).toString();
   const headers = new Headers(options.headers);
@@ -554,6 +637,11 @@ async function requestJson(
       ...(options.body === undefined ? {} : { body: options.body }),
     });
   } catch (error) {
+    if (isOperationTimeoutError(error) || isOperationAbortedError(error)) {
+      throw error;
+    }
+
+    ensureActive(options.context);
     throw transportError('service_unavailable', 'Cave request could not reach the authority.', {
       retryable: true,
       ...(typeof error === 'object' && error !== null ? { cause: error } : {}),
@@ -575,13 +663,27 @@ async function requestJson(
     throw parseErrorPayload(response.status, payload);
   }
 
-  return payload;
+  return {
+    discovered,
+    payload,
+  };
 }
 
 function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTransport {
+  const pairingAuthorities = new Map<string, CaveDiscoveredEndpoint>();
+
+  const requirePinnedAuthority = (requestId: string): CaveDiscoveredEndpoint => {
+    const pinnedAuthority = pairingAuthorities.get(requestId);
+    if (pinnedAuthority === undefined) {
+      throw pinnedPairingAuthorityError('authority_mismatch');
+    }
+
+    return pinnedAuthority;
+  };
+
   return {
     async health(context) {
-      const payload = await requestJson('GET', '/api/client/v1/health', {
+      const { payload } = await requestJson('GET', '/api/client/v1/health', {
         ...(context === undefined ? {} : { context }),
         discovery: options.discovery,
         fetchImplementation: options.fetchImplementation,
@@ -590,7 +692,7 @@ function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTra
       return parseHealthResponse(payload);
     },
     async pairingCreate(request, context) {
-      const payload = await requestJson('POST', '/api/client/v1/pairing/requests', {
+      const { payload, discovered } = await requestJson('POST', '/api/client/v1/pairing/requests', {
         body: stringifyJsonBody(request),
         ...(context === undefined ? {} : { context }),
         discovery: options.discovery,
@@ -600,10 +702,12 @@ function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTra
         },
         maxResponseBytes: options.maxResponseBytes,
       });
-      return parsePairingCreated(payload);
+      const created = parsePairingCreated(payload);
+      pairingAuthorities.set(created.requestId, discovered);
+      return created;
     },
     async pairingPoll(requestId, pairingSecret, context) {
-      const payload = await requestJson(
+      const { payload } = await requestJson(
         'GET',
         `/api/client/v1/pairing/requests/${requestId}`,
         {
@@ -614,12 +718,17 @@ function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTra
             'x-coven-pairing-secret': pairingSecret,
           },
           maxResponseBytes: options.maxResponseBytes,
+          pinnedAuthority: requirePinnedAuthority(requestId),
         },
       );
-      return parsePairingStatus(payload);
+      const status = parsePairingStatus(payload);
+      if (status.status === 'denied' || status.status === 'expired') {
+        pairingAuthorities.delete(requestId);
+      }
+      return status;
     },
     async pairingExchange(requestId, pairingSecret, context) {
-      const payload = await requestJson(
+      const { payload } = await requestJson(
         'POST',
         `/api/client/v1/pairing/requests/${requestId}/exchange`,
         {
@@ -631,12 +740,15 @@ function createDiscoveredTransport(options: DiscoveredTransportOptions): CaveTra
             'x-coven-pairing-secret': pairingSecret,
           },
           maxResponseBytes: options.maxResponseBytes,
+          pinnedAuthority: requirePinnedAuthority(requestId),
         },
       );
-      return parsePairingExchange(payload);
+      const exchanged = parsePairingExchange(payload);
+      pairingAuthorities.delete(requestId);
+      return exchanged;
     },
     async familiars(context) {
-      const payload = await requestJson('GET', '/api/client/v1/familiars', {
+      const { payload } = await requestJson('GET', '/api/client/v1/familiars', {
         ...(context === undefined ? {} : { context }),
         credentials: options.credentials,
         discovery: options.discovery,

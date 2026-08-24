@@ -84,10 +84,17 @@ export interface CaveEndpointFreshness {
   startedAt: string;
 }
 
+export interface CaveDiscoveryRecordIdentity {
+  path: string;
+  device: number;
+  inode: number;
+}
+
 export interface CaveDiscoveredEndpoint {
   version: typeof DISCOVERY_RECORD_VERSION;
   endpoint: Extract<DiscoveryEndpoint, { kind: 'http' }>;
   freshness: CaveEndpointFreshness;
+  record: CaveDiscoveryRecordIdentity;
 }
 
 interface DiscoveryDeadline {
@@ -454,7 +461,11 @@ function decodeJson(bytes: Uint8Array): string {
   }
 }
 
-function parseRecord(serialized: string, isProcessAlive: (pid: number) => boolean): CaveDiscoveredEndpoint {
+function parseRecord(
+  serialized: string,
+  isProcessAlive: (pid: number) => boolean,
+  recordIdentity: CaveDiscoveryRecordIdentity,
+): CaveDiscoveredEndpoint {
   let parsed: unknown;
 
   try {
@@ -521,6 +532,7 @@ function parseRecord(serialized: string, isProcessAlive: (pid: number) => boolea
       nonce: record.nonce,
       startedAt: record.startedAt,
     },
+    record: recordIdentity,
   };
 }
 
@@ -574,7 +586,7 @@ export async function discoverCaveEndpoint(
     platform,
     root: options.root,
   });
-  const recordPath = pathApi(platform).join(root, DISCOVERY_FILE_NAME);
+  const paths = pathApi(platform);
 
   try {
     const configuredRootIdentity = await awaitStep(async () => {
@@ -595,6 +607,7 @@ export async function discoverCaveEndpoint(
     if (physicalRoot !== root) {
       return fail('unsafe_endpoint', 'Cave discovery root must be canonical.');
     }
+    const physicalRecordPath = paths.join(physicalRoot, DISCOVERY_FILE_NAME);
 
     const rootIdentity = await awaitStep(() => lstat(physicalRoot), deadline);
     validateRootIdentity(rootIdentity, platform, expectedUid);
@@ -604,7 +617,7 @@ export async function discoverCaveEndpoint(
 
     const initialIdentity = await awaitStep(async () => {
       try {
-        return await lstat(recordPath);
+        return await lstat(physicalRecordPath);
       } catch (error) {
         if (isNotFound(error)) {
           return fail('not_found', 'Cave discovery record was not found.');
@@ -614,11 +627,16 @@ export async function discoverCaveEndpoint(
     }, deadline);
     validateRecordIdentity(initialIdentity, platform, expectedUid, maxRecordBytes);
     if (platform === 'win32') {
-      await validateWindowsTrust(dependencies?.windowsPathTrust, recordPath, 'record', deadline);
+      await validateWindowsTrust(
+        dependencies?.windowsPathTrust,
+        physicalRecordPath,
+        'record',
+        deadline,
+      );
     }
 
     const handle = await awaitStep(
-      () => openFile(recordPath, discoveryFlags(platform)),
+      () => openFile(physicalRecordPath, discoveryFlags(platform)),
       deadline,
       (lateHandle) => closeHandle(lateHandle),
     );
@@ -680,7 +698,11 @@ export async function discoverCaveEndpoint(
       return fail('invalid_response', 'Cave discovery record could not be read safely.');
     }
 
-    return parseRecord(serialized, isProcessAlive);
+    return parseRecord(serialized, isProcessAlive, {
+      path: physicalRecordPath,
+      device: initialIdentity.device,
+      inode: initialIdentity.inode,
+    });
   } catch (error) {
     throw toDiscoveryError(error, isNotFound(error) ? 'not_found' : 'unsafe_endpoint');
   }

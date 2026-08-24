@@ -9,7 +9,10 @@ A constrained Cave client with two entry points:
 Importing the package performs no filesystem, network, or credential I/O. The
 discovered helper reads Cave's `client-v1-discovery.json` only when an
 operation is called, validates owner-local discovery metadata, and stores the
-paired bearer only through an injected `SecretStore`.
+paired bearer only through an injected `SecretStore`. Pairing sessions pin to
+the exact discovered authority record and freshness; if rediscovery shows a
+restart, record replacement, or authority mismatch, `poll()`/`exchange()`
+fail locally before the pairing secret is sent.
 
 ```ts
 import {
@@ -90,7 +93,8 @@ The same controls apply to `createPairing()`, `session.poll()`,
 `familiars()`, `familiarContract()`, and `familiarAnalytics()`. The discovered
 helper currently owns Client v1 `health`, `pairing`, `credentialStatus`, and
 `familiars`; custom transports can continue to provide the familiar contract
-and analytics routes independently.
+and analytics routes independently. `session.exchange()` requires an injected
+credential store; the client never falls back to implicit in-memory storage.
 
 Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,
