@@ -64,6 +64,20 @@ interface IteratorLifecycle {
   throwCancellation: object;
 }
 
+function isThrowCancellation(
+  error: unknown,
+  signal: AbortSignal,
+  lifecycle: IteratorLifecycle,
+): error is OperationAbortedError {
+  return (
+    lifecycle.throwRequested &&
+    signal.aborted &&
+    error === signal.reason &&
+    isOperationAbortedError(error) &&
+    error.cause === lifecycle.throwCancellation
+  );
+}
+
 class PaginationResponseError extends Error {
   readonly code = 'invalid_response';
   readonly retryable = false;
@@ -257,10 +271,7 @@ async function* generatePages<T>(
       }
     } catch (error) {
       const terminalError =
-        lifecycle.throwRequested &&
-        error === scope.context.signal.reason &&
-        isOperationAbortedError(error) &&
-        error.cause === lifecycle.throwCancellation
+        isThrowCancellation(error, scope.context.signal, lifecycle)
           ? lifecycle.throwError
           : error;
       const phase = isOperationTimeoutError(terminalError)
@@ -393,8 +404,13 @@ export function iteratePages<T>(
     if (!lifecycle.started || lifecycle.terminal) {
       return throwInto(error);
     }
-    if (lifecycle.effectiveSignal?.aborted === true) {
-      return throwInto(lifecycle.effectiveSignal.reason);
+    const effectiveSignal = lifecycle.effectiveSignal;
+    if (effectiveSignal?.aborted === true) {
+      return throwInto(
+        isThrowCancellation(effectiveSignal.reason, effectiveSignal, lifecycle)
+          ? error
+          : effectiveSignal.reason,
+      );
     }
     if (!lifecycle.throwRequested) {
       lifecycle.throwRequested = true;

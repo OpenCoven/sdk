@@ -1031,6 +1031,108 @@ describe('bounded page iteration', () => {
     }
   });
 
+  test('queued iterator operations never expose throw transport cancellation details', async () => {
+    const events: OperationEvent[] = [];
+    const firstError = new Error('first consumer failure');
+    const secondError = new Error('second consumer failure');
+    let transportSignal: AbortSignal | undefined;
+    const readPage = vi.fn(
+      (options: { signal: AbortSignal }): Promise<Page<never>> => {
+        transportSignal = options.signal;
+        return new Promise((_resolve, reject) => {
+          options.signal.addEventListener(
+            'abort',
+            () => {
+              const reason = options.signal.reason as unknown;
+              reject(
+                reason instanceof Error
+                  ? reason
+                  : new Error('transport aborted', { cause: reason }),
+              );
+            },
+            { once: true },
+          );
+        });
+      },
+    );
+    const iterator = iteratePages(readPage, {
+      maxPages: 1,
+      observer: collectingObserver(events),
+    });
+    const settle = <T>(promise: Promise<T>) =>
+      promise.then(
+        (result) => ({ status: 'fulfilled' as const, result }),
+        (error: unknown) => ({ status: 'rejected' as const, error }),
+      );
+    const pendingNext = settle(iterator.next());
+
+    await vi.waitFor(() => {
+      expect(readPage).toHaveBeenCalledOnce();
+    });
+
+    const firstThrow = settle(iterator.throw(firstError));
+    const secondThrow = settle(iterator.throw(secondError));
+    const queuedNext = settle(iterator.next());
+    const queuedReturn = settle(iterator.return(undefined));
+    const settlement = await Promise.race([
+      Promise.all([
+        pendingNext,
+        firstThrow,
+        secondThrow,
+        queuedNext,
+        queuedReturn,
+      ]),
+      new Promise<'still-pending'>((resolve) => {
+        setTimeout(() => {
+          resolve('still-pending');
+        }, 50);
+      }),
+    ]);
+
+    expect(settlement).not.toBe('still-pending');
+    if (settlement === 'still-pending') {
+      return;
+    }
+
+    const internalAbort = transportSignal?.reason as OperationAbortedError;
+    expect(internalAbort).toBeInstanceOf(OperationAbortedError);
+    expect(internalAbort).not.toBe(firstError);
+    expect(internalAbort).not.toBe(secondError);
+
+    expect(settlement[0]).toEqual({ status: 'rejected', error: firstError });
+    expect(settlement[1]).toEqual({ status: 'rejected', error: firstError });
+    const secondThrowOutcome = settlement[2];
+    expect(secondThrowOutcome.status).toBe('rejected');
+    if (secondThrowOutcome.status === 'rejected') {
+      expect([firstError, secondError]).toContain(secondThrowOutcome.error);
+    }
+    expect(settlement[3]).toEqual({
+      status: 'fulfilled',
+      result: { value: undefined, done: true },
+    });
+    expect(settlement[4]).toEqual({
+      status: 'fulfilled',
+      result: { value: undefined, done: true },
+    });
+
+    const expectPublicSettlement = (exposed: unknown): void => {
+      expect(exposed).not.toBe(internalAbort);
+      expect(exposed).not.toBe(internalAbort.cause);
+      if (exposed instanceof OperationAbortedError) {
+        expect(exposed.cause).not.toBe(internalAbort.cause);
+      }
+    };
+    for (const outcome of settlement) {
+      if (outcome.status === 'rejected') {
+        expectPublicSettlement(outcome.error);
+      } else {
+        expectPublicSettlement(outcome.result.value as unknown);
+      }
+    }
+    expect(events.map(({ phase }) => phase)).toEqual(['start', 'failure']);
+    expect(events.filter(({ phase }) => phase !== 'start')).toHaveLength(1);
+  });
+
   test('disposes operation controls when abort observation throws', async () => {
     vi.useFakeTimers();
     const reporterFailure = new Error('observer reporter failed');
