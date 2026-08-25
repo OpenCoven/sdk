@@ -1,6 +1,6 @@
 # SDK CLI 0.1 Release-Scope Decision
 
-**Status:** Implementation and canonical verification complete; review and merge pending
+**Status:** Complete — merged through SDK PR #57
 
 **Date:** 2026-08-25
 
@@ -61,10 +61,38 @@ distribution, signing, updates, and packed-binary real-authority tests.
   verifier while retaining source CLI and keyring tests.
 - [x] Update active release, roadmap, root, package, and historical-scope docs.
 - [x] Run focused and full canonical verification.
-- [ ] Complete exact-head review and address findings.
-- [ ] Merge through protected review and verify `main`.
-- [ ] Update GitHub issues and Bead evidence, archive the reviewed head, and
-  retire the worktree.
+- [x] Complete exact-head and merged-commit reviews and address findings.
+- [x] Merge through protected review and verify `main`.
+- [x] Update GitHub issue and Bead evidence and archive the reviewed head.
+
+The implementation worktree is retired after this documentation-only evidence
+change merges.
+
+## Delivery evidence
+
+- Implementation PR:
+  [#57](https://github.com/OpenCoven/sdk/pull/57)
+- Reviewed head:
+  `0a2ae7ab23cc1f3a52e95249c32cd53b0b5fb30f`
+- Squash merge:
+  `11952ee4a20cf6d0744c9040b568715708a1e81f`
+- Local canonical verification:
+  `corepack pnpm@10.34.0 verify` with 45 test files and 1024 tests, package
+  builds, contract checks, four-package packed consumers, release checks,
+  coverage, three deterministic stress seeds, and lint
+- Pull-request CI:
+  [run 32799773424](https://github.com/OpenCoven/sdk/actions/runs/32799773424)
+- Pull-request CodeQL:
+  [run 32799768903](https://github.com/OpenCoven/sdk/actions/runs/32799768903)
+- Post-merge CI:
+  [run 32799945349](https://github.com/OpenCoven/sdk/actions/runs/32799945349)
+- Post-merge CodeQL:
+  [run 32799945053](https://github.com/OpenCoven/sdk/actions/runs/32799945053)
+- Review findings:
+  one stale roadmap status and one misleading metadata declaration name were
+  corrected before merge; the GitHub review thread was resolved
+- Reviewed-head archive:
+  `archive/2026-08-25/pr-57-cli-release-scope`
 
 ## Verification contract
 
