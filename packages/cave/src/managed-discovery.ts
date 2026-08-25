@@ -8,10 +8,21 @@ import {
 import {
   CaveDiscoveryError,
   parseCaveDiscoveryRecord,
+  type CaveDiscoveryErrorCode,
 } from './discovery-record.js';
 import { snapshotManagedResult } from './managed-snapshot.js';
 
 const DEFAULT_MAX_RECORD_BYTES = 16 * 1024;
+const DISCOVERY_ERROR_CODES = new Set<CaveDiscoveryErrorCode>([
+  'not_found',
+  'owner_mismatch',
+  'unsafe_endpoint',
+  'stale_record',
+  'body_limit',
+  'invalid_response',
+  'timeout',
+  'aborted',
+]);
 
 export interface CaveManagedDiscoverySource {
   /**
@@ -89,6 +100,50 @@ function invalidRecord(): never {
     'invalid_response',
     'Managed Cave discovery data was malformed.',
   );
+}
+
+function discoveryErrorCode(error: unknown): CaveDiscoveryErrorCode | undefined {
+  if (typeof error !== 'object' || error === null) {
+    return undefined;
+  }
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(error, 'code');
+    return (
+      descriptor !== undefined &&
+      Object.hasOwn(descriptor, 'value') &&
+      typeof descriptor.value === 'string' &&
+      DISCOVERY_ERROR_CODES.has(descriptor.value as CaveDiscoveryErrorCode)
+        ? descriptor.value as CaveDiscoveryErrorCode
+        : undefined
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizedDiscoveryError(error: unknown): CaveDiscoveryError {
+  switch (discoveryErrorCode(error)) {
+    case 'body_limit':
+      return new CaveDiscoveryError(
+        'body_limit',
+        'Managed Cave discovery data exceeded its size limit.',
+      );
+    case 'stale_record':
+      return new CaveDiscoveryError(
+        'stale_record',
+        'Managed Cave discovery record was stale.',
+      );
+    case 'unsafe_endpoint':
+      return new CaveDiscoveryError(
+        'unsafe_endpoint',
+        'Managed Cave discovery endpoint was unsafe.',
+      );
+    default:
+      return new CaveDiscoveryError(
+        'invalid_response',
+        'Managed Cave discovery data was malformed.',
+      );
+  }
 }
 
 function parseSourceResult(
@@ -203,7 +258,11 @@ export async function discoverManagedCaveEndpoint(
           'Managed Cave discovery data could not be read.',
         );
       }
-      return parseSourceResult(value, maxRecordBytes);
+      try {
+        return parseSourceResult(value, maxRecordBytes);
+      } catch (error) {
+        throw sanitizedDiscoveryError(error);
+      }
     },
   );
 }

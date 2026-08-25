@@ -39,6 +39,7 @@ import {
   storeBoundCredential,
 } from './credential-binding.js';
 import { isPairingSecretUnsentError } from './pairing-secret.js';
+import { parseCaveCredentialMetadata } from './credential-metadata.js';
 import { snapshotManagedResult } from './managed-snapshot.js';
 import {
   CAVE_PAIRING_SCOPES,
@@ -290,21 +291,8 @@ function parseManagedPairingExchange(
     return undefined;
   }
 
-  const metadata = managedDataRecord(result.credential);
-  if (
-    metadata === undefined ||
-    !hasExactManagedKeys(metadata, [
-      'id',
-      'appName',
-      'installationId',
-      'scopes',
-      'createdAt',
-      'lastUsedAt',
-      'revokedAt',
-      'revocationReason',
-    ]) ||
-    !isCredentialMetadata(metadata)
-  ) {
+  const metadata = parseCaveCredentialMetadata(result.credential);
+  if (metadata === undefined) {
     return undefined;
   }
 
@@ -1034,32 +1022,12 @@ function isPairingStatus(value: unknown): value is CavePairingStatus {
   );
 }
 
-function isCredentialMetadata(value: unknown): value is CaveCredentialMetadata {
-  if (!isObject(value)) {
-    return false;
-  }
-
-  return (
-    typeof value.id === 'string' &&
-    UUID_RE.test(value.id) &&
-    typeof value.appName === 'string' &&
-    typeof value.installationId === 'string' &&
-    Array.isArray(value.scopes) &&
-    value.scopes.length > 0 &&
-    value.scopes.every((scope) => typeof scope === 'string' && CAVE_PAIRING_SCOPE_SET.has(scope)) &&
-    Number.isSafeInteger(value.createdAt) &&
-    (value.lastUsedAt === null || Number.isSafeInteger(value.lastUsedAt)) &&
-    (value.revokedAt === null || Number.isSafeInteger(value.revokedAt)) &&
-    (value.revocationReason === null || typeof value.revocationReason === 'string')
-  );
-}
-
 function isPairingExchange(value: unknown): value is CavePairingExchange {
   return (
     isObject(value) &&
     typeof value.bearer === 'string' &&
     BASE64URL_43_RE.test(value.bearer) &&
-    isCredentialMetadata(value.credential)
+    parseCaveCredentialMetadata(value.credential) !== undefined
   );
 }
 
@@ -1277,9 +1245,12 @@ export class CaveClient {
         }
       } catch (error) {
         const wrapped =
-          redactManagedErrors &&
-          (isOperationTimeoutError(error) || isOperationAbortedError(error))
-            ? redactedManagedCancellationError(error, operation)
+          redactManagedErrors
+            ? isOperationTimeoutError(error) || isOperationAbortedError(error)
+              ? redactedManagedCancellationError(error, operation)
+              : isCaveClientError(error)
+                ? error
+                : redactedManagedTransportError(error, operation)
             : this.#wrapOperationError(error, operation);
         notifyOperationObserver(observer, {
           phase:

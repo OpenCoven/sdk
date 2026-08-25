@@ -2,6 +2,8 @@ import * as cave from '@opencoven/cave-client';
 import { inspect } from 'node:util';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+import { parseCaveCredentialMetadata } from '../packages/cave/src/credential-metadata.js';
+
 const PAIRING_SECRET = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const BEARER = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
 const REQUEST_ID = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
@@ -364,6 +366,118 @@ describe('managed native Cave credential custody', () => {
     const proxyError = await client.credentialStatus().catch((error: unknown) => error);
     expect(proxyError).toMatchObject({ normalized: { code: 'invalid_response' } });
   });
+
+  test.each([
+    {
+      label: 'ownKeys',
+      proxy: () =>
+        new Proxy(credential(), {
+          ownKeys() {
+            throw new Error(`native bearer ${BEARER}`);
+          },
+        }),
+    },
+    {
+      label: 'getOwnPropertyDescriptor',
+      proxy: () =>
+        new Proxy(credential(), {
+          getOwnPropertyDescriptor() {
+            throw new Error(`native bearer ${BEARER}`);
+          },
+        }),
+    },
+    {
+      label: 'getPrototypeOf after initial inspection',
+      proxy: () => {
+        let inspections = 0;
+        return new Proxy(credential(), {
+          getPrototypeOf() {
+            inspections += 1;
+            if (inspections === 1) {
+              return Object.prototype;
+            }
+            throw new Error(`native bearer ${BEARER}`);
+          },
+        });
+      },
+    },
+  ])('sanitizes $label proxy failures during persistent managed exchange', async ({ proxy }) => {
+    const events: unknown[] = [];
+    const transport = managedTransport({
+      managedPairingExchange: vi.fn(() =>
+        Promise.resolve({ credential: proxy() }),
+      ),
+    });
+    const client = managedClient(transport, {
+      onEvent(event) {
+        events.push(event);
+      },
+      onObserverError(error) {
+        throw error;
+      },
+    });
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-proxy',
+      scopes: ['chat:read'],
+    });
+    const error = await session.exchange().catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      normalized: { code: 'invalid_response', operation: 'pairingExchange' },
+    });
+    expect(error instanceof Error ? error.cause : undefined).toBeUndefined();
+    expectRedacted({
+      json: serializedError(error),
+      string: String(error),
+      inspect: inspect(error),
+      normalized: (error as cave.CaveClientError).normalized,
+      events,
+    });
+  });
+
+  test.each([
+    ['valid', (value: cave.CaveCredentialMetadata) => value, true],
+    ['empty app name', (value: cave.CaveCredentialMetadata) => ({ ...value, appName: '' }), false],
+    ['empty installation ID', (value: cave.CaveCredentialMetadata) => ({ ...value, installationId: '' }), false],
+    ['duplicate scope', (value: cave.CaveCredentialMetadata) => ({ ...value, scopes: ['chat:read', 'chat:read'] }), false],
+    ['unsupported scope', (value: cave.CaveCredentialMetadata) => ({ ...value, scopes: ['admin:all'] }), false],
+    ['negative timestamp', (value: cave.CaveCredentialMetadata) => ({ ...value, createdAt: -1 }), false],
+    ['non-finite timestamp', (value: cave.CaveCredentialMetadata) => ({ ...value, createdAt: Number.POSITIVE_INFINITY }), false],
+    ['malformed nullable timestamp', (value: cave.CaveCredentialMetadata) => ({ ...value, lastUsedAt: 'never' }), false],
+    ['negative revoked timestamp', (value: cave.CaveCredentialMetadata) => ({ ...value, revokedAt: -1 }), false],
+    ['empty revocation reason', (value: cave.CaveCredentialMetadata) => ({ ...value, revocationReason: '' }), false],
+    ['extra field', (value: cave.CaveCredentialMetadata) => ({ ...value, bearer: BEARER }), false],
+    ['accessor field', (value: cave.CaveCredentialMetadata) =>
+      withAccessor({ ...value }, 'appName', () => 'OpenCoven Chat'), false],
+  ] as const)(
+    'keeps direct and managed credential metadata parsing in parity: %s',
+    async (_label, shape, accepted) => {
+      const metadata = shape(credential());
+      const direct = parseCaveCredentialMetadata(metadata);
+      const transport = managedTransport({
+        managedPairingExchange: vi.fn(() =>
+          Promise.resolve({ credential: metadata }),
+        ),
+      });
+      const client = managedClient(transport);
+      const session = await client.createPairing({
+        appName: 'OpenCoven Chat',
+        installationId: 'chat-metadata-parity',
+        scopes: ['chat:read'],
+      });
+
+      if (accepted) {
+        expect(direct).toEqual(credential());
+        await expect(session.exchange()).resolves.toEqual(credential());
+      } else {
+        expect(direct).toBeUndefined();
+        await expect(session.exchange()).rejects.toMatchObject({
+          normalized: { code: 'invalid_response', operation: 'pairingExchange' },
+        });
+      }
+    },
+  );
 
   test('rejects nested managed accessors before health, pairing, status, and canonical parsing', async () => {
     const createTransport = managedTransport({

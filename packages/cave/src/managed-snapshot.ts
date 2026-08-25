@@ -5,7 +5,7 @@ type SnapshotResult =
 const INVALID_SNAPSHOT: SnapshotResult = { valid: false };
 const MAX_MANAGED_SNAPSHOT_DEPTH = 64;
 
-function snapshotValue(
+function snapshotValueUnsafe(
   value: unknown,
   ancestors: WeakSet<object>,
   depth: number,
@@ -159,12 +159,28 @@ function snapshotValue(
   return { valid: true, value: Object.freeze(snapshot) };
 }
 
+function snapshotValue(
+  value: unknown,
+  ancestors: WeakSet<object>,
+  depth: number,
+): SnapshotResult {
+  try {
+    return snapshotValueUnsafe(value, ancestors, depth);
+  } catch {
+    return INVALID_SNAPSHOT;
+  }
+}
+
 /**
  * Captures a native bridge result exactly once through own data descriptors.
  * The returned value is a deep-frozen JSON-shaped copy with no reference to
  * the bridge-owned object graph.
  */
 export function snapshotManagedResult(value: unknown): unknown {
-  const result = snapshotValue(value, new WeakSet<object>(), 0);
-  return result.valid ? result.value : undefined;
+  try {
+    const result = snapshotValue(value, new WeakSet<object>(), 0);
+    return result.valid ? result.value : undefined;
+  } catch {
+    return undefined;
+  }
 }

@@ -34,6 +34,7 @@ import {
   isCaveContractErrorCode,
 } from './contract-constraints.js';
 import { markPairingSecretUnsentError } from './pairing-secret.js';
+import { parseCaveCredentialMetadata } from './credential-metadata.js';
 import {
   loadBoundCredential,
 } from './credential-binding-node.js';
@@ -46,10 +47,8 @@ import type {
   CaveHealthResponse,
   CavePairingCreated,
   CavePairingExchange,
-  CavePairingScope,
   CavePairingStatus,
 } from './schemas.js';
-import { CAVE_PAIRING_SCOPES } from './schemas.js';
 import type { CaveCredentialPersistingTransport } from './transport.js';
 import { CAVE_CLIENT_VERSION } from './version.js';
 
@@ -58,7 +57,6 @@ const CAVE_API_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const DECLARATION_ID_PATTERN = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/u;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const BASE64URL_43_RE = /^[A-Za-z0-9_-]{43}$/u;
-const CAVE_PAIRING_SCOPE_SET = new Set<string>(CAVE_PAIRING_SCOPES);
 
 export interface CaveCredentialBinding {
   store: SecretStore;
@@ -233,30 +231,6 @@ function expectTimestampNumber(value: unknown, label: string): number {
   return value;
 }
 
-function parseNullableTimestamp(value: unknown, label: string): number | null {
-  if (value === null) {
-    return null;
-  }
-
-  return expectTimestampNumber(value, label);
-}
-
-function parseScopeList(value: unknown): CavePairingScope[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw transportError('invalid_response', 'credential.scopes must be a non-empty array.');
-  }
-
-  const scopes: CavePairingScope[] = [];
-  for (const scope of value) {
-    if (typeof scope !== 'string' || !CAVE_PAIRING_SCOPE_SET.has(scope) || scopes.includes(scope as CavePairingScope)) {
-      throw transportError('invalid_response', 'credential.scopes contained an unsupported value.');
-    }
-    scopes.push(scope as CavePairingScope);
-  }
-
-  return scopes;
-}
-
 function parseAdvertisedIds(value: unknown, label: string): string[] | undefined {
   if (value === undefined) {
     return undefined;
@@ -360,25 +334,11 @@ function parseHealthResponse(value: unknown): CaveHealthResponse {
 }
 
 function parseCredentialMetadata(value: unknown): CaveCredentialMetadata {
-  const credential = expectObject(value, 'credential');
-  const id = expectString(credential.id, 'credential.id');
-  if (!UUID_RE.test(id)) {
-    throw transportError('invalid_response', 'credential.id must be a UUID.');
+  const credential = parseCaveCredentialMetadata(value);
+  if (credential === undefined) {
+    throw transportError('invalid_response', 'pairing.exchange credential was malformed.');
   }
-
-  return {
-    id,
-    appName: expectString(credential.appName, 'credential.appName'),
-    installationId: expectString(credential.installationId, 'credential.installationId'),
-    scopes: parseScopeList(credential.scopes),
-    createdAt: expectTimestampNumber(credential.createdAt, 'credential.createdAt'),
-    lastUsedAt: parseNullableTimestamp(credential.lastUsedAt, 'credential.lastUsedAt'),
-    revokedAt: parseNullableTimestamp(credential.revokedAt, 'credential.revokedAt'),
-    revocationReason:
-      credential.revocationReason === null
-        ? null
-        : expectString(credential.revocationReason, 'credential.revocationReason'),
-  };
+  return credential;
 }
 
 function parsePairingCreated(value: unknown): CavePairingCreated {

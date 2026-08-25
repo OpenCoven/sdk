@@ -209,4 +209,68 @@ describe('managed browser entry point', () => {
     expect(serialized).not.toContain(NATIVE_BEARER);
     expect(serialized).not.toMatch(/bearer/iu);
   });
+
+  test.each([
+    {
+      label: 'ownKeys',
+      value: () =>
+        new Proxy({}, {
+          ownKeys() {
+            throw new Error(`native bearer ${NATIVE_BEARER}`);
+          },
+        }),
+    },
+    {
+      label: 'getOwnPropertyDescriptor',
+      value: () =>
+        new Proxy({}, {
+          getOwnPropertyDescriptor() {
+            throw new Error(`native bearer ${NATIVE_BEARER}`);
+          },
+        }),
+    },
+    {
+      label: 'getPrototypeOf after initial inspection',
+      value: () => {
+        let inspections = 0;
+        return new Proxy({}, {
+          getPrototypeOf() {
+            inspections += 1;
+            if (inspections === 1) {
+              return Object.prototype;
+            }
+            throw new Error(`native bearer ${NATIVE_BEARER}`);
+          },
+        });
+      },
+    },
+  ])('sanitizes hostile discovery $label proxies', async ({ value }) => {
+    const events: unknown[] = [];
+    const source: CaveManagedDiscoverySource = {
+      read: () => Promise.resolve(value()),
+    };
+    const error = await discoverManagedCaveEndpoint(source, {
+      observer: {
+        onEvent(event) {
+          events.push(event);
+        },
+        onObserverError(observerError) {
+          throw observerError;
+        },
+      },
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      name: 'CaveDiscoveryError',
+      code: 'invalid_response',
+    });
+    const serialized = JSON.stringify({
+      string: String(error),
+      inspect: inspect(error),
+      error,
+      events,
+    }, error instanceof Error ? Object.getOwnPropertyNames(error) : undefined);
+    expect(serialized).not.toContain(NATIVE_BEARER);
+    expect(serialized).not.toMatch(/bearer/iu);
+  });
 });
