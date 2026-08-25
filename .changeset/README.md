@@ -6,7 +6,9 @@ Add a changeset for every user-visible package change:
 corepack pnpm@10.34.0 changeset
 ```
 
-All five public packages use one fixed version. Choose:
+The four 0.1 release packages use one fixed version. The private
+`@opencoven/dev-cli` workspace is deliberately outside that fixed group.
+Choose:
 
 - `patch` for compatible fixes and additive implementation changes;
 - `minor` for pre-1.0 breaking changes or substantial new public APIs;

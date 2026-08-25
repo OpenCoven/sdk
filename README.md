@@ -6,20 +6,22 @@
 > change without notice. Do not use it for production workloads or with
 > production credentials.
 
-This workspace contains the experimental TypeScript SDK and developer CLI for
-OpenCoven Phase 1b clients, transports, compatibility contracts, runtime-only Cave
-discovery and pairing, explicit Coven daemon health, coordinated health
-reporting, and shared protocol infrastructure.
+This workspace contains four experimental TypeScript SDK release packages and
+a private developer CLI workspace for OpenCoven Phase 1b clients, transports,
+compatibility contracts, runtime-only Cave discovery and pairing, explicit
+Coven daemon health, coordinated health reporting, and shared protocol
+infrastructure.
 
 ## Release status
 
-This source repository is public, but its packages are explicitly marked
-private, are not published, and have standard publishing blocked. It is
-experimental and not yet a security-audited release. Standard publishing also
-requires `OPENCOVEN_RELEASE_AUTHORIZATION=publish`; remove or change these
-gates only as part of an intentional release process. This phase documents and
-verifies shipped contracts only; it does not publish packages or relax release
-gates.
+This source repository is public, but all workspace packages are explicitly
+marked private, are not published, and have standard publishing blocked. The
+0.1 release inventory contains only `@opencoven/sdk-core`,
+`@opencoven/cave-client`, `@opencoven/coven-client`, and `@opencoven/sdk`.
+`@opencoven/dev-cli` remains private and is not packed, versioned with, or
+published beside that group. Standard publishing also requires
+`OPENCOVEN_RELEASE_AUTHORIZATION=publish`; remove or change these gates only as
+part of an intentional release process.
 
 - [Roadmap](docs/ROADMAP.md)
 - [0.1 read-only release design](docs/superpowers/specs/2026-08-22-sdk-0.1-read-only-release-design.md)
@@ -37,13 +39,13 @@ protocol release. A packed consumer must be able to discover Cave and Coven,
 negotiate compatibility, pair through user consent, retain credentials in
 native custody, validate live IPC identity, and read canonical state.
 
-SDK [#36](https://github.com/OpenCoven/sdk/issues/36) is implementation-complete
-and fully verified/reviewed on the `feat/cave-canonical-reads` branch at the
-documented surface below. It still requires a PR, required checks, and merge
-before the issue is complete. Chat
-[#27](https://github.com/OpenCoven/chat/issues/27) remains blocked on merged SDK
-#36, SDK #37's native-adapter ownership decision and implementation, and the
-producer's atomic instance-binding work in
+SDK [#36](https://github.com/OpenCoven/sdk/issues/36) merged through PR #55 at
+`d7f9e69378d6136c2771f60b4c57d7beeaa74f6a`. SDK
+[#37](https://github.com/OpenCoven/sdk/issues/37) resolves the next boundary by
+deferring the CLI from the 0.1 release group and assigning Phase 1 native trust
+adapters to Chat's Tauri layer. Chat
+[#27](https://github.com/OpenCoven/chat/issues/27) remains blocked on those
+native adapters and the producer's atomic instance-binding work in
 [OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996)
 where bearer-bearing real-authority conformance applies.
 
@@ -53,13 +55,13 @@ post-release authority milestones. The roadmap and issue program above are the
 current plan of record; older Phase 0 plans remain historical evidence rather
 than the active release checklist.
 
-| Path | Package | Current purpose |
-| --- | --- | --- |
-| `packages/core` | `@opencoven/sdk-core` | Transport-neutral errors, compatibility/discovery contracts, operation controls, bounded pagination, and in-memory secret abstractions |
-| `packages/cave` | `@opencoven/cave-client` | Constrained Cave client, runtime discovery/pairing, canonical reads, legacy familiar extensions, and reviewed contract fixtures |
-| `packages/coven` | `@opencoven/coven-client` | Constrained Coven discovery and health with explicit native transport-security providers |
-| `packages/sdk` | `@opencoven/sdk` | Optional Cave/Coven coordination without merging source-system identity or errors |
-| `packages/cli` | `@opencoven/dev-cli` | Sole owner of the `opencoven` binary plus native secure storage and fail-closed Coven checks |
+| Path | Package | 0.1 status | Current purpose |
+| --- | --- | --- | --- |
+| `packages/core` | `@opencoven/sdk-core` | Release inventory | Transport-neutral errors, compatibility/discovery contracts, operation controls, bounded pagination, and in-memory secret abstractions |
+| `packages/cave` | `@opencoven/cave-client` | Release inventory | Constrained Cave client, runtime discovery/pairing, canonical reads, legacy familiar extensions, and reviewed contract fixtures |
+| `packages/coven` | `@opencoven/coven-client` | Release inventory | Constrained Coven discovery and health with explicit native transport-security providers |
+| `packages/sdk` | `@opencoven/sdk` | Release inventory | Optional Cave/Coven coordination without merging source-system identity or errors |
+| `packages/cli` | `@opencoven/dev-cli` | Private workspace only | Source-tested `opencoven` command implementation, native keyring integration, and fail-closed native trust injection points |
 
 ## Runtime ownership and import purity
 
@@ -80,11 +82,11 @@ credential, or failure model.
 | Cave health, runtime pairing/discovery, canonical reads, legacy familiar extensions, or reviewed contract fixtures | `@opencoven/cave-client` |
 | Explicit Coven discovery and owner-local daemon health | `@opencoven/coven-client` |
 | Optional Cave/Coven coordination | `@opencoven/sdk` |
-| Runtime diagnostics, discovery, pairing, credential status, and health commands | `@opencoven/dev-cli` |
+| Runtime diagnostics, discovery, pairing, credential status, and health commands for repository development only | Private `@opencoven/dev-cli` workspace |
 
-## Developer CLI contract
+## Private developer CLI contract
 
-`@opencoven/dev-cli` ships only these experimental commands:
+`@opencoven/dev-cli` implements these experimental commands in the workspace:
 
 - `opencoven doctor`
 - `opencoven discover`
@@ -109,6 +111,12 @@ trusts discovery metadata, file ownership metadata alone, or shell output.
 During an active credential commit, `cave status` surfaces a retryable
 `credential_update_in_progress`/`disconnected` result instead of clearing the
 pending credential.
+
+The CLI is deliberately excluded from 0.1 release artifacts because its
+default Windows Cave path validation and Coven peer/pipe validation still need
+native adapters. Phase 1 production ownership for those adapters is
+OpenCoven Chat's Tauri layer. A future standalone CLI release requires a
+separate reviewed native distribution design and packed-binary validation.
 
 ## Caller-supplied Cave transports
 

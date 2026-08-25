@@ -1,6 +1,13 @@
 # @opencoven/dev-cli
 
-The sole owner of the `opencoven` binary in this workspace.
+> [!IMPORTANT]
+> This package is a private workspace tool. It is not part of the OpenCoven SDK
+> 0.1 release group, release artifacts, npm bootstrap, or trusted-publisher
+> configuration.
+
+The package remains the sole owner of the `opencoven` binary in this workspace
+so its command, output, keyring, and fail-closed trust contracts remain tested
+while native distribution is unresolved.
 
 Importing `@opencoven/dev-cli` performs no runtime discovery, daemon I/O, or
 keyring I/O. Work begins only when you call `runCli()`, `main()`, or
@@ -16,7 +23,7 @@ opencoven cave forget
 opencoven coven health
 ```
 
-## Public package surface
+## Workspace API surface
 
 - `runCli(argv, runtime?)` returns `{ exitCode, stdout, stderr }` without
   touching process stdio.
@@ -97,6 +104,12 @@ reviewed discovery dependencies they need.
 ## Native Coven transport security
 
 The CLI never fabricates Unix peer credentials or Windows named-pipe ownership from discovery metadata, process IDs, filesystem owners, or shell commands. Production `opencoven coven health` and the Coven portion of `opencoven doctor` require a reviewed native `@opencoven/coven-client` `transportSecurity` provider. Embedders can inject that provider through `CliRuntime.coven.transportSecurity`, plus optional `CliRuntime.coven.transport.unix` or `.windows` overrides for reviewed transport dependencies. Without a real adapter, Coven checks fail closed with `platform_security_unavailable` and `opencoven doctor` reports Coven health as unhealthy.
+
+For Phase 1, OpenCoven Chat's Tauri layer owns production native Cave path and
+Coven peer/pipe identity adapters. The private CLI may consume injected
+adapters in tests and development, but a standalone public CLI requires a
+separate reviewed native packaging, update, signing, and supported-platform
+design before it can join a release group.
 
 ## Compatibility and retry guidance
 

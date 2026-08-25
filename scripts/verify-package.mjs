@@ -1,6 +1,5 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
@@ -25,22 +24,11 @@ import {
 } from './repository-metadata.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const packedCliTimeoutMs = 5_000;
-const usage = [
-  'opencoven [--help] [--version] [--json]',
-  'opencoven doctor [--json]',
-  'opencoven discover [--json]',
-  'opencoven cave pair [--json]',
-  'opencoven cave status [--json]',
-  'opencoven cave forget [--json]',
-  'opencoven coven health [--json]',
-];
 const installedPackageNames = {
   core: 'sdk-core',
   cave: 'cave-client',
   coven: 'coven-client',
   sdk: 'sdk',
-  cli: 'dev-cli',
 };
 const rootPackageExports = {
   '.': {
@@ -55,180 +43,6 @@ function readTarballFile(tarball, path) {
   return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
     encoding: 'utf8',
   });
-}
-
-function summarizeCliResult(result) {
-  return JSON.stringify({
-    error: result.error?.message,
-    signal: result.signal,
-    status: result.status,
-    stderr: result.stderr,
-    stdout: result.stdout,
-  });
-}
-
-function runPackedCliProbe(binary, args, cwd, description) {
-  const result = spawnSync(binary, args, {
-    cwd,
-    encoding: 'utf8',
-    timeout: packedCliTimeoutMs,
-    killSignal: 'SIGKILL',
-  });
-
-  if (result.error?.code === 'ETIMEDOUT') {
-    throw new Error(
-      `Packed opencoven ${description} timed out after ${packedCliTimeoutMs}ms: ${summarizeCliResult(result)}.`,
-    );
-  }
-  if (result.signal !== null) {
-    throw new Error(
-      `Packed opencoven ${description} terminated by signal ${result.signal}: ${summarizeCliResult(result)}.`,
-    );
-  }
-  if (result.error !== undefined) {
-    throw new Error(
-      `Packed opencoven ${description} could not execute: ${summarizeCliResult(result)}.`,
-    );
-  }
-
-  return result;
-}
-
-function assertPackedCliJsonHelp(binary, cwd, expectedVersion) {
-  const result = runPackedCliProbe(binary, ['--json', '--help'], cwd, 'JSON help');
-  let jsonOutput;
-
-  try {
-    jsonOutput = JSON.parse(result.stdout);
-  } catch (error) {
-    throw new Error(
-      `Packed opencoven JSON help output is invalid: ${summarizeCliResult(result)}.`,
-      { cause: error },
-    );
-  }
-
-  const expectedOutput = {
-    command: 'help',
-    data: { name: 'opencoven', usage },
-    ok: true,
-    version: expectedVersion,
-  };
-
-  if (
-    result.error !== undefined ||
-    result.status !== 0 ||
-    result.stderr !== '' ||
-    !isDeepStrictEqual(jsonOutput, expectedOutput)
-  ) {
-    throw new Error(
-      `Packed opencoven JSON help output is incorrect: ${summarizeCliResult(result)}.`,
-    );
-  }
-}
-
-function assertPackedCliFailurePaths(binary, cwd) {
-  const humanFailure = runPackedCliProbe(binary, ['status'], cwd, 'human failure');
-
-  if (
-    humanFailure.error !== undefined ||
-    humanFailure.status !== 1 ||
-    humanFailure.stdout !== '' ||
-    !humanFailure.stderr.includes('Unknown or incomplete command.') ||
-    !humanFailure.stderr.includes('Usage:')
-  ) {
-    throw new Error(
-      `Packed opencoven human failure output is incorrect: ${summarizeCliResult(humanFailure)}.`,
-    );
-  }
-
-  const jsonFailure = runPackedCliProbe(binary, ['--json', 'status'], cwd, 'JSON failure');
-  let jsonOutput;
-
-  try {
-    jsonOutput = JSON.parse(jsonFailure.stdout);
-  } catch (error) {
-    throw new Error(
-      `Packed opencoven JSON failure output is invalid: ${summarizeCliResult(jsonFailure)}.`,
-      { cause: error },
-    );
-  }
-
-  if (
-    jsonFailure.error !== undefined ||
-    jsonFailure.status !== 1 ||
-    jsonFailure.stderr !== '' ||
-    jsonOutput?.error?.code !== 'invalid_arguments' ||
-    jsonOutput?.command !== 'status' ||
-    !Array.isArray(jsonOutput?.data?.usage) ||
-    jsonOutput?.ok !== false
-  ) {
-    throw new Error(
-      `Packed opencoven JSON failure output is incorrect: ${summarizeCliResult(jsonFailure)}.`,
-    );
-  }
-}
-
-function readInstalledPackageManifest(requireFromPath, packageName) {
-  const packageRequire = createRequire(requireFromPath);
-  const resolvedEntryPath = packageRequire.resolve(packageName);
-  let currentDirectory = dirname(resolvedEntryPath);
-
-  while (true) {
-    const manifestPath = resolve(currentDirectory, 'package.json');
-
-    try {
-      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-
-      if (manifest.name === packageName) {
-        return { manifest, manifestPath };
-      }
-    } catch (error) {
-      if (!error || typeof error !== 'object' || error.code !== 'ENOENT') {
-        throw error;
-      }
-    }
-
-    const parentDirectory = dirname(currentDirectory);
-
-    if (parentDirectory === currentDirectory) {
-      break;
-    }
-
-    currentDirectory = parentDirectory;
-  }
-
-  throw new Error(
-    `Could not locate installed ${packageName} package metadata from ${requireFromPath}.`,
-  );
-}
-
-function assertPackedCliNativeDependency(fixtureRoot, tarballs) {
-  const cliManifest = JSON.parse(readTarballFile(tarballs.cli, 'package.json'));
-  if (cliManifest.dependencies?.['@napi-rs/keyring'] !== '1.3.0') {
-    throw new Error('Packed @opencoven/dev-cli must depend directly on @napi-rs/keyring 1.3.0.');
-  }
-
-  const cliPackage = readInstalledPackageManifest(
-    resolve(fixtureRoot, 'package.json'),
-    '@opencoven/dev-cli',
-  );
-  if (cliPackage.manifest.dependencies?.['@napi-rs/keyring'] !== '1.3.0') {
-    throw new Error('Installed @opencoven/dev-cli must depend directly on @napi-rs/keyring 1.3.0.');
-  }
-
-  const { manifest: keyringManifest } = readInstalledPackageManifest(
-    cliPackage.manifestPath,
-    '@napi-rs/keyring',
-  );
-
-  if (
-    keyringManifest.name !== '@napi-rs/keyring' ||
-    keyringManifest.version !== '1.3.0' ||
-    Object.keys(keyringManifest.optionalDependencies ?? {}).length === 0 ||
-    !Object.values(keyringManifest.optionalDependencies).every((version) => version === '1.3.0')
-  ) {
-    throw new Error('Packed @opencoven/dev-cli keyring dependency metadata is incomplete.');
-  }
 }
 
 function assertPackedLicenses(tarballs) {
@@ -282,13 +96,6 @@ function expectedPackedDependencies(workspaceDirectory, version) {
       };
     case 'sdk':
       return {
-        '@opencoven/cave-client': version,
-        '@opencoven/coven-client': version,
-        '@opencoven/sdk-core': version,
-      };
-    case 'cli':
-      return {
-        '@napi-rs/keyring': '1.3.0',
         '@opencoven/cave-client': version,
         '@opencoven/coven-client': version,
         '@opencoven/sdk-core': version,
@@ -397,7 +204,6 @@ function createFixture(fixtureRoot, tarballs) {
           '@opencoven/cave-client': tarballSpecifier(tarballs, 'cave'),
           '@opencoven/coven-client': tarballSpecifier(tarballs, 'coven'),
           '@opencoven/sdk': tarballSpecifier(tarballs, 'sdk'),
-          '@opencoven/dev-cli': tarballSpecifier(tarballs, 'cli'),
         },
         pnpm: {
           overrides,
@@ -439,7 +245,6 @@ function createFixture(fixtureRoot, tarballs) {
   type CaveProject,
 } from '@opencoven/cave-client';
 import { COVEN_DAEMON_PROTOCOL, CovenClient } from '@opencoven/coven-client';
-import { formatCliOutput } from '@opencoven/dev-cli';
 import {
   createManagedMemorySecretStore,
   createMemorySecretStore,
@@ -535,7 +340,6 @@ await sdk.healthReport({
   observer,
 });
 void events;
-void formatCliOutput;
 void caveIterators;
 `,
   );
@@ -545,7 +349,6 @@ void caveIterators;
 const { CaveClient } = await import('@opencoven/cave-client');
 await import('@opencoven/coven-client');
 await import('@opencoven/sdk');
-await import('@opencoven/dev-cli');
 
 const iteratorClient = new CaveClient({
   transport: {
@@ -736,11 +539,6 @@ try {
   }
 
   run(process.execPath, ['verify.mjs'], fixtureRoot);
-  const binary = resolve(fixtureRoot, 'node_modules', '.bin', 'opencoven');
-  const packedCliVersion = JSON.parse(readTarballFile(tarballs.cli, 'package.json')).version;
-  assertPackedCliJsonHelp(binary, fixtureRoot, packedCliVersion);
-  assertPackedCliNativeDependency(fixtureRoot, tarballs);
-  assertPackedCliFailurePaths(binary, fixtureRoot);
   process.stdout.write('Packed package verification passed.\n');
 } finally {
   if (artifactContext !== undefined) {

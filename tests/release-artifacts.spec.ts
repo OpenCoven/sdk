@@ -66,6 +66,7 @@ describe('release artifacts', () => {
     expect(result.manifest.packages.map(({ name }) => name)).toEqual(
       PUBLIC_PACKAGES.map(({ packageName }) => packageName),
     );
+    expect(result.manifest.packages).toHaveLength(4);
 
     for (const entry of result.manifest.packages) {
       const bytes = readFileSync(resolve(outputRoot, entry.file));
