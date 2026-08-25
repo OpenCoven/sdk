@@ -120,6 +120,47 @@ describe('managed browser entry point', () => {
     await expect(client.health()).resolves.toMatchObject({ status: 'ok' });
   });
 
+  test('captures managed factory configuration only through own data descriptors', () => {
+    const accessorOptions = {
+      get transport() {
+        throw new Error(`native bearer ${NATIVE_BEARER}`);
+      },
+    };
+    const operation = Object.defineProperty({}, 'observer', {
+      enumerable: true,
+      get() {
+        throw new Error(`native bearer ${NATIVE_BEARER}`);
+      },
+    });
+    const proxyOptions = new Proxy(
+      { transport: managedTransport },
+      {
+        ownKeys() {
+          throw new Error(`native bearer ${NATIVE_BEARER}`);
+        },
+      },
+    );
+
+    for (const options of [
+      accessorOptions,
+      { transport: managedTransport, operation },
+      proxyOptions,
+    ]) {
+      const error = (() => {
+        try {
+          createManagedCaveClient(options as unknown as {
+            transport: CaveManagedCredentialTransport;
+          });
+        } catch (caught) {
+          return caught;
+        }
+        return undefined;
+      })();
+      expect(error).toBeInstanceOf(TypeError);
+      expect(JSON.stringify({ error, inspect: inspect(error) })).not.toContain(NATIVE_BEARER);
+    }
+  });
+
   test('rejects native discovery records that Rust did not shape safely', async () => {
     const source: CaveManagedDiscoverySource = {
       read: () =>

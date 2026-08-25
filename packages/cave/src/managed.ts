@@ -3,7 +3,7 @@ import {
   type CaveManagedNativeCredentialCustody,
 } from './client.js';
 
-import type { OperationDefaults } from '@opencoven/sdk-core';
+import type { OperationDefaults } from '@opencoven/sdk-core/browser';
 import type { CaveManagedCredentialTransport } from './transport.js';
 
 export interface CaveManagedClientOptions {
@@ -11,16 +11,113 @@ export interface CaveManagedClientOptions {
   operation?: OperationDefaults;
 }
 
+function ownManagedClientOptions(
+  value: unknown,
+): { transport: CaveManagedCredentialTransport; operation: OperationDefaults | undefined } | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  try {
+    const prototype = Reflect.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return undefined;
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Reflect.ownKeys(descriptors);
+    if (
+      keys.some(
+        (key) => {
+          if (typeof key !== 'string') {
+            return true;
+          }
+          const descriptor = descriptors[key];
+          return (
+            (key !== 'transport' && key !== 'operation') ||
+            descriptor === undefined ||
+            !Object.hasOwn(descriptor, 'value')
+          );
+        },
+      )
+    ) {
+      return undefined;
+    }
+    const transport = descriptors.transport;
+    if (transport === undefined || !Object.hasOwn(transport, 'value')) {
+      return undefined;
+    }
+
+    const operationDescriptor = descriptors.operation;
+    const operationValue: unknown = operationDescriptor?.value;
+    if (operationDescriptor === undefined) {
+      return {
+        transport: transport.value as CaveManagedCredentialTransport,
+        operation: undefined,
+      };
+    }
+    if (
+      !Object.hasOwn(operationDescriptor, 'value') ||
+      typeof operationValue !== 'object' ||
+      operationValue === null ||
+      Array.isArray(operationValue)
+    ) {
+      return undefined;
+    }
+
+    const operationDescriptors = Object.getOwnPropertyDescriptors(operationValue);
+    const operationKeys = Reflect.ownKeys(operationDescriptors);
+    const operationPrototype = Reflect.getPrototypeOf(operationValue);
+    if (
+      (operationPrototype !== Object.prototype && operationPrototype !== null) ||
+      operationKeys.some(
+        (key) => {
+          if (typeof key !== 'string') {
+            return true;
+          }
+          const descriptor = operationDescriptors[key];
+          return (
+            (key !== 'timeoutMs' && key !== 'observer') ||
+            descriptor === undefined ||
+            !Object.hasOwn(descriptor, 'value')
+          );
+        },
+      )
+    ) {
+      return undefined;
+    }
+    return {
+      transport: transport.value as CaveManagedCredentialTransport,
+      operation: Object.freeze({
+        ...(operationDescriptors.timeoutMs?.value !== undefined
+          ? { timeoutMs: operationDescriptors.timeoutMs.value as number }
+          : {}),
+        ...(operationDescriptors.observer?.value !== undefined
+          ? {
+              observer:
+                operationDescriptors.observer.value as NonNullable<OperationDefaults['observer']>,
+            }
+          : {}),
+      }),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export function createManagedCaveClient(
   options: CaveManagedClientOptions,
 ): CaveClient {
+  const captured = ownManagedClientOptions(options);
+  if (captured === undefined) {
+    throw new TypeError('Managed Cave client options must use own data properties.');
+  }
   const credentialCustody: CaveManagedNativeCredentialCustody = {
     mode: 'managed-native',
   };
   return new CaveClient({
-    transport: options.transport,
+    transport: captured.transport,
     credentialCustody,
-    ...(options.operation === undefined ? {} : { operation: options.operation }),
+    ...(captured.operation === undefined ? {} : { operation: captured.operation }),
   });
 }
 

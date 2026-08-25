@@ -334,7 +334,9 @@ function parseHealthResponse(value: unknown): CaveHealthResponse {
 }
 
 function parseCredentialMetadata(value: unknown): CaveCredentialMetadata {
-  const credential = parseCaveCredentialMetadata(value);
+  const credential = parseCaveCredentialMetadata(value, {
+    allowAdditionalFields: true,
+  });
   if (credential === undefined) {
     throw transportError('invalid_response', 'pairing.exchange credential was malformed.');
   }

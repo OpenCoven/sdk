@@ -25,14 +25,15 @@ function dataRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function hasExactFields(value: Record<string, unknown>): boolean {
+function hasAllowedFields(
+  value: Record<string, unknown>,
+  allowAdditionalFields: boolean,
+): boolean {
   const keys = Object.keys(value);
-  return (
-    keys.length === CREDENTIAL_METADATA_FIELDS.length &&
-    keys.every((key) =>
-      (CREDENTIAL_METADATA_FIELDS as readonly string[]).includes(key),
-    )
-  );
+  const expectedFields = CREDENTIAL_METADATA_FIELDS as readonly string[];
+  return allowAdditionalFields
+    ? expectedFields.every((key) => Object.hasOwn(value, key))
+    : keys.length === expectedFields.length && keys.every((key) => expectedFields.includes(key));
 }
 
 function nonEmptyString(value: unknown): value is string {
@@ -72,11 +73,12 @@ function scopes(value: unknown): CavePairingScope[] | undefined {
  */
 export function parseCaveCredentialMetadata(
   value: unknown,
+  options: { allowAdditionalFields?: boolean } = {},
 ): CaveCredentialMetadata | undefined {
   const credential = dataRecord(value);
   if (
     credential === undefined ||
-    !hasExactFields(credential) ||
+    !hasAllowedFields(credential, options.allowAdditionalFields === true) ||
     !nonEmptyString(credential.id) ||
     !UUID_RE.test(credential.id) ||
     !nonEmptyString(credential.appName) ||

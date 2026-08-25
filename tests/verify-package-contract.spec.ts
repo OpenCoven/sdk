@@ -163,4 +163,18 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain('assertPackedPackagesExcludeSources(managedBrowserFixtureRoot);');
   });
 
+  test('executes the packed managed-native lifecycle rather than only importing it', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain('Packed managed lifecycle passed.');
+    expect(verifier).toContain('managedPairingCreate');
+    expect(verifier).toContain('managedPairingPoll');
+    expect(verifier).toContain('managedPairingExchange');
+    expect(verifier).toContain('managedCredentialStatus');
+    expect(verifier).toContain('managedForgetCredential');
+    expect(verifier).toContain('PACKED_MANAGED_BEARER');
+    expect(verifier).toContain('late completion');
+    expect(verifier).toContain('Cave managed result leaked a native canary.');
+  });
+
 });

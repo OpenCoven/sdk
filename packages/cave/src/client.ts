@@ -24,6 +24,7 @@ import {
   discardPairingExchangeBearer,
   parseCaveAuthorityBinding,
 } from './authority-binding-contract.js';
+import { CAVE_CONTRACT_ERROR_CODES } from './contract-constraints.js';
 import {
   CaveCanonicalSchemaError,
   parseConversationEnvelope,
@@ -257,6 +258,137 @@ function immutableManagedResult<T>(value: T): T {
   return snapshot as T;
 }
 
+function ownConfigurationRecord(
+  value: unknown,
+  allowedKeys: readonly string[],
+): Record<string, unknown> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  try {
+    const prototype = Reflect.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return undefined;
+    }
+
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Reflect.ownKeys(descriptors);
+    if (
+      keys.some(
+        (key) => {
+          if (typeof key !== 'string') {
+            return true;
+          }
+          const descriptor = descriptors[key];
+          return (
+            !allowedKeys.includes(key) ||
+            descriptor === undefined ||
+            !Object.hasOwn(descriptor, 'value')
+          );
+        },
+      )
+    ) {
+      return undefined;
+    }
+
+    const record = Object.create(null) as Record<string, unknown>;
+    for (const key of keys) {
+      const descriptor = descriptors[key as string];
+      if (descriptor === undefined) {
+        return undefined;
+      }
+      Object.defineProperty(record, key, {
+        configurable: false,
+        enumerable: true,
+        value: descriptor.value,
+        writable: false,
+      });
+    }
+    return Object.freeze(record);
+  } catch {
+    return undefined;
+  }
+}
+
+interface CapturedCaveClientOptions {
+  transport: CaveTransport;
+  operation: OperationDefaults | undefined;
+  credentials: CaveCredentialBinding | undefined;
+  credentialCustody: { mode: unknown } | undefined;
+}
+
+function captureCaveClientOptions(
+  value: unknown,
+): CapturedCaveClientOptions | undefined {
+  const options = ownConfigurationRecord(value, [
+    'transport',
+    'operation',
+    'credentials',
+    'credentialCustody',
+  ]);
+  if (options === undefined || !Object.hasOwn(options, 'transport')) {
+    return undefined;
+  }
+
+  let operation: OperationDefaults | undefined;
+  if (options.operation !== undefined) {
+    const capturedOperation = ownConfigurationRecord(options.operation, [
+      'timeoutMs',
+      'observer',
+    ]);
+    if (capturedOperation === undefined) {
+      return undefined;
+    }
+    operation = Object.freeze({
+      ...(capturedOperation.timeoutMs !== undefined
+        ? { timeoutMs: capturedOperation.timeoutMs as number }
+        : {}),
+      ...(capturedOperation.observer !== undefined
+        ? { observer: capturedOperation.observer as NonNullable<OperationDefaults['observer']> }
+        : {}),
+    });
+  }
+
+  let credentials: CaveCredentialBinding | undefined;
+  if (options.credentials !== undefined) {
+    const capturedCredentials = ownConfigurationRecord(options.credentials, [
+      'store',
+      'reference',
+    ]);
+    if (
+      capturedCredentials === undefined ||
+      !Object.hasOwn(capturedCredentials, 'store') ||
+      !Object.hasOwn(capturedCredentials, 'reference')
+    ) {
+      return undefined;
+    }
+    credentials = Object.freeze({
+      store: capturedCredentials.store as SecretStore,
+      reference: capturedCredentials.reference as SecretStoreReference,
+    });
+  }
+
+  let credentialCustody: { mode: unknown } | undefined;
+  if (options.credentialCustody !== undefined) {
+    const capturedCustody = ownConfigurationRecord(options.credentialCustody, ['mode']);
+    if (
+      capturedCustody === undefined ||
+      !Object.hasOwn(capturedCustody, 'mode')
+    ) {
+      return undefined;
+    }
+    credentialCustody = Object.freeze({ mode: capturedCustody.mode });
+  }
+
+  return Object.freeze({
+    transport: options.transport as CaveTransport,
+    operation,
+    credentials,
+    credentialCustody,
+  });
+}
+
 function hasExactManagedKeys(
   value: Record<string, unknown>,
   keys: readonly string[],
@@ -399,23 +531,15 @@ function parseManagedForgetCredential(
   return immutableManagedResult({ status: result.status });
 }
 
-const MANAGED_NATIVE_ERROR_CODES = new Set([
+const MANAGED_NATIVE_ERROR_CODES = new Set<string>([
+  ...CAVE_CONTRACT_ERROR_CODES,
   'aborted',
   'body_limit',
   'conflict',
   'credential_update_in_progress',
-  'incompatible_version',
-  'invalid_request',
   'invalid_response',
-  'not_found',
-  'pairing_denied',
-  'pairing_expired',
-  'rate_limited',
-  'reconcile_required',
   'scope_denied',
-  'service_unavailable',
   'timeout',
-  'unauthorized',
   'unsupported_operation',
 ]);
 
@@ -1421,7 +1545,9 @@ function parseDirectPairingExchange(
   if (typeof bearer !== 'string' || !BASE64URL_43_RE.test(bearer)) {
     return undefined;
   }
-  const parsedCredential = parseCaveCredentialMetadata(credential);
+  const parsedCredential = parseCaveCredentialMetadata(credential, {
+    allowAdditionalFields: true,
+  });
   if (parsedCredential === undefined) {
     return undefined;
   }
@@ -1475,25 +1601,29 @@ export class CaveClient {
   readonly #managedCredentialTransport: CaveManagedCredentialTransport | undefined;
 
   constructor(options: CaveClientOptions) {
+    const captured = captureCaveClientOptions(options);
+    if (captured === undefined) {
+      throw new TypeError('CaveClient options must use own data properties.');
+    }
     if (
-      options.credentialCustody !== undefined &&
-      options.credentialCustody.mode !== 'managed-native'
+      captured.credentialCustody !== undefined &&
+      captured.credentialCustody.mode !== 'managed-native'
     ) {
       throw new TypeError('credentialCustody.mode must be "managed-native".');
     }
     if (
-      options.credentialCustody?.mode === 'managed-native' &&
-      options.credentials !== undefined
+      captured.credentialCustody?.mode === 'managed-native' &&
+      captured.credentials !== undefined
     ) {
       throw new TypeError('Managed native credential custody cannot use a JavaScript SecretStore.');
     }
 
-    this.#transport = options.transport;
-    this.#operation = options.operation;
-    this.#credentials = options.credentials;
+    this.#transport = captured.transport;
+    this.#operation = captured.operation;
+    this.#credentials = captured.credentials;
     this.#managedCredentialTransport =
-      options.credentialCustody?.mode === 'managed-native'
-        ? options.transport as CaveManagedCredentialTransport
+      captured.credentialCustody?.mode === 'managed-native'
+        ? captured.transport as CaveManagedCredentialTransport
         : undefined;
   }
 

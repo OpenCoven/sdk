@@ -4,6 +4,7 @@ import { createMemorySecretStore, createSecretStoreReference } from '@opencoven/
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { parseCaveCredentialMetadata } from '../packages/cave/src/credential-metadata.js';
+import { CAVE_CONTRACT_ERROR_CODES } from '../packages/cave/src/contract-constraints.js';
 
 const PAIRING_SECRET = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const BEARER = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
@@ -309,6 +310,117 @@ describe('managed native Cave credential custody', () => {
       normalized: (error as cave.CaveClientError).normalized,
       events,
     });
+  });
+
+  test.each(CAVE_CONTRACT_ERROR_CODES)(
+    'preserves the managed contract error code and retry semantics for %s',
+    async (code) => {
+      const retryable = code === 'rate_limited' || code === 'service_unavailable';
+      const envelope = {
+        apiVersion: '1.0',
+        minimumClientVersion: '0.1.0',
+        capabilities: ['familiars', 'cursors'],
+        operations: ['familiars.list'],
+        error: {
+          code,
+          message: `native bearer ${BEARER}`,
+          retryable,
+          details: { bearer: BEARER },
+        },
+      };
+      const direct = new cave.CaveClient({
+        transport: {
+          health: () => Promise.resolve(HEALTH_ENVELOPE),
+          listFamiliars: () => Promise.resolve(envelope),
+        },
+      });
+      const managed = managedClient(managedTransport({
+        listFamiliars: vi.fn(() => Promise.resolve(envelope)),
+      }));
+
+      const directError = await direct.listFamiliars().catch((error: unknown) => error);
+      const managedError = await managed.listFamiliars().catch((error: unknown) => error);
+      expect(directError).toMatchObject({
+        normalized: { code, retryable },
+      });
+      expect(managedError).toMatchObject({
+        normalized: { code, retryable },
+      });
+      expectRedacted({
+        error: serializedError(managedError),
+        normalized: (managedError as cave.CaveClientError).normalized,
+      });
+    },
+  );
+
+  test('rejects accessor and proxy constructor configuration without leaking or bypassing custody', () => {
+    const transport = managedTransport();
+    const operation = Object.defineProperty({}, 'timeoutMs', {
+      enumerable: true,
+      get() {
+        throw new Error(`operation bearer ${BEARER}`);
+      },
+    });
+    const credentials = Object.defineProperty({}, 'store', {
+      enumerable: true,
+      get() {
+        throw new Error(`credentials bearer ${BEARER}`);
+      },
+    });
+    const accessorOptions = {
+      get transport() {
+        throw new Error(`constructor bearer ${BEARER}`);
+      },
+    };
+    const mixedOptions = {
+      transport,
+      credentials: {
+        store: createMemorySecretStore(),
+        reference: createSecretStoreReference('constructor-mixed'),
+      },
+      get credentialCustody() {
+        return { mode: 'managed-native' as const };
+      },
+    };
+    const proxyOptions = new Proxy(
+      { transport },
+      {
+        getOwnPropertyDescriptor() {
+          throw new Error(`constructor bearer ${BEARER}`);
+        },
+      },
+    );
+
+    for (const options of [
+      accessorOptions,
+      mixedOptions,
+      proxyOptions,
+      {
+        transport,
+        credentialCustody: { mode: 'managed-native' as const },
+        operation,
+      },
+      {
+        transport,
+        credentialCustody: { mode: 'managed-native' as const },
+        credentials,
+      },
+    ]) {
+      const error = (() => {
+        try {
+          new cave.CaveClient(options as unknown as cave.CaveClientOptions);
+        } catch (caught) {
+          return caught;
+        }
+        return undefined;
+      })();
+      expect(error).toBeInstanceOf(TypeError);
+      expectRedacted({
+        string: String(error),
+        inspect: inspect(error),
+        json: serializedError(error),
+      });
+    }
   });
 
   test('rejects nested accessor, custom-array, and revoked-proxy managed results before they leak', async () => {
@@ -781,7 +893,7 @@ describe('managed native Cave credential custody', () => {
       get credential() {
         credentialReads += 1;
         return credentialReads === 1
-          ? credential()
+          ? { ...credential(), harmlessAdditive: 'base-compatible-additive' }
           : { ...credential(), appName: accessorBearer };
       },
       get authorityBinding() {
@@ -817,6 +929,7 @@ describe('managed native Cave credential custody', () => {
     expect(credentialReads).toBe(1);
     expect(authorityReads).toBe(1);
     expect(JSON.stringify({ result, stored })).not.toContain(accessorBearer);
+    expect(stored).not.toContain('base-compatible-additive');
   });
 
   test('redacts managed health and canonical failures before causes, inspect, or observer events', async () => {

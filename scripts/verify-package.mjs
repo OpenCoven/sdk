@@ -613,7 +613,242 @@ if (
   );
   writeFileSync(
     resolve(fixtureRoot, 'verify.mjs'),
-    `await import('@opencoven/cave-client/managed');
+    `import { inspect } from 'node:util';
+
+const { createManagedCaveClient } = await import('@opencoven/cave-client/managed');
+const managedEntrypoint = import.meta.resolve('@opencoven/cave-client/managed');
+if (
+  !managedEntrypoint.includes('node_modules') ||
+  managedEntrypoint.includes('/packages/cave/') ||
+  managedEntrypoint.includes('/src/')
+) {
+  throw new Error('Packed managed entry point resolved outside its installed tarball.');
+}
+
+const PACKED_MANAGED_SECRET = 'PACKED_MANAGED_PAIRING_SECRET';
+const PACKED_MANAGED_BEARER = 'PACKED_MANAGED_BEARER';
+const canaries = [PACKED_MANAGED_SECRET, PACKED_MANAGED_BEARER];
+const events = [];
+const requestId = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
+const credential = {
+  id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+  appName: 'Packed Managed Cave',
+  installationId: 'packed-managed-browser',
+  scopes: ['chat:read'],
+  createdAt: 1_755_730_812_617,
+  lastUsedAt: null,
+  revokedAt: null,
+  revocationReason: null,
+};
+const health = {
+  apiVersion: '1.0',
+  minimumClientVersion: '0.1.0',
+  capabilities: ['health', 'familiars', 'cursors'],
+  operations: ['health.read', 'familiars.list'],
+  data: {
+    instanceId: 'packed-managed-browser-cave',
+    pairingRequired: true,
+    releaseVersion: '0.3.9',
+  },
+};
+const canonicalFamiliars = {
+  apiVersion: '1.0',
+  minimumClientVersion: '0.1.0',
+  capabilities: ['familiars', 'cursors'],
+  operations: ['familiars.list'],
+  data: {
+    familiars: [{
+      id: 'familiar-packed',
+      displayName: 'Packed Familiar',
+      role: 'verifier',
+      nativeBearer: PACKED_MANAGED_BEARER,
+    }],
+  },
+  nativeBearer: PACKED_MANAGED_BEARER,
+};
+
+function serialized(error) {
+  return error instanceof Error
+    ? JSON.stringify(error, Object.getOwnPropertyNames(error))
+    : JSON.stringify(error);
+}
+
+function assertRedacted(value) {
+  const text = [String(value), inspect(value), JSON.stringify(value), serialized(value)].join('\\n');
+  if (canaries.some((canary) => text.includes(canary))) {
+    throw new Error('Cave managed result leaked a native canary.');
+  }
+}
+
+async function expectFailure(promise, code) {
+  try {
+    await promise;
+  } catch (error) {
+    if (error?.normalized?.code !== code) {
+      throw error;
+    }
+    return error;
+  }
+  throw new Error('Packed managed operation unexpectedly succeeded.');
+}
+
+let exchangeCalls = 0;
+let resolveLateExchange;
+const transport = {
+  health: async () => health,
+  listFamiliars: async () => canonicalFamiliars,
+  managedPairingCreate: async () => ({
+    requestId,
+    expiresAt: 1_755_731_112_617,
+  }),
+  managedPairingPoll: async (id) => ({
+    id,
+    status: 'approved',
+    expiresAt: 1_755_731_112_617,
+  }),
+  managedPairingExchange: async () => {
+    exchangeCalls += 1;
+    if (exchangeCalls === 1) {
+      return { credential };
+    }
+    return await new Promise((resolve) => {
+      resolveLateExchange = resolve;
+    });
+  },
+  managedCredentialStatus: async () => ({
+    status: 'valid',
+    access: 'chat:read',
+    health,
+  }),
+  managedForgetCredential: async () => ({ status: 'deleted' }),
+};
+const observer = {
+  onEvent(event) {
+    events.push(event);
+  },
+  onObserverError(error) {
+    throw error;
+  },
+};
+const client = createManagedCaveClient({
+  transport,
+  operation: { observer },
+});
+
+const healthy = await client.health();
+const session = await client.createPairing({
+  appName: 'Packed Managed Cave',
+  installationId: 'packed-managed-browser',
+  scopes: ['chat:read'],
+});
+const polled = await session.poll();
+const exchanged = await session.exchange();
+const status = await client.credentialStatus();
+const forgotten = await client.forgetCredential();
+const familiars = await client.listFamiliars();
+if (
+  healthy.instanceId !== health.data.instanceId ||
+  polled.id !== requestId ||
+  exchanged.id !== credential.id ||
+  status.status !== 'valid' ||
+  forgotten !== true ||
+  familiars.data[0]?.id !== 'familiar-packed' ||
+  'nativeBearer' in familiars ||
+  'nativeBearer' in familiars.data[0]
+) {
+  throw new Error('Packed managed lifecycle did not validate its public DTOs.');
+}
+
+const lateSession = await client.createPairing({
+  appName: 'Packed Managed Cave',
+  installationId: 'packed-managed-browser-late',
+  scopes: ['chat:read'],
+});
+const abortController = new AbortController();
+const cancelled = lateSession.exchange({ signal: abortController.signal });
+abortController.abort(new Error(PACKED_MANAGED_BEARER));
+const cancellation = await expectFailure(cancelled, 'aborted');
+if (typeof resolveLateExchange !== 'function') {
+  throw new Error('Packed managed late exchange was not dispatched.');
+}
+resolveLateExchange({ credential });
+await new Promise((resolve) => setTimeout(resolve, 0));
+const replay = await expectFailure(lateSession.exchange(), 'conflict');
+if (exchangeCalls !== 2) {
+  throw new Error('Packed managed late completion triggered a duplicate exchange.');
+}
+
+const malformedClient = createManagedCaveClient({
+  transport: {
+    ...transport,
+    managedPairingCreate: async () => ({
+      requestId,
+      expiresAt: 1_755_731_112_617,
+      bearer: PACKED_MANAGED_BEARER,
+    }),
+  },
+});
+const malformed = await expectFailure(
+  malformedClient.createPairing({
+    appName: 'Packed Managed Cave',
+    installationId: 'packed-managed-malformed',
+    scopes: ['chat:read'],
+  }),
+  'invalid_response',
+);
+const hostileClient = createManagedCaveClient({
+  transport: {
+    ...transport,
+    managedCredentialStatus: async () => {
+      throw new Error(PACKED_MANAGED_BEARER);
+    },
+  },
+});
+const hostile = await expectFailure(hostileClient.credentialStatus(), 'invalid_response');
+const hostileSnapshotClient = createManagedCaveClient({
+  transport: {
+    ...transport,
+    managedPairingCreate: async () => new Proxy({}, {
+      ownKeys() {
+        throw new Error(PACKED_MANAGED_BEARER);
+      },
+    }),
+  },
+});
+const hostileSnapshot = await expectFailure(
+  hostileSnapshotClient.createPairing({
+    appName: 'Packed Managed Cave',
+    installationId: 'packed-managed-hostile-snapshot',
+    scopes: ['chat:read'],
+  }),
+  'invalid_response',
+);
+const redactedSnapshot = structuredClone({
+  cancellation,
+  replay,
+  malformed,
+  hostile,
+  hostileSnapshot,
+  events,
+});
+
+assertRedacted({
+  healthy,
+  session,
+  polled,
+  exchanged,
+  status,
+  forgotten,
+  familiars,
+  cancellation,
+  replay,
+  malformed,
+  hostile,
+  hostileSnapshot,
+  redactedSnapshot,
+  events,
+});
+console.log('Packed managed lifecycle passed.');
 `,
   );
 }
