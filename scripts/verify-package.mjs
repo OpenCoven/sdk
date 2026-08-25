@@ -27,6 +27,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const exampleWorkspaces = [
   'cave-discovery',
   'cave-health',
+  'cave-managed-native',
   'coven-health',
   'unified-health',
 ];
