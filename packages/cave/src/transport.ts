@@ -1,4 +1,4 @@
-import type { OperationContext, PageOptions } from '@opencoven/sdk-core';
+import type { OperationContext, PageOptions } from '@opencoven/sdk-core/browser';
 
 import type {
   CaveAuthorityBoundPairingExchange,

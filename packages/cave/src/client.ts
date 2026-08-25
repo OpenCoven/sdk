@@ -39,6 +39,7 @@ import {
   storeBoundCredential,
 } from './credential-binding.js';
 import { isPairingSecretUnsentError } from './pairing-secret.js';
+import { snapshotManagedResult } from './managed-snapshot.js';
 import {
   CAVE_PAIRING_SCOPES,
   type CaveAuthorityBinding,
@@ -235,37 +236,20 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * code or smuggle values into SDK validation through a getter.
  */
 function managedDataRecord(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  const snapshot = snapshotManagedResult(value);
+  if (typeof snapshot !== 'object' || snapshot === null || Array.isArray(snapshot)) {
     return undefined;
   }
 
-  try {
-    const prototype = Reflect.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      return undefined;
-    }
-    const descriptors = Object.getOwnPropertyDescriptors(value);
-    const keys = Reflect.ownKeys(descriptors);
-    if (
-      keys.some(
-        (key) => {
-          if (typeof key !== 'string') {
-            return true;
-          }
-          const descriptor = descriptors[key];
-          return descriptor === undefined || !Object.hasOwn(descriptor, 'value');
-        },
-      )
-    ) {
-      return undefined;
-    }
+  return snapshot as Record<string, unknown>;
+}
 
-    return Object.fromEntries(
-      Object.entries(descriptors).map(([key, descriptor]) => [key, descriptor.value]),
-    );
-  } catch {
-    return undefined;
+function immutableManagedResult<T>(value: T): T {
+  const snapshot = snapshotManagedResult(value);
+  if (snapshot === undefined) {
+    throw new TypeError('Managed result snapshot was malformed.');
   }
+  return snapshot as T;
 }
 
 function hasExactManagedKeys(
@@ -292,10 +276,10 @@ function parseManagedPairingCreated(
     return undefined;
   }
 
-  return {
+  return immutableManagedResult({
     requestId: result.requestId,
     expiresAt: result.expiresAt,
-  };
+  });
 }
 
 function parseManagedPairingExchange(
@@ -324,7 +308,7 @@ function parseManagedPairingExchange(
     return undefined;
   }
 
-  return {
+  return immutableManagedResult({
     credential: {
       id: metadata.id,
       appName: metadata.appName,
@@ -335,7 +319,7 @@ function parseManagedPairingExchange(
       revokedAt: metadata.revokedAt,
       revocationReason: metadata.revocationReason,
     },
-  };
+  });
 }
 
 function parseManagedPairingStatus(
@@ -350,11 +334,11 @@ function parseManagedPairingStatus(
     return undefined;
   }
 
-  return {
+  return immutableManagedResult({
     id: result.id,
     status: result.status,
     expiresAt: result.expiresAt,
-  };
+  });
 }
 
 function parseManagedCredentialStatus(
@@ -366,7 +350,7 @@ function parseManagedCredentialStatus(
   }
 
   if (result.status === 'missing' && hasExactManagedKeys(result, ['status'])) {
-    return { status: 'missing' };
+    return immutableManagedResult({ status: 'missing' });
   }
   if (
     result.status === 'disconnected' &&
@@ -374,13 +358,13 @@ function parseManagedCredentialStatus(
     (result.reason === 'credential_update_in_progress' ||
       result.reason === 'reconcile_required')
   ) {
-    return {
+    return immutableManagedResult({
       status: 'disconnected',
       reason: result.reason,
-    };
+    });
   }
   if (result.status === 'revoked' && hasExactManagedKeys(result, ['status', 'health'])) {
-    return { status: 'revoked', health: result.health };
+    return immutableManagedResult({ status: 'revoked', health: result.health });
   }
   if (
     result.status === 'valid' &&
@@ -390,11 +374,11 @@ function parseManagedCredentialStatus(
       result.access === 'service_unavailable' ||
       result.access === 'rate_limited')
   ) {
-    return {
+    return immutableManagedResult({
       status: 'valid',
       access: result.access,
       health: result.health,
-    };
+    });
   }
 
   return undefined;
@@ -414,7 +398,7 @@ function parseManagedForgetCredential(
     return undefined;
   }
 
-  return { status: result.status };
+  return immutableManagedResult({ status: result.status });
 }
 
 const MANAGED_NATIVE_ERROR_CODES = new Set([
@@ -1177,12 +1161,11 @@ export class CaveClient {
           try {
             return await executor(context);
           } catch (error) {
-            if (isCaveClientError(error)) {
-              throw error;
-            }
-
             if (redactManagedErrors) {
               throw redactedManagedTransportError(error, operation);
+            }
+            if (isCaveClientError(error)) {
+              throw error;
             }
 
             throw new CaveClientError(normalizeCaveError(error, operation), undefined, {
@@ -1207,6 +1190,17 @@ export class CaveClient {
 
       throw error;
     }
+  }
+
+  #managedSnapshot(value: unknown, operation: string): unknown {
+    if (this.#managedCredentialTransport === undefined) {
+      return value;
+    }
+    const snapshot = snapshotManagedResult(value);
+    if (snapshot === undefined) {
+      throw invalidResponse(operation);
+    }
+    return snapshot;
   }
 
   #operationControls(options: OperationOptions): {
@@ -1399,7 +1393,10 @@ export class CaveClient {
 
   async #runHealth(context: OperationContext): Promise<CaveHealth> {
     this.#ensureActive(context, 'health');
-    const response: unknown = await this.#transport.health(context);
+    const response = this.#managedSnapshot(
+      await this.#transport.health(context),
+      'health',
+    );
 
     if (isObject(response)) {
       const refusal = refusalOf(response, 'health');
@@ -1412,7 +1409,13 @@ export class CaveClient {
   }
 
   async health(options: OperationOptions = {}): Promise<CaveHealth> {
-    return this.#execute('health', options, async (context) => this.#runHealth(context));
+    return this.#execute(
+      'health',
+      options,
+      async (context) => this.#runHealth(context),
+      true,
+      this.#managedCredentialTransport !== undefined,
+    );
   }
 
   async #canonicalRead<T>(
@@ -1427,9 +1430,12 @@ export class CaveClient {
       options,
       async (context) => {
         this.#ensureActive(context, operation);
-        const response = await read(context);
+        const response = this.#managedSnapshot(await read(context), operation);
         try {
-          return parse(response);
+          const parsed = parse(response);
+          return this.#managedCredentialTransport === undefined
+            ? parsed
+            : immutableManagedResult(parsed);
         } catch (error) {
           if (error instanceof CaveCanonicalSchemaError) {
             throw invalidCanonicalResponse(operation, error.field);
@@ -1438,6 +1444,7 @@ export class CaveClient {
         }
       },
       inheritDefaults,
+      this.#managedCredentialTransport !== undefined,
     );
   }
 
@@ -1641,7 +1648,7 @@ export class CaveClient {
       throw unsupported(operation);
     }
 
-    const response: unknown = await call(context);
+    const response = this.#managedSnapshot(await call(context), operation);
 
     if (!isObject(response)) {
       throw invalidResponse(operation);
@@ -1664,11 +1671,20 @@ export class CaveClient {
       throw invalidResponse(operation);
     }
 
-    return response.familiars.map(toFamiliar);
+    const familiars = response.familiars.map(toFamiliar);
+    return this.#managedCredentialTransport === undefined
+      ? familiars
+      : immutableManagedResult(familiars);
   }
 
   async familiars(options: OperationOptions = {}): Promise<CaveFamiliar[]> {
-    return this.#execute('familiars', options, async (context) => this.#runFamiliars(context));
+    return this.#execute(
+      'familiars',
+      options,
+      async (context) => this.#runFamiliars(context),
+      true,
+      this.#managedCredentialTransport !== undefined,
+    );
   }
 
   /** The Familiar Contract report. Mirrors `GET /api/familiars/:id/contract`. */
@@ -1684,7 +1700,10 @@ export class CaveClient {
         throw unsupported('familiarContract');
       }
 
-      const response: unknown = await call(familiarId, context);
+      const response = this.#managedSnapshot(
+        await call(familiarId, context),
+        'familiarContract',
+      );
 
       if (!isObject(response)) {
         throw invalidResponse('familiarContract');
@@ -1704,13 +1723,16 @@ export class CaveClient {
         throw invalidResponse('familiarContract');
       }
 
-      return {
+      const contract = {
         id: isString(response.id) ? response.id : familiarId,
         ...(isString(response.workspace) ? { workspace: response.workspace } : {}),
         present: response.present,
         report: response.report as CaveFamiliarContract['report'],
       };
-    });
+      return this.#managedCredentialTransport === undefined
+        ? contract
+        : immutableManagedResult(contract);
+    }, true, this.#managedCredentialTransport !== undefined);
   }
 
   /**
@@ -1735,7 +1757,10 @@ export class CaveClient {
         throw unsupported('familiarAnalytics');
       }
 
-      const response: unknown = await call(familiarId, transportOptions, context);
+      const response = this.#managedSnapshot(
+        await call(familiarId, transportOptions, context),
+        'familiarAnalytics',
+      );
 
       if (!isObject(response)) {
         throw invalidResponse('familiarAnalytics');
@@ -1755,8 +1780,10 @@ export class CaveClient {
         throw invalidResponse('familiarAnalytics');
       }
 
-      return response.analytics;
-    });
+      return this.#managedCredentialTransport === undefined
+        ? response.analytics
+        : immutableManagedResult(response.analytics);
+    }, true, this.#managedCredentialTransport !== undefined);
   }
 
   async #runPairingCreate(
@@ -1883,7 +1910,7 @@ export class CaveClient {
               () => transport.managedPairingPoll(created.requestId, context),
             );
             const parsed = parseManagedPairingStatus(value);
-            if (parsed === undefined) {
+            if (parsed === undefined || parsed.id !== created.requestId) {
               throw invalidResponse('pairingPoll');
             }
             status = parsed;
@@ -2163,12 +2190,12 @@ export class CaveClient {
           'credentialStatus',
         );
         return managedStatus.status === 'revoked'
-          ? { status: 'revoked', health }
-          : {
+          ? immutableManagedResult({ status: 'revoked', health })
+          : immutableManagedResult({
               status: 'valid',
               access: managedStatus.access,
               health,
-            };
+            });
       }, true, true);
     }
 

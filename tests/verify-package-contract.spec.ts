@@ -148,4 +148,19 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain("await import('@opencoven/sdk-core/browser');");
   });
 
+  test('typechecks, imports, and bundles the packed managed browser entry without Node types', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain('function createManagedBrowserFixture(fixtureRoot, tarballs)');
+    expect(verifier).toContain('packed-opencoven-managed-browser-consumer');
+    expect(verifier).toContain("types: []");
+    expect(verifier).toContain("esbuild: '0.28.1'");
+    expect(verifier).toContain("platform: 'browser'");
+    expect(verifier).toContain('managedBrowserFixtureRoot');
+    expect(verifier).toContain('assertConsumerDependencyIsolation(managedBrowserFixtureRoot);');
+    expect(verifier).toContain("run(process.execPath, ['verify.mjs'], managedBrowserFixtureRoot);");
+    expect(verifier).toContain("run(process.execPath, ['bundle.mjs'], managedBrowserFixtureRoot);");
+    expect(verifier).toContain('assertPackedPackagesExcludeSources(managedBrowserFixtureRoot);');
+  });
+
 });

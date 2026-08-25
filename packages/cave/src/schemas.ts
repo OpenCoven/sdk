@@ -1,8 +1,3 @@
-import type {
-  CaveDiscoveredEndpoint,
-  CaveEndpointFreshness,
-} from './discovery.js';
-
 export interface CaveCanonicalFamiliar {
   id: string;
   displayName: string;
@@ -150,15 +145,22 @@ export interface CaveManagedPairingExchange {
 }
 
 export interface CaveAuthorityBinding {
-  version: CaveDiscoveredEndpoint['version'];
+  version: 1;
   instanceId: string;
-  endpoint: CaveDiscoveredEndpoint['endpoint'];
+  endpoint: {
+    kind: 'http';
+    url: string;
+  };
   record: {
     identity: string;
     device: number;
     inode: number;
   };
-  freshness: CaveEndpointFreshness;
+  freshness: {
+    pid: number;
+    nonce: string;
+    startedAt: string;
+  };
 }
 
 export interface CaveAuthorityBoundPairingExchange extends CavePairingExchange {

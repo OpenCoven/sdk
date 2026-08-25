@@ -1,4 +1,5 @@
 import * as cave from '@opencoven/cave-client';
+import { inspect } from 'node:util';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 const PAIRING_SECRET = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
@@ -97,6 +98,18 @@ function expectRedacted(value: unknown): void {
   expect(serialized).not.toContain(PAIRING_SECRET);
   expect(serialized).not.toContain(BEARER);
   expect(serialized).not.toMatch(/secret|bearer/iu);
+}
+
+function withAccessor(
+  value: Record<string, unknown>,
+  key: string,
+  getter: () => unknown,
+): Record<string, unknown> {
+  Object.defineProperty(value, key, {
+    enumerable: true,
+    get: getter,
+  });
+  return value;
 }
 
 afterEach(() => {
@@ -293,6 +306,275 @@ describe('managed native Cave credential custody', () => {
       normalized: (error as cave.CaveClientError).normalized,
       events,
     });
+  });
+
+  test('rejects nested accessor, custom-array, and revoked-proxy managed results before they leak', async () => {
+    const accessorCredential = credential() as unknown as Record<string, unknown>;
+    let scopeReads = 0;
+    withAccessor(accessorCredential, 'scopes', () => {
+      scopeReads += 1;
+      return scopeReads === 1 ? ['chat:read'] : [BEARER];
+    });
+    class CustomScopes extends Array<string> {}
+    const customScopes = new CustomScopes('chat:read');
+    const { proxy, revoke } = Proxy.revocable(
+      {
+        status: 'missing',
+      },
+      {},
+    );
+    revoke();
+
+    const transport = managedTransport({
+      managedPairingExchange: vi.fn(() =>
+        Promise.resolve({ credential: accessorCredential }),
+      ),
+    });
+    const client = managedClient(transport);
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+    const accessorError = await session.exchange().catch((error: unknown) => error);
+    expect(accessorError).toMatchObject({ normalized: { code: 'invalid_response' } });
+    expectRedacted({
+      accessorError: serializedError(accessorError),
+      scopes: (accessorError as cave.CaveClientError).details,
+    });
+
+    transport.managedPairingExchange = vi.fn(() =>
+      Promise.resolve({
+        credential: {
+          ...credential(),
+          scopes: customScopes,
+        },
+      }),
+    );
+    const customArrayError = await (
+      await client.createPairing({
+        appName: 'OpenCoven Chat',
+        installationId: 'chat-install-2',
+        scopes: ['chat:read'],
+      })
+    ).exchange().catch((error: unknown) => error);
+    expect(customArrayError).toMatchObject({ normalized: { code: 'invalid_response' } });
+
+    transport.managedCredentialStatus = vi.fn(() => Promise.resolve(proxy));
+    const proxyError = await client.credentialStatus().catch((error: unknown) => error);
+    expect(proxyError).toMatchObject({ normalized: { code: 'invalid_response' } });
+  });
+
+  test('rejects nested managed accessors before health, pairing, status, and canonical parsing', async () => {
+    const createTransport = managedTransport({
+      managedPairingCreate: vi.fn(() =>
+        Promise.resolve(
+          withAccessor(
+            {
+              requestId: REQUEST_ID,
+              expiresAt: 1_755_731_112_617,
+            },
+            'expiresAt',
+            () => 1_755_731_112_617,
+          ),
+        ),
+      ),
+    });
+    await expect(
+      managedClient(createTransport).createPairing({
+        appName: 'OpenCoven Chat',
+        installationId: 'chat-create-accessor',
+        scopes: ['chat:read'],
+      }),
+    ).rejects.toMatchObject({
+      normalized: { code: 'invalid_response' },
+    });
+
+    const healthData = withAccessor(
+      {
+        instanceId: 'managed-native-cave',
+        pairingRequired: true,
+        releaseVersion: '0.3.9',
+      },
+      'instanceId',
+      () => BEARER,
+    );
+    const canonicalEntry = withAccessor(
+      {
+        id: 'familiar-1',
+        displayName: 'Cedar',
+        role: 'guide',
+      },
+      'displayName',
+      () => BEARER,
+    );
+    const transport = managedTransport({
+      health: vi.fn(() =>
+        Promise.resolve({
+          ...HEALTH_ENVELOPE,
+          data: healthData as unknown as typeof HEALTH_ENVELOPE.data,
+        }),
+      ),
+      managedPairingPoll: vi.fn(() =>
+        Promise.resolve(
+          withAccessor(
+            {
+              id: REQUEST_ID,
+              status: 'approved',
+              expiresAt: 1_755_731_112_617,
+            },
+            'status',
+            () => 'approved',
+          ),
+        ),
+      ),
+      managedCredentialStatus: vi.fn(() =>
+        Promise.resolve({
+          status: 'valid',
+          access: 'chat:read',
+          health: withAccessor(
+            { ...HEALTH_ENVELOPE },
+            'apiVersion',
+            () => '1.0',
+          ),
+        }),
+      ),
+      listFamiliars: vi.fn(() =>
+        Promise.resolve({
+          apiVersion: '1.0',
+          minimumClientVersion: '0.1.0',
+          capabilities: ['familiars', 'cursors'],
+          operations: ['familiars.list'],
+          data: { familiars: [canonicalEntry] },
+        }),
+      ),
+    });
+    const client = managedClient(transport);
+
+    await expect(client.health()).rejects.toMatchObject({
+      normalized: { code: 'invalid_response' },
+    });
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+    await expect(session.poll()).rejects.toMatchObject({
+      normalized: { code: 'invalid_response' },
+    });
+    await expect(client.credentialStatus()).rejects.toMatchObject({
+      normalized: { code: 'invalid_response' },
+    });
+    await expect(client.listFamiliars()).rejects.toMatchObject({
+      normalized: { code: 'invalid_response' },
+    });
+
+    transport.managedForgetCredential = vi.fn(() =>
+      Promise.resolve(withAccessor({ status: 'deleted' }, 'status', () => 'deleted')),
+    );
+    await expect(client.forgetCredential()).rejects.toMatchObject({
+      normalized: { code: 'invalid_response' },
+    });
+  });
+
+  test('returns immutable managed snapshots rather than transport-owned values', async () => {
+    const transport = managedTransport({
+      listFamiliars: vi.fn(() =>
+        Promise.resolve({
+          apiVersion: '1.0',
+          minimumClientVersion: '0.1.0',
+          capabilities: ['familiars', 'cursors'],
+          operations: ['familiars.list'],
+          data: {
+            familiars: [{
+              id: 'familiar-1',
+              displayName: 'Cedar',
+              role: 'guide',
+            }],
+          },
+        }),
+      ),
+    });
+    const client = managedClient(transport);
+    const health = await client.health();
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+    const status = await session.poll();
+    const exchanged = await session.exchange();
+    const credentialStatus = await client.credentialStatus();
+    const familiars = await client.listFamiliars();
+
+    expect(Object.isFrozen(health)).toBe(true);
+    expect(Object.isFrozen(health.capabilities)).toBe(true);
+    expect(Object.isFrozen(status)).toBe(true);
+    expect(Object.isFrozen(exchanged)).toBe(true);
+    expect(Object.isFrozen(exchanged.scopes)).toBe(true);
+    expect(Object.isFrozen(credentialStatus)).toBe(true);
+    expect(Object.isFrozen(familiars)).toBe(true);
+    expect(Object.isFrozen(familiars.data)).toBe(true);
+    expect(Object.isFrozen(familiars.data[0])).toBe(true);
+  });
+
+  test('redacts managed health and canonical failures before causes, inspect, or observer events', async () => {
+    const events: unknown[] = [];
+    const nativeError = Object.assign(new Error(`native bearer ${BEARER}`), {
+      code: 'service_unavailable',
+      details: { bearer: BEARER },
+      cause: { secret: PAIRING_SECRET },
+    });
+    const transport = managedTransport({
+      health: vi.fn(() => Promise.reject(nativeError)),
+      listFamiliars: vi.fn(() => Promise.reject(nativeError)),
+    });
+    const client = managedClient(transport, {
+      onEvent(event) {
+        events.push(event);
+      },
+      onObserverError(error) {
+        throw error;
+      },
+    });
+
+    const healthError = await client.health().catch((error: unknown) => error);
+    const canonicalError = await client.listFamiliars().catch((error: unknown) => error);
+    for (const error of [healthError, canonicalError]) {
+      expect(error).toMatchObject({
+        normalized: { code: 'service_unavailable' },
+      });
+      expectRedacted({
+        json: serializedError(error),
+        inspect: inspect(error),
+        cause: error instanceof Error ? error.cause : undefined,
+        normalized: (error as cave.CaveClientError).normalized,
+      });
+    }
+    expectRedacted(events);
+  });
+
+  test('rejects managed polling that is not bound to the active pairing request', async () => {
+    const transport = managedTransport({
+      managedPairingPoll: vi.fn(() =>
+        Promise.resolve({
+          id: '018f4f1a-77c2-7a31-8a15-55a25aaba009',
+          status: 'approved',
+          expiresAt: 1_755_731_112_617,
+        }),
+      ),
+    });
+    const client = managedClient(transport);
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await expect(session.poll()).rejects.toMatchObject({
+      normalized: { code: 'invalid_response', operation: 'pairingPoll' },
+    });
+    await expect(session.exchange()).resolves.toEqual(credential());
   });
 
   test('rejects malformed managed metadata and validates health before exposing credential status', async () => {

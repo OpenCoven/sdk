@@ -347,8 +347,10 @@ if (existsSync(rootModules) || existsSync(nestedModules) || !existsSync(lockfile
           const declarations = readTarballFile(tarball, 'dist/index.d.ts');
           expect(declarations).toContain('CaveManagedCredentialTransport');
           expect(declarations).toContain('CaveManagedNativeCredentialCustody');
-          expect(readTarballFile(tarball, 'dist/managed.d.ts')).toContain(
-            'createManagedCaveClient',
+          const managedDeclarations = readTarballFile(tarball, 'dist/managed.d.ts');
+          expect(managedDeclarations).toContain('createManagedCaveClient');
+          expect(managedDeclarations).not.toMatch(
+            /\bNodeJS\.(?:ProcessEnv|Platform)\b/u,
           );
         }
         if (workspaceDirectory === 'core') {

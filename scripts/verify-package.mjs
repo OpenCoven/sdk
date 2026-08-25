@@ -495,6 +495,129 @@ try {
   );
 }
 
+function createManagedBrowserFixture(fixtureRoot, tarballs) {
+  const overrides = createPublicPackageOverrides(tarballs);
+
+  mkdirSync(resolve(fixtureRoot, 'src'), { recursive: true });
+  writeFileSync(
+    resolve(fixtureRoot, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'packed-opencoven-managed-browser-consumer',
+        private: true,
+        type: 'module',
+        dependencies: {
+          '@opencoven/cave-client': tarballSpecifier(tarballs, 'cave'),
+        },
+        pnpm: {
+          overrides,
+        },
+        devDependencies: {
+          esbuild: '0.28.1',
+          typescript: '6.0.3',
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFileSync(
+    resolve(fixtureRoot, 'tsconfig.json'),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          target: 'ES2024',
+          lib: ['ES2024', 'DOM'],
+          module: 'NodeNext',
+          moduleResolution: 'NodeNext',
+          strict: true,
+          types: [],
+          skipLibCheck: true,
+          noEmit: true,
+        },
+        include: ['src/**/*.ts'],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFileSync(
+    resolve(fixtureRoot, 'src', 'index.ts'),
+    `import {
+  createManagedCaveClient,
+  type CaveManagedCredentialTransport,
+} from '@opencoven/cave-client/managed';
+
+const transport = {
+  health: async () => ({
+    apiVersion: '1.0',
+    minimumClientVersion: '0.1.0',
+    capabilities: ['health'],
+    operations: ['health.read'],
+    data: {
+      instanceId: 'packed-managed-browser-cave',
+      pairingRequired: true,
+      releaseVersion: '0.3.9',
+    },
+  }),
+  managedPairingCreate: async () => ({
+    requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+    expiresAt: 1_755_731_112_617,
+  }),
+  managedPairingPoll: async () => ({
+    id: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+    status: 'pending',
+    expiresAt: 1_755_731_112_617,
+  }),
+  managedPairingExchange: async () => ({
+    credential: {
+      id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+      appName: 'OpenCoven Chat',
+      installationId: 'packed-managed-browser',
+      scopes: ['chat:read'],
+      createdAt: 1_755_730_812_617,
+      lastUsedAt: null,
+      revokedAt: null,
+      revocationReason: null,
+    },
+  }),
+  managedCredentialStatus: async () => ({ status: 'missing' }),
+  managedForgetCredential: async () => ({ status: 'missing' }),
+} satisfies CaveManagedCredentialTransport;
+
+void createManagedCaveClient({ transport });
+`,
+  );
+  writeFileSync(
+    resolve(fixtureRoot, 'bundle.mjs'),
+    `import { build } from 'esbuild';
+
+const result = await build({
+  bundle: true,
+  entryPoints: ['src/index.ts'],
+  format: 'esm',
+  logLevel: 'silent',
+  platform: 'browser',
+  target: 'es2024',
+  write: false,
+});
+const output = result.outputFiles.map(({ text }) => text).join('\\n');
+if (
+  /["']node:[^"']+["']/u.test(output) ||
+  /\\bBuffer\\b/u.test(output) ||
+  /\\bprocess\\s*\\.\\s*(?:env|cwd|platform|kill|get)/u.test(output)
+) {
+  throw new Error('Packed managed browser entry point includes a Node runtime dependency.');
+}
+`,
+  );
+  writeFileSync(
+    resolve(fixtureRoot, 'verify.mjs'),
+    `await import('@opencoven/cave-client/managed');
+`,
+  );
+}
+
 function createPackedExamples({ artifactRoot, exampleRoot, tarballs }) {
   mkdirSync(exampleRoot, { recursive: true });
   writeFileSync(resolve(artifactRoot, 'tsconfig.base.json'), readFileSync(resolve(root, 'tsconfig.base.json')));
@@ -565,6 +688,7 @@ try {
   const artifactRoot = artifactContext.rootPath;
   const tarballRoot = resolve(artifactRoot, 'tarballs');
   const fixtureRoot = resolve(artifactRoot, 'packed-consumer');
+  const managedBrowserFixtureRoot = resolve(artifactRoot, 'packed-managed-browser-consumer');
   const exampleRoot = resolve(artifactRoot, 'examples');
   mkdirSync(tarballRoot, { recursive: true });
 
@@ -595,6 +719,7 @@ try {
   process.stdout.write('Release artifact manifest verified.\n');
 
   createFixture(fixtureRoot, tarballs);
+  createManagedBrowserFixture(managedBrowserFixtureRoot, tarballs);
   createPackedExamples({
     artifactRoot,
     exampleRoot,
@@ -602,6 +727,7 @@ try {
   });
   const consumerRoots = [
     fixtureRoot,
+    managedBrowserFixtureRoot,
     ...exampleWorkspaces.map((workspaceDirectory) =>
       resolve(exampleRoot, workspaceDirectory),
     ),
@@ -610,6 +736,27 @@ try {
   assertConsumerDependencyIsolation(fixtureRoot);
   runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);
   assertPackedPackagesExcludeSources(fixtureRoot);
+  assertConsumerDependencyIsolation(managedBrowserFixtureRoot);
+  const managedBrowserManifest = JSON.parse(
+    readFileSync(resolve(managedBrowserFixtureRoot, 'package.json'), 'utf8'),
+  );
+  const managedBrowserTsconfig = JSON.parse(
+    readFileSync(resolve(managedBrowserFixtureRoot, 'tsconfig.json'), 'utf8'),
+  );
+  if (
+    managedBrowserManifest.devDependencies?.['@types/node'] !== undefined ||
+    !Array.isArray(managedBrowserTsconfig.compilerOptions?.types) ||
+    managedBrowserTsconfig.compilerOptions.types.length !== 0
+  ) {
+    throw new Error('Packed managed browser consumer must typecheck without Node ambient types.');
+  }
+  runPnpm(
+    ['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'],
+    managedBrowserFixtureRoot,
+  );
+  run(process.execPath, ['verify.mjs'], managedBrowserFixtureRoot);
+  run(process.execPath, ['bundle.mjs'], managedBrowserFixtureRoot);
+  assertPackedPackagesExcludeSources(managedBrowserFixtureRoot);
 
   for (const workspaceDirectory of exampleWorkspaces) {
     const destinationDirectory = resolve(exampleRoot, workspaceDirectory);

@@ -1,5 +1,6 @@
 import { build } from 'esbuild';
 import { resolve } from 'node:path';
+import { inspect } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -12,6 +13,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const REQUEST_ID = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
+const NATIVE_BEARER = 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC';
 
 const HEALTH = {
   apiVersion: '1.0',
@@ -170,5 +172,41 @@ describe('managed browser entry point', () => {
     await expect(discoverManagedCaveEndpoint(stale)).rejects.toMatchObject({
       code: 'stale_record',
     });
+  });
+
+  test('sanitizes native discovery read failures before observer or error serialization', async () => {
+    const events: unknown[] = [];
+    const source: CaveManagedDiscoverySource = {
+      read: () =>
+        Promise.reject(
+          Object.assign(new Error(`native bearer ${NATIVE_BEARER}`), {
+            code: 'service_unavailable',
+            details: { bearer: NATIVE_BEARER },
+            cause: { bearer: NATIVE_BEARER },
+          }),
+        ),
+    };
+    const error = await discoverManagedCaveEndpoint(source, {
+      observer: {
+        onEvent(event) {
+          events.push(event);
+        },
+        onObserverError(observerError) {
+          throw observerError;
+        },
+      },
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      name: 'CaveDiscoveryError',
+      code: 'invalid_response',
+    });
+    const serialized = JSON.stringify({
+      error,
+      inspect: inspect(error),
+      events,
+    }, error instanceof Error ? Object.getOwnPropertyNames(error) : undefined);
+    expect(serialized).not.toContain(NATIVE_BEARER);
+    expect(serialized).not.toMatch(/bearer/iu);
   });
 });

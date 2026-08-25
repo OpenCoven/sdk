@@ -9,6 +9,7 @@ import {
   CaveDiscoveryError,
   parseCaveDiscoveryRecord,
 } from './discovery-record.js';
+import { snapshotManagedResult } from './managed-snapshot.js';
 
 const DEFAULT_MAX_RECORD_BYTES = 16 * 1024;
 
@@ -94,10 +95,14 @@ function parseSourceResult(
   value: unknown,
   maxRecordBytes: number,
 ): CaveManagedDiscoveredEndpoint {
-  if (!isDataRecord(value) || !hasExactKeys(value, ['bytes', 'record'])) {
+  const snapshot = snapshotManagedResult(value);
+  if (
+    !isDataRecord(snapshot) ||
+    !hasExactKeys(snapshot, ['bytes', 'record'])
+  ) {
     return invalidRecord();
   }
-  if (!isDataRecord(value.record) || !hasExactKeys(value.record, [
+  if (!isDataRecord(snapshot.record) || !hasExactKeys(snapshot.record, [
     'identity',
     'device',
     'inode',
@@ -105,7 +110,7 @@ function parseSourceResult(
   ])) {
     return invalidRecord();
   }
-  const { identity, device, inode, processAlive } = value.record;
+  const { identity, device, inode, processAlive } = snapshot.record;
   if (
     typeof identity !== 'string' ||
     identity.length === 0 ||
@@ -123,17 +128,28 @@ function parseSourceResult(
   }
 
   let serialized: string;
-  if (typeof value.bytes === 'string') {
-    if (new TextEncoder().encode(value.bytes).byteLength > maxRecordBytes) {
+  if (typeof snapshot.bytes === 'string') {
+    if (new TextEncoder().encode(snapshot.bytes).byteLength > maxRecordBytes) {
       throw new CaveDiscoveryError('body_limit', 'Cave discovery record exceeded its size limit.');
     }
-    serialized = value.bytes;
-  } else if (value.bytes instanceof Uint8Array) {
-    if (value.bytes.byteLength > maxRecordBytes) {
+    serialized = snapshot.bytes;
+  } else if (
+    Array.isArray(snapshot.bytes) &&
+    snapshot.bytes.every(
+      (byte) =>
+        typeof byte === 'number' &&
+        Number.isSafeInteger(byte) &&
+        byte >= 0 &&
+        byte <= 255,
+    )
+  ) {
+    if (snapshot.bytes.length > maxRecordBytes) {
       throw new CaveDiscoveryError('body_limit', 'Cave discovery record exceeded its size limit.');
     }
     try {
-      serialized = new TextDecoder('utf-8', { fatal: true }).decode(value.bytes);
+      serialized = new TextDecoder('utf-8', { fatal: true }).decode(
+        new Uint8Array(snapshot.bytes),
+      );
     } catch {
       return invalidRecord();
     }
@@ -142,12 +158,17 @@ function parseSourceResult(
   }
 
   const parsed = parseCaveDiscoveryRecord(serialized, () => processAlive);
-  return {
+  const endpoint = {
     version: parsed.version,
     endpoint: parsed.endpoint,
     freshness: parsed.freshness,
     record: { identity, device, inode },
   };
+  const result = snapshotManagedResult(endpoint);
+  if (result === undefined) {
+    return invalidRecord();
+  }
+  return result as CaveManagedDiscoveredEndpoint;
 }
 
 export async function discoverManagedCaveEndpoint(
@@ -172,6 +193,17 @@ export async function discoverManagedCaveEndpoint(
       operation: 'managedDiscovery',
     },
     operationOptions,
-    async (context) => parseSourceResult(await source.read(context), maxRecordBytes),
+    async (context) => {
+      let value: unknown;
+      try {
+        value = await source.read(context);
+      } catch {
+        throw new CaveDiscoveryError(
+          'invalid_response',
+          'Managed Cave discovery data could not be read.',
+        );
+      }
+      return parseSourceResult(value, maxRecordBytes);
+    },
   );
 }
