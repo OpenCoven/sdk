@@ -1,3 +1,5 @@
+// Entrypoint: .
+// Declaration: dist/index.d.ts
 import { DiscoveryEndpoint, OperationContext, OperationDefaults, OperationOptions, NormalizedError } from '@opencoven/sdk-core';
 
 declare const COVEN_DAEMON_PROTOCOL: "coven.daemon.v1";

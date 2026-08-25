@@ -1,3 +1,5 @@
+// Entrypoint: .
+// Declaration: dist/index.d.ts
 import { CaveHealth, CaveClientError, CaveClient } from '@opencoven/cave-client';
 import { CovenHealth, CovenClientError, CovenClient } from '@opencoven/coven-client';
 import { OperationOptions } from '@opencoven/sdk-core';

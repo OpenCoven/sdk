@@ -19,10 +19,10 @@ import {
   parseEnvelopeBase,
   parseErrorPayload,
   parseFamiliarsResponse,
-  parseHealthResponse,
   parsePairingStatus,
 } from './pairing.js';
 import type {
+  CaveHealthResponse,
   CavePairingRequest,
 } from './schemas.js';
 import type {
@@ -497,11 +497,9 @@ export function createManagedCaveClient(
   const transport: CaveStagedManagedCredentialTransport = {
     credentialMode: 'managed-native',
     async health(context) {
-      return parseHealthResponse(
-        parseResponse(
-          await invokeNative(native, 'health', [context], 'health'),
-        ),
-      );
+      return parseResponse(
+        await invokeNative(native, 'health', [context], 'health'),
+      ) as CaveHealthResponse;
     },
     async pairingCreateManaged(request, context) {
       return parseManagedPairingCreated(

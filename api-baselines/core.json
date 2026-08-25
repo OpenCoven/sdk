@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "packageName": "@opencoven/sdk-core",
   "packageExports": {
     ".": {
@@ -14,38 +14,73 @@
     },
     "./package.json": "./package.json"
   },
-  "runtimeExports": [
-    "DISCOVERY_PROFILES",
-    "DISCOVERY_PROTOCOL",
-    "DISCOVERY_RECORD_VERSION",
-    "DiscoveryContractError",
-    "InvalidSecretKeyError",
-    "OPENCOVEN_DIAGNOSTIC_VERSION",
-    "OPENCOVEN_PROFILE_VERSION",
-    "OpenCovenDiagnosticError",
-    "OpenCovenProfileError",
-    "OperationAbortedError",
-    "OperationConfigurationError",
-    "OperationTimeoutError",
-    "SecretStoreDisposedError",
-    "assessCompatibility",
-    "createFileOpenCovenProfileStore",
-    "createManagedMemorySecretStore",
-    "createMemoryOpenCovenProfileStore",
-    "createMemorySecretStore",
-    "createOpenCovenDiagnosticReport",
-    "createOpenCovenProfileSecretReference",
-    "createOperationScope",
-    "createSecretStoreReference",
-    "isOperationAbortedError",
-    "isOperationTimeoutError",
-    "iteratePages",
-    "migrateOpenCovenProfileDocument",
-    "normalizeError",
-    "normalizePageOptions",
-    "parseDiscoveryEndpoint",
-    "parseDiscoveryRecord",
-    "parseOpenCovenProfile",
-    "runOperation"
-  ]
+  "entrypoints": {
+    ".": {
+      "declarationFiles": [
+        "dist/browser.d.ts",
+        "dist/index.d.ts"
+      ],
+      "runtimeExports": {
+        "dist/index.js": [
+          "DISCOVERY_PROFILES",
+          "DISCOVERY_PROTOCOL",
+          "DISCOVERY_RECORD_VERSION",
+          "DiscoveryContractError",
+          "InvalidSecretKeyError",
+          "OPENCOVEN_DIAGNOSTIC_VERSION",
+          "OPENCOVEN_PROFILE_VERSION",
+          "OpenCovenDiagnosticError",
+          "OpenCovenProfileError",
+          "OperationAbortedError",
+          "OperationConfigurationError",
+          "OperationTimeoutError",
+          "SecretStoreDisposedError",
+          "assessCompatibility",
+          "createFileOpenCovenProfileStore",
+          "createManagedMemorySecretStore",
+          "createMemoryOpenCovenProfileStore",
+          "createMemorySecretStore",
+          "createOpenCovenDiagnosticReport",
+          "createOpenCovenProfileSecretReference",
+          "createOperationScope",
+          "createSecretStoreReference",
+          "isOperationAbortedError",
+          "isOperationTimeoutError",
+          "iteratePages",
+          "migrateOpenCovenProfileDocument",
+          "normalizeError",
+          "normalizePageOptions",
+          "parseDiscoveryEndpoint",
+          "parseDiscoveryRecord",
+          "parseOpenCovenProfile",
+          "runOperation"
+        ]
+      }
+    },
+    "./browser": {
+      "declarationFiles": [
+        "dist/browser.d.ts"
+      ],
+      "runtimeExports": {
+        "dist/browser.js": [
+          "InvalidSecretKeyError",
+          "OperationAbortedError",
+          "OperationConfigurationError",
+          "OperationTimeoutError",
+          "SecretStoreDisposedError",
+          "assessCompatibility",
+          "createManagedMemorySecretStore",
+          "createMemorySecretStore",
+          "createOperationScope",
+          "createSecretStoreReference",
+          "isOperationAbortedError",
+          "isOperationTimeoutError",
+          "iteratePages",
+          "normalizeError",
+          "normalizePageOptions",
+          "runOperation"
+        ]
+      }
+    }
+  }
 }

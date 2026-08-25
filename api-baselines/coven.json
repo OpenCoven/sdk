@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "packageName": "@opencoven/coven-client",
   "packageExports": {
     ".": {
@@ -9,20 +9,29 @@
     },
     "./package.json": "./package.json"
   },
-  "runtimeExports": [
-    "COVEN_DAEMON_PROTOCOL",
-    "CovenClient",
-    "CovenClientError",
-    "CovenDaemonResponseError",
-    "CovenIpcError",
-    "createCovenClient",
-    "createCovenUnixTransport",
-    "createCovenWindowsTransport",
-    "createDiscoveredCovenClient",
-    "discoverCovenEndpoint",
-    "isCovenClientError",
-    "isCovenDaemonResponseError",
-    "isCovenIpcError",
-    "normalizeCovenError"
-  ]
+  "entrypoints": {
+    ".": {
+      "declarationFiles": [
+        "dist/index.d.ts"
+      ],
+      "runtimeExports": {
+        "dist/index.js": [
+          "COVEN_DAEMON_PROTOCOL",
+          "CovenClient",
+          "CovenClientError",
+          "CovenDaemonResponseError",
+          "CovenIpcError",
+          "createCovenClient",
+          "createCovenUnixTransport",
+          "createCovenWindowsTransport",
+          "createDiscoveredCovenClient",
+          "discoverCovenEndpoint",
+          "isCovenClientError",
+          "isCovenDaemonResponseError",
+          "isCovenIpcError",
+          "normalizeCovenError"
+        ]
+      }
+    }
+  }
 }

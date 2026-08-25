@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "packageName": "@opencoven/sdk",
   "packageExports": {
     ".": {
@@ -9,9 +9,18 @@
     },
     "./package.json": "./package.json"
   },
-  "runtimeExports": [
-    "OpenCovenSdk",
-    "OpenCovenSdkError",
-    "createOpenCovenSdk"
-  ]
+  "entrypoints": {
+    ".": {
+      "declarationFiles": [
+        "dist/index.d.ts"
+      ],
+      "runtimeExports": {
+        "dist/index.js": [
+          "OpenCovenSdk",
+          "OpenCovenSdkError",
+          "createOpenCovenSdk"
+        ]
+      }
+    }
+  }
 }

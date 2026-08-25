@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "packageName": "@opencoven/cave-client",
   "packageExports": {
     ".": {
@@ -14,26 +14,57 @@
     },
     "./package.json": "./package.json"
   },
-  "runtimeExports": [
-    "CAVE_ANALYTICS_WINDOWS",
-    "CAVE_CLIENT_VERSION",
-    "CAVE_FAMILIAR_PROPERTIES",
-    "CAVE_PAIRING_SCOPES",
-    "CAVE_PAIRING_STATUSES",
-    "CaveClient",
-    "CaveClientError",
-    "CaveDiscoveryError",
-    "CavePairingSession",
-    "createCaveClient",
-    "createDiscoveredCaveClient",
-    "createManagedCaveClient",
-    "digestCaveContractFixture",
-    "discoverCaveEndpoint",
-    "isCaveClientError",
-    "isCaveDiscoveryError",
-    "normalizeCaveError",
-    "parseCaveContractFixture",
-    "parseVerifiedCaveContractFixture",
-    "verifyCaveContractFixtureDigest"
-  ]
+  "entrypoints": {
+    ".": {
+      "declarationFiles": [
+        "dist/client-BbxpTVKf.d.ts",
+        "dist/index.d.ts"
+      ],
+      "runtimeExports": {
+        "dist/index.js": [
+          "CAVE_ANALYTICS_WINDOWS",
+          "CAVE_CLIENT_VERSION",
+          "CAVE_FAMILIAR_PROPERTIES",
+          "CAVE_PAIRING_SCOPES",
+          "CAVE_PAIRING_STATUSES",
+          "CaveClient",
+          "CaveClientError",
+          "CaveDiscoveryError",
+          "CavePairingSession",
+          "createCaveClient",
+          "createDiscoveredCaveClient",
+          "createManagedCaveClient",
+          "digestCaveContractFixture",
+          "discoverCaveEndpoint",
+          "isCaveClientError",
+          "isCaveDiscoveryError",
+          "normalizeCaveError",
+          "parseCaveContractFixture",
+          "parseVerifiedCaveContractFixture",
+          "verifyCaveContractFixtureDigest"
+        ]
+      }
+    },
+    "./managed": {
+      "declarationFiles": [
+        "dist/client-BbxpTVKf.d.ts",
+        "dist/managed.d.ts"
+      ],
+      "runtimeExports": {
+        "dist/managed.js": [
+          "CAVE_ANALYTICS_WINDOWS",
+          "CAVE_FAMILIAR_PROPERTIES",
+          "CAVE_PAIRING_SCOPES",
+          "CAVE_PAIRING_STATUSES",
+          "CaveClient",
+          "CaveClientError",
+          "CavePairingSession",
+          "createManagedCaveClient",
+          "discoverManagedCaveEndpoint",
+          "isCaveClientError",
+          "normalizeCaveError"
+        ]
+      }
+    }
+  }
 }

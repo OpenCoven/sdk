@@ -124,5 +124,13 @@ describe('managed result snapshot resource limits', () => {
       valid: false,
       limitExceeded: false,
     });
+    const hostileBudget = new Proxy({}, {
+      get() {
+        throw new Error('budget bearer must not escape');
+      },
+    });
+    expect(
+      snapshotManagedResultWithBudget({}, hostileBudget),
+    ).toEqual({ valid: false, limitExceeded: false });
   });
 });

@@ -237,6 +237,7 @@ export function isCaveClientError(error: unknown): error is CaveClientError {
 }
 
 const MANAGED_LOCAL_CAVE_CLIENT_ERRORS = new WeakSet<CaveClientError>();
+const MANAGED_VALIDATED_CAVE_CLIENT_ERRORS = new WeakSet<CaveClientError>();
 
 function managedLocalCaveClientError(error: CaveClientError): CaveClientError {
   MANAGED_LOCAL_CAVE_CLIENT_ERRORS.add(error);
@@ -245,6 +246,15 @@ function managedLocalCaveClientError(error: CaveClientError): CaveClientError {
 
 function isManagedLocalCaveClientError(error: unknown): error is CaveClientError {
   return isCaveClientError(error) && MANAGED_LOCAL_CAVE_CLIENT_ERRORS.has(error);
+}
+
+function managedValidatedCaveClientError(error: CaveClientError): CaveClientError {
+  MANAGED_VALIDATED_CAVE_CLIENT_ERRORS.add(error);
+  return error;
+}
+
+function isManagedValidatedCaveClientError(error: unknown): error is CaveClientError {
+  return isCaveClientError(error) && MANAGED_VALIDATED_CAVE_CLIENT_ERRORS.has(error);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -1704,7 +1714,8 @@ export class CaveClient {
           } catch (error) {
             if (
               redactManagedErrors &&
-              isManagedLocalCaveClientError(error)
+              (isManagedLocalCaveClientError(error) ||
+                isManagedValidatedCaveClientError(error))
             ) {
               throw error;
             }
@@ -1828,6 +1839,7 @@ export class CaveClient {
             ? isOperationTimeoutError(error) || isOperationAbortedError(error)
               ? redactedManagedCancellationError(error, operation)
               : isManagedLocalCaveClientError(error)
+                || isManagedValidatedCaveClientError(error)
                 ? error
                 : redactedManagedTransportError(error, operation)
             : this.#wrapOperationError(error, operation);
@@ -1909,7 +1921,7 @@ export class CaveClient {
     }
 
     if (!compatibility.compatible) {
-      throw new CaveClientError(
+      throw managedValidatedCaveClientError(new CaveClientError(
         normalizeCaveError(
           {
             code: 'incompatible_version',
@@ -1917,7 +1929,7 @@ export class CaveClient {
           operation,
         ),
         compatibility,
-      );
+      ));
     }
 
     if (!CAVE_API_VERSION_PATTERN.test(parsed.apiVersion)) {
@@ -1928,14 +1940,14 @@ export class CaveClient {
     }
 
     if (parsed.apiVersion.split('.')[0] !== SUPPORTED_CAVE_API_MAJOR) {
-      throw new CaveClientError(
+      throw managedValidatedCaveClientError(new CaveClientError(
         normalizeCaveError(
           {
             code: 'incompatible_version',
           },
           operation,
         ),
-      );
+      ));
     }
 
     return parsed.health;

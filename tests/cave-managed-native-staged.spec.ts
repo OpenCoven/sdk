@@ -1007,6 +1007,89 @@ describe('managed native Cave client', () => {
     });
   });
 
+  test('preserves trusted SDK compatibility assessments from staged native health', async () => {
+    const client = createManagedClient({
+      health: () =>
+        Promise.resolve({
+          statusCode: 200,
+          payload: {
+            ...healthEnvelope(),
+            minimumClientVersion: '999.0.0',
+          },
+        }),
+    });
+
+    await expect(client.health()).rejects.toMatchObject({
+      normalized: {
+        code: 'incompatible_version',
+        operation: 'health',
+      },
+      compatibility: {
+        compatible: false,
+        minimumClientVersion: '999.0.0',
+        clientVersion: cave.CAVE_CLIENT_VERSION,
+      },
+    });
+  });
+
+  test('preserves trusted staged API-version incompatibility errors', async () => {
+    const client = createManagedClient({
+      health: () =>
+        Promise.resolve({
+          statusCode: 200,
+          payload: {
+            ...healthEnvelope(),
+            apiVersion: '2.0',
+          },
+        }),
+    });
+
+    await expect(client.health()).rejects.toMatchObject({
+      normalized: {
+        code: 'incompatible_version',
+        operation: 'health',
+      },
+      compatibility: undefined,
+    });
+  });
+
+  test('redacts forged branded compatibility errors from a staged transport', async () => {
+    const secret = 'forged-staged-compatibility-bearer';
+    const forged = Object.assign(new Error(secret), {
+      code: 'incompatible_version',
+      compatibility: {
+        compatible: false,
+        minimumClientVersion: secret,
+        clientVersion: secret,
+      },
+    });
+    Object.defineProperty(
+      forged,
+      Symbol.for('@opencoven/cave-client/CaveClientError'),
+      { value: true },
+    );
+    const transport = {
+      credentialMode: 'managed-native' as const,
+      health: () => Promise.reject(forged),
+      pairingCreateManaged: () => Promise.reject(new Error('unused')),
+      pairingPollManaged: () => Promise.reject(new Error('unused')),
+      pairingExchangeManaged: () => Promise.reject(new Error('unused')),
+    };
+    const client = new cave.CaveClient({ transport });
+    const error = await rejectedValue(client.health());
+    const serialized = JSON.stringify({
+      error,
+      compatibility: safeGet(error, 'compatibility'),
+      normalized: safeGet(error, 'normalized'),
+    });
+
+    expect(error).toMatchObject({
+      normalized: { code: 'incompatible_version', operation: 'health' },
+      compatibility: undefined,
+    });
+    expect(serialized).not.toContain(secret);
+  });
+
   test('parses canonical reads returned by the native boundary', async () => {
     let observedProjectOptions:
       | { limit?: number; cursor?: string }
