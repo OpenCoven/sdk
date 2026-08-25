@@ -3,6 +3,55 @@ import type {
   CaveEndpointFreshness,
 } from './discovery.js';
 
+export interface CaveCanonicalFamiliar {
+  id: string;
+  displayName: string;
+  role: string;
+  description?: string;
+  pronouns?: string;
+  status?: string;
+  lastSeenAt?: string;
+  activeSessions?: number;
+}
+
+export interface CaveProject {
+  id: string;
+  name: string;
+  root: string;
+  color?: string;
+  repoUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CaveConversation {
+  id: string;
+  familiarId: string;
+  harness?: string;
+  model?: string;
+  runtime?: string;
+  title?: string;
+  origin?: string;
+  status?: string;
+  exitCode?: number | null;
+  pending?: boolean;
+  createdAt?: string;
+  updatedAt: string;
+}
+
+export interface CaveConversationMessage {
+  id: string;
+  conversationId: string;
+  parentId: string | null;
+  role: string;
+  text: string;
+  createdAt: string;
+  attachmentCount: number;
+  toolCount: number;
+  isError?: boolean;
+  cancelled?: boolean;
+}
+
 export interface CaveHealth {
   status: 'ok';
   apiVersion: string;

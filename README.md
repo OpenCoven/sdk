@@ -37,6 +37,16 @@ protocol release. A packed consumer must be able to discover Cave and Coven,
 negotiate compatibility, pair through user consent, retain credentials in
 native custody, validate live IPC identity, and read canonical state.
 
+SDK [#36](https://github.com/OpenCoven/sdk/issues/36) is implementation-complete
+and fully verified/reviewed on the `feat/cave-canonical-reads` branch at the
+documented surface below. It still requires a PR, required checks, and merge
+before the issue is complete. Chat
+[#27](https://github.com/OpenCoven/chat/issues/27) remains blocked on merged SDK
+#36, SDK #37's native-adapter ownership decision and implementation, and the
+producer's atomic instance-binding work in
+[OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996)
+where bearer-bearing real-authority conformance applies.
+
 Message sending, streaming, attachments, task handoffs, GitHub mutations, and
 offline mutation queues are explicitly deferred to separately reviewed
 post-release authority milestones. The roadmap and issue program above are the
@@ -45,8 +55,8 @@ than the active release checklist.
 
 | Path | Package | Current purpose |
 | --- | --- | --- |
-| `packages/core` | `@opencoven/sdk-core` | Transport-neutral errors, compatibility/discovery contracts, operation controls, and in-memory secret abstractions |
-| `packages/cave` | `@opencoven/cave-client` | Constrained Cave client, runtime discovery/pairing, familiar operations, and reviewed contract fixtures |
+| `packages/core` | `@opencoven/sdk-core` | Transport-neutral errors, compatibility/discovery contracts, operation controls, bounded pagination, and in-memory secret abstractions |
+| `packages/cave` | `@opencoven/cave-client` | Constrained Cave client, runtime discovery/pairing, canonical reads, legacy familiar extensions, and reviewed contract fixtures |
 | `packages/coven` | `@opencoven/coven-client` | Constrained Coven discovery and health with explicit native transport-security providers |
 | `packages/sdk` | `@opencoven/sdk` | Optional Cave/Coven coordination without merging source-system identity or errors |
 | `packages/cli` | `@opencoven/dev-cli` | Sole owner of the `opencoven` binary plus native secure storage and fail-closed Coven checks |
@@ -66,8 +76,8 @@ credential, or failure model.
 
 | Need | Package |
 | --- | --- |
-| Shared errors, compatibility/discovery contracts, operation controls, or in-memory secrets | `@opencoven/sdk-core` |
-| Cave health, runtime pairing/discovery, familiar operations, or reviewed contract fixtures | `@opencoven/cave-client` |
+| Shared errors, compatibility/discovery contracts, operation controls, bounded pagination, or in-memory secrets | `@opencoven/sdk-core` |
+| Cave health, runtime pairing/discovery, canonical reads, legacy familiar extensions, or reviewed contract fixtures | `@opencoven/cave-client` |
 | Explicit Coven discovery and owner-local daemon health | `@opencoven/coven-client` |
 | Optional Cave/Coven coordination | `@opencoven/sdk` |
 | Runtime diagnostics, discovery, pairing, credential status, and health commands | `@opencoven/dev-cli` |
@@ -206,6 +216,58 @@ the later HTTP request to the proven process. Final 0.1 security disposition
 and real-authority conformance remain blocked on
 [OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
 
+## Cave canonical reads
+
+`CaveClient` ships five one-page methods:
+
+- `listFamiliars()`
+- `listProjects()`
+- `listConversations()`
+- `getConversation()`
+- `listConversationMessages()`
+
+It also ships four bounded iterators: `iterateFamiliars()`,
+`iterateProjects()`, `iterateConversations()`, and
+`iterateConversationMessages()`. There is no detail iterator for
+`getConversation()`.
+
+List limits default to exactly `50`, accept only safe integers from `1` through
+`100`, and reject invalid values rather than clamping. Cursors are opaque,
+strict canonical base64url strings bounded to 512 characters; the SDK validates
+their spelling without semantically decoding them. Iterators require either a
+positive safe-integer `maxPages` or a caller-owned `AbortSignal`. They are lazy,
+request one page at a time, and perform no prefetch, automatic retry, or
+implicit whole-corpus walk.
+
+The discovered client uses deterministic `GET` routes:
+
+```text
+/api/client/v1/familiars?limit=<limit>[&cursor=<cursor>]
+/api/client/v1/projects?limit=<limit>[&cursor=<cursor>]
+/api/client/v1/conversations?limit=<limit>[&cursor=<cursor>]
+/api/client/v1/conversations/<encodeURIComponent(id)>
+/api/client/v1/conversations/<encodeURIComponent(id)>/messages?limit=<limit>[&cursor=<cursor>]
+```
+
+Query order is always `limit` then optional `cursor`, and each conversation ID
+is encoded as one path segment. Each discovered canonical request first proves
+the stored Cave `instanceId` through an unauthenticated health request and then
+sends the authenticated request. That is defense in depth, not atomic binding;
+producer blocker `OpenCoven/coven-cave#4996` remains.
+
+Success and explicit error envelopes require `apiVersion: "1.0"`,
+`minimumClientVersion`, `capabilities`, and nonempty `operations`. Explicit Cave
+errors remain explicit. Conversation `exitCode` is optional and nullable,
+message `parentId` is required and nullable, and consumer-visible count fields
+are strict nonnegative safe integers.
+
+`reconcile_required` means the caller must discard derived paging state and
+reload canonical state; it is never automatically retried. This is especially
+important for message branch drift with
+`details.reason: "resume_from_canonical_state"`. The legacy `familiars()`,
+`familiarContract()`, and `familiarAnalytics()` methods remain a separate
+compatible extension surface.
+
 ## Explicit Coven discovery
 
 `@opencoven/coven-client` may discover the owner-local daemon through an
@@ -302,14 +364,16 @@ secure-store, and platform-security errors require repair before rerunning.
 Reviewed Cave and Coven fixture bytes are committed under their client
 packages and verified locally. The Cave fixture provenance manifest pins
 `OpenCoven/coven-cave` commit
-`e2b5b9d10d8498895ba9ff39ce6185f4ed873b57`, producer paths, and SHA-256.
+`4adc97b1bdafd1012ce4c66de598e82f49329f79`, producer paths, and SHA-256.
 Refresh fixture bytes with
 `pnpm sync:contracts -- --cave-root <path> --coven-root <path>` before running
 the offline contract verifier. Explicitly prove a checkout is at the pinned
 producer commit and byte-identical with
 `pnpm verify:cave-authority -- --cave-root <path>`. No authority source tree is
 imported at runtime, and packed-package verification compares all three
-vendored Cave contract artifacts byte for byte.
+vendored Cave contract artifacts byte for byte. Packed tests also install the
+generated tarballs and verify canonical-read methods, iterators, and types
+through package-root imports without source-checkout or deep-import fallback.
 
 ## Validation
 

@@ -28,6 +28,20 @@ and `abort` events. An `onEvent` failure is sent to `onObserverError` without
 changing the operation result. If `onObserverError` also throws, that error
 propagates because no safe reporting sink remains.
 
+## Pagination
+
+`normalizePageOptions()` defaults `limit` to `50` and accepts safe integers from
+`1` through `100`. Invalid limits are rejected rather than clamped. Cursors are
+opaque, strictly canonical base64url strings of at most 512 characters; the SDK
+validates their spelling and canonical trailing bits without decoding producer
+semantics.
+
+`iteratePages()` is lazy and requests one page at a time only as the caller
+consumes it. It does not prefetch, retry, or default to walking the whole
+corpus. Every iterator requires a positive safe-integer `maxPages` or a
+caller-owned `AbortSignal`, stops before requesting a page beyond `maxPages`,
+and refuses missing or repeated continuation cursors.
+
 ## Secrets
 
 `createMemorySecretStore()` creates an isolated asynchronous store. Values

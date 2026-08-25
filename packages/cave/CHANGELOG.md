@@ -13,3 +13,24 @@
   bearer use, and bracket pairing exchange with pre/post authority proofs.
 - Treat failed post-exchange authority proof as a terminal re-pair condition
   because the single-use pairing secret has already been spent.
+- Add strict canonical familiar, project, conversation, and message DTOs plus
+  five optional one-page `CaveTransport` reads: `listFamiliars()`,
+  `listProjects()`, `listConversations()`, `getConversation()`, and
+  `listConversationMessages()`.
+- Add discovered bearer-authenticated implementations of those reads at the
+  exact Client v1 routes, with deterministic `limit`-then-`cursor` query
+  ordering and encoded conversation path segments.
+- Add bounded `iterateFamiliars()`, `iterateProjects()`,
+  `iterateConversations()`, and `iterateConversationMessages()` wrappers; the
+  single-item conversation detail route intentionally has no iterator.
+- Enforce the Client v1 default page size `50`, maximum `100`, safe-integer
+  limits, strict canonical base64url cursors up to 512 characters, required
+  success/error metadata, nullable conversation `exitCode`, required-nullable
+  message `parentId`, and nonnegative count fields.
+- Preserve explicit Cave errors, including producer-supplied retryability for
+  `reconcile_required`; callers must reload canonical state rather than
+  automatically retrying a mutable page walk.
+- Preserve legacy `familiars()`, `familiarContract()`, and
+  `familiarAnalytics()` as a separate compatible extension surface.
+- Verify the canonical read API and types through package-root imports from
+  packed tarballs.

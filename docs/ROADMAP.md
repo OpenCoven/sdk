@@ -17,11 +17,30 @@ Delivered foundations include:
 - no import-time discovery or I/O;
 - normalized errors, deadlines, cancellation, and observers;
 - secure owner-local Coven discovery and health transport contracts;
+- strict Cave Client v1 one-page canonical reads and bounded lazy iterators on
+  the SDK #36 feature branch;
 - contract fixture verification;
 - property, stress, package, and packed-consumer tests;
 - a locked two-key release system with checksummed artifacts and OIDC-oriented publishing.
 
 The packages remain private and public publishing remains intentionally disabled.
+
+SDK [#36](https://github.com/OpenCoven/sdk/issues/36) is implementation-complete
+and fully verified/reviewed on `feat/cave-canonical-reads`, pending PR,
+required checks, and merge. The branch exposes five one-page reads
+(`listFamiliars`, `listProjects`, `listConversations`, `getConversation`, and
+`listConversationMessages`) plus four bounded list iterators; it has no detail
+iterator. Limits default to `50`, reject unsafe or out-of-range values above
+the maximum `100`, and use opaque strict canonical base64url cursors bounded to
+512 characters. Iterators require positive `maxPages` or a caller-owned signal
+and never prefetch, retry, or implicitly walk the whole corpus.
+
+Chat [#27](https://github.com/OpenCoven/chat/issues/27) remains blocked on
+merged SDK #36, SDK #37 native-adapter ownership, and producer
+[`OpenCoven/coven-cave#4996`](https://github.com/OpenCoven/coven-cave/issues/4996)
+for atomic binding of pairing-secret and bearer-bearing requests where
+applicable. The SDK's unauthenticated instance proof followed by an
+authenticated canonical request remains defense in depth, not atomic binding.
 
 ## Now — secure read-only 0.1
 
@@ -35,7 +54,7 @@ The packages remain private and public publishing remains intentionally disabled
 
 - [#34](https://github.com/OpenCoven/sdk/issues/34) — secure Cave discovery
 - [#35](https://github.com/OpenCoven/sdk/issues/35) — pairing and credential custody
-- [#36](https://github.com/OpenCoven/sdk/issues/36) — canonical reads and bounded pagination
+- [#36](https://github.com/OpenCoven/sdk/issues/36) — implementation, full verification, and review complete on branch; PR, checks, and merge pending
 - [#37](https://github.com/OpenCoven/sdk/issues/37) — CLI scope and native trust boundaries
 
 ### Consumer and evidence

@@ -32,11 +32,19 @@ filesystem inode as `0`; Unix discovery still requires a positive inode.
 - `new CaveClient({ transport })` and `createCaveClient(...)` preserve
   caller-owned transports for health, familiars, analytics, and reviewed
   contract-fixture helpers.
+- Five optional methods on the same caller-owned `CaveTransport` add strict
+  one-page Client v1 canonical reads through `listFamiliars()`,
+  `listProjects()`, `listConversations()`, `getConversation()`, and
+  `listConversationMessages()`.
+- Four bounded async iterators, `iterateFamiliars()`, `iterateProjects()`,
+  `iterateConversations()`, and `iterateConversationMessages()`, lazily compose
+  the list routes. There is intentionally no iterator for the single-item
+  `getConversation()` detail route.
 - `discoverCaveEndpoint(options)` validates the owner-local
   `client-v1-discovery.json` record only when called.
 - `createDiscoveredCaveClient(...)` layers runtime-only `health()`,
-  `createPairing()`, `credentialStatus()`, and `forgetCredential()` over that
-  discovery contract.
+  pairing, credential, legacy familiar, and canonical-read operations over
+  that discovery contract.
 - Runtime exports also include `CAVE_CLIENT_VERSION`,
   `CAVE_PAIRING_SCOPES`, `CAVE_PAIRING_STATUSES`,
   `CAVE_FAMILIAR_PROPERTIES`, and `CAVE_ANALYTICS_WINDOWS`.
@@ -47,29 +55,85 @@ import {
   CaveClient,
   createDiscoveredCaveClient,
   isCaveClientError,
+  type CaveTransport,
 } from '@opencoven/cave-client';
 import {
   createMemorySecretStore,
   createSecretStoreReference,
 } from '@opencoven/sdk-core';
 
+const canonicalMetadata = {
+  apiVersion: '1.0',
+  capabilities: [
+    'familiars',
+    'projects',
+    'conversations',
+    'conversation-messages',
+    'cursors',
+  ],
+  minimumClientVersion: CAVE_CLIENT_VERSION,
+  operations: [
+    'familiars.list',
+    'projects.list',
+    'conversations.list',
+    'conversations.read',
+    'messages.list',
+  ],
+} as const;
+
+const transport = {
+  health: async () => ({
+    apiVersion: '1.0',
+    capabilities: ['health', 'pairing'],
+    minimumClientVersion: CAVE_CLIENT_VERSION,
+    operations: ['health.read', 'pairing.create'],
+    data: {
+      instanceId: 'cave-instance-id',
+      pairingRequired: true,
+      releaseVersion: '0.3.9',
+    },
+  }),
+  listFamiliars: async () => ({
+    ...canonicalMetadata,
+    data: { familiars: [] },
+  }),
+  listProjects: async () => ({
+    ...canonicalMetadata,
+    data: { projects: [] },
+  }),
+  listConversations: async () => ({
+    ...canonicalMetadata,
+    data: { conversations: [] },
+  }),
+  getConversation: async (conversationId) => ({
+    ...canonicalMetadata,
+    data: {
+      conversation: {
+        id: conversationId,
+        familiarId: 'familiar-id',
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  }),
+  listConversationMessages: async () => ({
+    ...canonicalMetadata,
+    data: { messages: [] },
+  }),
+} satisfies CaveTransport;
+
 const transportBacked = new CaveClient({
   operation: {
     timeoutMs: 5_000,
-  },
-  transport: {
-    health: async (context) => ({
-      apiVersion: '1.0',
-      capabilities: ['health', 'pairing'],
-      minimumClientVersion: CAVE_CLIENT_VERSION,
-      operations: ['health.read', 'pairing.create'],
-      data: {
-        instanceId: 'cave-instance-id',
-        pairingRequired: true,
-        releaseVersion: '0.3.9',
+    observer: {
+      onEvent(event) {
+        console.log(event.phase);
       },
-    }),
+      onObserverError(error) {
+        console.error(error);
+      },
+    },
   },
+  transport,
 });
 
 const discovered = createDiscoveredCaveClient({
@@ -82,14 +146,6 @@ const discovered = createDiscoveredCaveClient({
 try {
   await transportBacked.health({
     signal: new AbortController().signal,
-    observer: {
-      onEvent(event) {
-        console.log(event.phase);
-      },
-      onObserverError(error) {
-        console.error(error);
-      },
-    },
   });
 } catch (error) {
   if (isCaveClientError(error)) {
@@ -107,6 +163,17 @@ await session.poll();
 const credential = await session.exchange();
 console.log(credential.id, credential.scopes);
 ```
+
+Canonical success and explicit error envelopes require
+`apiVersion: "1.0"`, `minimumClientVersion`, `capabilities`, and a nonempty
+`operations` inventory. Declaration IDs are bounded, canonical, and unique.
+Explicit Cave error envelopes remain explicit failures rather than malformed
+responses: code, retryability, details, and request ID remain available, while
+the producer message stays on the original `cause`. `CaveConversation.exitCode`
+is absent when the producer omits it, preserves a present `null`, and otherwise
+requires a finite safe integer. `CaveConversationMessage.parentId` is required
+and nullable. `activeSessions`, `attachmentCount`, and `toolCount` require
+finite, safe, nonnegative integers.
 
 `health()` accepts additive Cave API updates on supported major version `1` and
 rejects incompatible API or minimum-client versions. It returns normalized
@@ -134,12 +201,13 @@ and stores with `compareAndDelete()` preserve exact-value deletion across
 processes. Only a cooperative transport stops underlying I/O. Do not log
 `error.cause` blindly.
 The same controls apply to `createPairing()`, `session.poll()`,
-`session.exchange()`, `credentialStatus()`, `forgetCredential()`,
-`familiars()`, `familiarContract()`, and `familiarAnalytics()`. The discovered
-helper currently owns Client v1 `health`, `pairing`, `credentialStatus`, and
-`familiars`; custom transports can continue to provide the familiar contract
-and analytics routes independently. `session.exchange()` requires an injected
-credential store; the client never falls back to implicit in-memory storage. A
+`session.exchange()`, `credentialStatus()`, `forgetCredential()`, canonical
+reads, `familiars()`, `familiarContract()`, and `familiarAnalytics()`. The
+discovered helper owns Client v1 health, pairing, credential status, canonical
+reads, and the legacy familiar roster; custom transports can continue to
+provide the familiar contract and analytics routes independently.
+`session.exchange()` requires an injected credential store; the client never
+falls back to implicit in-memory storage. A
 caller-supplied transport that uses `credentials` must satisfy
 `CaveCredentialPersistingTransport` and return `authorityBinding` from
 `pairingExchange()`. The binding is non-secret metadata only: Cave instance
@@ -173,11 +241,76 @@ record replacement surfaces retryable `credential_update_in_progress`, and
 store read/delete failures stay explicit instead of being reported as a
 successful absence.
 
+Canonical reads work with either optional caller-supplied `CaveTransport`
+methods or `createDiscoveredCaveClient()`. A caller-supplied transport owns its
+I/O, authority, authentication, and retry policy. The discovered transport uses
+the existing owner-local discovery, credential validation, unauthenticated
+instance proof, and authenticated request path. In both cases the client owns
+one observer lifecycle and strict versioned-envelope/DTO parsing; it never
+automatically retries.
+
+The discovered client issues only these deterministic `GET` routes:
+
+| Method | Route |
+| --- | --- |
+| `listFamiliars()` | `/api/client/v1/familiars?limit=<limit>[&cursor=<cursor>]` |
+| `listProjects()` | `/api/client/v1/projects?limit=<limit>[&cursor=<cursor>]` |
+| `listConversations()` | `/api/client/v1/conversations?limit=<limit>[&cursor=<cursor>]` |
+| `getConversation(id)` | `/api/client/v1/conversations/<encodeURIComponent(id)>` |
+| `listConversationMessages(id)` | `/api/client/v1/conversations/<encodeURIComponent(id)>/messages?limit=<limit>[&cursor=<cursor>]` |
+
+List query parameters are always inserted in `limit`, then optional `cursor`
+order. Conversation IDs are validated, dot path segments are rejected, and
+the complete ID is encoded as one path segment.
+
+List calls use the shared core `normalizePageOptions()` rules: `limit` defaults
+to exactly `50`, accepts only safe integers from `1` through `100`, and rejects
+invalid values rather than clamping. Cursors are opaque, strict canonical
+base64url strings of at most 512 characters. The SDK validates spelling and
+canonical trailing bits but never decodes producer semantics. Every one-page
+list returns one `Page<T>`.
+
+The four iterators require either a positive safe-integer `maxPages` or a
+caller-owned `AbortSignal`. They are lazy, request one page at a time, and do
+not prefetch, retry, or default to downloading the whole corpus. A mutable
+conversation or message walk is not a snapshot: if Cave returns
+`reconcile_required`, the caller must discard derived paging state and reload
+canonical state. The SDK never automatically retries that error, especially
+when message branch drift reports
+`details.reason: "resume_from_canonical_state"`.
+
+```ts
+const projects = await transportBacked.listProjects({
+  limit: 50,
+  cursor: 'eyJwYWdlIjoyfQ',
+});
+
+const conversation = await transportBacked.getConversation('conversation/1');
+const messages = await transportBacked.listConversationMessages(
+  conversation.id,
+);
+const firstTwoProjectPages = transportBacked.iterateProjects({ maxPages: 2 });
+console.log(
+  projects.data,
+  conversation.updatedAt,
+  messages.data,
+  await Array.fromAsync(firstTwoProjectPages),
+);
+```
+
+The legacy `familiars()`, `familiarContract()`, `familiarAnalytics()`, and
+`CaveFamiliar` contracts remain separate and unchanged. The canonical
+`listFamiliars()` method coexists with the legacy plural `familiars()` method.
+
+Public-contract and packed-package tests import the canonical methods,
+iterators, and types from `@opencoven/cave-client`'s package root and exercise
+the generated tarball without source-checkout or deep-import dependencies.
+
 Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,
 `verifyCaveContractFixtureDigest`, and `digestCaveContractFixture`.
 The vendored fixture is byte-identical to `OpenCoven/coven-cave` commit
-`e2b5b9d10d8498895ba9ff39ce6185f4ed873b57`; its source paths and SHA-256 are
+`4adc97b1bdafd1012ce4c66de598e82f49329f79`; its source paths and SHA-256 are
 recorded in `fixtures/contract-fixture.provenance.json`.
 
 Migration note: transports that returned `{ data: { status: "ok" } }` must now
@@ -192,9 +325,9 @@ and rejects incompatible API or minimum-client versions with
 `incompatible_version`. There is no default timeout and no automatic retry.
 Retry transient `timeout`, `not_found`, `service_unavailable`, or
 `rate_limited` failures only after the operator confirms the local runtime is
-ready; repair `stale_record`, `reconcile_required`, `pairing_denied`,
-`pairing_expired`, or `incompatible_version` before running the operation
-again.
+ready. `reconcile_required` is not a transient retry instruction: reload
+canonical state before continuing. Repair `stale_record`, pairing denial or
+expiry, and incompatible versions before running the operation again.
 
 ## License
 

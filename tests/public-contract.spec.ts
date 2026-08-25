@@ -5,6 +5,219 @@ import * as sdk from '@opencoven/sdk';
 import * as core from '@opencoven/sdk-core';
 import { describe, expect, test } from 'vitest';
 
+type Equal<Left, Right> =
+  (<Value>() => Value extends Left ? 1 : 2) extends
+  (<Value>() => Value extends Right ? 1 : 2)
+    ? true
+    : false;
+type Assert<Condition extends true> = Condition;
+
+type CaveCanonicalFamiliarContract = Assert<Equal<
+  cave.CaveCanonicalFamiliar,
+  {
+    id: string;
+    displayName: string;
+    role: string;
+    description?: string;
+    pronouns?: string;
+    status?: string;
+    lastSeenAt?: string;
+    activeSessions?: number;
+  }
+>>;
+type CaveProjectContract = Assert<Equal<
+  cave.CaveProject,
+  {
+    id: string;
+    name: string;
+    root: string;
+    color?: string;
+    repoUrl?: string;
+    createdAt: string;
+    updatedAt: string;
+  }
+>>;
+type CaveConversationContract = Assert<Equal<
+  cave.CaveConversation,
+  {
+    id: string;
+    familiarId: string;
+    harness?: string;
+    model?: string;
+    runtime?: string;
+    title?: string;
+    origin?: string;
+    status?: string;
+    exitCode?: number | null;
+    pending?: boolean;
+    createdAt?: string;
+    updatedAt: string;
+  }
+>>;
+type CaveConversationMessageContract = Assert<Equal<
+  cave.CaveConversationMessage,
+  {
+    id: string;
+    conversationId: string;
+    parentId: string | null;
+    role: string;
+    text: string;
+    createdAt: string;
+    attachmentCount: number;
+    toolCount: number;
+    isError?: boolean;
+    cancelled?: boolean;
+  }
+>>;
+type CaveListFamiliarsTransportContract = Assert<Equal<
+  NonNullable<cave.CaveTransport['listFamiliars']>,
+  (
+    options: core.PageOptions,
+    context?: core.OperationContext,
+  ) => Promise<unknown>
+>>;
+type CaveListProjectsTransportContract = Assert<Equal<
+  NonNullable<cave.CaveTransport['listProjects']>,
+  (
+    options: core.PageOptions,
+    context?: core.OperationContext,
+  ) => Promise<unknown>
+>>;
+type CaveListConversationsTransportContract = Assert<Equal<
+  NonNullable<cave.CaveTransport['listConversations']>,
+  (
+    options: core.PageOptions,
+    context?: core.OperationContext,
+  ) => Promise<unknown>
+>>;
+type CaveGetConversationTransportContract = Assert<Equal<
+  NonNullable<cave.CaveTransport['getConversation']>,
+  (
+    conversationId: string,
+    context?: core.OperationContext,
+  ) => Promise<unknown>
+>>;
+type CaveListConversationMessagesTransportContract = Assert<Equal<
+  NonNullable<cave.CaveTransport['listConversationMessages']>,
+  (
+    conversationId: string,
+    options: core.PageOptions,
+    context?: core.OperationContext,
+  ) => Promise<unknown>
+>>;
+type ListFamiliarsContract = Assert<Equal<
+  cave.CaveClient['listFamiliars'],
+  (
+    options?: core.PageOptions & core.OperationOptions,
+  ) => Promise<core.Page<cave.CaveCanonicalFamiliar>>
+>>;
+type ListProjectsContract = Assert<Equal<
+  cave.CaveClient['listProjects'],
+  (
+    options?: core.PageOptions & core.OperationOptions,
+  ) => Promise<core.Page<cave.CaveProject>>
+>>;
+type ListConversationsContract = Assert<Equal<
+  cave.CaveClient['listConversations'],
+  (
+    options?: core.PageOptions & core.OperationOptions,
+  ) => Promise<core.Page<cave.CaveConversation>>
+>>;
+type GetConversationContract = Assert<Equal<
+  cave.CaveClient['getConversation'],
+  (
+    conversationId: string,
+    options?: core.OperationOptions,
+  ) => Promise<cave.CaveConversation>
+>>;
+type ListConversationMessagesContract = Assert<Equal<
+  cave.CaveClient['listConversationMessages'],
+  (
+    conversationId: string,
+    options?: core.PageOptions & core.OperationOptions,
+  ) => Promise<core.Page<cave.CaveConversationMessage>>
+>>;
+type IterateFamiliarsContract = Assert<Equal<
+  cave.CaveClient['iterateFamiliars'],
+  (
+    options: core.BoundedPageOptions,
+  ) => AsyncGenerator<cave.CaveCanonicalFamiliar>
+>>;
+type IterateProjectsContract = Assert<Equal<
+  cave.CaveClient['iterateProjects'],
+  (
+    options: core.BoundedPageOptions,
+  ) => AsyncGenerator<cave.CaveProject>
+>>;
+type IterateConversationsContract = Assert<Equal<
+  cave.CaveClient['iterateConversations'],
+  (
+    options: core.BoundedPageOptions,
+  ) => AsyncGenerator<cave.CaveConversation>
+>>;
+type IterateConversationMessagesContract = Assert<Equal<
+  cave.CaveClient['iterateConversationMessages'],
+  (
+    conversationId: string,
+    options: core.BoundedPageOptions,
+  ) => AsyncGenerator<cave.CaveConversationMessage>
+>>;
+
+function canonicalReadCompileOnly(
+  client: cave.CaveClient,
+  transport: cave.CaveTransport,
+): void {
+  const familiars: Promise<core.Page<cave.CaveCanonicalFamiliar>> =
+    client.listFamiliars();
+  const projects: Promise<core.Page<cave.CaveProject>> =
+    client.listProjects({ limit: 25 });
+  const conversations: Promise<core.Page<cave.CaveConversation>> =
+    client.listConversations({ cursor: 'eyJwYWdlIjoyfQ' });
+  const conversation: Promise<cave.CaveConversation> =
+    client.getConversation('conversation-1');
+  const messages: Promise<core.Page<cave.CaveConversationMessage>> =
+    client.listConversationMessages('conversation-1', { timeoutMs: 100 });
+  const familiarIterator: AsyncGenerator<cave.CaveCanonicalFamiliar> =
+    client.iterateFamiliars({ maxPages: 1 });
+  const projectIterator: AsyncGenerator<cave.CaveProject> =
+    client.iterateProjects({ signal: new AbortController().signal });
+  const conversationIterator: AsyncGenerator<cave.CaveConversation> =
+    client.iterateConversations({ maxPages: 1, limit: 25 });
+  const messageIterator: AsyncGenerator<cave.CaveConversationMessage> =
+    client.iterateConversationMessages('conversation-1', { maxPages: 1 });
+
+  void new cave.CaveClient({ transport });
+  void familiars;
+  void projects;
+  void conversations;
+  void conversation;
+  void messages;
+  void familiarIterator;
+  void projectIterator;
+  void conversationIterator;
+  void messageIterator;
+}
+
+void (undefined as unknown as CaveCanonicalFamiliarContract);
+void (undefined as unknown as CaveProjectContract);
+void (undefined as unknown as CaveConversationContract);
+void (undefined as unknown as CaveConversationMessageContract);
+void (undefined as unknown as CaveListFamiliarsTransportContract);
+void (undefined as unknown as CaveListProjectsTransportContract);
+void (undefined as unknown as CaveListConversationsTransportContract);
+void (undefined as unknown as CaveGetConversationTransportContract);
+void (undefined as unknown as CaveListConversationMessagesTransportContract);
+void (undefined as unknown as ListFamiliarsContract);
+void (undefined as unknown as ListProjectsContract);
+void (undefined as unknown as ListConversationsContract);
+void (undefined as unknown as GetConversationContract);
+void (undefined as unknown as ListConversationMessagesContract);
+void (undefined as unknown as IterateFamiliarsContract);
+void (undefined as unknown as IterateProjectsContract);
+void (undefined as unknown as IterateConversationsContract);
+void (undefined as unknown as IterateConversationMessagesContract);
+void canonicalReadCompileOnly;
+
 interface NormalizedError {
   system: 'cave' | 'coven';
   code: string;
@@ -42,7 +255,9 @@ describe('public package entry points', () => {
       'createSecretStoreReference',
       'isOperationAbortedError',
       'isOperationTimeoutError',
+      'iteratePages',
       'normalizeError',
+      'normalizePageOptions',
       'parseDiscoveryEndpoint',
       'parseDiscoveryRecord',
       'runOperation',
@@ -142,6 +357,20 @@ describe('public package entry points', () => {
     );
     expect(client.familiars.bind(client)).toBeTypeOf('function');
     expect(client.familiarAnalytics.bind(client)).toBeTypeOf('function');
+    expect(client.listFamiliars.bind(client)).toBeTypeOf('function');
+    expect(client.listProjects.bind(client)).toBeTypeOf('function');
+    expect(client.listConversations.bind(client)).toBeTypeOf('function');
+    expect(client.getConversation.bind(client)).toBeTypeOf('function');
+    expect(client.listConversationMessages.bind(client)).toBeTypeOf('function');
+    expect(client.iterateFamiliars.bind(client)).toBeTypeOf('function');
+    expect(client.iterateProjects.bind(client)).toBeTypeOf('function');
+    expect(client.iterateConversations.bind(client)).toBeTypeOf('function');
+    expect(
+      client.iterateConversationMessages.bind(client),
+    ).toBeTypeOf('function');
+    expect(
+      (client as unknown as Record<string, unknown>).iterateConversation,
+    ).toBeUndefined();
   });
 
   test('normalizes Cave unauthorized errors with an explicit operation', () => {

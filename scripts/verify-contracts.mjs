@@ -8,7 +8,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fixtureChecks = [
   {
     path: 'packages/cave/fixtures/contract-fixture.json',
-    digest: '15be473203a68555ed69f267ff2b1d8dd0933d7eb1d3fe3f01246c25a8e61d38',
+    digest: 'b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd',
   },
   {
     path: 'packages/coven/fixtures/health.json',
@@ -47,7 +47,7 @@ const caveProvenancePath = resolve(
 const caveProvenance = JSON.parse(readFileSync(caveProvenancePath, 'utf8'));
 const expectedCaveProvenance = {
   repository: 'https://github.com/OpenCoven/coven-cave',
-  commit: 'e2b5b9d10d8498895ba9ff39ce6185f4ed873b57',
+  commit: '4adc97b1bdafd1012ce4c66de598e82f49329f79',
   fixturePath: 'src/lib/server/client-v1/contract-fixture.json',
   digestPath: 'src/lib/server/client-v1/contract-fixture.sha256',
   sha256: fixtureChecks[0].digest,

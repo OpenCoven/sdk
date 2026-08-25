@@ -431,12 +431,19 @@ function createFixture(fixtureRoot, tarballs) {
   );
   writeFileSync(
     resolve(fixtureRoot, 'src', 'index.ts'),
-    `import { CaveClient } from '@opencoven/cave-client';
+    `import {
+  CaveClient,
+  type CaveCanonicalFamiliar,
+  type CaveConversation,
+  type CaveConversationMessage,
+  type CaveProject,
+} from '@opencoven/cave-client';
 import { COVEN_DAEMON_PROTOCOL, CovenClient } from '@opencoven/coven-client';
 import { formatCliOutput } from '@opencoven/dev-cli';
 import {
   createManagedMemorySecretStore,
   createMemorySecretStore,
+  type BoundedPageOptions,
   type OperationContext,
   type OperationEvent,
 } from '@opencoven/sdk-core';
@@ -498,6 +505,18 @@ const sdk = createOpenCovenSdk({ cave, coven });
 const store = createMemorySecretStore();
 const managedStore = createManagedMemorySecretStore();
 const controller = new AbortController();
+const boundedPageOptions: BoundedPageOptions = { maxPages: 1 };
+const caveIterators: [
+  AsyncGenerator<CaveCanonicalFamiliar>,
+  AsyncGenerator<CaveProject>,
+  AsyncGenerator<CaveConversation>,
+  AsyncGenerator<CaveConversationMessage>,
+] = [
+  cave.iterateFamiliars(boundedPageOptions),
+  cave.iterateProjects(boundedPageOptions),
+  cave.iterateConversations(boundedPageOptions),
+  cave.iterateConversationMessages('conversation-1', boundedPageOptions),
+];
 
 await store.set('token', 'in-memory');
 await managedStore.set('token', 'managed');
@@ -517,6 +536,7 @@ await sdk.healthReport({
 });
 void events;
 void formatCliOutput;
+void caveIterators;
 `,
   );
   writeFileSync(
@@ -526,6 +546,28 @@ const { CaveClient } = await import('@opencoven/cave-client');
 await import('@opencoven/coven-client');
 await import('@opencoven/sdk');
 await import('@opencoven/dev-cli');
+
+const iteratorClient = new CaveClient({
+  transport: {
+    health: () => Promise.reject(new Error('Packed iterator transport must remain inert.')),
+  },
+});
+const caveIterators = [
+  iteratorClient.iterateFamiliars({ maxPages: 1 }),
+  iteratorClient.iterateProjects({ maxPages: 1 }),
+  iteratorClient.iterateConversations({ maxPages: 1 }),
+  iteratorClient.iterateConversationMessages('conversation-1', { maxPages: 1 }),
+];
+if (
+  caveIterators.some(
+    (iterator) =>
+      typeof iterator.next !== 'function' ||
+      typeof iterator.return !== 'function' ||
+      typeof iterator.throw !== 'function',
+  )
+) {
+  throw new Error('Packed Cave iterator methods are unavailable.');
+}
 
 const startedAt = Date.now();
 let watchdog;

@@ -2,8 +2,10 @@ import * as cave from '@opencoven/cave-client';
 import * as coven from '@opencoven/coven-client';
 import {
   createSecretStoreReference,
+  type BoundedPageOptions,
   type OperationContext,
   type OperationEvent,
+  type PageOptions,
 } from '@opencoven/sdk-core';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
@@ -78,6 +80,14 @@ function expectStoredCredentialRecord(serialized: string | undefined): void {
   });
 }
 
+async function collect<T>(iterator: AsyncIterable<T>): Promise<T[]> {
+  const items: T[] = [];
+  for await (const item of iterator) {
+    items.push(item);
+  }
+  return items;
+}
+
 const VALID_CAVE_HEALTH_RESPONSE = {
   apiVersion: '1.0',
   capabilities: ['health'],
@@ -123,6 +133,107 @@ describe('constrained client transports', () => {
         : Promise.resolve(undefined);
 
     await expect(response).resolves.toEqual(VALID_CAVE_HEALTH);
+  });
+
+  test('keeps legacy familiars and the five canonical reads on one CaveTransport', async () => {
+    const metadata = {
+      apiVersion: '1.0',
+      minimumClientVersion: '0.1.0',
+      capabilities: [
+        'familiars',
+        'projects',
+        'conversations',
+        'conversation-messages',
+        'cursors',
+      ],
+      operations: [
+        'familiars.list',
+        'projects.list',
+        'conversations.list',
+        'conversations.read',
+        'messages.list',
+      ],
+    } as const;
+    const transport = {
+      health: () => Promise.resolve(VALID_CAVE_HEALTH_RESPONSE),
+      familiars: () => Promise.resolve({ ok: true, familiars: [] }),
+      listFamiliars: (
+        options: PageOptions,
+        context?: OperationContext,
+      ) =>
+        Promise.resolve({
+          ...metadata,
+          data: { familiars: [] },
+          observed: { options, context },
+        }),
+      listProjects: (
+        options: PageOptions,
+        context?: OperationContext,
+      ) =>
+        Promise.resolve({
+          ...metadata,
+          data: { projects: [] },
+          observed: { options, context },
+        }),
+      listConversations: (
+        options: PageOptions,
+        context?: OperationContext,
+      ) =>
+        Promise.resolve({
+          ...metadata,
+          data: { conversations: [] },
+          observed: { options, context },
+        }),
+      getConversation: (
+        conversationId: string,
+        context?: OperationContext,
+      ) =>
+        Promise.resolve({
+          ...metadata,
+          data: {
+            conversation: {
+              id: conversationId,
+              familiarId: 'familiar-1',
+              updatedAt: '2026-08-24T00:00:00.000Z',
+            },
+          },
+          observed: { context },
+        }),
+      listConversationMessages: (
+        conversationId: string,
+        options: PageOptions,
+        context?: OperationContext,
+      ) =>
+        Promise.resolve({
+          ...metadata,
+          data: { messages: [] },
+          observed: { conversationId, options, context },
+        }),
+    } satisfies cave.CaveTransport;
+    const client = new cave.CaveClient({ transport });
+
+    await expect(client.familiars()).resolves.toEqual([]);
+    await expect(client.listFamiliars()).resolves.toEqual({ data: [] });
+    await expect(client.listProjects()).resolves.toEqual({ data: [] });
+    await expect(client.listConversations()).resolves.toEqual({ data: [] });
+    await expect(client.getConversation('conversation-1')).resolves.toEqual({
+      id: 'conversation-1',
+      familiarId: 'familiar-1',
+      updatedAt: '2026-08-24T00:00:00.000Z',
+    });
+    await expect(
+      client.listConversationMessages('conversation-1'),
+    ).resolves.toEqual({ data: [] });
+
+    const bounded: BoundedPageOptions = { maxPages: 1 };
+    await expect(collect(client.iterateFamiliars(bounded))).resolves.toEqual([]);
+    await expect(collect(client.iterateProjects(bounded))).resolves.toEqual([]);
+    await expect(collect(client.iterateConversations(bounded))).resolves.toEqual([]);
+    await expect(
+      collect(
+        client.iterateConversationMessages('conversation-1', bounded),
+      ),
+    ).resolves.toEqual([]);
   });
 
   test('creates Cave health clients through the public factory', async () => {

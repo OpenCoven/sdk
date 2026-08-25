@@ -10,6 +10,16 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, test } from 'vitest';
+import {
+  CaveClient,
+  type CaveCanonicalFamiliar,
+  type CaveConversation,
+  type CaveConversationMessage,
+  type CaveProject,
+} from '@opencoven/cave-client';
+import {
+  type BoundedPageOptions,
+} from '@opencoven/sdk-core';
 
 import {
   CANONICAL_REPOSITORY_URL,
@@ -81,7 +91,41 @@ async function waitForPath(path: string) {
   }
 }
 
+function usePackedCaveIteratorContracts(
+  client: CaveClient,
+  options: BoundedPageOptions,
+): [
+  AsyncGenerator<CaveCanonicalFamiliar>,
+  AsyncGenerator<CaveProject>,
+  AsyncGenerator<CaveConversation>,
+  AsyncGenerator<CaveConversationMessage>,
+] {
+  return [
+    client.iterateFamiliars(options),
+    client.iterateProjects(options),
+    client.iterateConversations(options),
+    client.iterateConversationMessages('conversation-1', options),
+  ];
+}
+
+void usePackedCaveIteratorContracts;
+
 describe('packed public packages', () => {
+  test('exposes bounded Cave iterators from package roots', () => {
+    const client = new CaveClient({
+      transport: {
+        health: () => Promise.reject(new Error('not called')),
+      },
+    });
+
+    expect(client.iterateFamiliars.bind(client)).toBeTypeOf('function');
+    expect(client.iterateProjects.bind(client)).toBeTypeOf('function');
+    expect(client.iterateConversations.bind(client)).toBeTypeOf('function');
+    expect(
+      client.iterateConversationMessages.bind(client),
+    ).toBeTypeOf('function');
+  });
+
   test('warms isolated installs before enforcing offline resolution', () => {
     const warmArgs = isolatedInstallArgs({ offline: false });
 

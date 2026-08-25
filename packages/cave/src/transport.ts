@@ -1,4 +1,4 @@
-import type { OperationContext } from '@opencoven/sdk-core';
+import type { OperationContext, PageOptions } from '@opencoven/sdk-core';
 
 import type {
   CaveAuthorityBoundPairingExchange,
@@ -28,6 +28,31 @@ export interface CaveTransport {
     pairingSecret: string,
     context?: OperationContext,
   ): Promise<CavePairingExchange>;
+  /**
+   * Canonical reads are optional for older transports. The caller owns their
+   * I/O; the client supplies normalized page options and operation context.
+   */
+  listFamiliars?(
+    options: PageOptions,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  listProjects?(
+    options: PageOptions,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  listConversations?(
+    options: PageOptions,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  getConversation?(
+    conversationId: string,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  listConversationMessages?(
+    conversationId: string,
+    options: PageOptions,
+    context?: OperationContext,
+  ): Promise<unknown>;
   /**
    * The familiar operations are optional so that a transport written against
    * an older Cave still satisfies this interface. The client reports a missing
