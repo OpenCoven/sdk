@@ -253,6 +253,9 @@ async function* generatePages<T>(
             { field: 'cursor.current' },
           );
         }
+        if (page.cursor?.current !== undefined) {
+          seenCursors.add(page.cursor.current);
+        }
         pagesRead += 1;
 
         for (const item of page.data) {

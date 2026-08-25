@@ -711,6 +711,40 @@ describe('bounded page iteration', () => {
     expect(readPage).toHaveBeenCalledTimes(3);
   });
 
+  test('rejects a cycle back to the initial page cursor before rereading it', async () => {
+    const readPage = vi.fn(
+      (options: { limit: number; cursor?: string }): Promise<Page<string>> => {
+        if (options.cursor === undefined) {
+          return Promise.resolve({
+            data: ['one'],
+            cursor: {
+              current: FIRST_CURSOR,
+              next: SECOND_CURSOR,
+              hasMore: true,
+            },
+          });
+        }
+        return Promise.resolve({
+          data: ['two'],
+          cursor: {
+            current: SECOND_CURSOR,
+            next: FIRST_CURSOR,
+            hasMore: true,
+          },
+        });
+      },
+    );
+    const iterator = iteratePages(readPage, { maxPages: 4 });
+
+    await expect(iterator.next()).resolves.toEqual({ value: 'one', done: false });
+    await expect(iterator.next()).resolves.toEqual({ value: 'two', done: false });
+    await expect(iterator.next()).rejects.toMatchObject({
+      code: 'invalid_response',
+      retryable: false,
+    });
+    expect(readPage).toHaveBeenCalledTimes(2);
+  });
+
   test('accepts a caller-provided initial cursor and advances from it', async () => {
     const readPage = vi.fn(
       (options: {

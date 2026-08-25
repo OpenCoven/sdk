@@ -1741,41 +1741,6 @@ describe('discovered Cave pairing helpers', () => {
               location: 'http://127.0.0.1:3999/redirected',
             },
           });
-
-          test('preserves legacy pairing error compatibility for apiVersion 1.1', async () => {
-            const root = createScratchRoot('pairing-error-version-1-1');
-            await writeDiscoveryRecord(root, discoveryRecord());
-            const requestId = 'pairing-error-version-1-1';
-            const fetchImplementation = queuedFetch([
-              () =>
-                jsonResponse(409, {
-                  ...errorEnvelope('conflict', 409, false, {
-                    reason: 'pairing_pending',
-                  }),
-                  apiVersion: '1.1',
-                  requestId,
-                }),
-            ]);
-            const { client } = discoveredClient(root, fetchImplementation);
-
-            await expect(
-              client.createPairing({
-                appName: 'OpenCoven Chat',
-                installationId: 'chat-install-1',
-                scopes: ['chat:read'],
-              }),
-            ).rejects.toMatchObject({
-              normalized: {
-                code: 'conflict',
-                operation: 'pairingCreate',
-                requestId,
-                retryable: false,
-                statusCode: 409,
-              },
-              details: { reason: 'pairing_pending' },
-            });
-            expect(fetchImplementation).toHaveBeenCalledOnce();
-          });
         },
       ]);
       const { client } = discoveredClient(root, fetchImplementation);
@@ -1789,6 +1754,41 @@ describe('discovered Cave pairing helpers', () => {
         },
       });
       expect(fetchImplementation).toHaveBeenCalledTimes(6);
+    });
+
+    test('preserves legacy pairing error compatibility for apiVersion 1.1', async () => {
+      const root = createScratchRoot('pairing-error-version-1-1');
+      await writeDiscoveryRecord(root, discoveryRecord());
+      const requestId = 'pairing-error-version-1-1';
+      const fetchImplementation = queuedFetch([
+        () =>
+          jsonResponse(409, {
+            ...errorEnvelope('conflict', 409, false, {
+              reason: 'pairing_pending',
+            }),
+            apiVersion: '1.1',
+            requestId,
+          }),
+      ]);
+      const { client } = discoveredClient(root, fetchImplementation);
+
+      await expect(
+        client.createPairing({
+          appName: 'OpenCoven Chat',
+          installationId: 'chat-install-1',
+          scopes: ['chat:read'],
+        }),
+      ).rejects.toMatchObject({
+        normalized: {
+          code: 'conflict',
+          operation: 'pairingCreate',
+          requestId,
+          retryable: false,
+          statusCode: 409,
+        },
+        details: { reason: 'pairing_pending' },
+      });
+      expect(fetchImplementation).toHaveBeenCalledOnce();
     });
 
     test('preserves legacy proxy error normalization for noncanonical requests', async () => {

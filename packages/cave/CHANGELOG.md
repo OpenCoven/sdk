@@ -27,7 +27,7 @@
   limits, strict canonical base64url cursors up to 512 characters, required
   success/error metadata, nullable conversation `exitCode`, required-nullable
   message `parentId`, and nonnegative count fields.
-- Preserve explicit Cave errors, including non-retryable
+- Preserve explicit Cave errors, including producer-supplied retryability for
   `reconcile_required`; callers must reload canonical state rather than
   automatically retrying a mutable page walk.
 - Preserve legacy `familiars()`, `familiarContract()`, and
