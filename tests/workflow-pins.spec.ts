@@ -42,6 +42,39 @@ function actionPins(source: string) {
   }));
 }
 
+function runScripts(source: string): string[] {
+  const lines = source.split('\n');
+  const scripts: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
+    const match = /^(\s+)(?:-\s+)?run:\s*(.*)$/u.exec(line);
+    if (match === null) {
+      continue;
+    }
+    const indentation = match[1]?.length ?? 0;
+    const first = match[2] ?? '';
+    if (first !== '|' && first !== '>-') {
+      scripts.push(first);
+      continue;
+    }
+    const body: string[] = [];
+    for (index += 1; index < lines.length; index += 1) {
+      const candidate = lines[index] ?? '';
+      const candidateIndentation =
+        candidate.length - candidate.trimStart().length;
+      if (candidate.trim().length > 0 && candidateIndentation <= indentation) {
+        index -= 1;
+        break;
+      }
+      body.push(candidate);
+    }
+    scripts.push(body.join('\n'));
+  }
+
+  return scripts;
+}
+
 describe('workflow action pins', () => {
   test('runs branch validation once through pull requests and still verifies main pushes', () => {
     expect(workflow).toMatch(
@@ -145,5 +178,15 @@ describe('workflow action pins', () => {
     expect(cleanTreeIndex).toBeGreaterThan(-1);
     expect(artifactsIndex).toBeGreaterThan(-1);
     expect(cleanTreeIndex).toBeLessThan(artifactsIndex);
+  });
+
+  test('never interpolates dispatch inputs directly into release shell scripts', () => {
+    const scripts = runScripts(releaseWorkflow);
+
+    expect(scripts.join('\n')).not.toContain('${{ inputs.version }}');
+    expect(releaseWorkflow.match(/RELEASE_VERSION: \$\{\{ inputs\.version \}\}/gu))
+      .toHaveLength(2);
+    expect(scripts.join('\n')).toContain('--version "$RELEASE_VERSION"');
+    expect(scripts.join('\n')).toContain('--tag "sdk-v$RELEASE_VERSION"');
   });
 });
