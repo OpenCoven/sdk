@@ -9,7 +9,7 @@ import {
   type CaveManagedCredentialTransport,
   type CaveManagedDiscoverySource,
 } from '@opencoven/cave-client/managed';
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const REQUEST_ID = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
@@ -49,6 +49,10 @@ const managedTransport = {
   managedCredentialStatus: () => Promise.resolve({ status: 'missing' }),
   managedForgetCredential: () => Promise.resolve({ status: 'missing' }),
 } satisfies CaveManagedCredentialTransport;
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('managed browser entry point', () => {
   test('bundles for a browser without Node built-ins', async () => {
@@ -272,5 +276,68 @@ describe('managed browser entry point', () => {
     }, error instanceof Error ? Object.getOwnPropertyNames(error) : undefined);
     expect(serialized).not.toContain(NATIVE_BEARER);
     expect(serialized).not.toMatch(/bearer/iu);
+  });
+
+  test('sanitizes abort and timeout control failures before caller or observer output', async () => {
+    const events: unknown[] = [];
+    const source: CaveManagedDiscoverySource = {
+      read: () => new Promise(() => {}),
+    };
+    const controller = new AbortController();
+    const aborted = discoverManagedCaveEndpoint(source, {
+      signal: controller.signal,
+      observer: {
+        onEvent(event) {
+          events.push(event);
+        },
+        onObserverError(error) {
+          throw error;
+        },
+      },
+    }).catch((caught: unknown) => caught);
+    await Promise.resolve();
+    controller.abort(new Error(`abort bearer ${NATIVE_BEARER}`));
+    const abortError = await aborted;
+    expect(abortError).toMatchObject({
+      name: 'CaveDiscoveryError',
+      code: 'aborted',
+    });
+
+    vi.useFakeTimers();
+    const timedOut = discoverManagedCaveEndpoint(source, { timeoutMs: 10 }).catch(
+      (caught: unknown) => caught,
+    );
+    await vi.advanceTimersByTimeAsync(10);
+    const timeoutError = await timedOut;
+    expect(timeoutError).toMatchObject({
+      name: 'CaveDiscoveryError',
+      code: 'timeout',
+    });
+
+    const serialized = JSON.stringify({
+      abort: {
+        string: String(abortError),
+        inspect: inspect(abortError),
+        error: abortError,
+      },
+      timeout: {
+        string: String(timeoutError),
+        inspect: inspect(timeoutError),
+        error: timeoutError,
+      },
+      events,
+    }, [
+      'abort',
+      'timeout',
+      'string',
+      'inspect',
+      'error',
+      'events',
+      ...Object.getOwnPropertyNames(abortError),
+      ...Object.getOwnPropertyNames(timeoutError),
+    ]);
+    expect(serialized).not.toContain(NATIVE_BEARER);
+    expect(serialized).not.toMatch(/bearer/iu);
+    expect(JSON.stringify(events)).toContain('"code":"aborted"');
   });
 });

@@ -1,5 +1,6 @@
 import * as cave from '@opencoven/cave-client';
 import { inspect } from 'node:util';
+import { createMemorySecretStore, createSecretStoreReference } from '@opencoven/sdk-core';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { parseCaveCredentialMetadata } from '../packages/cave/src/credential-metadata.js';
@@ -630,6 +631,192 @@ describe('managed native Cave credential custody', () => {
     expect(Object.isFrozen(familiars)).toBe(true);
     expect(Object.isFrozen(familiars.data)).toBe(true);
     expect(Object.isFrozen(familiars.data[0])).toBe(true);
+  });
+
+  test('reconstructs managed canonical outputs without nested native extras', async () => {
+    const nestedBearer = 'nested-bearer-must-not-return';
+    const transport = managedTransport({
+      familiarContract: vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          id: 'cody',
+          workspace: '/cody',
+          present: true,
+          bearer: nestedBearer,
+          report: {
+            specVersion: '1',
+            pass: false,
+            bearer: nestedBearer,
+            properties: [{ property: 'Named Identity', pass: true, bearer: nestedBearer }],
+            violations: [{
+              file: 'SOUL.md',
+              field: 'name',
+              message: 'Missing name',
+              bearer: nestedBearer,
+            }],
+            warnings: [{
+              file: 'MEMORY.md',
+              field: 'memory',
+              message: 'No memory',
+              bearer: nestedBearer,
+            }],
+          },
+        } as unknown as cave.CaveFamiliarContractResponse),
+      ),
+      familiarAnalytics: vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          bearer: nestedBearer,
+          analytics: {
+            generatedAt: '2026-08-24T02:03:51.419Z',
+            bearer: nestedBearer,
+            windows: {
+              '7d': {
+                attempts: 1,
+                completed: 1,
+                failed: 0,
+                cancelled: 0,
+                successRate: 1,
+                toolCalls: 1,
+                toolFailures: 0,
+                bearer: nestedBearer,
+                models: [{
+                  key: 'model',
+                  attempts: 1,
+                  completed: 1,
+                  failed: 0,
+                  cancelled: 0,
+                  successRate: 1,
+                  toolCalls: 1,
+                  toolFailures: 0,
+                  bearer: nestedBearer,
+                }],
+                harnesses: [{
+                  key: 'harness',
+                  attempts: 1,
+                  completed: 1,
+                  failed: 0,
+                  cancelled: 0,
+                  successRate: 1,
+                  toolCalls: 1,
+                  toolFailures: 0,
+                  bearer: nestedBearer,
+                }],
+                coverage: {
+                  all: { known: 1, total: 1, ratio: 1, bearer: nestedBearer },
+                },
+              },
+            },
+            recentAttempts: [{
+              id: 'attempt-1',
+              executionKind: 'chat',
+              occurredAt: '2026-08-24T02:03:51.419Z',
+              harnessId: 'harness',
+              status: 'completed',
+              toolCalls: 1,
+              toolFailures: 0,
+              bearer: nestedBearer,
+            }],
+            backfill: {
+              state: 'complete',
+              imported: 1,
+              bearer: nestedBearer,
+            },
+          },
+        } as unknown as cave.CaveFamiliarAnalyticsResponse),
+      ),
+      listFamiliars: vi.fn(() =>
+        Promise.resolve({
+          apiVersion: '1.0',
+          minimumClientVersion: '0.1.0',
+          capabilities: ['familiars', 'cursors'],
+          operations: ['familiars.list'],
+          bearer: nestedBearer,
+          data: {
+            bearer: nestedBearer,
+            familiars: [{
+              id: 'cody',
+              displayName: 'Cody',
+              role: 'guide',
+              bearer: nestedBearer,
+            }],
+          },
+        }),
+      ),
+    });
+    const client = managedClient(transport);
+    const contract = await client.familiarContract('cody');
+    const analytics = await client.familiarAnalytics('cody');
+    const familiars = await client.listFamiliars();
+
+    expectRedacted({ contract, analytics, familiars });
+    expect(Object.isFrozen(contract.report)).toBe(true);
+    expect(Object.isFrozen(analytics.windows['7d'])).toBe(true);
+    expect(Object.isFrozen(familiars.data[0])).toBe(true);
+  });
+
+  test('uses direct pairing exchange accessors only once before returning or persisting', async () => {
+    const accessorBearer = 'getter-bearer-must-not-return';
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('direct-accessor-exchange');
+    const authorityBinding: cave.CaveAuthorityBinding = {
+      version: 1,
+      instanceId: 'managed-native-cave',
+      endpoint: { kind: 'http', url: 'http://127.0.0.1:3020' },
+      record: { identity: 'sha256:direct-accessor', device: 1, inode: 2 },
+      freshness: {
+        pid: 1,
+        nonce: '018f4f1a-77c2-7a31-8a15-55a25aaba003',
+        startedAt: '2026-08-24T02:03:51.419Z',
+      },
+    };
+    let bearerReads = 0;
+    let credentialReads = 0;
+    let authorityReads = 0;
+    const exchange = {
+      get bearer() {
+        bearerReads += 1;
+        return bearerReads === 1 ? BEARER : accessorBearer;
+      },
+      get credential() {
+        credentialReads += 1;
+        return credentialReads === 1
+          ? credential()
+          : { ...credential(), appName: accessorBearer };
+      },
+      get authorityBinding() {
+        authorityReads += 1;
+        return authorityReads === 1
+          ? authorityBinding
+          : { ...authorityBinding, instanceId: accessorBearer };
+      },
+    };
+    const client = new cave.CaveClient({
+      transport: {
+        health: () => Promise.resolve(HEALTH_ENVELOPE),
+        pairingCreate: () =>
+          Promise.resolve({
+            requestId: REQUEST_ID,
+            secret: PAIRING_SECRET,
+            expiresAt: 1_755_731_112_617,
+          }),
+        pairingExchange: () => Promise.resolve(exchange),
+      },
+      credentials: { store, reference },
+    });
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-direct-accessor',
+      scopes: ['chat:read'],
+    });
+    const result = await session.exchange();
+    const stored = await store.get(reference.key);
+
+    expect(result).toEqual(credential());
+    expect(bearerReads).toBe(1);
+    expect(credentialReads).toBe(1);
+    expect(authorityReads).toBe(1);
+    expect(JSON.stringify({ result, stored })).not.toContain(accessorBearer);
   });
 
   test('redacts managed health and canonical failures before causes, inspect, or observer events', async () => {

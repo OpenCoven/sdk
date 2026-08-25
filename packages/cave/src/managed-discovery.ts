@@ -1,4 +1,6 @@
 import {
+  isOperationAbortedError,
+  isOperationTimeoutError,
   runOperation,
   type OperationContext,
   type OperationDefaults,
@@ -146,6 +148,22 @@ function sanitizedDiscoveryError(error: unknown): CaveDiscoveryError {
   }
 }
 
+function sanitizedDiscoveryBoundaryError(error: unknown): CaveDiscoveryError {
+  if (isOperationTimeoutError(error)) {
+    return new CaveDiscoveryError(
+      'timeout',
+      'Managed Cave discovery timed out.',
+    );
+  }
+  if (isOperationAbortedError(error)) {
+    return new CaveDiscoveryError(
+      'aborted',
+      'Managed Cave discovery was aborted.',
+    );
+  }
+  return sanitizedDiscoveryError(error);
+}
+
 function parseSourceResult(
   value: unknown,
   maxRecordBytes: number,
@@ -242,27 +260,31 @@ export async function discoverManagedCaveEndpoint(
     ...(observer === undefined ? {} : { observer }),
   };
 
-  return await runOperation(
-    {
-      system: 'cave',
-      operation: 'managedDiscovery',
-    },
-    operationOptions,
-    async (context) => {
-      let value: unknown;
-      try {
-        value = await source.read(context);
-      } catch {
-        throw new CaveDiscoveryError(
-          'invalid_response',
-          'Managed Cave discovery data could not be read.',
-        );
-      }
-      try {
-        return parseSourceResult(value, maxRecordBytes);
-      } catch (error) {
-        throw sanitizedDiscoveryError(error);
-      }
-    },
-  );
+  try {
+    return await runOperation(
+      {
+        system: 'cave',
+        operation: 'managedDiscovery',
+      },
+      operationOptions,
+      async (context) => {
+        let value: unknown;
+        try {
+          value = await source.read(context);
+        } catch {
+          throw new CaveDiscoveryError(
+            'invalid_response',
+            'Managed Cave discovery data could not be read.',
+          );
+        }
+        try {
+          return parseSourceResult(value, maxRecordBytes);
+        } catch (error) {
+          throw sanitizedDiscoveryError(error);
+        }
+      },
+    );
+  } catch (error) {
+    throw sanitizedDiscoveryBoundaryError(error);
+  }
 }

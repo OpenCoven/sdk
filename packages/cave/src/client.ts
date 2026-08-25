@@ -47,9 +47,13 @@ import {
   type CaveCanonicalFamiliar,
   type CaveConversation,
   type CaveConversationMessage,
+  type CaveContractReport,
+  type CaveContractViolation,
   type CaveCredentialMetadata,
   type CaveCredentialStatus,
   type CaveExecutionAttempt,
+  type CaveExecutionBackfill,
+  type CaveExecutionCoverage,
   type CaveExecutionSlice,
   type CaveExecutionWindow,
   type CaveFamiliar,
@@ -58,7 +62,6 @@ import {
   type CaveFamiliarWire,
   type CaveHealth,
   type CavePairingCreated,
-  type CavePairingExchange,
   type CaveManagedCredentialStatusResult,
   type CaveManagedForgetCredentialResult,
   type CaveManagedPairingCreated,
@@ -66,6 +69,7 @@ import {
   type CavePairingRequest,
   type CavePairingScope,
   type CavePairingStatus,
+  type CavePropertyCoverage,
   type CaveProject,
 } from './schemas.js';
 import type {
@@ -314,18 +318,24 @@ function parseManagedPairingStatus(
   value: unknown,
 ): CavePairingStatus | undefined {
   const result = managedDataRecord(value);
+  const status = result === undefined
+    ? undefined
+    : parseDirectPairingStatus(result);
   if (
     result === undefined ||
+    status === undefined ||
     !hasExactManagedKeys(result, ['id', 'status', 'expiresAt']) ||
-    !isPairingStatus(result)
+    status.id !== result.id ||
+    status.status !== result.status ||
+    status.expiresAt !== result.expiresAt
   ) {
     return undefined;
   }
 
   return immutableManagedResult({
-    id: result.id,
-    status: result.status,
-    expiresAt: result.expiresAt,
+    id: status.id,
+    status: status.status,
+    expiresAt: status.expiresAt,
   });
 }
 
@@ -828,7 +838,7 @@ function isSlice(value: unknown): value is CaveExecutionSlice {
   return value.successRate === null || typeof value.successRate === 'number';
 }
 
-function isCoverage(value: unknown): boolean {
+function isCoverage(value: unknown): value is CaveExecutionCoverage {
   return (
     isObject(value) &&
     typeof value.known === 'number' &&
@@ -922,6 +932,331 @@ function isAnalytics(value: unknown): value is CaveFamiliarAnalytics {
   return backfill.remaining === undefined || typeof backfill.remaining === 'number';
 }
 
+function managedContractViolation(
+  value: unknown,
+): CaveContractViolation | undefined {
+  if (
+    !isObject(value) ||
+    !isString(value.file) ||
+    !isString(value.field) ||
+    !isString(value.message)
+  ) {
+    return undefined;
+  }
+  return {
+    file: value.file as CaveContractViolation['file'],
+    field: value.field,
+    message: value.message,
+  };
+}
+
+function managedPropertyCoverage(
+  value: unknown,
+): CavePropertyCoverage | undefined {
+  if (
+    !isObject(value) ||
+    !isString(value.property) ||
+    typeof value.pass !== 'boolean'
+  ) {
+    return undefined;
+  }
+  return { property: value.property, pass: value.pass };
+}
+
+function managedContractReport(value: unknown): CaveContractReport | undefined {
+  if (
+    !isObject(value) ||
+    !isString(value.specVersion) ||
+    typeof value.pass !== 'boolean' ||
+    !Array.isArray(value.properties) ||
+    !Array.isArray(value.violations) ||
+    !Array.isArray(value.warnings)
+  ) {
+    return undefined;
+  }
+
+  const properties: CavePropertyCoverage[] = [];
+  const violations: CaveContractViolation[] = [];
+  const warnings: CaveContractViolation[] = [];
+  for (const property of value.properties) {
+    const parsed = managedPropertyCoverage(property);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    properties.push(parsed);
+  }
+  for (const violation of value.violations) {
+    const parsed = managedContractViolation(violation);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    violations.push(parsed);
+  }
+  for (const warning of value.warnings) {
+    const parsed = managedContractViolation(warning);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    warnings.push(parsed);
+  }
+
+  return {
+    specVersion: value.specVersion,
+    pass: value.pass,
+    properties,
+    violations,
+    warnings,
+  };
+}
+
+function optionalManagedString(
+  value: object,
+  key: string,
+): string | undefined | false {
+  const candidate = (value as Record<string, unknown>)[key];
+  return candidate === undefined || typeof candidate === 'string'
+    ? candidate
+    : false;
+}
+
+function optionalManagedNumber(
+  value: object,
+  key: string,
+): number | undefined | false {
+  const candidate = (value as Record<string, unknown>)[key];
+  return candidate === undefined || typeof candidate === 'number'
+    ? candidate
+    : false;
+}
+
+function managedExecutionSlice(
+  value: unknown,
+): CaveExecutionSlice | undefined {
+  if (!isSlice(value)) {
+    return undefined;
+  }
+  const label = optionalManagedString(value, 'label');
+  const medianDurationMs = optionalManagedNumber(value, 'medianDurationMs');
+  const totalTokens = optionalManagedNumber(value, 'totalTokens');
+  const costUsd = optionalManagedNumber(value, 'costUsd');
+  if (
+    label === false ||
+    medianDurationMs === false ||
+    totalTokens === false ||
+    costUsd === false
+  ) {
+    return undefined;
+  }
+  return {
+    key: value.key,
+    ...(label === undefined ? {} : { label }),
+    attempts: value.attempts,
+    completed: value.completed,
+    failed: value.failed,
+    cancelled: value.cancelled,
+    successRate: value.successRate,
+    ...(medianDurationMs === undefined ? {} : { medianDurationMs }),
+    ...(totalTokens === undefined ? {} : { totalTokens }),
+    ...(costUsd === undefined ? {} : { costUsd }),
+    toolCalls: value.toolCalls,
+    toolFailures: value.toolFailures,
+  };
+}
+
+function managedExecutionCoverage(
+  value: unknown,
+): CaveExecutionCoverage | undefined {
+  if (!isCoverage(value)) {
+    return undefined;
+  }
+  return {
+    known: value.known,
+    total: value.total,
+    ratio: value.ratio,
+  };
+}
+
+function managedExecutionWindow(
+  value: unknown,
+): CaveExecutionWindow | undefined {
+  if (!isWindow(value)) {
+    return undefined;
+  }
+  const medianDurationMs = optionalManagedNumber(value, 'medianDurationMs');
+  const p95DurationMs = optionalManagedNumber(value, 'p95DurationMs');
+  const totalTokens = optionalManagedNumber(value, 'totalTokens');
+  const costUsd = optionalManagedNumber(value, 'costUsd');
+  if (
+    medianDurationMs === false ||
+    p95DurationMs === false ||
+    totalTokens === false ||
+    costUsd === false
+  ) {
+    return undefined;
+  }
+
+  const models: CaveExecutionSlice[] = [];
+  const harnesses: CaveExecutionSlice[] = [];
+  for (const model of value.models) {
+    const parsed = managedExecutionSlice(model);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    models.push(parsed);
+  }
+  for (const harness of value.harnesses) {
+    const parsed = managedExecutionSlice(harness);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    harnesses.push(parsed);
+  }
+
+  const coverage: Record<string, CaveExecutionCoverage> = {};
+  if (value.coverage !== undefined) {
+    for (const [key, entry] of Object.entries(value.coverage)) {
+      const parsed = managedExecutionCoverage(entry);
+      if (parsed === undefined) {
+        return undefined;
+      }
+      coverage[key] = parsed;
+    }
+  }
+
+  return {
+    attempts: value.attempts,
+    completed: value.completed,
+    failed: value.failed,
+    cancelled: value.cancelled,
+    successRate: value.successRate,
+    ...(medianDurationMs === undefined ? {} : { medianDurationMs }),
+    ...(p95DurationMs === undefined ? {} : { p95DurationMs }),
+    ...(totalTokens === undefined ? {} : { totalTokens }),
+    ...(costUsd === undefined ? {} : { costUsd }),
+    toolCalls: value.toolCalls,
+    toolFailures: value.toolFailures,
+    models,
+    harnesses,
+    coverage,
+  };
+}
+
+function managedExecutionAttempt(
+  value: unknown,
+): CaveExecutionAttempt | undefined {
+  if (!isAttempt(value)) {
+    return undefined;
+  }
+  const sessionId = optionalManagedString(value, 'sessionId');
+  const turnId = optionalManagedString(value, 'turnId');
+  const harnessVersion = optionalManagedString(value, 'harnessVersion');
+  const requestedModel = optionalManagedString(value, 'requestedModel');
+  const forwardedModel = optionalManagedString(value, 'forwardedModel');
+  const confirmedModel = optionalManagedString(value, 'confirmedModel');
+  const durationMs = optionalManagedNumber(value, 'durationMs');
+  const totalTokens = optionalManagedNumber(value, 'totalTokens');
+  const costUsd = optionalManagedNumber(value, 'costUsd');
+  if (
+    sessionId === false ||
+    turnId === false ||
+    harnessVersion === false ||
+    requestedModel === false ||
+    forwardedModel === false ||
+    confirmedModel === false ||
+    durationMs === false ||
+    totalTokens === false ||
+    costUsd === false
+  ) {
+    return undefined;
+  }
+  return {
+    id: value.id,
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(turnId === undefined ? {} : { turnId }),
+    executionKind: value.executionKind,
+    occurredAt: value.occurredAt,
+    harnessId: value.harnessId,
+    ...(harnessVersion === undefined ? {} : { harnessVersion }),
+    ...(requestedModel === undefined ? {} : { requestedModel }),
+    ...(forwardedModel === undefined ? {} : { forwardedModel }),
+    ...(confirmedModel === undefined ? {} : { confirmedModel }),
+    status: value.status,
+    ...(durationMs === undefined ? {} : { durationMs }),
+    ...(totalTokens === undefined ? {} : { totalTokens }),
+    ...(costUsd === undefined ? {} : { costUsd }),
+    toolCalls: value.toolCalls,
+    toolFailures: value.toolFailures,
+  };
+}
+
+function managedExecutionBackfill(
+  value: unknown,
+): CaveExecutionBackfill | undefined {
+  if (
+    !isObject(value) ||
+    (value.state !== 'complete' &&
+      value.state !== 'partial' &&
+      value.state !== 'not-started') ||
+    typeof value.imported !== 'number'
+  ) {
+    return undefined;
+  }
+  if (value.remaining !== undefined && typeof value.remaining !== 'number') {
+    return undefined;
+  }
+  return {
+    state: value.state,
+    imported: value.imported,
+    ...(value.remaining === undefined ? {} : { remaining: value.remaining }),
+  };
+}
+
+function managedFamiliarAnalytics(
+  value: unknown,
+): CaveFamiliarAnalytics | undefined {
+  if (
+    !isObject(value) ||
+    !isString(value.generatedAt) ||
+    !isObject(value.windows) ||
+    !Array.isArray(value.recentAttempts)
+  ) {
+    return undefined;
+  }
+
+  const windows: CaveFamiliarAnalytics['windows'] = {};
+  for (const key of ['7d', '14d', '8w', 'all'] as const) {
+    const candidate = value.windows[key];
+    if (candidate === undefined) {
+      continue;
+    }
+    const parsed = managedExecutionWindow(candidate);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    windows[key] = parsed;
+  }
+
+  const recentAttempts: CaveExecutionAttempt[] = [];
+  for (const attempt of value.recentAttempts) {
+    const parsed = managedExecutionAttempt(attempt);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    recentAttempts.push(parsed);
+  }
+  const backfill = managedExecutionBackfill(value.backfill);
+  if (backfill === undefined) {
+    return undefined;
+  }
+
+  return {
+    generatedAt: value.generatedAt,
+    windows,
+    recentAttempts,
+    backfill,
+  };
+}
+
 function isPairingRequest(value: unknown): value is CavePairingRequest {
   if (!isObject(value)) {
     return false;
@@ -996,56 +1331,119 @@ function validatePairingRequest(value: unknown): CavePairingRequest {
   };
 }
 
-function isPairingCreated(value: unknown): value is CavePairingCreated {
+function parseDirectPairingCreated(
+  value: unknown,
+): CavePairingCreated | undefined {
+  if (!isObject(value) || Array.isArray(value)) {
+    return undefined;
+  }
+  let requestId: unknown;
+  let secret: unknown;
+  let expiresAt: unknown;
+  try {
+    requestId = value.requestId;
+    secret = value.secret;
+    expiresAt = value.expiresAt;
+  } catch {
+    return undefined;
+  }
   return (
-    isObject(value) &&
-    typeof value.requestId === 'string' &&
-    UUID_RE.test(value.requestId) &&
-    typeof value.secret === 'string' &&
-    BASE64URL_43_RE.test(value.secret) &&
-    Number.isSafeInteger(value.expiresAt) &&
-    (value.expiresAt as number) > 0
-  );
+    typeof requestId === 'string' &&
+    UUID_RE.test(requestId) &&
+    typeof secret === 'string' &&
+    BASE64URL_43_RE.test(secret) &&
+    typeof expiresAt === 'number' &&
+    Number.isSafeInteger(expiresAt) &&
+    expiresAt > 0
+  )
+    ? { requestId, secret, expiresAt }
+    : undefined;
 }
 
-function isPairingStatus(value: unknown): value is CavePairingStatus {
+function parseDirectPairingStatus(
+  value: unknown,
+): CavePairingStatus | undefined {
+  if (!isObject(value) || Array.isArray(value)) {
+    return undefined;
+  }
+  let id: unknown;
+  let status: unknown;
+  let expiresAt: unknown;
+  try {
+    id = value.id;
+    status = value.status;
+    expiresAt = value.expiresAt;
+  } catch {
+    return undefined;
+  }
   return (
-    isObject(value) &&
-    typeof value.id === 'string' &&
-    UUID_RE.test(value.id) &&
-    (value.status === 'pending' ||
-      value.status === 'approved' ||
-      value.status === 'denied' ||
-      value.status === 'expired') &&
-    Number.isSafeInteger(value.expiresAt) &&
-    (value.expiresAt as number) > 0
-  );
+    typeof id === 'string' &&
+    UUID_RE.test(id) &&
+    (status === 'pending' ||
+      status === 'approved' ||
+      status === 'denied' ||
+      status === 'expired') &&
+    typeof expiresAt === 'number' &&
+    Number.isSafeInteger(expiresAt) &&
+    expiresAt > 0
+  )
+    ? { id, status, expiresAt }
+    : undefined;
 }
 
-function isPairingExchange(value: unknown): value is CavePairingExchange {
-  return (
-    isObject(value) &&
-    typeof value.bearer === 'string' &&
-    BASE64URL_43_RE.test(value.bearer) &&
-    parseCaveCredentialMetadata(value.credential) !== undefined
-  );
-}
-
-function pairingExchangeAuthorityBinding(
-  value: CavePairingExchange,
-):
+interface ParsedDirectPairingExchange {
+  bearer: string;
+  credential: CaveCredentialMetadata;
+  authorityBinding:
   | { status: 'missing' }
   | { status: 'invalid' }
-  | { status: 'valid'; authorityBinding: CaveAuthorityBinding } {
-  const candidate = (value as CavePairingExchange & { authorityBinding?: unknown }).authorityBinding;
-  if (candidate === undefined) {
-    return { status: 'missing' };
+  | { status: 'valid'; authorityBinding: CaveAuthorityBinding };
+}
+
+function parseDirectPairingExchange(
+  value: unknown,
+): ParsedDirectPairingExchange | undefined {
+  if (!isObject(value) || Array.isArray(value)) {
+    return undefined;
   }
 
-  const authorityBinding = parseCaveAuthorityBinding(candidate);
-  return authorityBinding === undefined
-    ? { status: 'invalid' }
-    : { status: 'valid', authorityBinding };
+  let bearer: unknown;
+  let credential: unknown;
+  let candidate: unknown;
+  try {
+    bearer = value.bearer;
+    credential = value.credential;
+    candidate = value.authorityBinding;
+  } catch {
+    return undefined;
+  }
+
+  if (typeof bearer !== 'string' || !BASE64URL_43_RE.test(bearer)) {
+    return undefined;
+  }
+  const parsedCredential = parseCaveCredentialMetadata(credential);
+  if (parsedCredential === undefined) {
+    return undefined;
+  }
+  if (candidate === undefined) {
+    return {
+      bearer,
+      credential: parsedCredential,
+      authorityBinding: { status: 'missing' },
+    };
+  }
+
+  const authorityBinding = parseCaveAuthorityBinding(
+    snapshotManagedResult(candidate),
+  );
+  return {
+    bearer,
+    credential: parsedCredential,
+    authorityBinding:
+      authorityBinding === undefined
+        ? { status: 'invalid' }
+        : { status: 'valid', authorityBinding },
+  };
 }
 
 export class CavePairingSession {
@@ -1694,11 +2092,18 @@ export class CaveClient {
         throw invalidResponse('familiarContract');
       }
 
+      const report =
+        this.#managedCredentialTransport === undefined
+          ? response.report as CaveFamiliarContract['report']
+          : managedContractReport(response.report);
+      if (report === undefined) {
+        throw invalidResponse('familiarContract');
+      }
       const contract = {
         id: isString(response.id) ? response.id : familiarId,
         ...(isString(response.workspace) ? { workspace: response.workspace } : {}),
         present: response.present,
-        report: response.report as CaveFamiliarContract['report'],
+        report,
       };
       return this.#managedCredentialTransport === undefined
         ? contract
@@ -1751,9 +2156,16 @@ export class CaveClient {
         throw invalidResponse('familiarAnalytics');
       }
 
+      const analytics =
+        this.#managedCredentialTransport === undefined
+          ? response.analytics
+          : managedFamiliarAnalytics(response.analytics);
+      if (analytics === undefined) {
+        throw invalidResponse('familiarAnalytics');
+      }
       return this.#managedCredentialTransport === undefined
-        ? response.analytics
-        : immutableManagedResult(response.analytics);
+        ? analytics
+        : immutableManagedResult(analytics);
     }, true, this.#managedCredentialTransport !== undefined);
   }
 
@@ -1768,8 +2180,8 @@ export class CaveClient {
       throw unsupported('pairingCreate');
     }
 
-    const created: unknown = await call(request, context);
-    if (!isPairingCreated(created)) {
+    const created = parseDirectPairingCreated(await call(request, context));
+    if (created === undefined) {
       throw invalidResponse('pairingCreate');
     }
 
@@ -1788,8 +2200,10 @@ export class CaveClient {
       throw unsupported('pairingPoll');
     }
 
-    const status: unknown = await call(requestId, pairingSecret, context);
-    if (!isPairingStatus(status)) {
+    const status = parseDirectPairingStatus(
+      await call(requestId, pairingSecret, context),
+    );
+    if (status === undefined) {
       throw invalidResponse('pairingPoll');
     }
 
@@ -2067,16 +2481,17 @@ export class CaveClient {
           const call = this.#pairingExchangeCall();
           this.#ensureActive(context, 'pairingExchange');
           const secret = beginPairingExchange();
-          let exchanged: CavePairingExchange;
+          let exchanged: ParsedDirectPairingExchange;
 
           try {
             exchanged = await racePrePersistencePhase(
               (async () => {
                 const response: unknown = await call(created.requestId, secret, context);
-                if (!isPairingExchange(response)) {
+                const parsed = parseDirectPairingExchange(response);
+                if (parsed === undefined) {
                   throw invalidResponse('pairingExchange');
                 }
-                return response;
+                return parsed;
               })(),
               termination,
               discardPairingExchangeBearer,
@@ -2091,7 +2506,7 @@ export class CaveClient {
           }
 
           clearPairingSecret();
-          const authorityBinding = pairingExchangeAuthorityBinding(exchanged);
+          const authorityBinding = exchanged.authorityBinding;
           this.#ensureActive(context, 'pairingExchange');
           if (authorityBinding.status !== 'valid') {
             throw invalidAuthorityBinding(
