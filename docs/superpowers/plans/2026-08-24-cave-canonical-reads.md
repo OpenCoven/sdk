@@ -3,9 +3,9 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Status:** Tasks 1–4 are implementation-complete on
-`feat/cave-canonical-reads`. Task 5 documentation is complete; full
-verification, exact-SHA review, PR, required checks, merge, and evidence remain
-pending.
+`feat/cave-canonical-reads`. Task 5 documentation, full verification, and both
+exact-SHA review gates are complete at `ef10921005cb663b8c60163676fbe30e39745640`;
+PR, required checks, merge, evidence updates, and cleanup remain pending.
 
 **Goal:** Add the five live Cave Client v1 canonical read operations, strict DTO parsing, and explicitly bounded pagination to the public SDK without changing the existing legacy Familiar Contract and analytics APIs.
 
@@ -448,7 +448,7 @@ Document:
 - current instance preflight as defense in depth, with atomic producer binding still tracked by `OpenCoven/coven-cave#4996`.
 - packed root-import and tarball verification coverage.
 
-- [ ] **Step 2: Run exact full verification**
+- [x] **Step 2: Run exact full verification**
 
 Run:
 
@@ -459,9 +459,18 @@ corepack pnpm@10.34.0 verify
 
 Expected: all tests, coverage thresholds, builds, contract/package/release checks, stress seeds, and lint pass.
 
-- [ ] **Step 3: Request exact-SHA spec and code-quality review**
+Completed at `ef10921005cb663b8c60163676fbe30e39745640` with
+1,028 tests, 91.10% line coverage, all builds, contract/package/release checks,
+three stress seeds, typecheck, and lint passing. Cave authority provenance was
+verified at producer merge `4adc97b1bdafd1012ce4c66de598e82f49329f79`
+with digest `b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd`.
+
+- [x] **Step 3: Request exact-SHA spec and code-quality review**
 
 Review the full branch against SDK #36 and the producer route contract. Fix every correctness, security, pagination, compatibility, and documentation finding; rerun `corepack pnpm@10.34.0 verify` after the final fix.
+
+Both the full-branch specification and code-quality reviews returned `PASS` at
+`ef10921005cb663b8c60163676fbe30e39745640`.
 
 - [x] **Step 4: Commit documentation (and commit later review fixes separately if needed)**
 

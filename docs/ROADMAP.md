@@ -26,7 +26,7 @@ Delivered foundations include:
 The packages remain private and public publishing remains intentionally disabled.
 
 SDK [#36](https://github.com/OpenCoven/sdk/issues/36) is implementation-complete
-on `feat/cave-canonical-reads`, pending full verification, exact-SHA review, PR,
+and fully verified/reviewed on `feat/cave-canonical-reads`, pending PR,
 required checks, and merge. The branch exposes five one-page reads
 (`listFamiliars`, `listProjects`, `listConversations`, `getConversation`, and
 `listConversationMessages`) plus four bounded list iterators; it has no detail
