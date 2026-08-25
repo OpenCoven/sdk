@@ -203,6 +203,9 @@ describe('workspace package manifests', () => {
   }, 15_000);
 
   test('verifies the release contract and artifacts on the compatibility path', () => {
+    expect(rootManifest.scripts?.['verify:compat']).toBe(
+      'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 verify:package',
+    );
     expect(rootManifest.scripts?.['verify:compat']).toContain('verify:release');
     expect(rootManifest.scripts?.['verify:compat']).toMatch(
       /verify:release.*verify:package/,
