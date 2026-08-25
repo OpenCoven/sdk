@@ -5,7 +5,6 @@ import { posix, win32 } from 'node:path';
 import {
   isOperationAbortedError,
   isOperationTimeoutError,
-  parseDiscoveryEndpoint,
   type DiscoveryEndpoint,
   type OperationOptions,
 } from '@opencoven/sdk-core';
@@ -15,7 +14,9 @@ const DISCOVERY_FILE_NAME = 'client-v1-discovery.json';
 const DEFAULT_DISCOVERY_TIMEOUT_MS = 2_000;
 const DEFAULT_MAX_RECORD_BYTES = 16 * 1024;
 const DISCOVERY_TIMESTAMP_RE =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/u;
+const CAVE_HTTP_ENDPOINT_RE =
+  /^http:\/\/(\[[^\]]+\]|[^/?#:@\\]+):([0-9]{1,5})\/?$/iu;
 const CAVE_DISCOVERY_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveDiscoveryError');
 
 export type CaveDiscoveryErrorCode =
@@ -463,6 +464,105 @@ function decodeJson(bytes: Uint8Array): string {
   }
 }
 
+function containsControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined &&
+      (codePoint <= 0x1F || (codePoint >= 0x7F && codePoint <= 0x9F))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function parseCaveHttpEndpoint(value: string): Extract<DiscoveryEndpoint, { kind: 'http' }> {
+  const match = CAVE_HTTP_ENDPOINT_RE.exec(value);
+  const rawHost = match?.[1]?.toLowerCase();
+  const rawPort = match?.[2];
+  if (
+    containsControlCharacter(value) ||
+    /%(?:2f|5c)/iu.test(value) ||
+    (rawHost !== '127.0.0.1' && rawHost !== 'localhost' && rawHost !== '[::1]') ||
+    rawPort === undefined
+  ) {
+    return fail('unsafe_endpoint', 'Cave discovery endpoint was not a path-free loopback URL.');
+  }
+
+  const port = Number(rawPort);
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return fail('unsafe_endpoint', 'Cave discovery endpoint was invalid.');
+  }
+
+  if (
+    !Number.isInteger(port) ||
+    port < 1 ||
+    port > 65_535 ||
+    parsed.protocol !== 'http:' ||
+    parsed.username !== '' ||
+    parsed.password !== '' ||
+    parsed.pathname !== '/' ||
+    parsed.search !== '' ||
+    parsed.hash !== '' ||
+    (parsed.hostname !== '127.0.0.1' &&
+      parsed.hostname !== 'localhost' &&
+      parsed.hostname !== '[::1]')
+  ) {
+    return fail('unsafe_endpoint', 'Cave discovery endpoint was not a path-free loopback URL.');
+  }
+
+  return { kind: 'http', url: value };
+}
+
+function validTimestamp(value: string): boolean {
+  const match = DISCOVERY_TIMESTAMP_RE.exec(value);
+  if (match === null || containsControlCharacter(value)) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[7] === undefined ? 0 : Number(match[7]);
+  const offsetMinute = match[8] === undefined ? 0 : Number(match[8]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [
+    31,
+    leapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  const parsed = Date.parse(value);
+
+  return (
+    Number.isFinite(parsed) &&
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= (daysInMonth[month - 1] ?? 0) &&
+    hour <= 23 &&
+    minute <= 59 &&
+    second <= 59 &&
+    offsetHour <= 23 &&
+    offsetMinute <= 59
+  );
+}
+
 function parseRecord(
   serialized: string,
   isProcessAlive: (pid: number) => boolean,
@@ -496,11 +596,8 @@ function parseRecord(
 
   const endpoint =
     typeof record.endpoint === 'string'
-      ? parseDiscoveryEndpoint({ kind: 'http', url: record.endpoint })
+      ? parseCaveHttpEndpoint(record.endpoint)
       : fail('invalid_response', 'Cave discovery endpoint was invalid.');
-  if (endpoint.kind !== 'http') {
-    return fail('unsafe_endpoint', 'Cave discovery endpoint was not an HTTP loopback URL.');
-  }
   const pid = expectPositiveSafeInteger(
     record.pid,
     'invalid_response',
@@ -513,15 +610,15 @@ function parseRecord(
   if (
     typeof record.nonce !== 'string' ||
     record.nonce.trim().length === 0 ||
-    record.nonce.length > 256
+    record.nonce.length > 256 ||
+    containsControlCharacter(record.nonce)
   ) {
     return fail('invalid_response', 'Cave discovery nonce was invalid.');
   }
 
   if (
     typeof record.startedAt !== 'string' ||
-    !DISCOVERY_TIMESTAMP_RE.test(record.startedAt) ||
-    !Number.isFinite(Date.parse(record.startedAt))
+    !validTimestamp(record.startedAt)
   ) {
     return fail('invalid_response', 'Cave discovery startedAt was invalid.');
   }
@@ -698,6 +795,49 @@ export async function discoverCaveEndpoint(
     }
     if (serialized === undefined) {
       return fail('invalid_response', 'Cave discovery record could not be read safely.');
+    }
+
+    const currentRecordIdentity = await awaitStep(
+      () => lstat(physicalRecordPath),
+      deadline,
+    );
+    validateRecordIdentity(
+      currentRecordIdentity,
+      platform,
+      expectedUid,
+      maxRecordBytes,
+    );
+    if (
+      currentRecordIdentity.device !== initialIdentity.device ||
+      currentRecordIdentity.inode !== initialIdentity.inode
+    ) {
+      return fail('unsafe_endpoint', 'Cave discovery record changed while it was being read.');
+    }
+    if (platform === 'win32') {
+      await validateWindowsTrust(
+        dependencies?.windowsPathTrust,
+        physicalRecordPath,
+        'record',
+        deadline,
+      );
+    }
+
+    const currentRootIdentity = await awaitStep(() => lstat(physicalRoot), deadline);
+    validateRootIdentity(currentRootIdentity, platform, expectedUid);
+    if (
+      currentRootIdentity.device !== rootIdentity.device ||
+      currentRootIdentity.inode !== rootIdentity.inode ||
+      (await awaitStep(() => realpath(physicalRoot), deadline)) !== physicalRoot
+    ) {
+      return fail('unsafe_endpoint', 'Cave discovery root changed while the record was read.');
+    }
+    if (platform === 'win32') {
+      await validateWindowsTrust(
+        dependencies?.windowsPathTrust,
+        physicalRoot,
+        'root',
+        deadline,
+      );
     }
 
     return parseRecord(serialized, isProcessAlive, {

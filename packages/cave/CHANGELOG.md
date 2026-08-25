@@ -3,6 +3,12 @@
 ## 0.1.0
 
 - Initial experimental SDK foundation. This version is not yet published.
+- Harden Cave discovery against record replacement, malformed timestamps and
+  nonces, unbounded responses, ambient credentials, cache reuse, redirects,
+  and uncancelled response streams while accepting the producer's explicit
+  `localhost` loopback form.
+- Add a packed runtime-discovery example with deterministic transport and an
+  explicit Windows native-trust limitation.
 - Align the vendored Cave Client v1 contract and normalized health result with
   the reviewed `OpenCoven/coven-cave` producer fixture.
 - Share credential mutation queues across duplicate module copies and use

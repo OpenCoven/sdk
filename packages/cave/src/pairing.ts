@@ -688,6 +688,7 @@ async function readResponseText(
     /^\d+$/u.test(declaredLength) &&
     Number(declaredLength) > maxResponseBytes
   ) {
+    void response.body?.cancel().catch(() => undefined);
     throw transportError('body_limit', 'Cave response exceeded its size limit.', {
       statusCode: response.status,
     });
@@ -702,6 +703,20 @@ async function readResponseText(
 
   const chunks: Uint8Array[] = [];
   let total = 0;
+  let cancellationStarted = false;
+  const cancelReader = (reason?: unknown): void => {
+    if (!cancellationStarted) {
+      cancellationStarted = true;
+      void reader.cancel(reason).catch(() => undefined);
+    }
+  };
+  const onAbort = (): void => {
+    cancelReader(context?.signal.reason);
+  };
+  context?.signal.addEventListener('abort', onAbort, { once: true });
+  if (context?.signal.aborted === true) {
+    onAbort();
+  }
 
   try {
     while (true) {
@@ -719,6 +734,7 @@ async function readResponseText(
         ensureActive(context);
         throw error;
       }
+      ensureActive(context);
       const { done, value } = readResult;
       if (done) {
         break;
@@ -726,11 +742,7 @@ async function readResponseText(
       if (value !== undefined) {
         total += value.byteLength;
         if (total > maxResponseBytes) {
-          try {
-            await reader.cancel();
-          } catch {
-            // Best effort only.
-          }
+          cancelReader();
           throw transportError('body_limit', 'Cave response exceeded its size limit.', {
             statusCode: response.status,
           });
@@ -739,6 +751,7 @@ async function readResponseText(
       }
     }
   } finally {
+    context?.signal.removeEventListener('abort', onAbort);
     reader.releaseLock();
   }
 
@@ -860,6 +873,8 @@ async function requestJson(
   let response: Response;
   try {
     response = await options.fetchImplementation(url, {
+      cache: 'no-store',
+      credentials: 'omit',
       method,
       headers,
       redirect: 'error',
@@ -1106,6 +1121,10 @@ export function createDiscoveredCaveClient(
       retryable: false,
     });
   }
+  const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes <= 0) {
+    throw new RangeError('maxResponseBytes must be a positive safe integer.');
+  }
 
   return createCaveClient({
     credentials: options.credentials,
@@ -1115,7 +1134,7 @@ export function createDiscoveredCaveClient(
       discoverEndpoint: options.discoverEndpoint ?? discoverCaveEndpoint,
       discovery: options.discovery,
       fetchImplementation,
-      maxResponseBytes: options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+      maxResponseBytes,
     }),
   });
 }
