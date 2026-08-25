@@ -11,6 +11,11 @@ import {
   type OperationOptions,
 } from '@opencoven/sdk-core';
 
+import {
+  discoverCave,
+  type CaveDiscoveredEndpoint,
+  type DiscoverCaveOptions,
+} from './discovery.js';
 import type { CaveHealth } from './schemas.js';
 import type {
   CaveExecutionAttempt,
@@ -23,12 +28,31 @@ import type {
   CaveHealthResponse,
 } from './schemas.js';
 import type { CaveTransport } from './transport.js';
+import {
+  createCaveHttpTransport,
+  resolveCaveHttpMaxBodyBytes,
+  type CaveHttpTransportOptions,
+} from './transport-http.js';
 import { CAVE_CLIENT_VERSION } from './version.js';
 
 const CAVE_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveClientError');
 
 export interface CaveClientOptions {
+  discovery?: CaveClientDiscovery;
   transport: CaveTransport;
+  operation?: OperationDefaults;
+}
+
+export interface CaveClientDiscovery extends CaveDiscoveredEndpoint {
+  instanceId: string;
+}
+
+export interface CaveDiscoveredClientOptions extends OperationOptions {
+  discovery?: Omit<
+    DiscoverCaveOptions,
+    'observer' | 'signal' | 'timeoutMs'
+  >;
+  http?: CaveHttpTransportOptions;
   operation?: OperationDefaults;
 }
 
@@ -368,10 +392,17 @@ function isAnalytics(value: unknown): value is CaveFamiliarAnalytics {
 export class CaveClient {
   readonly #transport: CaveTransport;
   readonly #operation: OperationDefaults | undefined;
+  readonly #expectedInstanceId: string | undefined;
+  readonly discovery: Readonly<CaveClientDiscovery> | undefined;
 
   constructor(options: CaveClientOptions) {
     this.#transport = options.transport;
     this.#operation = options.operation;
+    this.discovery =
+      options.discovery === undefined
+        ? undefined
+        : Object.freeze({ ...options.discovery });
+    this.#expectedInstanceId = this.discovery?.instanceId;
   }
 
   async #execute<T>(
@@ -477,7 +508,7 @@ export class CaveClient {
         );
       }
 
-      return Object.freeze({
+      const health = Object.freeze({
         status: 'ok',
         apiVersion: response.apiVersion,
         minimumClientVersion: response.minimumClientVersion,
@@ -487,6 +518,17 @@ export class CaveClient {
         pairingRequired: response.data.pairingRequired,
         releaseVersion: response.data.releaseVersion,
       });
+
+      if (
+        this.#expectedInstanceId !== undefined &&
+        health.instanceId !== this.#expectedInstanceId
+      ) {
+        throw new CaveClientError(
+          normalizeCaveError({ code: 'instance_changed' }, 'health'),
+        );
+      }
+
+      return health;
     });
   }
 
@@ -621,4 +663,52 @@ export class CaveClient {
 
 export function createCaveClient(options: CaveClientOptions): CaveClient {
   return new CaveClient(options);
+}
+
+export async function createDiscoveredCaveClient(
+  options: CaveDiscoveredClientOptions = {},
+): Promise<CaveClient> {
+  resolveCaveHttpMaxBodyBytes(options.http);
+  const timeoutMs = options.timeoutMs ?? 2_000;
+
+  return runOperation(
+    { system: 'cave', operation: 'createDiscoveredClient' },
+    {
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      timeoutMs,
+      ...(options.observer === undefined ? {} : { observer: options.observer }),
+    },
+    async (context) => {
+      const discovered = await discoverCave({
+        ...options.discovery,
+        signal: context.signal,
+        timeoutMs,
+        ...(options.observer === undefined
+          ? {}
+          : { observer: options.observer }),
+      });
+      const transport = createCaveHttpTransport(
+        discovered.endpoint,
+        options.http,
+      );
+      const probe = new CaveClient({ transport });
+      const health = await probe.health({
+        signal: context.signal,
+        ...(options.observer === undefined
+          ? {}
+          : { observer: options.observer }),
+      });
+
+      return new CaveClient({
+        transport,
+        ...(options.operation === undefined
+          ? {}
+          : { operation: options.operation }),
+        discovery: {
+          ...discovered,
+          instanceId: health.instanceId,
+        },
+      });
+    },
+  );
 }

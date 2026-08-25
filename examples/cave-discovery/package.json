@@ -1,0 +1,14 @@
+{
+  "name": "@opencoven/example-cave-discovery",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --pretty false",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --pretty false --noEmit"
+  },
+  "dependencies": {
+    "@opencoven/cave-client": "workspace:0.1.0"
+  }
+}

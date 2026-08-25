@@ -32,7 +32,9 @@ describe('workspace entrypoints', () => {
       }));
       vi.doMock('node:fs/promises', () => ({
         lstat: unexpectedIo,
+        open: unexpectedIo,
         readFile: unexpectedIo,
+        realpath: unexpectedIo,
         readdir: unexpectedIo,
         stat: unexpectedIo,
       }));

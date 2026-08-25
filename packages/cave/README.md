@@ -1,10 +1,49 @@
 # @opencoven/cave-client
 
-A constrained Cave health client. Consumers provide the transport; this package
-does not discover endpoints or credentials, and health checks reject malformed
-responses or incompatible minimum client versions deterministically. It also
+A constrained Cave health client with explicit owner-local Client v1 discovery.
+Imports perform no I/O. Consumers can either call
+`createDiscoveredCaveClient()` or provide a narrow transport directly; neither
+surface discovers credentials. Health checks reject malformed responses or
+incompatible minimum client versions deterministically. The package also
 exports public helpers for parsing and digest-verifying the reviewed
 foundation-only Cave contract fixture.
+
+```ts
+import {
+  createDiscoveredCaveClient,
+  isCaveDiscoveryError,
+} from '@opencoven/cave-client';
+
+try {
+  const cave = await createDiscoveredCaveClient({ timeoutMs: 2_000 });
+  const health = await cave.health({ timeoutMs: 2_000 });
+  console.log(cave.discovery?.endpoint, health.instanceId);
+} catch (error) {
+  if (isCaveDiscoveryError(error)) {
+    console.error(error.code, error.diagnostics.phase);
+  }
+}
+```
+
+Discovery checks only `COVEN_CAVE_HOME/client-v1-discovery.json`,
+`COVEN_HOME/cave/client-v1-discovery.json`, or the owner home fallback
+`~/.coven/cave/client-v1-discovery.json`, in that order. The root and record
+must be real owner-only filesystem objects. Unix ownership is checked against
+the effective UID; Windows requires an injected
+`CaveWindowsFileTrustValidator`. Records are size-bounded and must identify a
+live process plus a path-free loopback HTTP endpoint with an explicit port.
+Discovery and the initial compatibility health check share one absolute
+deadline. The returned client binds the negotiated Cave instance ID and rejects
+later health responses with `instance_changed` if that endpoint is replaced.
+
+The built-in discovery transport sends only
+`GET /api/client/v1/health`, omits credentials, rejects redirects and
+unsuccessful HTTP statuses, and bounds streamed response bytes. It does not
+expose arbitrary HTTP requests. Discovery diagnostics contain allowlisted
+phases and limits, never filesystem paths or record contents. Sensitive native
+errors remain only in `cause` and must not be logged blindly.
+
+For a caller-supplied transport:
 
 ```ts
 import {
@@ -59,8 +98,9 @@ and pairing requirement. Unknown additive fields are ignored safely and
 unknown declarations remain available, while missing or malformed required
 fields fail closed.
 Proxy `{ ok: false, reason, error }` responses are normalized as failures and
-cannot be mistaken for Client v1 envelopes. No request is made until `health()`
-is called. Use `isCaveClientError(error)` when errors may cross bundles or
+cannot be mistaken for Client v1 envelopes. No request is made until `health()` is called on a directly constructed client.
+`createDiscoveredCaveClient()` performs discovery and one compatibility health
+request before it resolves. Use `isCaveClientError(error)` when errors may cross bundles or
 duplicate package installations; unlike `instanceof`, the guard is stable
 across module instances.
 

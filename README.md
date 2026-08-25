@@ -42,7 +42,7 @@ than the active release checklist.
 | Path | Package | Current purpose |
 | --- | --- | --- |
 | `packages/core` | `@opencoven/sdk-core` | Transport-neutral errors, compatibility/discovery contracts, operation controls, and in-memory secret abstractions |
-| `packages/cave` | `@opencoven/cave-client` | Constrained Cave client, current familiar operations, and reviewed Cave contract fixtures |
+| `packages/cave` | `@opencoven/cave-client` | Explicit owner-local Cave discovery, constrained client operations, and reviewed Cave contract fixtures |
 | `packages/coven` | `@opencoven/coven-client` | Explicit owner-local Coven discovery plus constrained health transports |
 | `packages/sdk` | `@opencoven/sdk` | Optional Cave/Coven coordination without merging source-system identity or errors |
 | `packages/cli` | `@opencoven/dev-cli` | Sole owner of the `opencoven` binary; help/version are implemented while operational scope is being decided |
@@ -52,10 +52,10 @@ than the active release checklist.
 Importing any public package performs no discovery, credential lookup, network,
 filesystem, process, socket, or daemon I/O.
 
-Cave operations currently use caller-supplied narrow transports. Coven also
-offers explicit runtime discovery and owner-local health transport factories;
-those functions perform I/O only when called and require reviewed platform
-security providers where Node cannot prove connected-peer or pipe identity.
+Cave and Coven both offer explicit owner-local runtime discovery. Those
+functions perform I/O only when called and require reviewed platform security
+providers where Node cannot prove filesystem or connected-peer ownership.
+Callers can still construct Cave clients with narrow custom transports.
 
 Cave and Coven models, transports, authorities, and normalized errors remain
 distinct. The coordination package composes them without pretending they share
@@ -66,10 +66,30 @@ one endpoint, credential, or failure model.
 | Need | Package |
 | --- | --- |
 | Shared errors, compatibility/discovery contracts, operation controls, or in-memory secrets | `@opencoven/sdk-core` |
-| Cave health, familiar operations, or reviewed Cave contract fixtures | `@opencoven/cave-client` |
+| Explicit Cave discovery, Cave health, familiar operations, or reviewed Cave contract fixtures | `@opencoven/cave-client` |
 | Explicit Coven discovery and owner-local daemon health | `@opencoven/coven-client` |
 | Optional Cave/Coven coordination | `@opencoven/sdk` |
 | Deterministic help/version output from the global binary | `@opencoven/dev-cli` |
+
+## Explicit Cave discovery
+
+`@opencoven/cave-client` can securely read the fixed owner-local Client v1
+record and negotiate compatibility before returning a client:
+
+```ts
+import { createDiscoveredCaveClient } from '@opencoven/cave-client';
+
+const cave = await createDiscoveredCaveClient({ timeoutMs: 2_000 });
+await cave.health({ timeoutMs: 2_000 });
+```
+
+Discovery checks only the reviewed `COVEN_CAVE_HOME`, `COVEN_HOME/cave`, and
+owner-home fallback locations. It rejects symlinks, replacement races, foreign
+ownership, unsafe modes, oversized or malformed records, stale PIDs, and
+non-loopback endpoints. Windows callers must inject a reviewed filesystem trust
+provider. The initial health request is fixed to the Client v1 route, sends no
+credentials, follows no redirects, and shares the discovery deadline. The
+returned client is bound to the negotiated Cave instance ID.
 
 ## Caller-supplied Cave transports
 
@@ -88,8 +108,8 @@ const cave = new CaveClient({
 });
 ```
 
-The Cave client does not own the URL, authentication, retry, or fetch policy in
-this current surface. Callers may provide cancellation and an optional
+For directly constructed clients, the SDK does not own the URL, authentication,
+retry, or fetch policy. Callers may provide cancellation and an optional
 SDK-enforced timeout:
 
 ```ts

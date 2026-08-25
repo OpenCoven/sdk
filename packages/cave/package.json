@@ -2,7 +2,7 @@
   "name": "@opencoven/cave-client",
   "version": "0.1.0",
   "private": true,
-  "description": "Transport-neutral constrained Cave client",
+  "description": "Constrained Cave client with explicit owner-local discovery",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.js",

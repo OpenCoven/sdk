@@ -5,3 +5,5 @@
 - Initial experimental SDK foundation. This version is not yet published.
 - Align the vendored Cave Client v1 contract and normalized health result with
   the reviewed `OpenCoven/coven-cave` producer fixture.
+- Add explicit secure owner-local Cave discovery, bounded compatibility health
+  negotiation, and Cave instance replacement detection.
