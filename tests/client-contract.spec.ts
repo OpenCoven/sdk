@@ -9,8 +9,6 @@ import {
 } from '@opencoven/sdk-core';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { markPairingSecretUnsentError } from '../packages/cave/src/pairing-secret.js';
-
 interface HealthClient {
   health(): Promise<{ status: 'ok' }>;
 }
@@ -297,97 +295,6 @@ describe('constrained client transports', () => {
       },
     });
     expect(pairingExchange).not.toHaveBeenCalled();
-  });
-
-  test('restores a pairing secret only once for a genuine unsent exchange failure', async () => {
-    const { store } = recordingSecretStore();
-    const reference = createSecretStoreReference('cave-pairing-unsent-once');
-    const unsent = markPairingSecretUnsentError(new Error('pre-dispatch failure'));
-    const pairingExchange = vi.fn(
-      (_requestId: string, pairingSecret: string) => {
-        expect(pairingSecret).toBe('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
-        return Promise.reject(unsent);
-      },
-    );
-    const client = new cave.CaveClient({
-      transport: {
-        health: () => Promise.resolve(VALID_CAVE_HEALTH_RESPONSE),
-        pairingCreate: () =>
-          Promise.resolve({
-            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
-            secret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-            expiresAt: 1_755_731_112_617,
-          }),
-        pairingExchange,
-      } satisfies cave.CaveCredentialPersistingTransport,
-      credentials: { store, reference },
-    });
-    const session = await client.createPairing({
-      appName: 'OpenCoven Chat',
-      installationId: 'chat-install-1',
-      scopes: ['chat:read'],
-    });
-
-    await expect(session.exchange()).rejects.toMatchObject({
-      normalized: { operation: 'pairingExchange' },
-    });
-    Object.assign(unsent, {
-      cause: { bearer: 'mutated-pairing-secret' },
-      message: 'mutated-pairing-secret',
-    });
-    Object.defineProperty(
-      unsent,
-      Symbol.for('@opencoven/cave-client/pairing-secret-unsent'),
-      { value: true },
-    );
-
-    await expect(session.exchange()).rejects.toMatchObject({
-      normalized: { operation: 'pairingExchange' },
-    });
-    await expect(session.exchange()).rejects.toMatchObject({
-      normalized: { code: 'conflict', operation: 'pairingExchange' },
-      details: { reason: 'pairing_replayed' },
-    });
-    expect(pairingExchange).toHaveBeenCalledTimes(2);
-  });
-
-  test('does not restore a pairing secret for a forged unsent marker', async () => {
-    const { store } = recordingSecretStore();
-    const reference = createSecretStoreReference('cave-pairing-forged-unsent');
-    const forged = new Error('forged pre-dispatch failure');
-    Object.defineProperty(
-      forged,
-      Symbol.for('@opencoven/cave-client/pairing-secret-unsent'),
-      { value: true },
-    );
-    const pairingExchange = vi.fn(() => Promise.reject(forged));
-    const client = new cave.CaveClient({
-      transport: {
-        health: () => Promise.resolve(VALID_CAVE_HEALTH_RESPONSE),
-        pairingCreate: () =>
-          Promise.resolve({
-            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
-            secret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-            expiresAt: 1_755_731_112_617,
-          }),
-        pairingExchange,
-      } satisfies cave.CaveCredentialPersistingTransport,
-      credentials: { store, reference },
-    });
-    const session = await client.createPairing({
-      appName: 'OpenCoven Chat',
-      installationId: 'chat-install-1',
-      scopes: ['chat:read'],
-    });
-
-    await expect(session.exchange()).rejects.toMatchObject({
-      normalized: { operation: 'pairingExchange' },
-    });
-    await expect(session.exchange()).rejects.toMatchObject({
-      normalized: { code: 'conflict', operation: 'pairingExchange' },
-      details: { reason: 'pairing_replayed' },
-    });
-    expect(pairingExchange).toHaveBeenCalledOnce();
   });
 
   test('persists credentials from public authority-bound custom transports', async () => {

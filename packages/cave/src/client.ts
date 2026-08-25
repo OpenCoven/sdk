@@ -39,7 +39,11 @@ import {
   invalidateStoredCredential,
   storeBoundCredential,
 } from './credential-binding.js';
-import { consumePairingSecretUnsentError } from './pairing-secret.js';
+import {
+  beginPairingExchangeUnsentAttempt,
+  consumePairingExchangeUnsentError,
+  endPairingExchangeUnsentAttempt,
+} from './pairing-secret.js';
 import { parseCaveCredentialMetadata } from './credential-metadata.js';
 import { snapshotManagedResult } from './managed-snapshot.js';
 import {
@@ -2915,6 +2919,7 @@ export class CaveClient {
           const call = this.#pairingExchangeCall();
           this.#ensureActive(context, 'pairingExchange');
           const secret = beginPairingExchange();
+          const unsentAttempt = beginPairingExchangeUnsentAttempt(context);
           let exchanged: ParsedDirectPairingExchange;
 
           try {
@@ -2931,12 +2936,14 @@ export class CaveClient {
               discardPairingExchangeBearer,
             );
           } catch (error) {
-            if (consumePairingSecretUnsentError(error)) {
+            if (consumePairingExchangeUnsentError(error, unsentAttempt)) {
               restorePairingSecret(secret);
             } else {
               clearPairingSecret();
             }
             throw error;
+          } finally {
+            endPairingExchangeUnsentAttempt(context, unsentAttempt);
           }
 
           clearPairingSecret();

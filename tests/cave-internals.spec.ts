@@ -28,8 +28,10 @@ import {
   type CaveDiscoveryPathIdentity,
 } from '../packages/cave/src/discovery.js';
 import {
-  consumePairingSecretUnsentError,
-  markPairingSecretUnsentError,
+  beginPairingExchangeUnsentAttempt,
+  consumePairingExchangeUnsentError,
+  endPairingExchangeUnsentAttempt,
+  markPairingExchangeUnsentError,
 } from '../packages/cave/src/pairing-secret.js';
 import type * as CredentialBindingModule from '../packages/cave/src/credential-binding-node.js';
 
@@ -1343,25 +1345,52 @@ describe('Cave authority binding helpers', () => {
 });
 
 describe('Cave pairing secret marker', () => {
-  test('consumes genuine unsent errors once and rejects forged or replayed markers', () => {
+  test('binds unsent proof to one exchange attempt and consumes it once', () => {
+    const firstContext = {};
+    const secondContext = {};
+    const firstAttempt = beginPairingExchangeUnsentAttempt(firstContext);
+    const secondAttempt = beginPairingExchangeUnsentAttempt(secondContext);
     const error = new Error('pairing');
-    expect(markPairingSecretUnsentError(error)).toBe(error);
-    expect(consumePairingSecretUnsentError(error)).toBe(true);
-    expect(consumePairingSecretUnsentError(error)).toBe(false);
+    expect(markPairingExchangeUnsentError(error, firstContext)).toBe(error);
+    Object.assign(error, {
+      cause: { bearer: 'mutated-pairing-secret' },
+      message: 'mutated-pairing-secret',
+    });
+    expect(consumePairingExchangeUnsentError(error, secondAttempt)).toBe(false);
+    expect(consumePairingExchangeUnsentError(error, firstAttempt)).toBe(false);
+
+    const staleAttempt = beginPairingExchangeUnsentAttempt(firstContext);
+    const stale = markPairingExchangeUnsentError(
+      new Error('stale attempt'),
+      firstContext,
+    );
+    const replacementAttempt = beginPairingExchangeUnsentAttempt(firstContext);
+    expect(consumePairingExchangeUnsentError(stale, replacementAttempt)).toBe(false);
+
+    const genuine = markPairingExchangeUnsentError(
+      new Error('same attempt'),
+      firstContext,
+    );
+    expect(consumePairingExchangeUnsentError(genuine, replacementAttempt)).toBe(true);
+    expect(consumePairingExchangeUnsentError(genuine, replacementAttempt)).toBe(false);
     Reflect.set(
-      error,
+      genuine,
       Symbol.for('@opencoven/cave-client/pairing-secret-unsent'),
       true,
     );
-    expect(consumePairingSecretUnsentError(error)).toBe(false);
+    expect(consumePairingExchangeUnsentError(genuine, replacementAttempt)).toBe(false);
 
-    expect(markPairingSecretUnsentError('pairing-secret')).toBe('pairing-secret');
-    expect(consumePairingSecretUnsentError('pairing-secret')).toBe(false);
+    expect(markPairingExchangeUnsentError('pairing-secret', firstContext)).toBe(
+      'pairing-secret',
+    );
+    expect(
+      consumePairingExchangeUnsentError('pairing-secret', replacementAttempt),
+    ).toBe(false);
 
     const frozen = Object.freeze({ code: 'frozen' });
-    expect(markPairingSecretUnsentError(frozen)).toBe(frozen);
-    expect(consumePairingSecretUnsentError(frozen)).toBe(true);
-    expect(consumePairingSecretUnsentError(frozen)).toBe(false);
+    expect(markPairingExchangeUnsentError(frozen, firstContext)).toBe(frozen);
+    expect(consumePairingExchangeUnsentError(frozen, replacementAttempt)).toBe(true);
+    expect(consumePairingExchangeUnsentError(frozen, replacementAttempt)).toBe(false);
 
     const forged = new Error('forged');
     Object.defineProperty(
@@ -1369,7 +1398,7 @@ describe('Cave pairing secret marker', () => {
       Symbol.for('@opencoven/cave-client/pairing-secret-unsent'),
       { value: true },
     );
-    expect(consumePairingSecretUnsentError(forged)).toBe(false);
+    expect(consumePairingExchangeUnsentError(forged, replacementAttempt)).toBe(false);
 
     const throwingGetter = new Proxy(
       {},
@@ -1379,7 +1408,12 @@ describe('Cave pairing secret marker', () => {
         },
       },
     );
-    expect(consumePairingSecretUnsentError(throwingGetter)).toBe(false);
+    expect(
+      consumePairingExchangeUnsentError(throwingGetter, replacementAttempt),
+    ).toBe(false);
+    endPairingExchangeUnsentAttempt(firstContext, staleAttempt);
+    endPairingExchangeUnsentAttempt(firstContext, replacementAttempt);
+    endPairingExchangeUnsentAttempt(secondContext, secondAttempt);
   });
 });
 

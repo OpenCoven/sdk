@@ -3,9 +3,11 @@ import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import {
+  CaveClient,
   CaveClientError,
   createDiscoveredCaveClient,
   discoverCaveEndpoint,
+  type CaveCredentialPersistingTransport,
 } from '@opencoven/cave-client';
 import {
   createMemorySecretStore,
@@ -2227,6 +2229,77 @@ describe('discovered Cave pairing helpers', () => {
     await expect(session.exchange()).resolves.toEqual(credential);
     expectStoredCredentialRecord(await credentials.store.get(credentials.reference.key));
     expect(fetchImplementation).toHaveBeenCalledTimes(5);
+  });
+
+  test('does not let a poll failure cause restore or redispatch another session exchange', async () => {
+    const root = createScratchRoot('pairing-poll-cause-replay');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const sourceFetch = queuedFetch([
+      () =>
+        jsonResponse(
+          201,
+          successEnvelope({
+            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+            secret: PAIRING_SECRET,
+            expiresAt: 1_755_731_112_617,
+          }),
+        ),
+    ], { automaticHealth: false });
+    const { client: sourceClient } = discoveredClient(root, sourceFetch);
+    const sourceSession = await sourceClient.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await writeDiscoveryRecord(root, discoveryRecord({ endpoint: 'http://127.0.0.1:3021' }));
+    const pollFailure = await sourceSession.poll().catch((error: unknown) => error);
+    expect(pollFailure).toBeInstanceOf(CaveClientError);
+    const pollCause =
+      pollFailure instanceof Error ? pollFailure.cause : undefined;
+    expect(pollCause).toBeInstanceOf(Error);
+    expect(
+      Reflect.get(
+        pollCause as object,
+        Symbol.for('@opencoven/cave-client/pairing-secret-unsent'),
+      ),
+    ).not.toBe(true);
+
+    const replayedCause =
+      pollCause instanceof Error
+        ? pollCause
+        : new Error('Expected a poll failure cause.');
+    const pairingExchange = vi.fn(() => Promise.reject(replayedCause));
+    const replayClient = new CaveClient({
+      transport: {
+        health: () => Promise.resolve(CURRENT_HEALTH_ENVELOPE),
+        pairingCreate: () =>
+          Promise.resolve({
+            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba004',
+            secret: PAIRING_SECRET,
+            expiresAt: 1_755_731_112_617,
+          }),
+        pairingExchange,
+      } as CaveCredentialPersistingTransport,
+      credentials: {
+        store: createMemorySecretStore(),
+        reference: createSecretStoreReference('replayed-poll-cause'),
+      },
+    });
+    const replaySession = await replayClient.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await expect(replaySession.exchange()).rejects.toMatchObject({
+      normalized: { operation: 'pairingExchange' },
+    });
+    await expect(replaySession.exchange()).rejects.toMatchObject({
+      normalized: { code: 'conflict', operation: 'pairingExchange' },
+      details: { reason: 'pairing_replayed' },
+    });
+    expect(pairingExchange).toHaveBeenCalledOnce();
   });
 
   test('spends the pairing secret after a terminal poll status', async () => {

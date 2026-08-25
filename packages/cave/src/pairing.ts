@@ -33,7 +33,7 @@ import {
   CAVE_CONTRACT_LIMITS,
   isCaveContractErrorCode,
 } from './contract-constraints.js';
-import { markPairingSecretUnsentError } from './pairing-secret.js';
+import { markPairingExchangeUnsentError } from './pairing-secret.js';
 import { parseCaveCredentialMetadata } from './credential-metadata.js';
 import {
   loadBoundCredential,
@@ -750,6 +750,7 @@ async function requestJson(
     fetchImplementation: typeof fetch;
     headers?: Record<string, string>;
     maxResponseBytes: number;
+    onPreDispatchFailure?: (error: unknown) => unknown;
     pairingSecretDispatch?: 'reusable' | 'single_use';
     pinnedAuthority?: CaveDiscoveredEndpoint;
     requireBearer?: boolean;
@@ -770,8 +771,8 @@ async function requestJson(
       assertPinnedPairingAuthority(discovered, options.pinnedAuthority);
     }
   } catch (error) {
-    if (options.pinnedAuthority !== undefined) {
-      throw markPairingSecretUnsentError(error);
+    if (options.onPreDispatchFailure !== undefined) {
+      throw options.onPreDispatchFailure(error);
     }
     throw error;
   }
@@ -979,7 +980,7 @@ function createDiscoveredTransport(
         });
         expectedInstanceId = parseHealthResponse(expectedHealth.payload).data.instanceId;
       } catch (error) {
-        throw markPairingSecretUnsentError(error);
+        throw markPairingExchangeUnsentError(error, context);
       }
 
       const { payload, discovered } = await requestJson(
@@ -995,6 +996,8 @@ function createDiscoveredTransport(
             'x-coven-pairing-secret': pairingSecret,
           },
           maxResponseBytes: options.maxResponseBytes,
+          onPreDispatchFailure: (error) =>
+            markPairingExchangeUnsentError(error, context),
           pairingSecretDispatch: 'single_use',
           pinnedAuthority: requirePinnedAuthority(requestId),
         },

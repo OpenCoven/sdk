@@ -1,22 +1,51 @@
-const pairingSecretUnsentErrors = new WeakSet<object>();
+const pairingExchangeAttempts = new WeakMap<object, object>();
+const pairingExchangeUnsentErrors = new WeakMap<object, object>();
 
-export function markPairingSecretUnsentError<T>(error: T): T {
+export function beginPairingExchangeUnsentAttempt(context: object): object {
+  const attempt = {};
+  pairingExchangeAttempts.set(context, attempt);
+  return attempt;
+}
+
+export function endPairingExchangeUnsentAttempt(
+  context: object,
+  attempt: object,
+): void {
+  if (pairingExchangeAttempts.get(context) === attempt) {
+    pairingExchangeAttempts.delete(context);
+  }
+}
+
+export function markPairingExchangeUnsentError<T>(
+  error: T,
+  context: object | undefined,
+): T {
   if (typeof error !== 'object' || error === null) {
     return error;
   }
 
-  pairingSecretUnsentErrors.add(error);
+  const attempt =
+    typeof context === 'object' && context !== null
+      ? pairingExchangeAttempts.get(context)
+      : undefined;
+  if (attempt !== undefined) {
+    pairingExchangeUnsentErrors.set(error, attempt);
+  }
   return error;
 }
 
-export function consumePairingSecretUnsentError(error: unknown): boolean {
+export function consumePairingExchangeUnsentError(
+  error: unknown,
+  attempt: object,
+): boolean {
   if (typeof error !== 'object' || error === null) {
     return false;
   }
 
-  if (!pairingSecretUnsentErrors.has(error)) {
+  const markedAttempt = pairingExchangeUnsentErrors.get(error);
+  if (markedAttempt === undefined) {
     return false;
   }
-  pairingSecretUnsentErrors.delete(error);
-  return true;
+  pairingExchangeUnsentErrors.delete(error);
+  return markedAttempt === attempt;
 }
