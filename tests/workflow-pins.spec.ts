@@ -33,6 +33,8 @@ const RELEASE_TAG = /^v\d+(?:\.\d+){0,2}$/;
 
 const USES_PATTERN =
   /uses:\s+([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)@([^\s#]+)(?:[^\S\n]+#[^\S\n]*(\S+))?/g;
+const DIRECT_DISPATCH_INPUT_PATTERN =
+  /\$\{\{[^}]*\binputs\s*(?:\.|\[)[^}]*\}\}/u;
 
 function actionPins(source: string) {
   return [...source.matchAll(USES_PATTERN)].map(([, action, ref, comment]) => ({
@@ -182,11 +184,24 @@ describe('workflow action pins', () => {
 
   test('never interpolates dispatch inputs directly into release shell scripts', () => {
     const scripts = runScripts(releaseWorkflow);
+    const combinedScripts = scripts.join('\n');
 
-    expect(scripts.join('\n')).not.toContain('${{ inputs.version }}');
+    expect(combinedScripts).not.toMatch(DIRECT_DISPATCH_INPUT_PATTERN);
+    for (const unsafeExpression of [
+      '${{ inputs.version }}',
+      '${{inputs.version}}',
+      '${{ inputs.version}}',
+      '${{ inputs.version  }}',
+      '${{ inputs . version }}',
+      '${{ inputs.release-tag }}',
+      "${{ inputs['version'] }}",
+      '${{ github.event.inputs.version }}',
+    ]) {
+      expect(unsafeExpression).toMatch(DIRECT_DISPATCH_INPUT_PATTERN);
+    }
     expect(releaseWorkflow.match(/RELEASE_VERSION: \$\{\{ inputs\.version \}\}/gu))
       .toHaveLength(2);
-    expect(scripts.join('\n')).toContain('--version "$RELEASE_VERSION"');
-    expect(scripts.join('\n')).toContain('--tag "sdk-v$RELEASE_VERSION"');
+    expect(combinedScripts).toContain('--version "$RELEASE_VERSION"');
+    expect(combinedScripts).toContain('--tag "sdk-v$RELEASE_VERSION"');
   });
 });
