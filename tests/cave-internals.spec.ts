@@ -1357,6 +1357,7 @@ describe('Cave pairing secret marker', () => {
       message: 'mutated-pairing-secret',
     });
     expect(consumePairingExchangeUnsentError(error, secondAttempt)).toBe(false);
+    expect(consumePairingExchangeUnsentError(error, firstAttempt)).toBe(true);
     expect(consumePairingExchangeUnsentError(error, firstAttempt)).toBe(false);
 
     const staleAttempt = beginPairingExchangeUnsentAttempt(firstContext);
@@ -1366,6 +1367,20 @@ describe('Cave pairing secret marker', () => {
     );
     const replacementAttempt = beginPairingExchangeUnsentAttempt(firstContext);
     expect(consumePairingExchangeUnsentError(stale, replacementAttempt)).toBe(false);
+
+    const shared = new Error('shared error');
+    markPairingExchangeUnsentError(shared, firstContext);
+    markPairingExchangeUnsentError(shared, secondContext);
+    expect(consumePairingExchangeUnsentError(shared, replacementAttempt)).toBe(true);
+    expect(consumePairingExchangeUnsentError(shared, secondAttempt)).toBe(true);
+    expect(consumePairingExchangeUnsentError(shared, secondAttempt)).toBe(false);
+
+    const settled = markPairingExchangeUnsentError(
+      new Error('settled attempt'),
+      secondContext,
+    );
+    endPairingExchangeUnsentAttempt(secondContext, secondAttempt);
+    expect(consumePairingExchangeUnsentError(settled, secondAttempt)).toBe(false);
 
     const genuine = markPairingExchangeUnsentError(
       new Error('same attempt'),
@@ -1413,7 +1428,6 @@ describe('Cave pairing secret marker', () => {
     ).toBe(false);
     endPairingExchangeUnsentAttempt(firstContext, staleAttempt);
     endPairingExchangeUnsentAttempt(firstContext, replacementAttempt);
-    endPairingExchangeUnsentAttempt(secondContext, secondAttempt);
   });
 });
 

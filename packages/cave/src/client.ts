@@ -2921,17 +2921,19 @@ export class CaveClient {
           const secret = beginPairingExchange();
           const unsentAttempt = beginPairingExchangeUnsentAttempt(context);
           let exchanged: ParsedDirectPairingExchange;
+          let endUnsentAttemptAfterSettlement = false;
+          const exchangeOperation = (async () => {
+            const response: unknown = await call(created.requestId, secret, context);
+            const parsed = parseDirectPairingExchange(response);
+            if (parsed === undefined) {
+              throw invalidResponse('pairingExchange');
+            }
+            return parsed;
+          })();
 
           try {
             exchanged = await racePrePersistencePhase(
-              (async () => {
-                const response: unknown = await call(created.requestId, secret, context);
-                const parsed = parseDirectPairingExchange(response);
-                if (parsed === undefined) {
-                  throw invalidResponse('pairingExchange');
-                }
-                return parsed;
-              })(),
+              exchangeOperation,
               termination,
               discardPairingExchangeBearer,
             );
@@ -2941,9 +2943,36 @@ export class CaveClient {
             } else {
               clearPairingSecret();
             }
+            if (
+              isOperationTimeoutError(error) ||
+              isOperationAbortedError(error)
+            ) {
+              endUnsentAttemptAfterSettlement = true;
+              void exchangeOperation.then(
+                () => {
+                  endPairingExchangeUnsentAttempt(context, unsentAttempt);
+                },
+                (lateError) => {
+                  try {
+                    if (
+                      consumePairingExchangeUnsentError(
+                        lateError,
+                        unsentAttempt,
+                      )
+                    ) {
+                      restorePairingSecret(secret);
+                    }
+                  } finally {
+                    endPairingExchangeUnsentAttempt(context, unsentAttempt);
+                  }
+                },
+              );
+            }
             throw error;
           } finally {
-            endPairingExchangeUnsentAttempt(context, unsentAttempt);
+            if (!endUnsentAttemptAfterSettlement) {
+              endPairingExchangeUnsentAttempt(context, unsentAttempt);
+            }
           }
 
           clearPairingSecret();
