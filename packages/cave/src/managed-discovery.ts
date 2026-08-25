@@ -168,29 +168,84 @@ function sanitizedDiscoveryBoundaryError(error: unknown): CaveDiscoveryError {
   return sanitizedDiscoveryError(error);
 }
 
+function snapshotDiscoverySource(
+  value: unknown,
+  maxRecordBytes: number,
+): { bytes: unknown; record: unknown } | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  try {
+    const prototype = Reflect.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return undefined;
+    }
+    const keys = Reflect.ownKeys(value);
+    if (
+      keys.length !== 2 ||
+      keys.some((key) => key !== 'bytes' && key !== 'record')
+    ) {
+      return undefined;
+    }
+    const bytes = Object.getOwnPropertyDescriptor(value, 'bytes');
+    const record = Object.getOwnPropertyDescriptor(value, 'record');
+    if (
+      bytes === undefined ||
+      record === undefined ||
+      !Object.hasOwn(bytes, 'value') ||
+      !Object.hasOwn(record, 'value')
+    ) {
+      return undefined;
+    }
+
+    const recordSnapshot = snapshotManagedResultWithBudget(record.value, {
+      maxArrayElements: 1,
+      maxEntries: 4,
+      maxNodes: 1,
+      maxStringCodeUnits: 1_024,
+      maxTypedArrayElements: 1,
+    });
+    if (!recordSnapshot.valid) {
+      return undefined;
+    }
+    const bytesSnapshot = snapshotManagedResultWithBudget(bytes.value, {
+      maxArrayElements: maxRecordBytes,
+      maxEntries: maxRecordBytes,
+      maxNodes: 1,
+      maxStringCodeUnits: maxRecordBytes,
+      maxTypedArrayElements: maxRecordBytes,
+    });
+    if (!bytesSnapshot.valid) {
+      if (bytesSnapshot.limitExceeded) {
+        throw new CaveDiscoveryError(
+          'body_limit',
+          'Cave discovery record exceeded its size limit.',
+        );
+      }
+      return undefined;
+    }
+
+    return Object.freeze({
+      bytes: bytesSnapshot.value,
+      record: recordSnapshot.value,
+    });
+  } catch (error) {
+    if (error instanceof CaveDiscoveryError) {
+      throw error;
+    }
+    return undefined;
+  }
+}
+
 function parseSourceResult(
   value: unknown,
   maxRecordBytes: number,
 ): CaveManagedDiscoveredEndpoint {
-  const sourceSnapshot = snapshotManagedResultWithBudget(value, {
-    maxArrayElements: maxRecordBytes,
-    maxEntries: Math.min(
-      MANAGED_SNAPSHOT_LIMITS.entries,
-      maxRecordBytes + 16,
-    ),
-    maxStringCodeUnits: maxRecordBytes,
-    maxTypedArrayElements: maxRecordBytes,
-  });
-  if (!sourceSnapshot.valid) {
-    if (sourceSnapshot.limitExceeded) {
-      throw new CaveDiscoveryError(
-        'body_limit',
-        'Cave discovery record exceeded its size limit.',
-      );
-    }
+  const snapshot = snapshotDiscoverySource(value, maxRecordBytes);
+  if (snapshot === undefined) {
     return invalidRecord();
   }
-  const snapshot = sourceSnapshot.value;
   if (
     !isDataRecord(snapshot) ||
     !hasExactKeys(snapshot, ['bytes', 'record'])

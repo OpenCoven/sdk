@@ -232,6 +232,17 @@ export function isCaveClientError(error: unknown): error is CaveClientError {
   }
 }
 
+const MANAGED_LOCAL_CAVE_CLIENT_ERRORS = new WeakSet<CaveClientError>();
+
+function managedLocalCaveClientError(error: CaveClientError): CaveClientError {
+  MANAGED_LOCAL_CAVE_CLIENT_ERRORS.add(error);
+  return error;
+}
+
+function isManagedLocalCaveClientError(error: unknown): error is CaveClientError {
+  return isCaveClientError(error) && MANAGED_LOCAL_CAVE_CLIENT_ERRORS.has(error);
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -816,7 +827,7 @@ function errorCodeOf(error: unknown): string | undefined {
 }
 
 function replayedPairing(operation: string): CaveClientError {
-  return new CaveClientError(
+  return managedLocalCaveClientError(new CaveClientError(
     normalizeCaveError(
       {
         code: 'conflict',
@@ -833,7 +844,7 @@ function replayedPairing(operation: string): CaveClientError {
         details: { reason: 'pairing_replayed' },
       },
     },
-  );
+  ));
 }
 
 function pairingOperationInProgress(operation: string): CaveClientError {
@@ -843,7 +854,9 @@ function pairingOperationInProgress(operation: string): CaveClientError {
     details: { reason: 'pairing_poll_in_progress' },
   };
 
-  return new CaveClientError(normalizeCaveError(cause, operation), undefined, { cause });
+  return managedLocalCaveClientError(
+    new CaveClientError(normalizeCaveError(cause, operation), undefined, { cause }),
+  );
 }
 
 /**
@@ -1657,6 +1670,12 @@ export class CaveClient {
           try {
             return await executor(context);
           } catch (error) {
+            if (
+              redactManagedErrors &&
+              isManagedLocalCaveClientError(error)
+            ) {
+              throw error;
+            }
             if (redactManagedErrors) {
               throw redactedManagedTransportError(error, operation);
             }
@@ -1776,7 +1795,7 @@ export class CaveClient {
           redactManagedErrors
             ? isOperationTimeoutError(error) || isOperationAbortedError(error)
               ? redactedManagedCancellationError(error, operation)
-              : isCaveClientError(error)
+              : isManagedLocalCaveClientError(error)
                 ? error
                 : redactedManagedTransportError(error, operation)
             : this.#wrapOperationError(error, operation);

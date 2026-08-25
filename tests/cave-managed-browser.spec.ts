@@ -250,6 +250,65 @@ describe('managed browser entry point', () => {
       : undefined)).not.toContain(NATIVE_BEARER);
   });
 
+  test('keeps owner identity metadata separate from the discovery byte budget', async () => {
+    const bytes = JSON.stringify({
+      version: 1,
+      endpoint: 'http://127.0.0.1:1',
+      pid: 1,
+      nonce: 'xxxxxxxx',
+      startedAt: '2026-01-01T00:00:00Z',
+    });
+    const identity = 'i'.repeat(300);
+    const source: CaveManagedDiscoverySource = {
+      read: () =>
+        Promise.resolve({
+          bytes,
+          record: {
+            identity,
+            device: 0,
+            inode: 0,
+            processAlive: true,
+          },
+        }),
+    };
+
+    expect(new TextEncoder().encode(bytes).byteLength).toBe(107);
+    await expect(discoverManagedCaveEndpoint(source, {
+      maxRecordBytes: 256,
+    })).resolves.toMatchObject({
+      record: { identity },
+    });
+  });
+
+  test('rejects an oversized owner identity independently of record bytes', async () => {
+    const source: CaveManagedDiscoverySource = {
+      read: () =>
+        Promise.resolve({
+          bytes: JSON.stringify({
+            version: 1,
+            endpoint: 'http://127.0.0.1:1',
+            pid: 1,
+            nonce: 'xxxxxxxx',
+            startedAt: '2026-01-01T00:00:00Z',
+          }),
+          record: {
+            identity: 'i'.repeat(1_025),
+            device: 0,
+            inode: 0,
+            processAlive: true,
+          },
+        }),
+    };
+
+    const error = await discoverManagedCaveEndpoint(source, {
+      maxRecordBytes: 256,
+    }).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: 'invalid_response' });
+    expect(JSON.stringify(error, error instanceof Error
+      ? Object.getOwnPropertyNames(error)
+      : undefined)).not.toContain('i'.repeat(1_025));
+  });
+
   test.each([
     { bytes: 'x'.repeat(65), maxRecordBytes: 64 },
     { bytes: '€'.repeat(22), maxRecordBytes: 64 },

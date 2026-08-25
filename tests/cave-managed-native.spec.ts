@@ -183,6 +183,92 @@ describe('managed native Cave credential custody', () => {
     expectRedacted({ session, status, exchanged, events });
   });
 
+  test('preserves managed local poll and replay state errors without native remapping', async () => {
+    let resolvePoll: ((status: unknown) => void) | undefined;
+    const events: unknown[] = [];
+    const transport = managedTransport({
+      managedPairingPoll: vi.fn(() =>
+        new Promise<unknown>((resolve) => {
+          resolvePoll = resolve;
+        }),
+      ),
+    });
+    const client = managedClient(transport, {
+      onEvent(event) {
+        events.push(event);
+      },
+      onObserverError(error) {
+        throw error;
+      },
+    });
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-local-pairing-state',
+      scopes: ['chat:read'],
+    });
+
+    const firstPoll = session.poll();
+    await vi.waitFor(() => expect(resolvePoll).toBeTypeOf('function'));
+    const concurrentPoll = await session.poll().catch((error: unknown) => error);
+
+    expect(concurrentPoll).toMatchObject({
+      normalized: {
+        code: 'operation_in_progress',
+        retryable: true,
+      },
+      details: { reason: 'pairing_poll_in_progress' },
+    });
+
+    resolvePoll?.({
+      id: REQUEST_ID,
+      status: 'approved',
+      expiresAt: 1_755_731_112_617,
+    });
+    await expect(firstPoll).resolves.toMatchObject({ status: 'approved' });
+    await expect(session.exchange()).resolves.toEqual(credential());
+
+    const replay = await session.exchange().catch((error: unknown) => error);
+    expect(replay).toMatchObject({
+      normalized: {
+        code: 'conflict',
+        retryable: false,
+      },
+      details: { reason: 'pairing_replayed' },
+    });
+    expectRedacted({
+      concurrentPoll: serializedError(concurrentPoll),
+      replay: serializedError(replay),
+      inspect: [inspect(concurrentPoll), inspect(replay)],
+      events,
+    });
+  });
+
+  test('does not trust a native error that imitates the CaveClientError brand', async () => {
+    const imitation = Object.assign(new Error(`native bearer ${BEARER}`), {
+      code: 'conflict',
+      details: { reason: BEARER },
+      retryable: false,
+    });
+    Object.defineProperty(imitation, Symbol.for('@opencoven/cave-client/CaveClientError'), {
+      value: true,
+    });
+    const client = managedClient(managedTransport({
+      health: vi.fn(() => Promise.reject(imitation)),
+    }));
+
+    const error = await client.health().catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      normalized: { code: 'conflict', retryable: false },
+      details: undefined,
+    });
+    expectRedacted({
+      error: serializedError(error),
+      inspect: inspect(error),
+      cause: error instanceof Error ? error.cause : undefined,
+    });
+  });
+
   test.each([
     {
       label: 'pairing create',
