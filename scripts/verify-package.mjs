@@ -248,6 +248,7 @@ function createFixture(fixtureRoot, tarballs) {
   type CaveCanonicalFamiliar,
   type CaveConversation,
   type CaveConversationMessage,
+  type CaveManagedCredentialTransport,
   type CaveProject,
 } from '@opencoven/cave-client';
 import { COVEN_DAEMON_PROTOCOL, CovenClient } from '@opencoven/coven-client';
@@ -292,6 +293,49 @@ const cave = new CaveClient({
       };
     },
   },
+});
+const managedNativeTransport = {
+  health: async (context?: OperationContext) => {
+    void context?.signal;
+    return {
+      apiVersion: '1.0',
+      capabilities: ['health'],
+      minimumClientVersion: '0.1.0',
+      operations: ['health.read'],
+      data: {
+        instanceId: 'packed-managed-native-cave',
+        pairingRequired: true,
+        releaseVersion: '0.3.9',
+      },
+    };
+  },
+  managedPairingCreate: async () => ({
+    requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+    expiresAt: 1_755_731_112_617,
+  }),
+  managedPairingPoll: async () => ({
+    id: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+    status: 'pending',
+    expiresAt: 1_755_731_112_617,
+  }),
+  managedPairingExchange: async () => ({
+    credential: {
+      id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+      appName: 'OpenCoven Chat',
+      installationId: 'packed-managed-native',
+      scopes: ['chat:read'],
+      createdAt: 1_755_730_812_617,
+      lastUsedAt: null,
+      revokedAt: null,
+      revocationReason: null,
+    },
+  }),
+  managedCredentialStatus: async () => ({ status: 'missing' }),
+  managedForgetCredential: async () => ({ status: 'missing' }),
+} satisfies CaveManagedCredentialTransport;
+const managedNativeCave = new CaveClient({
+  transport: managedNativeTransport,
+  credentialCustody: { mode: 'managed-native' },
 });
 const coven = new CovenClient({
   transport: {
@@ -347,6 +391,7 @@ await sdk.healthReport({
 });
 void events;
 void caveIterators;
+void managedNativeCave;
 `,
   );
   writeFileSync(

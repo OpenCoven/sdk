@@ -41,6 +41,9 @@ record. Unix discovery still requires a positive inode.
 - `new CaveClient({ transport })` and `createCaveClient(...)` preserve
   caller-owned transports for health, familiars, analytics, and reviewed
   contract-fixture helpers.
+- `new CaveClient({ transport, credentialCustody: { mode: 'managed-native' } })`
+  selects a narrow native-only pairing and credential boundary for webviews.
+  It cannot be combined with a JavaScript `SecretStore`.
 - Five optional methods on the same caller-owned `CaveTransport` add strict
   one-page Client v1 canonical reads through `listFamiliars()`,
   `listProjects()`, `listConversations()`, `getConversation()`, and
@@ -232,6 +235,49 @@ pairing-secret or bearer request to the process that answered health. The 0.1
 release remains blocked on the producer protocol work in
 [OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996)
 and real-authority conformance.
+### Managed native credential custody
+
+Webviews such as Tauri Chat must not receive pairing secrets or exchanged
+bearers. Supply a `CaveManagedCredentialTransport` and explicitly select
+managed-native custody instead of injecting `credentials`:
+
+```ts
+import {
+  CaveClient,
+  type CaveManagedCredentialTransport,
+} from '@opencoven/cave-client';
+
+const transport = {
+  health: async () => nativeCave.health(),
+  managedPairingCreate: async (request) => nativeCave.pairingCreate(request),
+  managedPairingPoll: async (requestId) => nativeCave.pairingPoll(requestId),
+  managedPairingExchange: async (requestId) => nativeCave.pairingExchange(requestId),
+  managedCredentialStatus: async () => nativeCave.credentialStatus(),
+  managedForgetCredential: async () => nativeCave.forgetCredential(),
+} satisfies CaveManagedCredentialTransport;
+
+const cave = new CaveClient({
+  transport,
+  credentialCustody: { mode: 'managed-native' },
+});
+```
+
+This bridge has no generic fetch method. Native code alone retains the pairing
+secret, sends pairing-secret headers, consumes the exchange bearer, and
+persists the credential. Its create result is limited to `requestId` and
+`expiresAt`; poll receives only that opaque request ID; exchange returns only
+credential metadata. Credential status and forget use narrow non-secret
+results, including replacement-race reporting. The SDK rejects malformed or
+secret-bearing native results, validates every exposed metadata/status value,
+and keeps timed-out or aborted managed exchange attempts terminal so it never
+automatically duplicates a persistent mutation.
+
+Managed custody removes credential material from JavaScript; it does **not**
+solve authority endpoint takeover. Client v1 still lacks atomic request binding,
+so the release remains blocked on
+[OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996)
+and real-authority conformance.
+
 A successful `session.poll()` keeps the session ready for one later
 `session.exchange()`. While a poll is in flight, later `poll()`/`exchange()`
 calls fail locally with retryable `operation_in_progress` instead of sending

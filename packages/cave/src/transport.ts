@@ -77,3 +77,33 @@ export interface CaveCredentialPersistingTransport extends CaveTransport {
     context?: OperationContext,
   ): Promise<CaveAuthorityBoundPairingExchange>;
 }
+
+/**
+ * A native credential-custody bridge. Its implementation owns all network
+ * authorization, pairing secrets, exchanged bearers, and durable credential
+ * storage outside the JavaScript runtime. It intentionally has no generic
+ * request method.
+ *
+ * Results are `unknown` at this trust boundary. `CaveClient` validates every
+ * non-secret value before exposing a public DTO.
+ */
+export interface CaveManagedCredentialTransport extends CaveTransport {
+  managedPairingCreate(
+    request: CavePairingRequest,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  managedPairingPoll(
+    requestId: string,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  managedPairingExchange(
+    requestId: string,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  managedCredentialStatus(
+    context?: OperationContext,
+  ): Promise<unknown>;
+  managedForgetCredential(
+    context?: OperationContext,
+  ): Promise<unknown>;
+}

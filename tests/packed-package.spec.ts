@@ -319,6 +319,11 @@ if (existsSync(rootModules) || existsSync(nestedModules) || !existsSync(lockfile
         expect(manifest.dependencies ?? {}).toEqual(
           expectedPackedDependencies(workspaceDirectory, manifest.version),
         );
+        if (workspaceDirectory === 'cave') {
+          const declarations = readTarballFile(tarball, 'dist/index.d.ts');
+          expect(declarations).toContain('CaveManagedCredentialTransport');
+          expect(declarations).toContain('CaveManagedNativeCredentialCustody');
+        }
         if (workspaceDirectory === 'cli') {
           expect(manifest.optionalDependencies?.['@napi-rs/keyring']).toBeUndefined();
         }

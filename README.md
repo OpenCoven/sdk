@@ -224,6 +224,19 @@ the later HTTP request to the proven process. Final 0.1 security disposition
 and real-authority conformance remain blocked on
 [OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
 
+### Managed native custody for webviews
+
+Tauri Chat should instead provide a `CaveManagedCredentialTransport` and select
+`credentialCustody: { mode: 'managed-native' }` on `CaveClient`. This
+discriminated mode cannot be combined with `credentials`: native code retains
+the pairing secret, pairing-secret headers, exchange bearer, and persistent
+credential, while JavaScript receives only validated pairing metadata, status,
+and credential metadata. The bridge has narrow pairing/status/forget methods,
+not generic fetch; canonical reads remain SDK-parsed raw envelopes returned by
+the native-authenticated transport. Managed custody does not fix Client v1's
+separate atomic request-binding blocker in
+[OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
+
 ## Cave canonical reads
 
 `CaveClient` ships five one-page methods:

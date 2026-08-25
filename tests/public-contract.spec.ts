@@ -162,6 +162,32 @@ type IterateConversationMessagesContract = Assert<Equal<
     options: core.BoundedPageOptions,
   ) => AsyncGenerator<cave.CaveConversationMessage>
 >>;
+type CaveManagedPairingCreatedContract = Assert<Equal<
+  cave.CaveManagedPairingCreated,
+  {
+    requestId: string;
+    expiresAt: number;
+  }
+>>;
+type CaveManagedPairingExchangeContract = Assert<Equal<
+  cave.CaveManagedPairingExchange,
+  {
+    credential: cave.CaveCredentialMetadata;
+  }
+>>;
+type CaveManagedPairingCreateTransportContract = Assert<Equal<
+  cave.CaveManagedCredentialTransport['managedPairingCreate'],
+  (
+    request: cave.CavePairingRequest,
+    context?: core.OperationContext,
+  ) => Promise<unknown>
+>>;
+type CaveManagedForgetTransportContract = Assert<Equal<
+  cave.CaveManagedCredentialTransport['managedForgetCredential'],
+  (
+    context?: core.OperationContext,
+  ) => Promise<unknown>
+>>;
 
 function canonicalReadCompileOnly(
   client: cave.CaveClient,
@@ -198,6 +224,42 @@ function canonicalReadCompileOnly(
   void messageIterator;
 }
 
+function managedNativeCustodyCompileOnly(
+  transport: cave.CaveManagedCredentialTransport,
+): void {
+  const client = new cave.CaveClient({
+    transport,
+    credentialCustody: { mode: 'managed-native' },
+  });
+  const session: Promise<cave.CavePairingSession> = client.createPairing({
+    appName: 'OpenCoven Chat',
+    installationId: 'chat-install-1',
+    scopes: ['chat:read'],
+  });
+  const status: Promise<cave.CaveCredentialStatus> = client.credentialStatus();
+  const forgotten: Promise<boolean> = client.forgetCredential();
+  const created: Promise<unknown> = transport.managedPairingCreate({
+    appName: 'OpenCoven Chat',
+    installationId: 'chat-install-1',
+    scopes: ['chat:read'],
+  });
+
+  // @ts-expect-error Managed native custody cannot be combined with a JS SecretStore.
+  void new cave.CaveClient({
+    transport,
+    credentialCustody: { mode: 'managed-native' },
+    credentials: {
+      store: core.createMemorySecretStore(),
+      reference: core.createSecretStoreReference('managed-native-contract'),
+    },
+  });
+
+  void session;
+  void status;
+  void forgotten;
+  void created;
+}
+
 void (undefined as unknown as CaveCanonicalFamiliarContract);
 void (undefined as unknown as CaveProjectContract);
 void (undefined as unknown as CaveConversationContract);
@@ -216,7 +278,12 @@ void (undefined as unknown as IterateFamiliarsContract);
 void (undefined as unknown as IterateProjectsContract);
 void (undefined as unknown as IterateConversationsContract);
 void (undefined as unknown as IterateConversationMessagesContract);
+void (undefined as unknown as CaveManagedPairingCreatedContract);
+void (undefined as unknown as CaveManagedPairingExchangeContract);
+void (undefined as unknown as CaveManagedPairingCreateTransportContract);
+void (undefined as unknown as CaveManagedForgetTransportContract);
 void canonicalReadCompileOnly;
+void managedNativeCustodyCompileOnly;
 
 interface NormalizedError {
   system: 'cave' | 'coven';

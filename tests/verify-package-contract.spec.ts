@@ -111,6 +111,7 @@ describe('packed package verifier contract', () => {
   type CaveCanonicalFamiliar,
   type CaveConversation,
   type CaveConversationMessage,
+  type CaveManagedCredentialTransport,
   type CaveProject,
 } from '@opencoven/cave-client';`,
     );
@@ -138,6 +139,8 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain(
       "throw new Error('Packed Cave iterator methods are unavailable.');",
     );
+    expect(verifier).toContain('} satisfies CaveManagedCredentialTransport;');
+    expect(verifier).toContain("credentialCustody: { mode: 'managed-native' }");
   });
 
 });

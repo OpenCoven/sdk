@@ -132,6 +132,23 @@ export interface CavePairingExchange {
   credential: CaveCredentialMetadata;
 }
 
+/**
+ * The non-secret metadata a managed native bridge may return after creating a
+ * pairing request. Native code retains the pairing secret.
+ */
+export interface CaveManagedPairingCreated {
+  requestId: string;
+  expiresAt: number;
+}
+
+/**
+ * The non-secret metadata a managed native bridge may return after consuming
+ * an exchange. Native code retains and persists the bearer.
+ */
+export interface CaveManagedPairingExchange {
+  credential: CaveCredentialMetadata;
+}
+
 export interface CaveAuthorityBinding {
   version: CaveDiscoveredEndpoint['version'];
   instanceId: string;
@@ -163,6 +180,25 @@ export type CaveCredentialStatus =
   | { status: 'disconnected'; reason: CaveCredentialDisconnectedReason }
   | { status: 'revoked'; health: CaveHealth }
   | { status: 'valid'; access: CaveCredentialAccess; health: CaveHealth };
+
+/**
+ * Native bridges return this raw, non-secret status shape. `health` remains
+ * untrusted until the SDK validates it with the authoritative health parser.
+ */
+export type CaveManagedCredentialStatusResult =
+  | { status: 'missing' }
+  | { status: 'disconnected'; reason: CaveCredentialDisconnectedReason }
+  | { status: 'revoked'; health: unknown }
+  | { status: 'valid'; access: CaveCredentialAccess; health: unknown };
+
+/**
+ * Native credential deletion must distinguish confirmed absence from a
+ * replacement race so JavaScript never reports a newer credential as removed.
+ */
+export type CaveManagedForgetCredentialResult =
+  | { status: 'deleted' }
+  | { status: 'missing' }
+  | { status: 'credential_update_in_progress' };
 
 /**
  * Familiars.
