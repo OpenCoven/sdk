@@ -9,7 +9,7 @@ export interface PackageManifest {
   [key: string]: unknown;
 }
 
-export interface PublicPackageMetadata {
+export interface PackageMetadata {
   packageName: string;
   workspaceDirectory: string;
   manifestPath: string;
@@ -17,8 +17,8 @@ export interface PublicPackageMetadata {
 }
 
 export const CANONICAL_REPOSITORY_URL: 'git+https://github.com/OpenCoven/sdk.git';
-export const WORKSPACE_PACKAGES: readonly PublicPackageMetadata[];
-export const PUBLIC_PACKAGES: readonly PublicPackageMetadata[];
+export const WORKSPACE_PACKAGES: readonly PackageMetadata[];
+export const PUBLIC_PACKAGES: readonly PackageMetadata[];
 
 export function assertCanonicalRepository(
   manifest: PackageManifest,
