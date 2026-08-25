@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "packageName": "@opencoven/sdk-core",
+  "packageExports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "runtimeExports": [
+    "DISCOVERY_PROFILES",
+    "DISCOVERY_PROTOCOL",
+    "DISCOVERY_RECORD_VERSION",
+    "DiscoveryContractError",
+    "InvalidSecretKeyError",
+    "OperationAbortedError",
+    "OperationConfigurationError",
+    "OperationTimeoutError",
+    "SecretStoreDisposedError",
+    "assessCompatibility",
+    "createManagedMemorySecretStore",
+    "createMemorySecretStore",
+    "createOperationScope",
+    "createSecretStoreReference",
+    "isOperationAbortedError",
+    "isOperationTimeoutError",
+    "iteratePages",
+    "normalizeError",
+    "normalizePageOptions",
+    "parseDiscoveryEndpoint",
+    "parseDiscoveryRecord",
+    "runOperation"
+  ]
+}

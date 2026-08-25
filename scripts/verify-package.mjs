@@ -10,6 +10,12 @@ import {
   verifyReleaseArtifacts,
 } from './create-release-artifacts.mjs';
 import {
+  assertApiBaseline,
+  isJsonOrderEqual,
+  readApiBaseline,
+  readPackedApiSurfaces,
+} from './api-baselines.mjs';
+import {
   assertPackedPackagesExcludeSources,
   createPublicPackageOverrides,
   installIsolatedConsumersOfflineAfterWarming,
@@ -120,7 +126,7 @@ function assertPackedPackageContracts(tarballs) {
     if (
       manifest.main !== './dist/index.js' ||
       manifest.types !== './dist/index.d.ts' ||
-      !isDeepStrictEqual(manifest.exports, rootPackageExports)
+      !isJsonOrderEqual(manifest.exports, rootPackageExports)
     ) {
       throw new Error(
         `Packed ${packageName} package must ship only the reviewed root export map.`,
@@ -146,6 +152,24 @@ function assertPackedContractFixtures(tarballs) {
     if (packed !== source) {
       throw new Error(`Packed @opencoven/cave-client ${path} differs from source.`);
     }
+  }
+}
+
+async function assertPackedApiBaselines(tarballs, artifactRoot) {
+  const surfaces = await readPackedApiSurfaces({
+    artifactRoot,
+    packages: PUBLIC_PACKAGES,
+    tarballs,
+  });
+  for (const { packageName, workspaceDirectory } of PUBLIC_PACKAGES) {
+    const surface = surfaces[workspaceDirectory];
+    if (surface === undefined) {
+      throw new Error(`Packed API surface was missing for ${packageName}.`);
+    }
+    assertApiBaseline(
+      readApiBaseline(root, workspaceDirectory),
+      surface,
+    );
   }
 }
 
@@ -507,6 +531,11 @@ try {
   process.stdout.write('Packed package manifest contracts verified.\n');
   assertPackedContractFixtures(tarballs);
   process.stdout.write('Packed Cave contract fixtures verified.\n');
+  await assertPackedApiBaselines(
+    tarballs,
+    resolve(artifactRoot, 'api-baseline-runtime'),
+  );
+  process.stdout.write('Packed API baselines verified.\n');
 
   const releaseArtifactRoot = resolve(artifactRoot, 'release');
   createReleaseArtifacts({

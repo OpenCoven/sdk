@@ -32,6 +32,13 @@ release readiness, coverage, property stress tests, and linting.
 - Keep normalized observer and error metadata allowlisted.
 - Refresh reviewed contract fixtures with `pnpm sync:contracts` only from the
   authoritative repositories and review the resulting bytes and digests.
+- Keep the packed API baselines unchanged unless the public contract change is
+  intentional. For an approved change, run
+  `corepack pnpm@10.34.0 api:baseline:update`, review the declaration and export
+  diff, and include matching tests, docs, and a Changeset.
+
+See [COMPATIBILITY.md](COMPATIBILITY.md) for the supported surface and
+deprecation policy.
 
 ## Changesets
 

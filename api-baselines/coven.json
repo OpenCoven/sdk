@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "packageName": "@opencoven/coven-client",
+  "packageExports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "runtimeExports": [
+    "COVEN_DAEMON_PROTOCOL",
+    "CovenClient",
+    "CovenClientError",
+    "CovenDaemonResponseError",
+    "CovenIpcError",
+    "createCovenClient",
+    "createCovenUnixTransport",
+    "createCovenWindowsTransport",
+    "createDiscoveredCovenClient",
+    "discoverCovenEndpoint",
+    "isCovenClientError",
+    "isCovenDaemonResponseError",
+    "isCovenIpcError",
+    "normalizeCovenError"
+  ]
+}

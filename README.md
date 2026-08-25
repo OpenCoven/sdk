@@ -28,6 +28,7 @@ part of an intentional release process.
 - [0.1 dependency-ordered delivery program](docs/superpowers/plans/2026-08-22-sdk-0.1-delivery-program.md)
 - [GitHub delivery program](https://github.com/OpenCoven/sdk/issues/31)
 - [Support policy](SUPPORT.md)
+- [Compatibility and deprecation policy](COMPATIBILITY.md)
 - [Security policy](SECURITY.md)
 - [Release process](RELEASING.md)
 - [Contributing](CONTRIBUTING.md)

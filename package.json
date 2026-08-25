@@ -16,6 +16,7 @@
     }
   },
   "scripts": {
+    "api:baseline:update": "node ./scripts/update-api-baselines.mjs",
     "build": "corepack pnpm@10.34.0 --recursive --filter './packages/*' build && corepack pnpm@10.34.0 --recursive --filter './examples/*' build",
     "changeset": "changeset",
     "cleanup:merged": "node ./scripts/cleanup-merged-branch.mjs",
