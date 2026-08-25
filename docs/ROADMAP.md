@@ -54,7 +54,7 @@ authenticated canonical request remains defense in depth, not atomic binding.
 
 - [#34](https://github.com/OpenCoven/sdk/issues/34) — secure Cave discovery
 - [#35](https://github.com/OpenCoven/sdk/issues/35) — pairing and credential custody
-- [#36](https://github.com/OpenCoven/sdk/issues/36) — implementation complete on branch; full verification, review, PR, checks, and merge pending
+- [#36](https://github.com/OpenCoven/sdk/issues/36) — implementation, full verification, and review complete on branch; PR, checks, and merge pending
 - [#37](https://github.com/OpenCoven/sdk/issues/37) — CLI scope and native trust boundaries
 
 ### Consumer and evidence
