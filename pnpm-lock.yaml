@@ -60,6 +60,12 @@ importers:
         specifier: workspace:0.1.0
         version: link:../../packages/cave
 
+  examples/cave-managed-native:
+    dependencies:
+      '@opencoven/cave-client':
+        specifier: workspace:0.1.0
+        version: link:../../packages/cave
+
   examples/coven-health:
     dependencies:
       '@opencoven/coven-client':

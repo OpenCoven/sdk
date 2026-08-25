@@ -1,10 +1,12 @@
 # @opencoven/cave-client
 
-A constrained Cave client with two entry points:
+A constrained Cave client with three entry points:
 
 - `new CaveClient({ transport })` for caller-supplied transports
 - `createDiscoveredCaveClient(...)` for runtime Client v1 discovery, pairing,
   and stored-credential validation over direct loopback
+- `createManagedCaveClient(...)` for native adapters that retain pairing
+  secrets and bearer credentials outside JavaScript
 
 Importing the package performs no filesystem, network, or credential I/O. The
 discovered helper reads Cave's `client-v1-discovery.json` only when an
@@ -54,6 +56,9 @@ record. Unix discovery still requires a positive inode.
 - `createDiscoveredCaveClient(...)` layers runtime-only `health()`,
   pairing, credential, legacy familiar, and canonical-read operations over
   that discovery contract.
+- `createManagedCaveClient(...)` keeps secret-bearing wire fields and
+  credentials behind narrow native calls while the SDK validates all
+  non-secret Client v1 envelopes, metadata, cursors, DTOs, and errors.
 - Runtime exports also include `CAVE_CLIENT_VERSION`,
   `CAVE_PAIRING_SCOPES`, `CAVE_PAIRING_STATUSES`,
   `CAVE_FAMILIAR_PROPERTIES`, and `CAVE_ANALYTICS_WINDOWS`.
@@ -172,6 +177,54 @@ await session.poll();
 const credential = await session.exchange();
 console.log(credential.id, credential.scopes);
 ```
+
+## Managed native credential custody
+
+Webview consumers can implement `CaveManagedNativeTransport` in a reviewed
+native bridge and pass it to `createManagedCaveClient()`. The adapter exposes
+operation-specific methods rather than a generic authenticated fetch primitive.
+Pairing creation returns an opaque request handle plus only `requestId` and
+`expiresAt`; polling and exchange use that handle without returning the pairing
+secret. Exchange stages the bearer in native custody and returns a separate
+opaque commit handle, non-secret authority binding, and credential metadata.
+The SDK validates that metadata before calling `pairingCommit()`. Validation,
+timeout, abort, and late-completion failures trigger best-effort
+`pairingDiscard()` by exact commit handle.
+
+```ts
+import {
+  createManagedCaveClient,
+  type CaveManagedNativeTransport,
+} from '@opencoven/cave-client';
+
+declare const nativeCave: CaveManagedNativeTransport;
+
+const cave = createManagedCaveClient({
+  operation: { timeoutMs: 5_000 },
+  transport: nativeCave,
+});
+
+const session = await cave.createPairing({
+  appName: 'OpenCoven Chat',
+  installationId: 'chat-install-1',
+  scopes: ['chat:read'],
+});
+
+await session.poll();
+const credential = await session.exchange();
+```
+
+Native raw responses use `{ statusCode, payload }`. Payloads must be plain,
+finite JSON data with no accessors, symbols, cycles, sparse or decorated
+arrays, secret- or bearer-named fields, more than 4,096 values, or more than
+64 KiB of string content. Handles are bounded opaque strings and never appear
+in pairing-session serialization, normalized errors, or observer events.
+Credential state and local forget return status only, never stored values.
+Native bridge rejections are replaced with a generic `service_unavailable`
+failure so their messages, codes, details, and causes cannot cross into public
+errors or observers. Protocol failures must use a non-2xx raw Client v1
+response when the SDK should preserve the structured error.
+Existing caller-owned `CaveTransport` and `SecretStore` paths are unchanged.
 
 Canonical success and explicit error envelopes require
 `apiVersion: "1.0"`, `minimumClientVersion`, `capabilities`, and a nonempty

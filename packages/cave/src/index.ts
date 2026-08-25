@@ -12,6 +12,15 @@ export {
   isCaveDiscoveryError,
 } from './discovery.js';
 export {
+  createManagedCaveClient,
+  type CaveManagedClientOptions,
+  type CaveManagedNativeDiscardResult,
+  type CaveManagedNativePairingCreated,
+  type CaveManagedNativePairingExchange,
+  type CaveManagedNativeResponse,
+  type CaveManagedNativeTransport,
+} from './managed-native.js';
+export {
   createDiscoveredCaveClient,
 } from './pairing.js';
 export {

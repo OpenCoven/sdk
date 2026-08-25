@@ -224,6 +224,26 @@ the later HTTP request to the proven process. Final 0.1 security disposition
 and real-authority conformance remain blocked on
 [OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
 
+## Managed native Cave credentials
+
+Webview hosts can use `createManagedCaveClient()` with a
+`CaveManagedNativeTransport` implemented by their native IPC layer. Pairing
+secrets and bearers remain behind the native boundary; JavaScript receives only
+bounded opaque handles, non-secret authority binding, credential metadata, and
+raw non-secret Client v1 envelopes for authoritative SDK parsing. Exchange is
+staged and committed only after SDK validation, with exact-handle discard on
+validation failure, timeout, abort, or late completion.
+
+The adapter has narrow typed methods for health, pairing, credential state and
+forget, familiars, and all five canonical reads. It is not a generic fetch
+bridge. Native payloads are rejected if they contain accessors, cycles,
+non-JSON values, excessive complexity, or secret- or bearer-bearing fields.
+Native bridge rejections are sanitized to a generic availability failure;
+structured protocol errors travel through non-2xx raw Client v1 responses.
+The packed `cave-managed-native` example verifies pairing, native commit,
+credential status, canonical reads, errors, observers, and serialized state
+without exposing either secret sentinel.
+
 ## Cave canonical reads
 
 `CaveClient` ships five one-page methods:

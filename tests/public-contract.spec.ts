@@ -274,6 +274,7 @@ describe('public package entry points', () => {
       'CavePairingSession',
       'createCaveClient',
       'createDiscoveredCaveClient',
+      'createManagedCaveClient',
       'digestCaveContractFixture',
       'discoverCaveEndpoint',
       'isCaveClientError',
