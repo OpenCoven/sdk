@@ -49,6 +49,30 @@ const ROOT_PACKAGE_EXPORTS = {
   },
   './package.json': './package.json',
 } as const;
+
+function expectedPackageExports(workspaceDirectory: string) {
+  return {
+    ...ROOT_PACKAGE_EXPORTS,
+    ...(workspaceDirectory === 'core'
+      ? {
+          './browser': {
+            types: './dist/browser.d.ts',
+            import: './dist/browser.js',
+            default: './dist/browser.js',
+          },
+        }
+      : {}),
+    ...(workspaceDirectory === 'cave'
+      ? {
+          './managed': {
+            types: './dist/managed.d.ts',
+            import: './dist/managed.js',
+            default: './dist/managed.js',
+          },
+        }
+      : {}),
+  };
+}
 const EXPECTED_WORKSPACE_DEPENDENCIES = {
   core: {},
   cave: {
@@ -250,7 +274,7 @@ describe('workspace package manifests', () => {
       expect(manifest.main).toBe('./dist/index.js');
       expect(manifest.types).toBe('./dist/index.d.ts');
       expect(manifest.sideEffects).toBe(false);
-      expect(manifest.exports).toEqual(ROOT_PACKAGE_EXPORTS);
+      expect(manifest.exports).toEqual(expectedPackageExports(workspaceDirectory));
       expect(manifest.dependencies ?? {}).toEqual(expectedDependencies);
       expect(manifest.license).toBe('AGPL-3.0-only OR MIT');
       expect(manifest.version).toBe('0.1.0');

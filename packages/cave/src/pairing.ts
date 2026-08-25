@@ -36,7 +36,7 @@ import {
 import { markPairingSecretUnsentError } from './pairing-secret.js';
 import {
   loadBoundCredential,
-} from './credential-binding.js';
+} from './credential-binding-node.js';
 import type {
   CaveAuthorityBoundPairingExchange,
   CaveCredentialMetadata,

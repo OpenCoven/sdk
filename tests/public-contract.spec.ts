@@ -1,8 +1,10 @@
 import * as cave from '@opencoven/cave-client';
+import * as caveManaged from '@opencoven/cave-client/managed';
 import * as coven from '@opencoven/coven-client';
 import * as cli from '@opencoven/dev-cli';
 import * as sdk from '@opencoven/sdk';
 import * as core from '@opencoven/sdk-core';
+import * as coreBrowser from '@opencoven/sdk-core/browser';
 import { describe, expect, test } from 'vitest';
 
 type Equal<Left, Right> =
@@ -188,6 +190,18 @@ type CaveManagedForgetTransportContract = Assert<Equal<
     context?: core.OperationContext,
   ) => Promise<unknown>
 >>;
+type CaveManagedBrowserFactoryContract = Assert<Equal<
+  typeof caveManaged.createManagedCaveClient,
+  (
+    options: caveManaged.CaveManagedClientOptions,
+  ) => cave.CaveClient
+>>;
+type CaveManagedDiscoverySourceContract = Assert<Equal<
+  caveManaged.CaveManagedDiscoverySource,
+  {
+    read(context?: core.OperationContext): Promise<unknown>;
+  }
+>>;
 
 function canonicalReadCompileOnly(
   client: cave.CaveClient,
@@ -260,6 +274,22 @@ function managedNativeCustodyCompileOnly(
   void created;
 }
 
+function managedBrowserCompileOnly(
+  transport: caveManaged.CaveManagedCredentialTransport,
+  source: caveManaged.CaveManagedDiscoverySource,
+): void {
+  const client: cave.CaveClient = caveManaged.createManagedCaveClient({
+    transport,
+  });
+  const endpoint: Promise<caveManaged.CaveManagedDiscoveredEndpoint> =
+    caveManaged.discoverManagedCaveEndpoint(source);
+  const page = coreBrowser.normalizePageOptions({ limit: 25 });
+
+  void client;
+  void endpoint;
+  void page;
+}
+
 void (undefined as unknown as CaveCanonicalFamiliarContract);
 void (undefined as unknown as CaveProjectContract);
 void (undefined as unknown as CaveConversationContract);
@@ -282,8 +312,11 @@ void (undefined as unknown as CaveManagedPairingCreatedContract);
 void (undefined as unknown as CaveManagedPairingExchangeContract);
 void (undefined as unknown as CaveManagedPairingCreateTransportContract);
 void (undefined as unknown as CaveManagedForgetTransportContract);
+void (undefined as unknown as CaveManagedBrowserFactoryContract);
+void (undefined as unknown as CaveManagedDiscoverySourceContract);
 void canonicalReadCompileOnly;
 void managedNativeCustodyCompileOnly;
+void managedBrowserCompileOnly;
 
 interface NormalizedError {
   system: 'cave' | 'coven';

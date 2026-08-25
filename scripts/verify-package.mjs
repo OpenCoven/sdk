@@ -45,6 +45,30 @@ const rootPackageExports = {
   './package.json': './package.json',
 };
 
+function expectedPackageExports(workspaceDirectory) {
+  return {
+    ...rootPackageExports,
+    ...(workspaceDirectory === 'core'
+      ? {
+          './browser': {
+            types: './dist/browser.d.ts',
+            import: './dist/browser.js',
+            default: './dist/browser.js',
+          },
+        }
+      : {}),
+    ...(workspaceDirectory === 'cave'
+      ? {
+          './managed': {
+            types: './dist/managed.d.ts',
+            import: './dist/managed.js',
+            default: './dist/managed.js',
+          },
+        }
+      : {}),
+  };
+}
+
 function readTarballFile(tarball, path) {
   return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
     encoding: 'utf8',
@@ -119,10 +143,10 @@ function assertPackedPackageContracts(tarballs) {
     if (
       manifest.main !== './dist/index.js' ||
       manifest.types !== './dist/index.d.ts' ||
-      !isDeepStrictEqual(manifest.exports, rootPackageExports)
+      !isDeepStrictEqual(manifest.exports, expectedPackageExports(workspaceDirectory))
     ) {
       throw new Error(
-        `Packed ${packageName} package must ship only the reviewed root export map.`,
+        `Packed ${packageName} package must ship only its reviewed export map.`,
       );
     }
 
@@ -248,9 +272,12 @@ function createFixture(fixtureRoot, tarballs) {
   type CaveCanonicalFamiliar,
   type CaveConversation,
   type CaveConversationMessage,
-  type CaveManagedCredentialTransport,
   type CaveProject,
 } from '@opencoven/cave-client';
+import {
+  createManagedCaveClient,
+  type CaveManagedCredentialTransport,
+} from '@opencoven/cave-client/managed';
 import { COVEN_DAEMON_PROTOCOL, CovenClient } from '@opencoven/coven-client';
 import {
   createManagedMemorySecretStore,
@@ -259,6 +286,7 @@ import {
   type OperationContext,
   type OperationEvent,
 } from '@opencoven/sdk-core';
+import { normalizePageOptions as normalizeBrowserPageOptions } from '@opencoven/sdk-core/browser';
 import { createOpenCovenSdk } from '@opencoven/sdk';
 
 const eventCursor: string = 'sequence';
@@ -333,9 +361,8 @@ const managedNativeTransport = {
   managedCredentialStatus: async () => ({ status: 'missing' }),
   managedForgetCredential: async () => ({ status: 'missing' }),
 } satisfies CaveManagedCredentialTransport;
-const managedNativeCave = new CaveClient({
+const managedNativeCave = createManagedCaveClient({
   transport: managedNativeTransport,
-  credentialCustody: { mode: 'managed-native' },
 });
 const coven = new CovenClient({
   transport: {
@@ -392,12 +419,15 @@ await sdk.healthReport({
 void events;
 void caveIterators;
 void managedNativeCave;
+void normalizeBrowserPageOptions;
 `,
   );
   writeFileSync(
     resolve(fixtureRoot, 'verify.mjs'),
     `await import('@opencoven/sdk-core');
+await import('@opencoven/sdk-core/browser');
 const { CaveClient } = await import('@opencoven/cave-client');
+await import('@opencoven/cave-client/managed');
 await import('@opencoven/coven-client');
 await import('@opencoven/sdk');
 

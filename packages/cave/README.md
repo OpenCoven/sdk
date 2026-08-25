@@ -238,14 +238,16 @@ and real-authority conformance.
 ### Managed native credential custody
 
 Webviews such as Tauri Chat must not receive pairing secrets or exchanged
-bearers. Supply a `CaveManagedCredentialTransport` and explicitly select
-managed-native custody instead of injecting `credentials`:
+bearers. Browser/webview consumers must import the browser-safe managed
+subpath, which has no Node filesystem, network, crypto, or `Buffer`
+dependency. Supply a `CaveManagedCredentialTransport` through its factory
+instead of injecting `credentials`:
 
 ```ts
 import {
-  CaveClient,
+  createManagedCaveClient,
   type CaveManagedCredentialTransport,
-} from '@opencoven/cave-client';
+} from '@opencoven/cave-client/managed';
 
 const transport = {
   health: async () => nativeCave.health(),
@@ -256,9 +258,8 @@ const transport = {
   managedForgetCredential: async () => nativeCave.forgetCredential(),
 } satisfies CaveManagedCredentialTransport;
 
-const cave = new CaveClient({
+const cave = createManagedCaveClient({
   transport,
-  credentialCustody: { mode: 'managed-native' },
 });
 ```
 
@@ -271,6 +272,30 @@ results, including replacement-race reporting. The SDK rejects malformed or
 secret-bearing native results, validates every exposed metadata/status value,
 and keeps timed-out or aborted managed exchange attempts terminal so it never
 automatically duplicates a persistent mutation.
+
+When Chat needs to display or diagnose discovery, Rust supplies only
+owner-checked bytes and opaque record metadata through
+`CaveManagedDiscoverySource`; the SDK parses Client v1 discovery itself, so
+the webview never receives a filesystem capability:
+
+```ts
+import {
+  discoverManagedCaveEndpoint,
+  type CaveManagedDiscoverySource,
+} from '@opencoven/cave-client/managed';
+
+const source = {
+  read: async () => await invoke('cave_discovery_snapshot'),
+} satisfies CaveManagedDiscoverySource;
+
+const endpoint = await discoverManagedCaveEndpoint(source);
+```
+
+The native response is restricted to discovery JSON bytes plus an
+owner-checked opaque identity, device/inode metadata, and whether its PID is
+alive. Unsupported fields, invalid loopback URLs, stale PIDs, malformed UTF-8,
+and oversized records fail SDK validation. Rust does not shape an endpoint DTO
+or compatibility result for JavaScript.
 
 Managed custody removes credential material from JavaScript; it does **not**
 solve authority endpoint takeover. Client v1 still lacks atomic request binding,

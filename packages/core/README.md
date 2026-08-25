@@ -3,6 +3,10 @@
 Transport-neutral errors, SemVer-accurate compatibility assessment, and an
 in-memory secret store. It performs no I/O at import time.
 
+Browser consumers can import `@opencoven/sdk-core/browser` for operation,
+compatibility, pagination, error, and memory-secret APIs without bringing in
+the Node-only local-discovery helpers from the root entry point.
+
 ## Errors
 
 `normalizeError(error, options)` returns stable `system`, `code`, `retryable`,

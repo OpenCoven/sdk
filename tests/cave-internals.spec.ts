@@ -20,7 +20,7 @@ import {
   invalidateStoredCredential,
   loadBoundCredential,
   storeBoundCredential,
-} from '../packages/cave/src/credential-binding.js';
+} from '../packages/cave/src/credential-binding-node.js';
 import {
   discoverCaveEndpoint,
   type CaveDiscoveredEndpoint,
@@ -31,7 +31,7 @@ import {
   isPairingSecretUnsentError,
   markPairingSecretUnsentError,
 } from '../packages/cave/src/pairing-secret.js';
-import type * as CredentialBindingModule from '../packages/cave/src/credential-binding.js';
+import type * as CredentialBindingModule from '../packages/cave/src/credential-binding-node.js';
 
 const discovered: CaveDiscoveredEndpoint = {
   version: 1,

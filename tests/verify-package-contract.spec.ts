@@ -51,7 +51,9 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain('function assertPackedPackageContracts(tarballs)');
     expect(verifier).toContain("manifest.main !== './dist/index.js'");
     expect(verifier).toContain("manifest.types !== './dist/index.d.ts'");
-    expect(verifier).toContain('!isDeepStrictEqual(manifest.exports, rootPackageExports)');
+    expect(verifier).toContain(
+      '!isDeepStrictEqual(manifest.exports, expectedPackageExports(workspaceDirectory))',
+    );
     expect(verifier).toContain(
       'const expectedDependencies = expectedPackedDependencies(workspaceDirectory, manifest.version);',
     );
@@ -111,7 +113,6 @@ describe('packed package verifier contract', () => {
   type CaveCanonicalFamiliar,
   type CaveConversation,
   type CaveConversationMessage,
-  type CaveManagedCredentialTransport,
   type CaveProject,
 } from '@opencoven/cave-client';`,
     );
@@ -140,7 +141,11 @@ describe('packed package verifier contract', () => {
       "throw new Error('Packed Cave iterator methods are unavailable.');",
     );
     expect(verifier).toContain('} satisfies CaveManagedCredentialTransport;');
-    expect(verifier).toContain("credentialCustody: { mode: 'managed-native' }");
+    expect(verifier).toContain('createManagedCaveClient');
+    expect(verifier).toContain("'@opencoven/cave-client/managed'");
+    expect(verifier).toContain("'@opencoven/sdk-core/browser'");
+    expect(verifier).toContain("await import('@opencoven/cave-client/managed');");
+    expect(verifier).toContain("await import('@opencoven/sdk-core/browser');");
   });
 
 });

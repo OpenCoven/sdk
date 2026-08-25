@@ -18,12 +18,12 @@ import {
   type PageOptions,
   type SecretStore,
   type SecretStoreReference,
-} from '@opencoven/sdk-core';
+} from '@opencoven/sdk-core/browser';
 
 import {
   discardPairingExchangeBearer,
   parseCaveAuthorityBinding,
-} from './authority-binding.js';
+} from './authority-binding-contract.js';
 import {
   CaveCanonicalSchemaError,
   parseConversationEnvelope,
@@ -2104,9 +2104,9 @@ export class CaveClient {
             );
           }
 
-          const bearerBytes = Buffer.from(exchanged.bearer, 'utf8');
+          const bearerBytes = new TextEncoder().encode(exchanged.bearer);
           try {
-            const bearer = bearerBytes.toString('utf8');
+            const bearer = new TextDecoder().decode(bearerBytes);
             await storeBoundCredential(
               credentials.store,
               credentials.reference,
