@@ -2,10 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Tasks 1–4 are implementation-complete on
-`feat/cave-canonical-reads`. Task 5 documentation, full verification, and both
-exact-SHA review gates are complete at `ef10921005cb663b8c60163676fbe30e39745640`;
-PR, required checks, merge, evidence updates, and cleanup remain pending.
+**Status:** Complete. PR
+[#55](https://github.com/OpenCoven/sdk/pull/55) passed the required Node and
+CodeQL checks at reviewed head
+`696e295b0517a0b00b6f79370a57cd8e9e15241e` and was squash-merged as
+`d7f9e69378d6136c2771f60b4c57d7beeaa74f6a`. Protected-`main` CI and CodeQL
+also passed on the exact merge. The reviewed topic head is retained as
+`archive/2026-08-25/pr-55-cave-canonical-reads`.
 
 **Goal:** Add the five live Cave Client v1 canonical read operations, strict DTO parsing, and explicitly bounded pagination to the public SDK without changing the existing legacy Familiar Contract and analytics APIs.
 
@@ -459,18 +462,21 @@ corepack pnpm@10.34.0 verify
 
 Expected: all tests, coverage thresholds, builds, contract/package/release checks, stress seeds, and lint pass.
 
-Completed at `ef10921005cb663b8c60163676fbe30e39745640` with
-1,028 tests, 91.10% line coverage, all builds, contract/package/release checks,
-three stress seeds, typecheck, and lint passing. Cave authority provenance was
-verified at producer merge `4adc97b1bdafd1012ce4c66de598e82f49329f79`
-with digest `b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd`.
+Completed at final reviewed head
+`696e295b0517a0b00b6f79370a57cd8e9e15241e` with 1,028 passing tests,
+91.10% line coverage, 86.15% branch coverage, 97.99% function coverage, all
+builds, contract/package/release checks, three stress seeds, typecheck, and
+lint passing. Cave authority provenance was verified at producer PR
+[OpenCoven/coven-cave#5007](https://github.com/OpenCoven/coven-cave/pull/5007)
+and merge `4adc97b1bdafd1012ce4c66de598e82f49329f79`, with fixture digest
+`b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd`.
 
 - [x] **Step 3: Request exact-SHA spec and code-quality review**
 
 Review the full branch against SDK #36 and the producer route contract. Fix every correctness, security, pagination, compatibility, and documentation finding; rerun `corepack pnpm@10.34.0 verify` after the final fix.
 
 Both the full-branch specification and code-quality reviews returned `PASS` at
-`ef10921005cb663b8c60163676fbe30e39745640`.
+final reviewed head `696e295b0517a0b00b6f79370a57cd8e9e15241e`.
 
 - [x] **Step 4: Commit documentation (and commit later review fixes separately if needed)**
 
@@ -479,10 +485,30 @@ git add README.md packages/core/README.md packages/core/CHANGELOG.md packages/ca
 git commit -m "docs: describe Cave canonical reads" -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
 ```
 
-- [ ] **Step 5: Push, open, verify, and merge**
+- [x] **Step 5: Push, open, verify, and merge**
 
 Push `feat/cave-canonical-reads`, open a PR to `main`, include the exact verified SHA and test evidence, wait for required Node CI and CodeQL, merge only if GitHub still reports that exact head, then verify protected `main`.
 
-- [ ] **Step 6: Record evidence and clean the branch**
+Completed through PR [#55](https://github.com/OpenCoven/sdk/pull/55). Both Node
+verification jobs and both CodeQL analyses passed at reviewed head
+`696e295b0517a0b00b6f79370a57cd8e9e15241e`; GitHub then squash-merged that
+head as `d7f9e69378d6136c2771f60b4c57d7beeaa74f6a`. Protected-`main`
+[CI run 32796553510](https://github.com/OpenCoven/sdk/actions/runs/32796553510)
+and
+[CodeQL run 32796553300](https://github.com/OpenCoven/sdk/actions/runs/32796553300)
+passed on the exact merge.
+
+- [x] **Step 6: Record evidence and clean the branch**
 
 Update SDK #36, Chat #27, SDK #38, and the Phase 1 tracker with the PR, reviewed head, merge commit, required checks, test count, coverage, and remaining blockers. Remove the merged local/remote branch and worktree only after merge evidence is verified.
+
+Completion evidence was recorded on
+[SDK #36](https://github.com/OpenCoven/sdk/issues/36),
+[Chat #27](https://github.com/OpenCoven/chat/issues/27),
+[SDK #38](https://github.com/OpenCoven/sdk/issues/38), and the
+[SDK Phase 1 tracker](https://github.com/OpenCoven/sdk/issues/31). GitHub
+deleted the merged remote topic branch; the local topic branch was removed
+after its exact reviewed head was pushed as
+`archive/2026-08-25/pr-55-cave-canonical-reads`. The existing worktree was
+repurposed only for this evidence correction and is retired after that
+documentation change merges.
