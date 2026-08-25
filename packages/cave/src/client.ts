@@ -39,7 +39,7 @@ import {
   invalidateStoredCredential,
   storeBoundCredential,
 } from './credential-binding.js';
-import { isPairingSecretUnsentError } from './pairing-secret.js';
+import { consumePairingSecretUnsentError } from './pairing-secret.js';
 import { parseCaveCredentialMetadata } from './credential-metadata.js';
 import { snapshotManagedResult } from './managed-snapshot.js';
 import {
@@ -2931,7 +2931,7 @@ export class CaveClient {
               discardPairingExchangeBearer,
             );
           } catch (error) {
-            if (isPairingSecretUnsentError(error)) {
+            if (consumePairingSecretUnsentError(error)) {
               restorePairingSecret(secret);
             } else {
               clearPairingSecret();

@@ -1,29 +1,22 @@
-const CAVE_PAIRING_SECRET_UNSENT = Symbol.for(
-  '@opencoven/cave-client/pairing-secret-unsent',
-);
+const pairingSecretUnsentErrors = new WeakSet<object>();
 
 export function markPairingSecretUnsentError<T>(error: T): T {
   if (typeof error !== 'object' || error === null) {
     return error;
   }
 
-  try {
-    Object.defineProperty(error, CAVE_PAIRING_SECRET_UNSENT, { value: true });
-  } catch {
-    return error;
-  }
-
+  pairingSecretUnsentErrors.add(error);
   return error;
 }
 
-export function isPairingSecretUnsentError(error: unknown): boolean {
+export function consumePairingSecretUnsentError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) {
     return false;
   }
 
-  try {
-    return Reflect.get(error, CAVE_PAIRING_SECRET_UNSENT) === true;
-  } catch {
+  if (!pairingSecretUnsentErrors.has(error)) {
     return false;
   }
+  pairingSecretUnsentErrors.delete(error);
+  return true;
 }

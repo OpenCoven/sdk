@@ -28,7 +28,7 @@ import {
   type CaveDiscoveryPathIdentity,
 } from '../packages/cave/src/discovery.js';
 import {
-  isPairingSecretUnsentError,
+  consumePairingSecretUnsentError,
   markPairingSecretUnsentError,
 } from '../packages/cave/src/pairing-secret.js';
 import type * as CredentialBindingModule from '../packages/cave/src/credential-binding-node.js';
@@ -1343,17 +1343,33 @@ describe('Cave authority binding helpers', () => {
 });
 
 describe('Cave pairing secret marker', () => {
-  test('marks objects, ignores primitives, and survives descriptor or getter failures', () => {
+  test('consumes genuine unsent errors once and rejects forged or replayed markers', () => {
     const error = new Error('pairing');
     expect(markPairingSecretUnsentError(error)).toBe(error);
-    expect(isPairingSecretUnsentError(error)).toBe(true);
+    expect(consumePairingSecretUnsentError(error)).toBe(true);
+    expect(consumePairingSecretUnsentError(error)).toBe(false);
+    Reflect.set(
+      error,
+      Symbol.for('@opencoven/cave-client/pairing-secret-unsent'),
+      true,
+    );
+    expect(consumePairingSecretUnsentError(error)).toBe(false);
 
     expect(markPairingSecretUnsentError('pairing-secret')).toBe('pairing-secret');
-    expect(isPairingSecretUnsentError('pairing-secret')).toBe(false);
+    expect(consumePairingSecretUnsentError('pairing-secret')).toBe(false);
 
     const frozen = Object.freeze({ code: 'frozen' });
     expect(markPairingSecretUnsentError(frozen)).toBe(frozen);
-    expect(isPairingSecretUnsentError(frozen)).toBe(false);
+    expect(consumePairingSecretUnsentError(frozen)).toBe(true);
+    expect(consumePairingSecretUnsentError(frozen)).toBe(false);
+
+    const forged = new Error('forged');
+    Object.defineProperty(
+      forged,
+      Symbol.for('@opencoven/cave-client/pairing-secret-unsent'),
+      { value: true },
+    );
+    expect(consumePairingSecretUnsentError(forged)).toBe(false);
 
     const throwingGetter = new Proxy(
       {},
@@ -1363,7 +1379,7 @@ describe('Cave pairing secret marker', () => {
         },
       },
     );
-    expect(isPairingSecretUnsentError(throwingGetter)).toBe(false);
+    expect(consumePairingSecretUnsentError(throwingGetter)).toBe(false);
   });
 });
 
