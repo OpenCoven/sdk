@@ -1,5 +1,11 @@
 # SDK Release Readiness Implementation Plan
 
+> **Historical scope note:** This completed plan originally established a
+> five-package release pipeline. SDK #37 later narrowed the active 0.1 release
+> inventory to four packages and retained `@opencoven/dev-cli` as a private
+> workspace. See
+> [`2026-08-22-sdk-0.1-delivery-program.md`](2026-08-22-sdk-0.1-delivery-program.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a complete, fail-closed release system for the fixed-version OpenCoven SDK packages while keeping npm publication disabled until a separately approved launch.

@@ -10,6 +10,7 @@ import { DEV_CLI_VERSION } from '@opencoven/dev-cli';
 import {
   CANONICAL_REPOSITORY_URL,
   PUBLIC_PACKAGES,
+  WORKSPACE_PACKAGES,
   assertCanonicalRepository,
 } from '../scripts/repository-metadata.mjs';
 
@@ -69,7 +70,29 @@ const EXPECTED_WORKSPACE_DEPENDENCIES = {
   },
 } as const;
 
-describe('public package manifests', () => {
+describe('workspace package manifests', () => {
+  test('keeps the private CLI outside the four-package 0.1 release inventory', () => {
+    expect(PUBLIC_PACKAGES.map(({ packageName }) => packageName)).toEqual([
+      '@opencoven/sdk-core',
+      '@opencoven/cave-client',
+      '@opencoven/coven-client',
+      '@opencoven/sdk',
+    ]);
+    expect(WORKSPACE_PACKAGES.map(({ packageName }) => packageName)).toEqual([
+      '@opencoven/sdk-core',
+      '@opencoven/cave-client',
+      '@opencoven/coven-client',
+      '@opencoven/sdk',
+      '@opencoven/dev-cli',
+    ]);
+
+    const cliManifest = JSON.parse(
+      readFileSync(resolve(workspaceRoot, 'packages/cli/package.json'), 'utf8'),
+    ) as { private?: boolean };
+
+    expect(cliManifest.private).toBe(true);
+  });
+
   test('runs the clean Phase 0 matrix before the remaining full verification', () => {
     expect(rootManifest.scripts?.verify).toBe(
       'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 --recursive build && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint',
@@ -133,6 +156,13 @@ describe('public package manifests', () => {
     expect(rootManifest.scripts?.changeset).toBe('changeset');
     expect(rootManifest.scripts?.['release:status']).toBe('changeset status');
     expect(rootManifest.scripts?.['release:version']).toBe('changeset version');
+    const changesetConfig = JSON.parse(
+      readFileSync(resolve(workspaceRoot, '.changeset/config.json'), 'utf8'),
+    ) as { fixed?: string[][] };
+
+    expect(changesetConfig.fixed).toEqual([
+      PUBLIC_PACKAGES.map(({ packageName }) => packageName),
+    ]);
 
     for (const { manifestPath, workspaceDirectory } of PUBLIC_PACKAGES) {
       const manifest = JSON.parse(
@@ -159,7 +189,7 @@ describe('public package manifests', () => {
     expect(vitestConfig).toContain('fileParallelism: false');
   });
 
-  test('keeps every package unpublished until an intentional release change', () => {
+  test('keeps every release package unpublished until an intentional release change', () => {
     expect(rootManifest.pnpm?.overrides?.esbuild).toMatch(EXACT_VERSION);
 
     for (const { manifestPath } of PUBLIC_PACKAGES) {
@@ -194,7 +224,9 @@ describe('public package manifests', () => {
   test('declare exact root export maps, dependencies, and approved package metadata', () => {
     const versions = new Set<string>();
 
-    for (const { packageName, manifestPath, repositoryDirectory, workspaceDirectory } of PUBLIC_PACKAGES) {
+    const publicPackageNames = new Set(PUBLIC_PACKAGES.map(({ packageName }) => packageName));
+
+    for (const { packageName, manifestPath, repositoryDirectory, workspaceDirectory } of WORKSPACE_PACKAGES) {
       const manifest = JSON.parse(readFileSync(resolve(workspaceRoot, manifestPath), 'utf8')) as {
         dependencies?: Record<string, string>;
         name: string;
@@ -222,7 +254,9 @@ describe('public package manifests', () => {
       expect(manifest.dependencies ?? {}).toEqual(expectedDependencies);
       expect(manifest.license).toBe('AGPL-3.0-only OR MIT');
       expect(manifest.version).toBe('0.1.0');
-      versions.add(manifest.version ?? '');
+      if (publicPackageNames.has(packageName)) {
+        versions.add(manifest.version ?? '');
+      }
       expect(manifest.engines?.node).toBe('>=24.18.0 <25');
       expect(assertCanonicalRepository(manifest, repositoryDirectory, packageName)).toEqual({
         type: 'git',
@@ -253,7 +287,7 @@ describe('public package manifests', () => {
   });
 
   test('uses the exact approved license components in every package selector', () => {
-    for (const { workspaceDirectory } of PUBLIC_PACKAGES) {
+    for (const { workspaceDirectory } of WORKSPACE_PACKAGES) {
       const selector = readFileSync(
         resolve(workspaceRoot, 'packages', workspaceDirectory, 'LICENSE'),
         'utf8',
@@ -267,7 +301,7 @@ describe('public package manifests', () => {
   });
 
   test('assigns the opencoven binary only to @opencoven/dev-cli', () => {
-    const owners = PUBLIC_PACKAGES.flatMap(({ packageName, manifestPath }) => {
+    const owners = WORKSPACE_PACKAGES.flatMap(({ packageName, manifestPath }) => {
       const manifest = JSON.parse(readFileSync(resolve(workspaceRoot, manifestPath), 'utf8')) as {
         bin?: string | Record<string, string>;
       };

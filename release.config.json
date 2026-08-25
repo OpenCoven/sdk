@@ -13,7 +13,6 @@
     "@opencoven/sdk-core",
     "@opencoven/cave-client",
     "@opencoven/coven-client",
-    "@opencoven/sdk",
-    "@opencoven/dev-cli"
+    "@opencoven/sdk"
   ]
 }

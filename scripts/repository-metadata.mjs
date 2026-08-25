@@ -4,38 +4,45 @@ export const CANONICAL_REPOSITORY_URL = 'git+https://github.com/OpenCoven/sdk.gi
 export const APPROVED_PACKAGE_LICENSE_EXPRESSION = 'AGPL-3.0-only OR MIT';
 export const APPROVED_PACKAGE_LICENSE_COMPONENTS = Object.freeze(['AGPL-3.0-only', 'MIT']);
 
+const SDK_CORE_PACKAGE = {
+  packageName: '@opencoven/sdk-core',
+  workspaceDirectory: 'core',
+  manifestPath: 'packages/core/package.json',
+  repositoryDirectory: 'packages/core',
+};
+const CAVE_CLIENT_PACKAGE = {
+  packageName: '@opencoven/cave-client',
+  workspaceDirectory: 'cave',
+  manifestPath: 'packages/cave/package.json',
+  repositoryDirectory: 'packages/cave',
+};
+const COVEN_CLIENT_PACKAGE = {
+  packageName: '@opencoven/coven-client',
+  workspaceDirectory: 'coven',
+  manifestPath: 'packages/coven/package.json',
+  repositoryDirectory: 'packages/coven',
+};
+const SDK_PACKAGE = {
+  packageName: '@opencoven/sdk',
+  workspaceDirectory: 'sdk',
+  manifestPath: 'packages/sdk/package.json',
+  repositoryDirectory: 'packages/sdk',
+};
+const DEV_CLI_PACKAGE = {
+  packageName: '@opencoven/dev-cli',
+  workspaceDirectory: 'cli',
+  manifestPath: 'packages/cli/package.json',
+  repositoryDirectory: 'packages/cli',
+};
+
 export const PUBLIC_PACKAGES = [
-  {
-    packageName: '@opencoven/sdk-core',
-    workspaceDirectory: 'core',
-    manifestPath: 'packages/core/package.json',
-    repositoryDirectory: 'packages/core',
-  },
-  {
-    packageName: '@opencoven/cave-client',
-    workspaceDirectory: 'cave',
-    manifestPath: 'packages/cave/package.json',
-    repositoryDirectory: 'packages/cave',
-  },
-  {
-    packageName: '@opencoven/coven-client',
-    workspaceDirectory: 'coven',
-    manifestPath: 'packages/coven/package.json',
-    repositoryDirectory: 'packages/coven',
-  },
-  {
-    packageName: '@opencoven/sdk',
-    workspaceDirectory: 'sdk',
-    manifestPath: 'packages/sdk/package.json',
-    repositoryDirectory: 'packages/sdk',
-  },
-  {
-    packageName: '@opencoven/dev-cli',
-    workspaceDirectory: 'cli',
-    manifestPath: 'packages/cli/package.json',
-    repositoryDirectory: 'packages/cli',
-  },
+  SDK_CORE_PACKAGE,
+  CAVE_CLIENT_PACKAGE,
+  COVEN_CLIENT_PACKAGE,
+  SDK_PACKAGE,
 ];
+
+export const WORKSPACE_PACKAGES = [...PUBLIC_PACKAGES, DEV_CLI_PACKAGE];
 
 function isObject(value) {
   return typeof value === 'object' && value !== null;

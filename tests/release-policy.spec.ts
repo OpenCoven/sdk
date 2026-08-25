@@ -38,6 +38,10 @@ describe('release and support policies', () => {
     expect(releasing).toContain('incident response');
     expect(releasing).toContain('revoke');
     expect(releasing).toContain('does not publish packages');
+    expect(releasing).toContain('creates four tarballs');
+    expect(releasing).toContain(
+      '`@opencoven/dev-cli` is not part of the 0.1 release group',
+    );
   });
 
   test('links policies without claiming publication readiness', () => {

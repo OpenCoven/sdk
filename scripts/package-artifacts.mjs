@@ -191,7 +191,14 @@ export function assertPackedPackagesExcludeSources(installRoot) {
 }
 
 export function buildPublicPackages(root) {
-  runPnpm(['--recursive', '--filter', './packages/*', 'build'], root);
+  runPnpm(
+    [
+      '--recursive',
+      ...PUBLIC_PACKAGES.flatMap(({ packageName }) => ['--filter', packageName]),
+      'build',
+    ],
+    root,
+  );
 }
 
 export function packPublicPackages({ root, destinationRoot, build = true }) {

@@ -17,17 +17,19 @@ Delivered foundations include:
 - no import-time discovery or I/O;
 - normalized errors, deadlines, cancellation, and observers;
 - secure owner-local Coven discovery and health transport contracts;
-- strict Cave Client v1 one-page canonical reads and bounded lazy iterators on
-  the SDK #36 feature branch;
+- strict Cave Client v1 one-page canonical reads and bounded lazy iterators
+  merged through SDK PR #55;
 - contract fixture verification;
 - property, stress, package, and packed-consumer tests;
 - a locked two-key release system with checksummed artifacts and OIDC-oriented publishing.
 
-The packages remain private and public publishing remains intentionally disabled.
+All workspace packages remain private and public publishing remains
+intentionally disabled. The 0.1 release inventory contains the four SDK
+libraries; `@opencoven/dev-cli` remains a source-tested private workspace and
+is excluded from release artifacts and the Changesets fixed group.
 
-SDK [#36](https://github.com/OpenCoven/sdk/issues/36) is implementation-complete
-and fully verified/reviewed on `feat/cave-canonical-reads`, pending PR,
-required checks, and merge. The branch exposes five one-page reads
+SDK [#36](https://github.com/OpenCoven/sdk/issues/36) merged through PR #55 at
+`d7f9e69378d6136c2771f60b4c57d7beeaa74f6a`. It exposes five one-page reads
 (`listFamiliars`, `listProjects`, `listConversations`, `getConversation`, and
 `listConversationMessages`) plus four bounded list iterators; it has no detail
 iterator. Limits default to `50`, reject unsafe or out-of-range values above
@@ -35,8 +37,10 @@ the maximum `100`, and use opaque strict canonical base64url cursors bounded to
 512 characters. Iterators require positive `maxPages` or a caller-owned signal
 and never prefetch, retry, or implicitly walk the whole corpus.
 
-Chat [#27](https://github.com/OpenCoven/chat/issues/27) remains blocked on
-merged SDK #36, SDK #37 native-adapter ownership, and producer
+SDK [#37](https://github.com/OpenCoven/sdk/issues/37) records that the private
+CLI is deferred from 0.1 and that Chat's Tauri layer owns the Phase 1 native
+trust adapters. Chat [#27](https://github.com/OpenCoven/chat/issues/27) remains
+blocked on implementing those adapters and producer
 [`OpenCoven/coven-cave#4996`](https://github.com/OpenCoven/coven-cave/issues/4996)
 for atomic binding of pairing-secret and bearer-bearing requests where
 applicable. The SDK's unauthenticated instance proof followed by an
@@ -54,8 +58,8 @@ authenticated canonical request remains defense in depth, not atomic binding.
 
 - [#34](https://github.com/OpenCoven/sdk/issues/34) — secure Cave discovery
 - [#35](https://github.com/OpenCoven/sdk/issues/35) — pairing and credential custody
-- [#36](https://github.com/OpenCoven/sdk/issues/36) — implementation, full verification, and review complete on branch; PR, checks, and merge pending
-- [#37](https://github.com/OpenCoven/sdk/issues/37) — CLI scope and native trust boundaries
+- [#36](https://github.com/OpenCoven/sdk/issues/36) — canonical reads merged through PR #55
+- [#37](https://github.com/OpenCoven/sdk/issues/37) — defer private CLI from 0.1; assign Phase 1 native trust adapters to Chat
 
 ### Consumer and evidence
 

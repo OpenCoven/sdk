@@ -1,7 +1,12 @@
 # SDK Release Readiness Design
 
-**Status:** Approved  
+**Status:** Historical baseline; package scope superseded by SDK #37
 **Date:** 2026-08-19
+
+> The release architecture remains valid, but references to five public
+> packages are historical. The active 0.1 release inventory contains four
+> packages and excludes the private `@opencoven/dev-cli` workspace. See the
+> [current read-only release design](2026-08-22-sdk-0.1-read-only-release-design.md).
 
 ## Goal
 

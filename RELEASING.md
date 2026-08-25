@@ -1,16 +1,21 @@
 # Release process
 
 The repository contains release-readiness automation, but this phase does not publish packages.
-It does not create npm package records, configure GitHub environments, or
-register trusted publishers. All five packages remain private and the
-repository publication lock remains closed.
+It does not create npm package records, configure GitHub
+environments, or register trusted publishers. The four-package 0.1 release
+group and the private CLI workspace all remain private, and the repository
+publication lock remains closed.
+
+`@opencoven/dev-cli` is not part of the 0.1 release group. Release tooling must
+not pack, publish, attest, or configure a trusted publisher for it.
 
 ## 1. Release locks and prerequisites
 
 A normal publication requires both independent locks to be open:
 
 1. reviewed repository changes set `publishingEnabled` to `true` in
-   `release.config.json` and set all five package manifests to non-private;
+   `release.config.json` and set the four release package manifests to
+   non-private;
 2. the protected GitHub environment `npm-release` approves the publish job.
 
 Before unlocking, create and protect the `npm-release` environment, confirm
@@ -26,10 +31,11 @@ corepack pnpm@10.34.0 changeset
 corepack pnpm@10.34.0 release:status
 ```
 
-All five packages are one fixed-version group. Review the requested bump and
+The four release packages are one fixed-version group. Review the requested bump and
 run `corepack pnpm@10.34.0 release:version` on a dedicated release-preparation
 branch. Confirm identical package versions, exact
 `workspace:<fixedVersion>` internal ranges, and updated changelogs.
+The private CLI is outside this fixed group.
 
 ## 3. Clean verification
 
@@ -53,7 +59,7 @@ the exact checked-out `HEAD`.
 
 Run `.github/workflows/release.yml` from `main` with mode `verify` and the
 exact fixed version. It performs canonical verification, validates the tag,
-creates five tarballs plus `release-manifest.json`, verifies every digest, and
+creates four tarballs plus `release-manifest.json`, verifies every digest, and
 uploads the immutable workflow artifact. Verify mode never publishes.
 
 ## 6. First-publish bootstrap
@@ -63,7 +69,7 @@ Therefore the **First-publish bootstrap** is a separate, explicitly approved
 one-time operation:
 
 1. use a least-privilege npm automation credential protected by account 2FA;
-2. publish the five reviewed tarballs in canonical order, without rebuilding;
+2. publish the four reviewed tarballs in canonical order, without rebuilding;
 3. verify package ownership, contents, versions, and provenance expectations;
 4. immediately revoke the bootstrap credential and preserve the audit record.
 
@@ -74,13 +80,12 @@ history, or normal release automation.
 
 For each package, configure npm's trusted publisher to the `OpenCoven/sdk`
 repository and `.github/workflows/release.yml`. Restrict publishing to the
-protected `npm-release` GitHub environment where supported. Confirm all five:
+protected `npm-release` GitHub environment where supported. Confirm all four:
 
 - `@opencoven/sdk-core`
 - `@opencoven/cave-client`
 - `@opencoven/coven-client`
 - `@opencoven/sdk`
-- `@opencoven/dev-cli`
 
 ## 8. Normal OIDC publication
 
@@ -93,7 +98,7 @@ forbidden. The workflow must never rebuild or repack in the publish job.
 
 After publication, verify:
 
-- all five registry versions and `latest` dist-tags;
+- all four registry versions and `latest` dist-tags;
 - package manifests, licenses, changelogs, binaries, and dependency ranges;
 - SHA-256 values against `release-manifest.json`;
 - npm provenance and GitHub build attestations;
