@@ -5,7 +5,6 @@ import { posix, win32 } from 'node:path';
 import {
   isOperationAbortedError,
   isOperationTimeoutError,
-  parseDiscoveryEndpoint,
   type DiscoveryEndpoint,
   type OperationOptions,
 } from '@opencoven/sdk-core';
@@ -15,7 +14,9 @@ const DISCOVERY_FILE_NAME = 'client-v1-discovery.json';
 const DEFAULT_DISCOVERY_TIMEOUT_MS = 2_000;
 const DEFAULT_MAX_RECORD_BYTES = 16 * 1024;
 const DISCOVERY_TIMESTAMP_RE =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/u;
+const CAVE_HTTP_ENDPOINT_RE =
+  /^http:\/\/(\[[^\]]+\]|[^/?#:@\\]+):([0-9]{1,5})\/?$/iu;
 const CAVE_DISCOVERY_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveDiscoveryError');
 
 export type CaveDiscoveryErrorCode =
@@ -51,7 +52,20 @@ export interface CaveDiscoveryFileHandle {
 }
 
 export interface CaveWindowsPathTrustValidator {
-  validate(path: string, purpose: 'root' | 'record'): Promise<boolean>;
+  validate(
+    path: string,
+    purpose: 'root' | 'record',
+  ): Promise<boolean | CaveWindowsPathTrustResult>;
+  validateOpenedFile?(
+    handle: CaveDiscoveryFileHandle,
+    path: string,
+    purpose: 'record',
+  ): Promise<boolean | CaveWindowsPathTrustResult>;
+}
+
+export interface CaveWindowsPathTrustResult {
+  trusted: true;
+  identity: string;
 }
 
 export interface CaveDiscoveryDependencies {
@@ -444,14 +458,80 @@ async function validateWindowsTrust(
   path: string,
   purpose: 'root' | 'record',
   deadline: DiscoveryDeadline,
-): Promise<void> {
+): Promise<string | undefined> {
   if (validator === undefined || typeof validator.validate !== 'function') {
     return fail('owner_mismatch', 'Windows Cave discovery trust validation is required.');
   }
 
-  const trusted = await awaitStep(() => validator.validate(path, purpose), deadline);
-  if (trusted !== true) {
+  const result = await awaitStep(() => validator.validate(path, purpose), deadline);
+  if (result === true) {
+    return undefined;
+  }
+  if (
+    typeof result !== 'object' ||
+    result === null ||
+    result.trusted !== true ||
+    typeof result.identity !== 'string' ||
+    result.identity.trim().length === 0 ||
+    result.identity.length > 1_024 ||
+    containsControlCharacter(result.identity)
+  ) {
     return fail('owner_mismatch', 'Windows Cave discovery trust validation failed.');
+  }
+
+  return result.identity;
+}
+
+async function validateWindowsOpenedFileTrust(
+  validator: CaveWindowsPathTrustValidator | undefined,
+  handle: CaveDiscoveryFileHandle,
+  path: string,
+  deadline: DiscoveryDeadline,
+): Promise<string> {
+  if (
+    validator === undefined ||
+    typeof validator.validateOpenedFile !== 'function'
+  ) {
+    return fail(
+      'owner_mismatch',
+      'Windows Cave discovery opened-file identity validation is required.',
+    );
+  }
+  const validateOpenedFile = validator.validateOpenedFile.bind(validator);
+
+  const identity = await validateWindowsTrust(
+    {
+      validate: () => validateOpenedFile(handle, path, 'record'),
+    },
+    path,
+    'record',
+    deadline,
+  );
+  if (identity === undefined) {
+    return fail(
+      'owner_mismatch',
+      'Windows Cave discovery opened-file identity validation is required.',
+    );
+  }
+  return identity;
+}
+
+function validateStableIdentity(
+  initial: CaveDiscoveryPathIdentity,
+  current: CaveDiscoveryPathIdentity,
+  initialNativeIdentity: string | undefined,
+  currentNativeIdentity: string | undefined,
+  message: string,
+): void {
+  if (
+    current.device !== initial.device ||
+    current.inode !== initial.inode ||
+    ((initial.device === 0 || initial.inode === 0) &&
+      (initialNativeIdentity === undefined ||
+        currentNativeIdentity === undefined ||
+        currentNativeIdentity !== initialNativeIdentity))
+  ) {
+    return fail('unsafe_endpoint', message);
   }
 }
 
@@ -461,6 +541,105 @@ function decodeJson(bytes: Uint8Array): string {
   } catch {
     return fail('invalid_response', 'Cave discovery record was not valid UTF-8.');
   }
+}
+
+function containsControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined &&
+      (codePoint <= 0x1F || (codePoint >= 0x7F && codePoint <= 0x9F))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function parseCaveHttpEndpoint(value: string): Extract<DiscoveryEndpoint, { kind: 'http' }> {
+  const match = CAVE_HTTP_ENDPOINT_RE.exec(value);
+  const rawHost = match?.[1]?.toLowerCase();
+  const rawPort = match?.[2];
+  if (
+    containsControlCharacter(value) ||
+    /%(?:2f|5c)/iu.test(value) ||
+    (rawHost !== '127.0.0.1' && rawHost !== 'localhost' && rawHost !== '[::1]') ||
+    rawPort === undefined
+  ) {
+    return fail('unsafe_endpoint', 'Cave discovery endpoint was not a path-free loopback URL.');
+  }
+
+  const port = Number(rawPort);
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return fail('unsafe_endpoint', 'Cave discovery endpoint was invalid.');
+  }
+
+  if (
+    !Number.isInteger(port) ||
+    port < 1 ||
+    port > 65_535 ||
+    parsed.protocol !== 'http:' ||
+    parsed.username !== '' ||
+    parsed.password !== '' ||
+    parsed.pathname !== '/' ||
+    parsed.search !== '' ||
+    parsed.hash !== '' ||
+    (parsed.hostname !== '127.0.0.1' &&
+      parsed.hostname !== 'localhost' &&
+      parsed.hostname !== '[::1]')
+  ) {
+    return fail('unsafe_endpoint', 'Cave discovery endpoint was not a path-free loopback URL.');
+  }
+
+  return { kind: 'http', url: value };
+}
+
+function validTimestamp(value: string): boolean {
+  const match = DISCOVERY_TIMESTAMP_RE.exec(value);
+  if (match === null || containsControlCharacter(value)) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[7] === undefined ? 0 : Number(match[7]);
+  const offsetMinute = match[8] === undefined ? 0 : Number(match[8]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [
+    31,
+    leapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  const parsed = Date.parse(value);
+
+  return (
+    Number.isFinite(parsed) &&
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= (daysInMonth[month - 1] ?? 0) &&
+    hour <= 23 &&
+    minute <= 59 &&
+    second <= 59 &&
+    offsetHour <= 23 &&
+    offsetMinute <= 59
+  );
 }
 
 function parseRecord(
@@ -496,11 +675,8 @@ function parseRecord(
 
   const endpoint =
     typeof record.endpoint === 'string'
-      ? parseDiscoveryEndpoint({ kind: 'http', url: record.endpoint })
+      ? parseCaveHttpEndpoint(record.endpoint)
       : fail('invalid_response', 'Cave discovery endpoint was invalid.');
-  if (endpoint.kind !== 'http') {
-    return fail('unsafe_endpoint', 'Cave discovery endpoint was not an HTTP loopback URL.');
-  }
   const pid = expectPositiveSafeInteger(
     record.pid,
     'invalid_response',
@@ -513,15 +689,15 @@ function parseRecord(
   if (
     typeof record.nonce !== 'string' ||
     record.nonce.trim().length === 0 ||
-    record.nonce.length > 256
+    record.nonce.length > 256 ||
+    containsControlCharacter(record.nonce)
   ) {
     return fail('invalid_response', 'Cave discovery nonce was invalid.');
   }
 
   if (
     typeof record.startedAt !== 'string' ||
-    !DISCOVERY_TIMESTAMP_RE.test(record.startedAt) ||
-    !Number.isFinite(Date.parse(record.startedAt))
+    !validTimestamp(record.startedAt)
   ) {
     return fail('invalid_response', 'Cave discovery startedAt was invalid.');
   }
@@ -613,9 +789,15 @@ export async function discoverCaveEndpoint(
 
     const rootIdentity = await awaitStep(() => lstat(physicalRoot), deadline);
     validateRootIdentity(rootIdentity, platform, expectedUid);
-    if (platform === 'win32') {
-      await validateWindowsTrust(dependencies?.windowsPathTrust, physicalRoot, 'root', deadline);
-    }
+    const rootWindowsIdentity =
+      platform === 'win32'
+        ? await validateWindowsTrust(
+            dependencies?.windowsPathTrust,
+            physicalRoot,
+            'root',
+            deadline,
+          )
+        : undefined;
 
     const initialIdentity = await awaitStep(async () => {
       try {
@@ -628,14 +810,15 @@ export async function discoverCaveEndpoint(
       }
     }, deadline);
     validateRecordIdentity(initialIdentity, platform, expectedUid, maxRecordBytes);
-    if (platform === 'win32') {
-      await validateWindowsTrust(
-        dependencies?.windowsPathTrust,
-        physicalRecordPath,
-        'record',
-        deadline,
-      );
-    }
+    const recordWindowsIdentity =
+      platform === 'win32'
+        ? await validateWindowsTrust(
+            dependencies?.windowsPathTrust,
+            physicalRecordPath,
+            'record',
+            deadline,
+          )
+        : undefined;
 
     const handle = await awaitStep(
       () => openFile(physicalRecordPath, discoveryFlags(platform)),
@@ -648,12 +831,23 @@ export async function discoverCaveEndpoint(
     try {
       const openedIdentity = await awaitStep(() => handle.stat(), deadline);
       validateRecordIdentity(openedIdentity, platform, expectedUid, maxRecordBytes);
-      if (
-        openedIdentity.device !== initialIdentity.device ||
-        openedIdentity.inode !== initialIdentity.inode
-      ) {
-        return fail('unsafe_endpoint', 'Cave discovery record changed while it was being opened.');
-      }
+      const openedRecordWindowsIdentity =
+        platform === 'win32' &&
+        (initialIdentity.device === 0 || initialIdentity.inode === 0)
+          ? await validateWindowsOpenedFileTrust(
+              dependencies?.windowsPathTrust,
+              handle,
+              physicalRecordPath,
+              deadline,
+            )
+          : recordWindowsIdentity;
+      validateStableIdentity(
+        initialIdentity,
+        openedIdentity,
+        recordWindowsIdentity,
+        openedRecordWindowsIdentity,
+        'Cave discovery record changed while it was being opened.',
+      );
 
       const buffer = Buffer.alloc(maxRecordBytes + 1);
       let offset = 0;
@@ -699,6 +893,57 @@ export async function discoverCaveEndpoint(
     if (serialized === undefined) {
       return fail('invalid_response', 'Cave discovery record could not be read safely.');
     }
+
+    const currentRecordIdentity = await awaitStep(
+      () => lstat(physicalRecordPath),
+      deadline,
+    );
+    validateRecordIdentity(
+      currentRecordIdentity,
+      platform,
+      expectedUid,
+      maxRecordBytes,
+    );
+    const currentRecordWindowsIdentity =
+      platform === 'win32'
+        ? await validateWindowsTrust(
+            dependencies?.windowsPathTrust,
+            physicalRecordPath,
+            'record',
+            deadline,
+          )
+        : undefined;
+    validateStableIdentity(
+      initialIdentity,
+      currentRecordIdentity,
+      recordWindowsIdentity,
+      currentRecordWindowsIdentity,
+      'Cave discovery record changed while it was being read.',
+    );
+
+    const currentRootIdentity = await awaitStep(() => lstat(physicalRoot), deadline);
+    validateRootIdentity(currentRootIdentity, platform, expectedUid);
+    const currentRootWindowsIdentity =
+      platform === 'win32'
+        ? await validateWindowsTrust(
+            dependencies?.windowsPathTrust,
+            physicalRoot,
+            'root',
+            deadline,
+          )
+        : undefined;
+    if (
+      (await awaitStep(() => realpath(physicalRoot), deadline)) !== physicalRoot
+    ) {
+      return fail('unsafe_endpoint', 'Cave discovery root changed while the record was read.');
+    }
+    validateStableIdentity(
+      rootIdentity,
+      currentRootIdentity,
+      rootWindowsIdentity,
+      currentRootWindowsIdentity,
+      'Cave discovery root changed while the record was read.',
+    );
 
     return parseRecord(serialized, isProcessAlive, {
       path: physicalRecordPath,

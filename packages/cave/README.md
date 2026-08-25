@@ -8,7 +8,8 @@ A constrained Cave client with two entry points:
 
 Importing the package performs no filesystem, network, or credential I/O. The
 discovered helper reads Cave's `client-v1-discovery.json` only when an
-operation is called, validates owner-local discovery metadata, and stores the
+operation is called, validates owner-local discovery metadata before and after
+the bounded read, and stores the
 paired bearer together with non-secret authority-binding metadata in one
 versioned `SecretStore` record per credential reference. Pairing sessions pin
 to the exact discovered authority
@@ -20,12 +21,20 @@ unauthenticated health request before every authenticated discovered call.
 Mismatched credentials are cleared locally rather than sent to a different
 Cave.
 
+Discovery accepts only an explicit-port HTTP loopback authority at
+`127.0.0.1`, `localhost`, or `[::1]`. Discovered requests omit ambient
+credentials, disable cache reuse, reject redirects, enforce a positive safe
+response-byte limit, and cancel streamed bodies when that limit or the shared
+operation deadline is exceeded.
+
 On Windows, `discoverCaveEndpoint()` also requires a reviewed native
 `options.dependencies.windowsPathTrust` validator for the discovery root and
 record path. Metadata-only checks, shell commands, and fabricated ACL trust are
 rejected; the helper fails closed until a real validator is injected. A
-trusted Windows validator remains authoritative when Node reports the
-filesystem inode as `0`; Unix discovery still requires a positive inode.
+trusted Windows validator must also return a stable native identity and
+implement `validateOpenedFile(...)` when Node reports the filesystem device or
+inode as `0`, allowing the path snapshots to be compared with the actual opened
+record. Unix discovery still requires a positive inode.
 
 ## Shipped surface
 

@@ -1383,7 +1383,10 @@ describe('Cave discovery platform helpers', () => {
       inode: 0,
       size: Buffer.byteLength(recordBytes),
     });
-    const validate = vi.fn(async () => true);
+    const validate = vi.fn(async (_path: string, purpose: 'root' | 'record') => ({
+      trusted: true as const,
+      identity: `windows-${purpose}-identity`,
+    }));
     const openFile = vi.fn(async (_path: string, flags: number) => {
       expect(flags).toBe(fsConstants.O_RDONLY);
       return memoryHandle(recordBytes, recordIdentity);
@@ -1413,6 +1416,10 @@ describe('Cave discovery platform helpers', () => {
           realpath: async (path) => path,
           windowsPathTrust: {
             validate,
+            validateOpenedFile: async () => ({
+              trusted: true,
+              identity: 'windows-record-identity',
+            }),
           },
         },
       }),
@@ -1453,7 +1460,14 @@ describe('Cave discovery platform helpers', () => {
           openFile: async () => memoryHandle(recordBytes, recordIdentity),
           realpath: async (path) => path,
           windowsPathTrust: {
-            validate: async () => true,
+            validate: async (_path, purpose) => ({
+              trusted: true,
+              identity: `windows-${purpose}-identity`,
+            }),
+            validateOpenedFile: async () => ({
+              trusted: true,
+              identity: 'windows-record-identity',
+            }),
           },
         },
       }),
@@ -1464,6 +1478,86 @@ describe('Cave discovery platform helpers', () => {
         device: recordIdentity.device,
         inode: recordIdentity.inode,
       },
+    });
+  });
+
+  test('requires stable native Windows identity when filesystem identity is unavailable', async () => {
+    const root = 'C:\\Users\\Alice\\.coven\\cave';
+    const recordPath = `${root}\\client-v1-discovery.json`;
+    const recordBytes = discoveryRecord();
+    const rootIdentity = discoveredPathIdentity({
+      device: 0,
+      inode: 0,
+      regularFile: false,
+      directory: true,
+      mode: 0o040700,
+      size: 0,
+    });
+    const recordIdentity = discoveredPathIdentity({
+      device: 0,
+      inode: 0,
+      size: Buffer.byteLength(recordBytes),
+    });
+    const lstat = (path: string) => {
+      if (path === root) {
+        return Promise.resolve(rootIdentity);
+      }
+      if (path === recordPath) {
+        return Promise.resolve(recordIdentity);
+      }
+      return Promise.reject(Object.assign(new Error(`missing ${path}`), { code: 'ENOENT' }));
+    };
+
+    await expect(
+      discoverCaveEndpoint({
+        cwd: 'C:\\workspace',
+        env: { USERPROFILE: 'C:\\Users\\Alice' },
+        platform: 'win32',
+        timeoutMs: 50,
+        dependencies: {
+          isProcessAlive: () => true,
+          lstat,
+          openFile: () => Promise.resolve(memoryHandle(recordBytes, recordIdentity)),
+          realpath: (path) => Promise.resolve(path),
+          windowsPathTrust: {
+            validate: () => Promise.resolve(true),
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'owner_mismatch',
+      retryable: false,
+    });
+
+    let recordValidations = 0;
+    await expect(
+      discoverCaveEndpoint({
+        cwd: 'C:\\workspace',
+        env: { USERPROFILE: 'C:\\Users\\Alice' },
+        platform: 'win32',
+        timeoutMs: 50,
+        dependencies: {
+          isProcessAlive: () => true,
+          lstat,
+          openFile: () => Promise.resolve(memoryHandle(recordBytes, recordIdentity)),
+          realpath: (path) => Promise.resolve(path),
+          windowsPathTrust: {
+            validate: (_path, purpose) =>
+              Promise.resolve({
+                trusted: true,
+                identity: purpose === 'root' ? 'root-id' : 'record-id',
+              }),
+            validateOpenedFile: () =>
+              Promise.resolve({
+                trusted: true,
+                identity: `record-id-${++recordValidations}`,
+              }),
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'unsafe_endpoint',
+      retryable: false,
     });
   });
 
