@@ -28,6 +28,15 @@ describe('review corrections', () => {
     expect(manifest.scripts.typecheck).toBe(
       'corepack pnpm@10.34.0 exec tsc --pretty false --noEmit -p tsconfig.eslint.json',
     );
+    expect(manifest.scripts['clean:public-dist']).toBe(
+      'node ./scripts/clean-public-package-dist.mjs',
+    );
+    expect(manifest.scripts.test).toBe(
+      'corepack pnpm@10.34.0 build && vitest run',
+    );
+    expect(manifest.scripts.verify).toBe(
+      'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 clean:public-dist && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint',
+    );
     expect(sourceTypecheckConfig.include).toEqual([
       'examples/**/*.ts',
       'packages/**/*.ts',
