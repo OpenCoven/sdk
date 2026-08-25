@@ -294,8 +294,10 @@ const endpoint = await discoverManagedCaveEndpoint(source);
 The native response is restricted to discovery JSON bytes plus an
 owner-checked opaque identity, device/inode metadata, and whether its PID is
 alive. Unsupported fields, invalid loopback URLs, stale PIDs, malformed UTF-8,
-and oversized records fail SDK validation. Rust does not shape an endpoint DTO
-or compatibility result for JavaScript.
+and oversized records fail SDK validation. Discovery snapshots reject repeated
+object identities and cap records at 64 KiB before cloning bytes or encoding
+strings. Rust does not shape an endpoint DTO or compatibility result for
+JavaScript.
 
 Managed custody removes credential material from JavaScript; it does **not**
 solve authority endpoint takeover. Client v1 still lacks atomic request binding,

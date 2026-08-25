@@ -121,6 +121,32 @@ afterEach(() => {
 });
 
 describe('managed native Cave credential custody', () => {
+  test('maps repeated managed result identities to a fixed redacted invalid response', async () => {
+    const repeated = { nativeBearer: BEARER };
+    const client = managedClient(managedTransport({
+      health: vi.fn(() =>
+        Promise.resolve({
+          ...HEALTH_ENVELOPE,
+          data: {
+            ...HEALTH_ENVELOPE.data,
+            left: repeated,
+            right: repeated,
+          },
+        }),
+      ),
+    }));
+
+    const error = await client.health().catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      normalized: { code: 'invalid_response' },
+    });
+    expectRedacted({
+      error: serializedError(error),
+      inspect: inspect(error),
+    });
+  });
+
   test('keeps pairing and bearer material outside JavaScript while preserving CavePairingSession', async () => {
     const transport = managedTransport();
     const events: unknown[] = [];

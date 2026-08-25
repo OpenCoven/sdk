@@ -12,7 +12,11 @@ import {
   parseCaveDiscoveryRecord,
   type CaveDiscoveryErrorCode,
 } from './discovery-record.js';
-import { snapshotManagedResult } from './managed-snapshot.js';
+import {
+  MANAGED_SNAPSHOT_LIMITS,
+  snapshotManagedResult,
+  snapshotManagedResultWithBudget,
+} from './managed-snapshot.js';
 
 const DEFAULT_MAX_RECORD_BYTES = 16 * 1024;
 const DISCOVERY_ERROR_CODES = new Set<CaveDiscoveryErrorCode>([
@@ -168,7 +172,25 @@ function parseSourceResult(
   value: unknown,
   maxRecordBytes: number,
 ): CaveManagedDiscoveredEndpoint {
-  const snapshot = snapshotManagedResult(value);
+  const sourceSnapshot = snapshotManagedResultWithBudget(value, {
+    maxArrayElements: maxRecordBytes,
+    maxEntries: Math.min(
+      MANAGED_SNAPSHOT_LIMITS.entries,
+      maxRecordBytes + 16,
+    ),
+    maxStringCodeUnits: maxRecordBytes,
+    maxTypedArrayElements: maxRecordBytes,
+  });
+  if (!sourceSnapshot.valid) {
+    if (sourceSnapshot.limitExceeded) {
+      throw new CaveDiscoveryError(
+        'body_limit',
+        'Cave discovery record exceeded its size limit.',
+      );
+    }
+    return invalidRecord();
+  }
+  const snapshot = sourceSnapshot.value;
   if (
     !isDataRecord(snapshot) ||
     !hasExactKeys(snapshot, ['bytes', 'record'])
@@ -202,7 +224,7 @@ function parseSourceResult(
 
   let serialized: string;
   if (typeof snapshot.bytes === 'string') {
-    if (new TextEncoder().encode(snapshot.bytes).byteLength > maxRecordBytes) {
+    if (!isUtf8WithinLimit(snapshot.bytes, maxRecordBytes)) {
       throw new CaveDiscoveryError('body_limit', 'Cave discovery record exceeded its size limit.');
     }
     serialized = snapshot.bytes;
@@ -244,13 +266,53 @@ function parseSourceResult(
   return result as CaveManagedDiscoveredEndpoint;
 }
 
+function isUtf8WithinLimit(value: string, maximumBytes: number): boolean {
+  if (value.length > maximumBytes) {
+    return false;
+  }
+
+  let bytes = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit <= 0x7F) {
+      bytes += 1;
+    } else if (codeUnit <= 0x7FF) {
+      bytes += 2;
+    } else if (
+      codeUnit >= 0xD800 &&
+      codeUnit <= 0xDBFF &&
+      index + 1 < value.length
+    ) {
+      const nextCodeUnit = value.charCodeAt(index + 1);
+      if (nextCodeUnit >= 0xDC00 && nextCodeUnit <= 0xDFFF) {
+        bytes += 4;
+        index += 1;
+      } else {
+        bytes += 3;
+      }
+    } else {
+      bytes += 3;
+    }
+    if (bytes > maximumBytes) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export async function discoverManagedCaveEndpoint(
   source: CaveManagedDiscoverySource,
   options: CaveManagedDiscoveryOptions = {},
 ): Promise<CaveManagedDiscoveredEndpoint> {
   const maxRecordBytes = options.maxRecordBytes ?? DEFAULT_MAX_RECORD_BYTES;
-  if (!Number.isSafeInteger(maxRecordBytes) || maxRecordBytes <= 0) {
-    throw new RangeError('maxRecordBytes must be a positive safe integer.');
+  if (
+    !Number.isSafeInteger(maxRecordBytes) ||
+    maxRecordBytes <= 0 ||
+    maxRecordBytes > MANAGED_SNAPSHOT_LIMITS.arrayElements
+  ) {
+    throw new RangeError(
+      `maxRecordBytes must be a positive safe integer no greater than ${MANAGED_SNAPSHOT_LIMITS.arrayElements}.`,
+    );
   }
   const timeoutMs = options.timeoutMs ?? options.operation?.timeoutMs;
   const observer = options.observer ?? options.operation?.observer;

@@ -219,6 +219,88 @@ describe('managed browser entry point', () => {
     });
   });
 
+  test('enforces native discovery byte limits before snapshotting oversized arrays', async () => {
+    const bytes = Array.from({ length: 65 }, () => 0x7B);
+    Object.defineProperty(bytes, '0', {
+      enumerable: true,
+      get() {
+        throw new Error(`native bearer ${NATIVE_BEARER}`);
+      },
+    });
+    const source: CaveManagedDiscoverySource = {
+      read: () =>
+        Promise.resolve({
+          bytes,
+          record: {
+            identity: 'tauri:owner-checked:client-v1-discovery',
+            device: 0,
+            inode: 0,
+            processAlive: true,
+          },
+        }),
+    };
+
+    const error = await discoverManagedCaveEndpoint(source, {
+      maxRecordBytes: 64,
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: 'body_limit' });
+    expect(JSON.stringify(error, error instanceof Error
+      ? Object.getOwnPropertyNames(error)
+      : undefined)).not.toContain(NATIVE_BEARER);
+  });
+
+  test.each([
+    { bytes: 'x'.repeat(65), maxRecordBytes: 64 },
+    { bytes: '€'.repeat(22), maxRecordBytes: 64 },
+  ])('bounds discovery strings before constructing a TextEncoder result', async ({
+    bytes,
+    maxRecordBytes,
+  }) => {
+    const originalTextEncoder = globalThis.TextEncoder;
+    let constructed = false;
+    class UnexpectedTextEncoder {
+      constructor() {
+        constructed = true;
+        throw new Error(`native bearer ${NATIVE_BEARER}`);
+      }
+    }
+    Object.defineProperty(globalThis, 'TextEncoder', {
+      configurable: true,
+      value: UnexpectedTextEncoder,
+      writable: true,
+    });
+    try {
+      const source: CaveManagedDiscoverySource = {
+        read: () =>
+          Promise.resolve({
+            bytes,
+            record: {
+              identity: 'tauri:owner-checked:client-v1-discovery',
+              device: 0,
+              inode: 0,
+              processAlive: true,
+            },
+          }),
+      };
+      const error = await discoverManagedCaveEndpoint(source, {
+        maxRecordBytes,
+      }).catch((caught: unknown) => caught);
+
+      expect(error).toMatchObject({ code: 'body_limit' });
+      expect(constructed).toBe(false);
+      expect(JSON.stringify(error, error instanceof Error
+        ? Object.getOwnPropertyNames(error)
+        : undefined)).not.toContain(NATIVE_BEARER);
+    } finally {
+      Object.defineProperty(globalThis, 'TextEncoder', {
+        configurable: true,
+        value: originalTextEncoder,
+        writable: true,
+      });
+    }
+  });
+
   test('sanitizes native discovery read failures before observer or error serialization', async () => {
     const events: unknown[] = [];
     const source: CaveManagedDiscoverySource = {

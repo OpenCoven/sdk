@@ -1,36 +1,154 @@
-type SnapshotResult =
-  | { valid: true; value: unknown }
-  | { valid: false };
+export const MANAGED_SNAPSHOT_LIMITS = Object.freeze({
+  arrayElements: 64 * 1024,
+  entries: 128 * 1024,
+  nodes: 4 * 1024,
+  stringCodeUnits: 64 * 1024,
+  typedArrayElements: 64 * 1024,
+});
 
-const INVALID_SNAPSHOT: SnapshotResult = { valid: false };
+export interface ManagedSnapshotBudget {
+  maxArrayElements?: number;
+  maxEntries?: number;
+  maxNodes?: number;
+  maxStringCodeUnits?: number;
+  maxTypedArrayElements?: number;
+}
+
+export type ManagedSnapshotResult =
+  | { valid: true; value: unknown }
+  | { valid: false; limitExceeded: boolean };
+
+interface SnapshotLimits {
+  arrayElements: number;
+  entries: number;
+  nodes: number;
+  stringCodeUnits: number;
+  typedArrayElements: number;
+}
+
+interface SnapshotState {
+  entries: number;
+  nodes: number;
+  readonly limits: SnapshotLimits;
+  readonly visited: WeakSet<object>;
+}
+
+const INVALID_SNAPSHOT: ManagedSnapshotResult = {
+  valid: false,
+  limitExceeded: false,
+};
+const LIMITED_SNAPSHOT: ManagedSnapshotResult = {
+  valid: false,
+  limitExceeded: true,
+};
 const MAX_MANAGED_SNAPSHOT_DEPTH = 64;
+
+function boundedLimit(
+  value: number | undefined,
+  maximum: number,
+): number | undefined {
+  if (value === undefined) {
+    return maximum;
+  }
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    return undefined;
+  }
+  return Math.min(value, maximum);
+}
+
+function snapshotLimits(
+  budget: ManagedSnapshotBudget,
+): SnapshotLimits | undefined {
+  const arrayElements = boundedLimit(
+    budget.maxArrayElements,
+    MANAGED_SNAPSHOT_LIMITS.arrayElements,
+  );
+  const entries = boundedLimit(budget.maxEntries, MANAGED_SNAPSHOT_LIMITS.entries);
+  const nodes = boundedLimit(budget.maxNodes, MANAGED_SNAPSHOT_LIMITS.nodes);
+  const stringCodeUnits = boundedLimit(
+    budget.maxStringCodeUnits,
+    MANAGED_SNAPSHOT_LIMITS.stringCodeUnits,
+  );
+  const typedArrayElements = boundedLimit(
+    budget.maxTypedArrayElements,
+    MANAGED_SNAPSHOT_LIMITS.typedArrayElements,
+  );
+  if (
+    arrayElements === undefined ||
+    entries === undefined ||
+    nodes === undefined ||
+    stringCodeUnits === undefined ||
+    typedArrayElements === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    arrayElements,
+    entries,
+    nodes,
+    stringCodeUnits,
+    typedArrayElements,
+  };
+}
+
+function consume(state: SnapshotState, field: 'entries' | 'nodes', amount: number): boolean {
+  const limit = state.limits[field];
+  if (!Number.isSafeInteger(amount) || amount < 0 || state[field] > limit - amount) {
+    return false;
+  }
+  state[field] += amount;
+  return true;
+}
+
+function sameKeys(left: PropertyKey[], right: PropertyKey[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  const seen = new Set(left);
+  return seen.size === left.length && right.every((key) => seen.has(key));
+}
+
+function descriptorsForKeys(
+  value: object,
+  keys: PropertyKey[],
+): Record<PropertyKey, PropertyDescriptor> | undefined {
+  try {
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    return sameKeys(keys, Reflect.ownKeys(descriptors)) ? descriptors : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function snapshotValueUnsafe(
   value: unknown,
-  ancestors: WeakSet<object>,
+  state: SnapshotState,
   depth: number,
-): SnapshotResult {
-  if (
-    value === null ||
-    value === undefined ||
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
+): ManagedSnapshotResult {
+  if (value === null || value === undefined || typeof value === 'boolean' || typeof value === 'number') {
     return { valid: true, value };
+  }
+  if (typeof value === 'string') {
+    return value.length <= state.limits.stringCodeUnits
+      ? { valid: true, value }
+      : LIMITED_SNAPSHOT;
   }
   if (typeof value !== 'object' || depth > MAX_MANAGED_SNAPSHOT_DEPTH) {
     return INVALID_SNAPSHOT;
   }
-  if (ancestors.has(value)) {
+
+  const objectValue = value;
+  if (state.visited.has(objectValue)) {
     return INVALID_SNAPSHOT;
   }
+  if (!consume(state, 'nodes', 1)) {
+    return LIMITED_SNAPSHOT;
+  }
+  state.visited.add(objectValue);
 
   let prototype: object | null;
-  let descriptors: Record<PropertyKey, PropertyDescriptor>;
   try {
-    prototype = Reflect.getPrototypeOf(value);
-    descriptors = Object.getOwnPropertyDescriptors(value);
+    prototype = Reflect.getPrototypeOf(objectValue);
   } catch {
     return INVALID_SNAPSHOT;
   }
@@ -39,18 +157,46 @@ function snapshotValueUnsafe(
     if (prototype !== Uint8Array.prototype) {
       return INVALID_SNAPSHOT;
     }
-    const keys = Reflect.ownKeys(descriptors);
+    let length: unknown;
+    try {
+      length = Reflect.get(objectValue, 'length');
+    } catch {
+      return INVALID_SNAPSHOT;
+    }
     if (
+      typeof length !== 'number' ||
+      !Number.isSafeInteger(length) ||
+      length < 0
+    ) {
+      return INVALID_SNAPSHOT;
+    }
+    if (length > state.limits.typedArrayElements || !consume(state, 'entries', length)) {
+      return LIMITED_SNAPSHOT;
+    }
+
+    let keys: PropertyKey[];
+    try {
+      keys = Reflect.ownKeys(objectValue);
+    } catch {
+      return INVALID_SNAPSHOT;
+    }
+    if (
+      keys.length !== length ||
       keys.some(
         (key) =>
           typeof key !== 'string' ||
-          !/^(?:0|[1-9][0-9]*)$/u.test(key),
+          !/^(?:0|[1-9][0-9]*)$/u.test(key) ||
+          Number(key) >= length,
       )
     ) {
       return INVALID_SNAPSHOT;
     }
+    const descriptors = descriptorsForKeys(objectValue, keys);
+    if (descriptors === undefined) {
+      return INVALID_SNAPSHOT;
+    }
     const snapshot: number[] = [];
-    for (let index = 0; index < keys.length; index += 1) {
+    for (let index = 0; index < length; index += 1) {
       const descriptor = descriptors[String(index)];
       if (
         descriptor === undefined ||
@@ -71,7 +217,12 @@ function snapshotValueUnsafe(
     if (prototype !== Array.prototype) {
       return INVALID_SNAPSHOT;
     }
-    const lengthDescriptor = descriptors.length;
+    let lengthDescriptor: PropertyDescriptor | undefined;
+    try {
+      lengthDescriptor = Object.getOwnPropertyDescriptor(objectValue, 'length');
+    } catch {
+      return INVALID_SNAPSHOT;
+    }
     if (
       lengthDescriptor === undefined ||
       !Object.hasOwn(lengthDescriptor, 'value') ||
@@ -83,8 +234,17 @@ function snapshotValueUnsafe(
     }
 
     const length = lengthDescriptor.value;
-    const keys = Reflect.ownKeys(descriptors);
+    if (length > state.limits.arrayElements || !consume(state, 'entries', length)) {
+      return LIMITED_SNAPSHOT;
+    }
+    let keys: PropertyKey[];
+    try {
+      keys = Reflect.ownKeys(objectValue);
+    } catch {
+      return INVALID_SNAPSHOT;
+    }
     if (
+      keys.length !== length + 1 ||
       keys.some(
         (key) =>
           key !== 'length' &&
@@ -95,23 +255,21 @@ function snapshotValueUnsafe(
     ) {
       return INVALID_SNAPSHOT;
     }
-
-    ancestors.add(value);
+    const descriptors = descriptorsForKeys(objectValue, keys);
+    if (descriptors === undefined) {
+      return INVALID_SNAPSHOT;
+    }
     const snapshot: unknown[] = [];
-    try {
-      for (let index = 0; index < length; index += 1) {
-        const descriptor = descriptors[String(index)];
-        if (descriptor === undefined || !Object.hasOwn(descriptor, 'value')) {
-          return INVALID_SNAPSHOT;
-        }
-        const nested = snapshotValue(descriptor.value, ancestors, depth + 1);
-        if (!nested.valid) {
-          return INVALID_SNAPSHOT;
-        }
-        snapshot.push(nested.value);
+    for (let index = 0; index < length; index += 1) {
+      const descriptor = descriptors[String(index)];
+      if (descriptor === undefined || !Object.hasOwn(descriptor, 'value')) {
+        return INVALID_SNAPSHOT;
       }
-    } finally {
-      ancestors.delete(value);
+      const nested = snapshotValue(descriptor.value, state, depth + 1);
+      if (!nested.valid) {
+        return nested;
+      }
+      snapshot.push(nested.value);
     }
     return { valid: true, value: Object.freeze(snapshot) };
   }
@@ -120,40 +278,39 @@ function snapshotValueUnsafe(
     return INVALID_SNAPSHOT;
   }
 
-  const keys = Reflect.ownKeys(descriptors);
-  if (
-    keys.some((key) => {
-      if (typeof key !== 'string') {
-        return true;
-      }
-      const descriptor = descriptors[key];
-      return descriptor === undefined || !Object.hasOwn(descriptor, 'value');
-    })
-  ) {
+  let keys: PropertyKey[];
+  try {
+    keys = Reflect.ownKeys(objectValue);
+  } catch {
+    return INVALID_SNAPSHOT;
+  }
+  if (!consume(state, 'entries', keys.length)) {
+    return LIMITED_SNAPSHOT;
+  }
+  const descriptors = descriptorsForKeys(objectValue, keys);
+  if (descriptors === undefined) {
     return INVALID_SNAPSHOT;
   }
 
-  ancestors.add(value);
   const snapshot = Object.create(null) as Record<string, unknown>;
-  try {
-    for (const key of keys) {
-      const descriptor = descriptors[key as string];
-      if (descriptor === undefined) {
-        return INVALID_SNAPSHOT;
-      }
-      const nested = snapshotValue(descriptor.value, ancestors, depth + 1);
-      if (!nested.valid) {
-        return INVALID_SNAPSHOT;
-      }
-      Object.defineProperty(snapshot, key, {
-        configurable: false,
-        enumerable: true,
-        value: nested.value,
-        writable: false,
-      });
+  for (const key of keys) {
+    if (typeof key !== 'string') {
+      return INVALID_SNAPSHOT;
     }
-  } finally {
-    ancestors.delete(value);
+    const descriptor = descriptors[key];
+    if (descriptor === undefined || !Object.hasOwn(descriptor, 'value')) {
+      return INVALID_SNAPSHOT;
+    }
+    const nested = snapshotValue(descriptor.value, state, depth + 1);
+    if (!nested.valid) {
+      return nested;
+    }
+    Object.defineProperty(snapshot, key, {
+      configurable: false,
+      enumerable: true,
+      value: nested.value,
+      writable: false,
+    });
   }
 
   return { valid: true, value: Object.freeze(snapshot) };
@@ -161,11 +318,40 @@ function snapshotValueUnsafe(
 
 function snapshotValue(
   value: unknown,
-  ancestors: WeakSet<object>,
+  state: SnapshotState,
   depth: number,
-): SnapshotResult {
+): ManagedSnapshotResult {
   try {
-    return snapshotValueUnsafe(value, ancestors, depth);
+    return snapshotValueUnsafe(value, state, depth);
+  } catch {
+    return INVALID_SNAPSHOT;
+  }
+}
+
+/**
+ * Captures a native bridge result exactly once through own data descriptors.
+ * Repeated identities, unsupported shapes, and budget exhaustion are rejected
+ * before a bridge-owned graph can be expanded into JavaScript-owned state.
+ */
+export function snapshotManagedResultWithBudget(
+  value: unknown,
+  budget: ManagedSnapshotBudget = {},
+): ManagedSnapshotResult {
+  try {
+    const limits = snapshotLimits(budget);
+    if (limits === undefined) {
+      return INVALID_SNAPSHOT;
+    }
+    return snapshotValue(
+      value,
+      {
+        entries: 0,
+        limits,
+        nodes: 0,
+        visited: new WeakSet<object>(),
+      },
+      0,
+    );
   } catch {
     return INVALID_SNAPSHOT;
   }
@@ -177,10 +363,6 @@ function snapshotValue(
  * the bridge-owned object graph.
  */
 export function snapshotManagedResult(value: unknown): unknown {
-  try {
-    const result = snapshotValue(value, new WeakSet<object>(), 0);
-    return result.valid ? result.value : undefined;
-  } catch {
-    return undefined;
-  }
+  const result = snapshotManagedResultWithBudget(value);
+  return result.valid ? result.value : undefined;
 }
