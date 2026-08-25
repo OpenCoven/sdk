@@ -38,9 +38,9 @@ negotiate compatibility, pair through user consent, retain credentials in
 native custody, validate live IPC identity, and read canonical state.
 
 SDK [#36](https://github.com/OpenCoven/sdk/issues/36) is implementation-complete
-on the `feat/cave-canonical-reads` branch at the documented surface below. It
-still requires full repository verification, exact-SHA review, a PR, required
-checks, and merge before the issue is complete. Chat
+and fully verified/reviewed on the `feat/cave-canonical-reads` branch at the
+documented surface below. It still requires a PR, required checks, and merge
+before the issue is complete. Chat
 [#27](https://github.com/OpenCoven/chat/issues/27) remains blocked on merged SDK
 #36, SDK #37's native-adapter ownership decision and implementation, and the
 producer's atomic instance-binding work in
