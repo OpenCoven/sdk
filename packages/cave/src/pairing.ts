@@ -893,7 +893,12 @@ async function requestJson(
     });
   }
 
-  ensureActive(options.context);
+  try {
+    ensureActive(options.context);
+  } catch (error) {
+    void response.body?.cancel().catch(() => undefined);
+    throw error;
+  }
   const text = await readResponseText(response, options.context, options.maxResponseBytes);
   let payload: unknown;
   try {

@@ -3110,6 +3110,7 @@ describe('discovered Cave pairing helpers', () => {
       read: vi.fn(),
       releaseLock: vi.fn(),
     }));
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
     const fetchImplementation = vi.fn(
       () =>
         new Promise<Response>((resolve) => {
@@ -3135,6 +3136,7 @@ describe('discovered Cave pairing helpers', () => {
       status: 200,
       headers: new Headers({ 'content-length': '2' }),
       body: {
+        cancel,
         getReader,
       },
     } as unknown as Response);
@@ -3142,6 +3144,7 @@ describe('discovered Cave pairing helpers', () => {
     await Promise.resolve();
 
     expect(getReader).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   test('cancels a streamed response when a discovered health request times out', async () => {

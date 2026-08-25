@@ -52,7 +52,15 @@ export interface CaveDiscoveryFileHandle {
 }
 
 export interface CaveWindowsPathTrustValidator {
-  validate(path: string, purpose: 'root' | 'record'): Promise<boolean>;
+  validate(
+    path: string,
+    purpose: 'root' | 'record',
+  ): Promise<boolean | CaveWindowsPathTrustResult>;
+}
+
+export interface CaveWindowsPathTrustResult {
+  trusted: true;
+  identity: string;
 }
 
 export interface CaveDiscoveryDependencies {
@@ -445,14 +453,46 @@ async function validateWindowsTrust(
   path: string,
   purpose: 'root' | 'record',
   deadline: DiscoveryDeadline,
-): Promise<void> {
+): Promise<string | undefined> {
   if (validator === undefined || typeof validator.validate !== 'function') {
     return fail('owner_mismatch', 'Windows Cave discovery trust validation is required.');
   }
 
-  const trusted = await awaitStep(() => validator.validate(path, purpose), deadline);
-  if (trusted !== true) {
+  const result = await awaitStep(() => validator.validate(path, purpose), deadline);
+  if (result === true) {
+    return undefined;
+  }
+  if (
+    typeof result !== 'object' ||
+    result === null ||
+    result.trusted !== true ||
+    typeof result.identity !== 'string' ||
+    result.identity.trim().length === 0 ||
+    result.identity.length > 1_024 ||
+    containsControlCharacter(result.identity)
+  ) {
     return fail('owner_mismatch', 'Windows Cave discovery trust validation failed.');
+  }
+
+  return result.identity;
+}
+
+function validateStableIdentity(
+  initial: CaveDiscoveryPathIdentity,
+  current: CaveDiscoveryPathIdentity,
+  initialNativeIdentity: string | undefined,
+  currentNativeIdentity: string | undefined,
+  message: string,
+): void {
+  if (
+    current.device !== initial.device ||
+    current.inode !== initial.inode ||
+    ((initial.device === 0 || initial.inode === 0) &&
+      (initialNativeIdentity === undefined ||
+        currentNativeIdentity === undefined ||
+        currentNativeIdentity !== initialNativeIdentity))
+  ) {
+    return fail('unsafe_endpoint', message);
   }
 }
 
@@ -710,9 +750,15 @@ export async function discoverCaveEndpoint(
 
     const rootIdentity = await awaitStep(() => lstat(physicalRoot), deadline);
     validateRootIdentity(rootIdentity, platform, expectedUid);
-    if (platform === 'win32') {
-      await validateWindowsTrust(dependencies?.windowsPathTrust, physicalRoot, 'root', deadline);
-    }
+    const rootWindowsIdentity =
+      platform === 'win32'
+        ? await validateWindowsTrust(
+            dependencies?.windowsPathTrust,
+            physicalRoot,
+            'root',
+            deadline,
+          )
+        : undefined;
 
     const initialIdentity = await awaitStep(async () => {
       try {
@@ -725,14 +771,15 @@ export async function discoverCaveEndpoint(
       }
     }, deadline);
     validateRecordIdentity(initialIdentity, platform, expectedUid, maxRecordBytes);
-    if (platform === 'win32') {
-      await validateWindowsTrust(
-        dependencies?.windowsPathTrust,
-        physicalRecordPath,
-        'record',
-        deadline,
-      );
-    }
+    const recordWindowsIdentity =
+      platform === 'win32'
+        ? await validateWindowsTrust(
+            dependencies?.windowsPathTrust,
+            physicalRecordPath,
+            'record',
+            deadline,
+          )
+        : undefined;
 
     const handle = await awaitStep(
       () => openFile(physicalRecordPath, discoveryFlags(platform)),
@@ -745,12 +792,22 @@ export async function discoverCaveEndpoint(
     try {
       const openedIdentity = await awaitStep(() => handle.stat(), deadline);
       validateRecordIdentity(openedIdentity, platform, expectedUid, maxRecordBytes);
-      if (
-        openedIdentity.device !== initialIdentity.device ||
-        openedIdentity.inode !== initialIdentity.inode
-      ) {
-        return fail('unsafe_endpoint', 'Cave discovery record changed while it was being opened.');
-      }
+      const openedRecordWindowsIdentity =
+        platform === 'win32'
+          ? await validateWindowsTrust(
+              dependencies?.windowsPathTrust,
+              physicalRecordPath,
+              'record',
+              deadline,
+            )
+          : undefined;
+      validateStableIdentity(
+        initialIdentity,
+        openedIdentity,
+        recordWindowsIdentity,
+        openedRecordWindowsIdentity,
+        'Cave discovery record changed while it was being opened.',
+      );
 
       const buffer = Buffer.alloc(maxRecordBytes + 1);
       let offset = 0;
@@ -807,38 +864,46 @@ export async function discoverCaveEndpoint(
       expectedUid,
       maxRecordBytes,
     );
-    if (
-      currentRecordIdentity.device !== initialIdentity.device ||
-      currentRecordIdentity.inode !== initialIdentity.inode
-    ) {
-      return fail('unsafe_endpoint', 'Cave discovery record changed while it was being read.');
-    }
-    if (platform === 'win32') {
-      await validateWindowsTrust(
-        dependencies?.windowsPathTrust,
-        physicalRecordPath,
-        'record',
-        deadline,
-      );
-    }
+    const currentRecordWindowsIdentity =
+      platform === 'win32'
+        ? await validateWindowsTrust(
+            dependencies?.windowsPathTrust,
+            physicalRecordPath,
+            'record',
+            deadline,
+          )
+        : undefined;
+    validateStableIdentity(
+      initialIdentity,
+      currentRecordIdentity,
+      recordWindowsIdentity,
+      currentRecordWindowsIdentity,
+      'Cave discovery record changed while it was being read.',
+    );
 
     const currentRootIdentity = await awaitStep(() => lstat(physicalRoot), deadline);
     validateRootIdentity(currentRootIdentity, platform, expectedUid);
+    const currentRootWindowsIdentity =
+      platform === 'win32'
+        ? await validateWindowsTrust(
+            dependencies?.windowsPathTrust,
+            physicalRoot,
+            'root',
+            deadline,
+          )
+        : undefined;
     if (
-      currentRootIdentity.device !== rootIdentity.device ||
-      currentRootIdentity.inode !== rootIdentity.inode ||
       (await awaitStep(() => realpath(physicalRoot), deadline)) !== physicalRoot
     ) {
       return fail('unsafe_endpoint', 'Cave discovery root changed while the record was read.');
     }
-    if (platform === 'win32') {
-      await validateWindowsTrust(
-        dependencies?.windowsPathTrust,
-        physicalRoot,
-        'root',
-        deadline,
-      );
-    }
+    validateStableIdentity(
+      rootIdentity,
+      currentRootIdentity,
+      rootWindowsIdentity,
+      currentRootWindowsIdentity,
+      'Cave discovery root changed while the record was read.',
+    );
 
     return parseRecord(serialized, isProcessAlive, {
       path: physicalRecordPath,

@@ -51,8 +51,8 @@ async function runUnixExample(): Promise<void> {
         if (
           url !== 'http://127.0.0.1:43123/api/client/v1/health' ||
           init?.method !== 'GET' ||
-          init.credentials !== 'omit' ||
-          init.redirect !== 'error'
+          init?.credentials !== 'omit' ||
+          init?.redirect !== 'error'
         ) {
           return Promise.reject(new Error('Unexpected Cave health request.'));
         }

@@ -33,6 +33,7 @@ export type {
   CaveDiscoveryRecordIdentity,
   CaveDiscoveredEndpoint,
   CaveEndpointFreshness,
+  CaveWindowsPathTrustResult,
   CaveWindowsPathTrustValidator,
   DiscoverCaveEndpointOptions,
 } from './discovery.js';
