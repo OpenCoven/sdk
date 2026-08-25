@@ -24,6 +24,18 @@ type OpenCovenDiagnosticStatusContract = Assert<Equal<
   core.OpenCovenDiagnosticStatus,
   'ok' | 'error' | 'skipped'
 >>;
+type CaveHealthDiagnosticInputContract = Assert<Equal<
+  Extract<
+    core.OpenCovenDiagnosticCheckInput,
+    { readonly id: 'cave.health'; readonly status: 'ok' }
+  >,
+  {
+    readonly id: 'cave.health';
+    readonly status: 'ok';
+    readonly observedAt: string;
+    readonly health: unknown;
+  }
+>>;
 
 type OpenCovenProfileContract = Assert<Equal<
   core.OpenCovenProfile,
@@ -242,6 +254,7 @@ function canonicalReadCompileOnly(
 void (undefined as unknown as CaveCanonicalFamiliarContract);
 void (undefined as unknown as OpenCovenDiagnosticCheckIdContract);
 void (undefined as unknown as OpenCovenDiagnosticStatusContract);
+void (undefined as unknown as CaveHealthDiagnosticInputContract);
 void (undefined as unknown as OpenCovenProfileContract);
 void (undefined as unknown as FileOpenCovenProfileStoreOptionsContract);
 void (undefined as unknown as OpenCovenProfileErrorCodeContract);

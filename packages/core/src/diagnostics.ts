@@ -135,15 +135,44 @@ export interface OpenCovenDiagnosticRuntimeInput {
   readonly architecture: string;
 }
 
-export interface OpenCovenDiagnosticCheckInput {
-  readonly id: OpenCovenDiagnosticCheckId;
-  readonly status: OpenCovenDiagnosticStatus;
-  readonly observedAt?: string;
-  readonly discovery?: unknown;
-  readonly health?: unknown;
-  readonly error?: unknown;
-  readonly skipReason?: OpenCovenDiagnosticSkipReason;
-}
+export type OpenCovenDiagnosticCheckInput =
+  | {
+      readonly id: 'cave.discovery';
+      readonly status: 'ok';
+      readonly discovery?: unknown;
+    }
+  | {
+      readonly id: 'cave.health';
+      readonly status: 'ok';
+      readonly observedAt: string;
+      readonly health: unknown;
+    }
+  | {
+      readonly id: 'secure-store';
+      readonly status: 'ok';
+      readonly observedAt: string;
+    }
+  | {
+      readonly id: 'coven.discovery';
+      readonly status: 'ok';
+      readonly discovery?: unknown;
+    }
+  | {
+      readonly id: 'coven.health';
+      readonly status: 'ok';
+      readonly observedAt: string;
+      readonly health: unknown;
+    }
+  | {
+      readonly id: OpenCovenDiagnosticCheckId;
+      readonly status: 'error';
+      readonly error: unknown;
+    }
+  | {
+      readonly id: OpenCovenDiagnosticCheckId;
+      readonly status: 'skipped';
+      readonly skipReason: OpenCovenDiagnosticSkipReason;
+    };
 
 export interface OpenCovenDiagnosticReportOptions {
   readonly generatedAt: string;
