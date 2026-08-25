@@ -1,4 +1,9 @@
-import { createMemorySecretStore } from '@opencoven/sdk-core';
+import {
+  createMemorySecretStore,
+  createOpenCovenDiagnosticReport,
+  type OpenCovenDiagnosticCheckInput,
+  type OpenCovenDiagnosticReport,
+} from '@opencoven/sdk-core';
 
 import {
   missingCliCavePlatformSecurity,
@@ -13,27 +18,90 @@ import {
 import type { CliCommandResult, ResolvedCliRuntime } from './main.js';
 import { createCaveCredentialBinding } from './credentials.js';
 import { probeNativeSecretStore } from './native-secret-store.js';
-import { createCliError, normalizeCliError, type CliCheck, type CliOutput } from './output.js';
+import {
+  createCliError,
+  normalizeCliError,
+  type CliError,
+  type CliOutput,
+} from './output.js';
 
-const DOCTOR_TIMEOUT_SKIP_SUMMARY = 'Not run because the doctor deadline expired.';
+const CHECK_LABELS = {
+  'cave.discovery': 'Cave discovery',
+  'cave.health': 'Cave health',
+  'secure-store': 'Native secure store',
+  'coven.discovery': 'Coven discovery',
+  'coven.health': 'Coven health',
+} as const;
+const DIAGNOSTIC_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
-function summarizeChecks(checks: readonly CliCheck[]) {
+function diagnosticTimestamp(now: () => number): string {
+  return new Date(now()).toISOString();
+}
+
+function ownData(value: unknown, key: PropertyKey): unknown {
+  if (typeof value !== 'object' || value === null) {
+    return undefined;
+  }
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor !== undefined &&
+      Object.hasOwn(descriptor, 'value')
+      ? descriptor.value
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function diagnosticErrorInput(
+  error: unknown,
+  normalized: CliError,
+): Record<string, unknown> {
+  const nested = ownData(error, 'normalized');
+  const candidate =
+    ownData(error, 'requestId') ?? ownData(nested, 'requestId');
+  const diagnosticId =
+    typeof candidate === 'string' && DIAGNOSTIC_ID_RE.test(candidate)
+      ? candidate
+      : undefined;
   return {
-    healthy: checks.every((check) => check.status === 'ok'),
-    ok: checks.filter((check) => check.status === 'ok').length,
-    error: checks.filter((check) => check.status === 'error').length,
-    skipped: checks.filter((check) => check.status === 'skipped').length,
+    code: normalized.code,
+    retryable: normalized.retryable ?? false,
+    ...(diagnosticId === undefined ? {} : { diagnosticId }),
   };
 }
 
-function renderDoctorHuman(checks: readonly CliCheck[]): readonly string[] {
-  const summary = summarizeChecks(checks);
-  const lines = [`OpenCoven doctor: ${summary.healthy ? 'healthy' : 'unhealthy'}`];
+function renderDoctorHuman(
+  report: OpenCovenDiagnosticReport,
+): readonly string[] {
+  const lines = [
+    `OpenCoven doctor: ${report.summary.healthy ? 'healthy' : 'unhealthy'}`,
+  ];
 
-  for (const check of checks) {
-    lines.push(`- ${check.id}: ${check.status} — ${check.summary}`);
-    if (check.error?.action !== undefined) {
-      lines.push(`  action: ${check.error.action}`);
+  for (const check of report.checks) {
+    const label = CHECK_LABELS[check.id];
+    if (check.status === 'error') {
+      lines.push(
+        `- ${check.id}: error — ${label} failed (${check.error?.code ?? 'unknown'}, ${
+          check.error?.retryable === true
+            ? 'retryable'
+            : 'not retryable'
+        })`,
+      );
+      if (check.error?.diagnosticId !== undefined) {
+        lines.push(`  diagnostic: ${check.error.diagnosticId}`);
+      }
+    } else if (check.status === 'skipped') {
+      lines.push(
+        `- ${check.id}: skipped — ${
+          check.skipReason === 'deadline-expired'
+            ? 'Doctor deadline expired.'
+            : `${label} dependency failed.`
+        }`,
+      );
+    } else {
+      lines.push(`- ${check.id}: ok — ${label} succeeded.`);
     }
   }
 
@@ -42,43 +110,55 @@ function renderDoctorHuman(checks: readonly CliCheck[]): readonly string[] {
 
 function doctorResult(
   runtime: ResolvedCliRuntime,
-  checks: readonly CliCheck[],
+  generatedAt: string,
+  checks: readonly OpenCovenDiagnosticCheckInput[],
 ): CliCommandResult {
-  const summary = summarizeChecks(checks);
+  const report = createOpenCovenDiagnosticReport({
+    generatedAt,
+    packageVersion: runtime.version,
+    runtime: {
+      name: 'node',
+      version: process.version,
+      platform: runtime.platform,
+      architecture: process.arch,
+    },
+    checks,
+  });
   const output: CliOutput = {
     command: 'doctor',
-    data: {
-      checks,
-      summary,
-    },
-    ...(summary.healthy
+    data: { ...report },
+    ...(report.summary.healthy
       ? {}
       : {
           error: createCliError('unhealthy', 'One or more diagnostics failed.'),
         }),
-    human: renderDoctorHuman(checks),
-    ok: summary.healthy,
+    human: renderDoctorHuman(report),
+    ok: report.summary.healthy,
     version: runtime.version,
   };
 
   return {
-    exitCode: summary.healthy ? 0 : 1,
+    exitCode: report.summary.healthy ? 0 : 1,
     output,
   };
 }
 
-function doctorTimedOut(checks: CliCheck[], ...remainingIds: string[]): void {
+function doctorTimedOut(
+  checks: OpenCovenDiagnosticCheckInput[],
+  ...remainingIds: OpenCovenDiagnosticCheckInput['id'][]
+): void {
   for (const id of remainingIds) {
     checks.push({
       id,
       status: 'skipped',
-      summary: DOCTOR_TIMEOUT_SKIP_SUMMARY,
+      skipReason: 'deadline-expired',
     });
   }
 }
 
 export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommandResult> {
-  const checks: CliCheck[] = [];
+  const generatedAt = diagnosticTimestamp(runtime.now);
+  const checks: OpenCovenDiagnosticCheckInput[] = [];
   const deadline = createCliDeadline(runtime.now, runtime.timing.doctorTimeoutMs);
 
   let caveDiscovery: Awaited<ReturnType<ResolvedCliRuntime['cave']['discoverEndpoint']>> | undefined;
@@ -91,13 +171,15 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
     checks.push({
       id: 'cave.discovery',
       status: 'error',
-      summary: 'Cave runtime discovery failed.',
-      error: normalized,
+      error: diagnosticErrorInput(
+        cavePlatformSecurityError,
+        normalized,
+      ),
     });
     checks.push({
       id: 'cave.health',
       status: 'skipped',
-      summary: 'Not run because Cave discovery failed.',
+      skipReason: 'dependency-failed',
     });
   } else {
     try {
@@ -114,15 +196,7 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
       checks.push({
         id: 'cave.discovery',
         status: 'ok',
-        summary: 'Discovered the Cave client endpoint.',
-        data: {
-          endpoint: caveDiscovery.endpoint,
-          freshness: {
-            pid: caveDiscovery.freshness.pid,
-            startedAt: caveDiscovery.freshness.startedAt,
-          },
-          record: caveDiscovery.record,
-        },
+        discovery: caveDiscovery,
       });
     } catch (error) {
       const normalized = normalizeCliError(error, {
@@ -132,8 +206,7 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
       checks.push({
         id: 'cave.discovery',
         status: 'error',
-        summary: 'Cave runtime discovery failed.',
-        error: normalized,
+        error: diagnosticErrorInput(error, normalized),
       });
       if (normalized.code === 'timeout') {
         doctorTimedOut(
@@ -143,14 +216,14 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
           'coven.discovery',
           'coven.health',
         );
-        return doctorResult(runtime, checks);
+        return doctorResult(runtime, generatedAt, checks);
       }
     }
     if (caveDiscovery === undefined) {
       checks.push({
         id: 'cave.health',
         status: 'skipped',
-        summary: 'Not run because Cave discovery failed.',
+        skipReason: 'dependency-failed',
       });
     } else {
       try {
@@ -180,8 +253,8 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
         checks.push({
           id: 'cave.health',
           status: 'ok',
-          summary: 'Cave health is compatible.',
-          data: { ...health },
+          observedAt: diagnosticTimestamp(runtime.now),
+          health,
         });
       } catch (error) {
         const normalized = normalizeCliError(error, {
@@ -191,8 +264,7 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
         checks.push({
           id: 'cave.health',
           status: 'error',
-          summary: 'Cave health check failed.',
-          error: normalized,
+          error: diagnosticErrorInput(error, normalized),
         });
         if (normalized.code === 'timeout') {
           doctorTimedOut(
@@ -201,7 +273,7 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
             'coven.discovery',
             'coven.health',
           );
-          return doctorResult(runtime, checks);
+          return doctorResult(runtime, generatedAt, checks);
         }
       }
     }
@@ -226,10 +298,7 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
     checks.push({
       id: 'secure-store',
       status: 'ok',
-      summary: 'Native secure credential storage is available.',
-      data: {
-        backend: 'native',
-      },
+      observedAt: diagnosticTimestamp(runtime.now),
     });
   } catch (error) {
     const normalized = normalizeCliError(error, {
@@ -239,12 +308,11 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
     checks.push({
       id: 'secure-store',
       status: 'error',
-      summary: 'Native secure credential storage is unavailable.',
-      error: normalized,
+      error: diagnosticErrorInput(error, normalized),
     });
     if (normalized.code === 'timeout') {
       doctorTimedOut(checks, 'coven.discovery', 'coven.health');
-      return doctorResult(runtime, checks);
+      return doctorResult(runtime, generatedAt, checks);
     }
   }
 
@@ -263,8 +331,7 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
     checks.push({
       id: 'coven.discovery',
       status: 'ok',
-      summary: 'Discovered the Coven daemon endpoint.',
-      data: { ...covenDiscovery },
+      discovery: covenDiscovery,
     });
   } catch (error) {
     const normalized = normalizeCliError(error, {
@@ -274,12 +341,11 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
     checks.push({
       id: 'coven.discovery',
       status: 'error',
-      summary: 'Coven runtime discovery failed.',
-      error: normalized,
+      error: diagnosticErrorInput(error, normalized),
     });
     if (normalized.code === 'timeout') {
       doctorTimedOut(checks, 'coven.health');
-      return doctorResult(runtime, checks);
+      return doctorResult(runtime, generatedAt, checks);
     }
   }
 
@@ -287,7 +353,7 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
     checks.push({
       id: 'coven.health',
       status: 'skipped',
-      summary: 'Not run because Coven discovery failed.',
+      skipReason: 'dependency-failed',
     });
   } else {
     try {
@@ -301,24 +367,21 @@ export async function runDoctor(runtime: ResolvedCliRuntime): Promise<CliCommand
       checks.push({
         id: 'coven.health',
         status: 'ok',
-        summary: 'Coven daemon health is compatible.',
-        data: {
-          covenVersion: response.covenVersion,
-          capabilities: response.capabilities,
-        },
+        observedAt: diagnosticTimestamp(runtime.now),
+        health: response,
       });
     } catch (error) {
+      const normalized = normalizeCliError(error, {
+        system: 'coven',
+        operation: 'health',
+      });
       checks.push({
         id: 'coven.health',
         status: 'error',
-        summary: 'Coven daemon health check failed.',
-        error: normalizeCliError(error, {
-          system: 'coven',
-          operation: 'health',
-        }),
+        error: diagnosticErrorInput(error, normalized),
       });
     }
   }
 
-  return doctorResult(runtime, checks);
+  return doctorResult(runtime, generatedAt, checks);
 }

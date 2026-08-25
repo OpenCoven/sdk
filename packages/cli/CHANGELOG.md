@@ -8,3 +8,5 @@
 - Distinguish reused OpenCoven PIDs with per-process random markers without
   stealing locks from a matching live owner solely because of age.
 - Prove the Cave instance before storing or sending native-keyring credentials.
+- Build doctor output from the bounded public diagnostic report before choosing
+  human or JSON formatting.
