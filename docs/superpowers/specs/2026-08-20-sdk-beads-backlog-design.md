@@ -123,20 +123,21 @@ dependency chain:
    secret handling, provenance, and the documented production boundary. Record
    findings and disposition before publication unlock.
 4. **Prepare the reviewed launch/unlock change.**
-   Version all five fixed-group packages, update changelogs and internal ranges,
-   open the repository publishing lock, and preserve the two-key environment
-   gate. This remains a reviewed PR; no direct push to `main`.
+   Version the four fixed-group release packages, update changelogs and internal
+   ranges, open the repository publishing lock, and preserve the two-key
+   environment gate. The private `@opencoven/dev-cli` workspace remains
+   excluded. This remains a reviewed PR; no direct push to `main`.
 5. **Tag and run the verify-mode artifact rehearsal.**
    From the exact reviewed merge commit, create the annotated SDK tag, run
-   verify mode, and retain the five tarballs, manifest, checksums, and
+   verify mode, and retain the four tarballs, manifest, checksums, and
    attestations without publishing.
 6. **Perform the one-time bootstrap publication.**
    Publish the verified tarballs in canonical order with an explicitly approved
    least-privilege bootstrap credential, verify ownership and package contents,
    then revoke the credential and record the audit trail.
-7. **Configure all five npm trusted publishers.**
-   Bind each package to `OpenCoven/sdk`, the exact release workflow, and the
-   protected release environment.
+7. **Configure all four npm trusted publishers.**
+   Bind each release package to `OpenCoven/sdk`, the exact release workflow,
+   and the protected release environment. Do not configure the private CLI.
 8. **Validate registry, provenance, and normal OIDC readiness.**
    Verify versions, dist-tags, manifests, licenses, changelogs, binaries,
    dependency ranges, hashes, npm provenance, GitHub attestations, and clean

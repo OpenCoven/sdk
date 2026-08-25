@@ -1,5 +1,11 @@
 # SDK Beads Backlog Implementation Plan
 
+> **Current release-scope note:** The Beads workflow remains current, but the
+> command examples below preserve the original five-package records created on
+> 2026-08-20. SDK #37 later reconciled those live records to the four-package
+> 0.1 release group and explicitly excluded the private
+> `@opencoven/dev-cli` workspace.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Initialize a shared SDK Beads database that preserves completed delivery evidence and exposes a small, dependency-ordered backlog of genuinely remaining work.
