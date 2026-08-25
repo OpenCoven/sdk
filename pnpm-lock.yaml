@@ -45,6 +45,15 @@ importers:
         specifier: 4.1.11
         version: 4.1.11(@types/node@24.13.3)(@vitest/coverage-v8@4.1.11)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.28.1)(yaml@2.9.0))
 
+  examples/cave-discovery:
+    dependencies:
+      '@opencoven/cave-client':
+        specifier: workspace:0.1.0
+        version: link:../../packages/cave
+      '@opencoven/sdk-core':
+        specifier: workspace:0.1.0
+        version: link:../../packages/core
+
   examples/cave-health:
     dependencies:
       '@opencoven/cave-client':

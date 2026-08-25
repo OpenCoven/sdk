@@ -638,9 +638,31 @@ describe('discoverCaveEndpoint', () => {
     });
   });
 
+  test('accepts the producer-supported localhost endpoint with an explicit port', async () => {
+    const root = createScratchRoot('discover-localhost');
+    await writeDiscoveryRecord(
+      root,
+      discoveryRecord({ endpoint: 'http://localhost:3020' }),
+    );
+
+    await expect(
+      discoverCaveEndpoint({
+        root,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
+        dependencies: discoveryDependencies(),
+      }),
+    ).resolves.toMatchObject({
+      endpoint: {
+        kind: 'http',
+        url: 'http://localhost:3020',
+      },
+    });
+  });
+
   test.each([
     'http://192.168.1.4:3020',
     'http://user@127.0.0.1:3020',
+    'http://%6cocalhost:3020',
     'http://127.0.0.1:3020?ready=true',
     'http://127.0.0.1:3020#fragment',
     'http://127.0.0.1:3020/client',
@@ -689,6 +711,26 @@ describe('discoverCaveEndpoint', () => {
       code: 'invalid_response',
       retryable: false,
     });
+
+    for (const record of [
+      discoveryRecord({ nonce: 'nonce\nvalue' }),
+      discoveryRecord({ nonce: 'nonce\u0085value' }),
+      discoveryRecord({ startedAt: '2026-02-30T20:20:12.617Z' }),
+      discoveryRecord({ startedAt: '2026-08-20T24:20:12.617Z' }),
+    ]) {
+      const malformedRoot = createScratchRoot(`discover-malformed-${randomUUID()}`);
+      await writeDiscoveryRecord(malformedRoot, record);
+      await expect(
+        discoverCaveEndpoint({
+          root: malformedRoot,
+          timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
+          dependencies: discoveryDependencies(),
+        }),
+      ).rejects.toMatchObject({
+        code: 'invalid_response',
+        retryable: false,
+      });
+    }
   });
 
   test('rejects mismatched ownership, permissive modes, symlinks, and path swaps', async () => {
@@ -791,6 +833,104 @@ describe('discoverCaveEndpoint', () => {
     });
   });
 
+  test('rejects a discovery record replaced after its contents are read', async () => {
+    const root = '/Users/example/.coven/cave';
+    const recordPath = join(root, DISCOVERY_FILE_NAME);
+    const serialized = `${JSON.stringify(discoveryRecord())}\n`;
+    const rootIdentity = identity({
+      directory: true,
+      regularFile: false,
+      mode: 0o040700,
+      size: 0,
+    });
+    const recordIdentity = identity({
+      size: Buffer.byteLength(serialized),
+    });
+    let recordLstatCalls = 0;
+
+    await expect(
+      discoverCaveEndpoint({
+        root,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
+        dependencies: {
+          getEffectiveUid: () => DEFAULT_UID,
+          isProcessAlive: () => true,
+          lstat: (path: string) => {
+            if (path === root) {
+              return Promise.resolve(rootIdentity);
+            }
+            if (path === recordPath) {
+              recordLstatCalls += 1;
+              return Promise.resolve(
+                recordLstatCalls === 1
+                  ? recordIdentity
+                  : { ...recordIdentity, inode: recordIdentity.inode + 1 },
+              );
+            }
+            return Promise.reject(
+              Object.assign(new Error('missing'), { code: 'ENOENT' }),
+            );
+          },
+          openFile: () => Promise.resolve(memoryHandle(serialized)),
+          realpath: (path: string) => Promise.resolve(path),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'unsafe_endpoint',
+      retryable: false,
+    });
+    expect(recordLstatCalls).toBe(2);
+  });
+
+  test('rejects a discovery root replaced after record contents are read', async () => {
+    const root = '/Users/example/.coven/cave';
+    const recordPath = join(root, DISCOVERY_FILE_NAME);
+    const serialized = `${JSON.stringify(discoveryRecord())}\n`;
+    const rootIdentity = identity({
+      directory: true,
+      regularFile: false,
+      mode: 0o040700,
+      size: 0,
+    });
+    const recordIdentity = identity({
+      size: Buffer.byteLength(serialized),
+    });
+    let rootLstatCalls = 0;
+
+    await expect(
+      discoverCaveEndpoint({
+        root,
+        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
+        dependencies: {
+          getEffectiveUid: () => DEFAULT_UID,
+          isProcessAlive: () => true,
+          lstat: (path: string) => {
+            if (path === root) {
+              rootLstatCalls += 1;
+              return Promise.resolve(
+                rootLstatCalls < 3
+                  ? rootIdentity
+                  : { ...rootIdentity, inode: rootIdentity.inode + 1 },
+              );
+            }
+            if (path === recordPath) {
+              return Promise.resolve(recordIdentity);
+            }
+            return Promise.reject(
+              Object.assign(new Error('missing'), { code: 'ENOENT' }),
+            );
+          },
+          openFile: () => Promise.resolve(memoryHandle(serialized)),
+          realpath: (path: string) => Promise.resolve(path),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'unsafe_endpoint',
+      retryable: false,
+    });
+    expect(rootLstatCalls).toBe(3);
+  });
+
   test('rejects oversized or malformed discovery files', async () => {
     const oversizeRoot = createScratchRoot('discover-oversize');
     await writeDiscoveryRecord(oversizeRoot, {
@@ -874,6 +1014,35 @@ describe('discoverCaveEndpoint', () => {
 });
 
 describe('discovered Cave pairing helpers', () => {
+  test('sends discovered health without credentials, redirects, or cached data', async () => {
+    const fetchImplementation = queuedFetch([
+      (_url, init) => {
+        expect(init).toMatchObject({
+          cache: 'no-store',
+          credentials: 'omit',
+          method: 'GET',
+          redirect: 'error',
+        });
+        return jsonResponse(200, CURRENT_HEALTH_ENVELOPE);
+      },
+    ], { automaticHealth: false });
+    const client = inlineDiscoveredClient(fetchImplementation);
+
+    await expect(client.health()).resolves.toEqual(caveHealth());
+  });
+
+  test('validates the response limit before constructing a discovered client', () => {
+    expect(() =>
+      createDiscoveredCaveClient({
+        credentials: {
+          store: createMemorySecretStore(),
+          reference: createSecretStoreReference('invalid-response-limit'),
+        },
+        maxResponseBytes: 0,
+      }),
+    ).toThrow(RangeError);
+  });
+
   test('creates, polls, exchanges, validates, and forgets a paired credential', async () => {
     const root = createScratchRoot('pairing-success');
     await writeDiscoveryRecord(root, discoveryRecord());
@@ -2941,6 +3110,7 @@ describe('discovered Cave pairing helpers', () => {
       read: vi.fn(),
       releaseLock: vi.fn(),
     }));
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
     const fetchImplementation = vi.fn(
       () =>
         new Promise<Response>((resolve) => {
@@ -2966,6 +3136,7 @@ describe('discovered Cave pairing helpers', () => {
       status: 200,
       headers: new Headers({ 'content-length': '2' }),
       body: {
+        cancel,
         getReader,
       },
     } as unknown as Response);
@@ -2973,6 +3144,121 @@ describe('discovered Cave pairing helpers', () => {
     await Promise.resolve();
 
     expect(getReader).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  test('cancels a streamed response when a discovered health request times out', async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{'));
+      },
+    });
+    const client = inlineDiscoveredClient(
+      vi.fn(() => Promise.resolve(new Response(body))),
+    );
+
+    await expect(client.health({ timeoutMs: 20 })).rejects.toMatchObject({
+      normalized: {
+        code: 'timeout',
+        operation: 'health',
+      },
+    });
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+    expect(cancelled).toBe(true);
+  });
+
+  test('cancels a response whose declared content length exceeds the limit', async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+        return new Promise<void>(() => undefined);
+      },
+    });
+    const client = createDiscoveredCaveClient({
+      credentials: {
+        store: createMemorySecretStore(),
+        reference: createSecretStoreReference('declared-body-limit'),
+      },
+      discoverEndpoint: () =>
+        Promise.resolve({
+          version: 1,
+          endpoint: { kind: 'http', url: DEFAULT_DISCOVERY_ENDPOINT },
+          freshness: {
+            pid: DISCOVERY_PID,
+            nonce: DISCOVERY_NONCE,
+            startedAt: DISCOVERY_STARTED_AT,
+          },
+          record: {
+            path: '/trusted/client-v1-discovery.json',
+            device: 7,
+            inode: 11,
+          },
+        }),
+      fetch: () =>
+        Promise.resolve(
+          new Response(body, {
+            headers: { 'content-length': '65' },
+          }),
+        ),
+      maxResponseBytes: 64,
+    });
+
+    await expect(client.health()).rejects.toMatchObject({
+      normalized: {
+        code: 'body_limit',
+        operation: 'health',
+      },
+    });
+    expect(cancelled).toBe(true);
+  });
+
+  test('does not await cancellation after a streamed response exceeds the limit', async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+        return new Promise<void>(() => undefined);
+      },
+      start(controller) {
+        controller.enqueue(new Uint8Array(65));
+      },
+    });
+    const client = createDiscoveredCaveClient({
+      credentials: {
+        store: createMemorySecretStore(),
+        reference: createSecretStoreReference('streamed-body-limit'),
+      },
+      discoverEndpoint: () =>
+        Promise.resolve({
+          version: 1,
+          endpoint: { kind: 'http', url: DEFAULT_DISCOVERY_ENDPOINT },
+          freshness: {
+            pid: DISCOVERY_PID,
+            nonce: DISCOVERY_NONCE,
+            startedAt: DISCOVERY_STARTED_AT,
+          },
+          record: {
+            path: '/trusted/client-v1-discovery.json',
+            device: 7,
+            inode: 11,
+          },
+        }),
+      fetch: () => Promise.resolve(new Response(body)),
+      maxResponseBytes: 64,
+    });
+
+    await expect(client.health()).rejects.toMatchObject({
+      normalized: {
+        code: 'body_limit',
+        operation: 'health',
+      },
+    });
+    expect(cancelled).toBe(true);
   });
 
   test('preserves incompatible discovered health minimums as incompatible_version', async () => {

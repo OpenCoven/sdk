@@ -24,6 +24,12 @@ import {
 } from './repository-metadata.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const exampleWorkspaces = [
+  'cave-discovery',
+  'cave-health',
+  'coven-health',
+  'unified-health',
+];
 const installedPackageNames = {
   core: 'sdk-core',
   cave: 'cave-client',
@@ -418,7 +424,7 @@ function createPackedExamples({ artifactRoot, exampleRoot, tarballs }) {
   mkdirSync(exampleRoot, { recursive: true });
   writeFileSync(resolve(artifactRoot, 'tsconfig.base.json'), readFileSync(resolve(root, 'tsconfig.base.json')));
 
-  for (const workspaceDirectory of ['cave-health', 'coven-health', 'unified-health']) {
+  for (const workspaceDirectory of exampleWorkspaces) {
     const sourceDirectory = resolve(root, 'examples', workspaceDirectory);
     const destinationDirectory = resolve(exampleRoot, workspaceDirectory);
 
@@ -521,7 +527,7 @@ try {
   });
   const consumerRoots = [
     fixtureRoot,
-    ...['cave-health', 'coven-health', 'unified-health'].map((workspaceDirectory) =>
+    ...exampleWorkspaces.map((workspaceDirectory) =>
       resolve(exampleRoot, workspaceDirectory),
     ),
   ];
@@ -530,7 +536,7 @@ try {
   runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);
   assertPackedPackagesExcludeSources(fixtureRoot);
 
-  for (const workspaceDirectory of ['cave-health', 'coven-health', 'unified-health']) {
+  for (const workspaceDirectory of exampleWorkspaces) {
     const destinationDirectory = resolve(exampleRoot, workspaceDirectory);
     assertConsumerDependencyIsolation(destinationDirectory);
     runPnpm(['--ignore-workspace', 'run', 'build'], destinationDirectory);
