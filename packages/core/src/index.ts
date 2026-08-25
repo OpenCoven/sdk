@@ -5,6 +5,31 @@ export type {
   OpenCovenSystem,
 } from './errors.js';
 
+export {
+  createOpenCovenDiagnosticReport,
+  OPENCOVEN_DIAGNOSTIC_VERSION,
+  OpenCovenDiagnosticError,
+} from './diagnostics.js';
+export type {
+  OpenCovenDiagnosticCheck,
+  OpenCovenDiagnosticCheckId,
+  OpenCovenDiagnosticCheckInput,
+  OpenCovenDiagnosticCapability,
+  OpenCovenDiagnosticCode,
+  OpenCovenDiagnosticEnvironment,
+  OpenCovenDiagnosticFailure,
+  OpenCovenDiagnosticFacts,
+  OpenCovenDiagnosticOperation,
+  OpenCovenDiagnosticPhase,
+  OpenCovenDiagnosticReport,
+  OpenCovenDiagnosticReportOptions,
+  OpenCovenDiagnosticRuntimeInput,
+  OpenCovenDiagnosticSkipReason,
+  OpenCovenDiagnosticStatus,
+  OpenCovenDiagnosticSummary,
+  OpenCovenDiagnosticSystem,
+} from './diagnostics.js';
+
 export { assessCompatibility } from './compatibility.js';
 export type { CompatibilityAssessment } from './compatibility.js';
 
@@ -62,3 +87,20 @@ export type {
   SecretStore,
   SecretStoreReference,
 } from './secret-store.js';
+
+export {
+  createFileOpenCovenProfileStore,
+  createMemoryOpenCovenProfileStore,
+  createOpenCovenProfileSecretReference,
+  migrateOpenCovenProfileDocument,
+  OPENCOVEN_PROFILE_VERSION,
+  OpenCovenProfileError,
+  parseOpenCovenProfile,
+} from './profiles.js';
+export type {
+  FileOpenCovenProfileStoreOptions,
+  OpenCovenProfile,
+  OpenCovenProfileDocument,
+  OpenCovenProfileErrorCode,
+  OpenCovenProfileStore,
+} from './profiles.js';

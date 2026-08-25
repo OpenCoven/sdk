@@ -40,3 +40,15 @@
   `familiarAnalytics()` as a separate compatible extension surface.
 - Verify the canonical read API and types through package-root imports from
   packed tarballs.
+- Add `createManagedCaveClient()` and `CaveManagedNativeTransport` so webview
+  consumers can keep pairing secrets and bearer credentials in native custody
+  while the SDK remains authoritative for non-secret Client v1 parsing and
+  state transitions.
+- Stage native credential exchange behind opaque commit handles, validate
+  authority binding and credential metadata before commit, and discard exact
+  staged values after validation failures, timeout, abort, or late completion.
+- Reject secret-bearing, accessor-backed, cyclic, non-finite, oversized, or
+  overly complex native payloads, and verify the package-root API through a
+  packed fake-native consumer.
+- Freeze the packed declaration, runtime exports, and package export map in the
+  repository API baseline.

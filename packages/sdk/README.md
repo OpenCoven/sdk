@@ -6,6 +6,11 @@ package exports only `createOpenCovenSdk`, `OpenCovenSdk`, and
 credential stores, or perform import-time I/O; explicit discovery stays in the
 underlying Cave and Coven clients you inject.
 
+The supported root API, pre-1.0 compatibility rules, and deprecation process
+are documented in the repository
+[compatibility policy](https://github.com/OpenCoven/sdk/blob/main/COMPATIBILITY.md)
+and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
+
 ```ts
 import { createOpenCovenSdk } from '@opencoven/sdk';
 

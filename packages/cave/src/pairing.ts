@@ -258,7 +258,7 @@ function parseAdvertisedIds(value: unknown, label: string): string[] | undefined
   return parsed;
 }
 
-function parseEnvelopeBase(value: unknown): EnvelopeBase {
+export function parseEnvelopeBase(value: unknown): EnvelopeBase {
   const envelope = expectObject(value, 'Client v1 envelope');
   const apiVersion = expectString(envelope.apiVersion, 'apiVersion');
   const minimumClientVersion = expectString(
@@ -313,7 +313,7 @@ function parseHealthData(value: unknown): CaveHealthData {
   };
 }
 
-function parseHealthResponse(value: unknown): CaveHealthResponse {
+export function parseHealthResponse(value: unknown): CaveHealthResponse {
   const base = parseEnvelopeBase(value);
   const envelope = expectObject(value, 'health response');
   if (base.capabilities === undefined || base.operations === undefined) {
@@ -333,7 +333,7 @@ function parseHealthResponse(value: unknown): CaveHealthResponse {
   };
 }
 
-function parseCredentialMetadata(value: unknown): CaveCredentialMetadata {
+export function parseCredentialMetadata(value: unknown): CaveCredentialMetadata {
   const credential = parseCaveCredentialMetadata(value, {
     allowAdditionalFields: true,
   });
@@ -360,7 +360,7 @@ function parsePairingCreated(value: unknown): CavePairingCreated {
   };
 }
 
-function parsePairingStatus(value: unknown): CavePairingStatus {
+export function parsePairingStatus(value: unknown): CavePairingStatus {
   const envelope = expectObject(value, 'pairing.poll response');
   parseEnvelopeBase(envelope);
   const data = expectObject(envelope.data, 'pairing.poll data');
@@ -430,7 +430,7 @@ function parseFamiliar(value: unknown): CaveFamiliarWire {
   };
 }
 
-function parseFamiliarsResponse(value: unknown): CaveFamiliarsResponse {
+export function parseFamiliarsResponse(value: unknown): CaveFamiliarsResponse {
   const envelope = expectObject(value, 'familiars response');
   parseEnvelopeBase(envelope);
   const data = expectObject(envelope.data, 'familiars data');
@@ -511,7 +511,7 @@ function parseProxyFailure(status: number, payload: JsonObject): Error {
   });
 }
 
-function parseErrorPayload(
+export function parseErrorPayload(
   status: number,
   value: unknown,
   canonicalRequirements?: CaveCanonicalEnvelopeRequirements,

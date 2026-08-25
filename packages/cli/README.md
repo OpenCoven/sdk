@@ -41,7 +41,11 @@ opencoven coven health
 - `opencoven doctor [--json]` runs Cave discovery/health, a native secure-store
   probe, and Coven discovery/health inside one shared deadline; exit code `1`
   means at least one check failed or the shared budget forced later checks to
-  skip.
+  skip. It first builds the public bounded diagnostic report, then renders
+  either human or JSON output from that already-redacted model. Raw endpoints,
+  paths, discovery records, process/owner metadata, causes, prompts, messages,
+  details, daemon output, and unknown capabilities or error codes cannot reach
+  either formatter.
 - `opencoven discover [--json]` runs Cave and Coven discovery concurrently and
   exits `1` if either probe fails.
 - `opencoven cave pair [--json]` creates, polls, and exchanges one Cave
@@ -72,7 +76,10 @@ opencoven coven health
   `cave forget`, and `coven health`, plus 30s total for `cave pair` with a 1s
   poll interval.
 
-Human output is written to stdout on success and stderr on failure. JSON output is always written to stdout. All human and JSON output is secret-free: no bearer tokens, pairing secrets, raw discovery files, keychain payloads, or nested causes are emitted.
+Human output is written to stdout on success and stderr on failure. JSON output
+is always written to stdout. All human and JSON output is secret-free: no
+bearer tokens, pairing secrets, raw discovery files, keychain payloads, or
+nested causes are emitted.
 
 ## Native secure storage
 

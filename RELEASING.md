@@ -48,6 +48,9 @@ git diff --exit-code
 ```
 
 Do not release with uncommitted build output or a modified lockfile.
+Review every change under `api-baselines/` against its implementation,
+Changeset, migration guidance, and compatibility impact. Release preparation
+must not regenerate baselines merely to make verification pass.
 
 ## 4. Tag
 

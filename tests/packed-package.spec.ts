@@ -12,9 +12,13 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import {
   CaveClient,
+  createManagedCaveClient,
   type CaveCanonicalFamiliar,
   type CaveConversation,
   type CaveConversationMessage,
+  type CaveManagedNativeDiscardResult,
+  type CaveManagedNativePairingExchange,
+  type CaveManagedNativeTransport,
   type CaveProject,
 } from '@opencoven/cave-client';
 import {
@@ -134,6 +138,18 @@ function usePackedCaveIteratorContracts(
 
 void usePackedCaveIteratorContracts;
 
+function usePackedManagedNativeContracts(
+  transport: CaveManagedNativeTransport,
+  exchange: CaveManagedNativePairingExchange,
+  discard: CaveManagedNativeDiscardResult,
+): CaveClient {
+  void exchange;
+  void discard;
+  return createManagedCaveClient({ transport });
+}
+
+void usePackedManagedNativeContracts;
+
 describe('packed public packages', () => {
   test('exposes bounded Cave iterators from package roots', () => {
     const client = new CaveClient({
@@ -148,6 +164,10 @@ describe('packed public packages', () => {
     expect(
       client.iterateConversationMessages.bind(client),
     ).toBeTypeOf('function');
+  });
+
+  test('exposes the managed native Cave factory from package roots', () => {
+    expect(createManagedCaveClient).toBeTypeOf('function');
   });
 
   test('warms isolated installs before enforcing offline resolution', () => {

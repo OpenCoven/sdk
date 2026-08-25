@@ -10,6 +10,12 @@ import {
   verifyReleaseArtifacts,
 } from './create-release-artifacts.mjs';
 import {
+  assertApiBaseline,
+  isJsonOrderEqual,
+  readApiBaseline,
+  readPackedApiSurfaces,
+} from './api-baselines.mjs';
+import {
   assertPackedPackagesExcludeSources,
   createPublicPackageOverrides,
   installIsolatedConsumersOfflineAfterWarming,
@@ -27,6 +33,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const exampleWorkspaces = [
   'cave-discovery',
   'cave-health',
+  'cave-managed-native',
   'coven-health',
   'unified-health',
 ];
@@ -46,27 +53,30 @@ const rootPackageExports = {
 };
 
 function expectedPackageExports(workspaceDirectory) {
-  return {
-    ...rootPackageExports,
-    ...(workspaceDirectory === 'core'
-      ? {
-          './browser': {
-            types: './dist/browser.d.ts',
-            import: './dist/browser.js',
-            default: './dist/browser.js',
-          },
-        }
-      : {}),
-    ...(workspaceDirectory === 'cave'
-      ? {
-          './managed': {
-            types: './dist/managed.d.ts',
-            import: './dist/managed.js',
-            default: './dist/managed.js',
-          },
-        }
-      : {}),
-  };
+  const root = rootPackageExports['.'];
+  if (workspaceDirectory === 'core') {
+    return {
+      '.': root,
+      './browser': {
+        types: './dist/browser.d.ts',
+        import: './dist/browser.js',
+        default: './dist/browser.js',
+      },
+      './package.json': './package.json',
+    };
+  }
+  if (workspaceDirectory === 'cave') {
+    return {
+      '.': root,
+      './managed': {
+        types: './dist/managed.d.ts',
+        import: './dist/managed.js',
+        default: './dist/managed.js',
+      },
+      './package.json': './package.json',
+    };
+  }
+  return rootPackageExports;
 }
 
 function readTarballFile(tarball, path) {
@@ -143,10 +153,10 @@ function assertPackedPackageContracts(tarballs) {
     if (
       manifest.main !== './dist/index.js' ||
       manifest.types !== './dist/index.d.ts' ||
-      !isDeepStrictEqual(manifest.exports, expectedPackageExports(workspaceDirectory))
+      !isJsonOrderEqual(manifest.exports, expectedPackageExports(workspaceDirectory))
     ) {
       throw new Error(
-        `Packed ${packageName} package must ship only its reviewed export map.`,
+        `Packed ${packageName} package must ship only the reviewed root export map.`,
       );
     }
 
@@ -169,6 +179,24 @@ function assertPackedContractFixtures(tarballs) {
     if (packed !== source) {
       throw new Error(`Packed @opencoven/cave-client ${path} differs from source.`);
     }
+  }
+}
+
+async function assertPackedApiBaselines(tarballs, artifactRoot) {
+  const surfaces = await readPackedApiSurfaces({
+    artifactRoot,
+    packages: PUBLIC_PACKAGES,
+    tarballs,
+  });
+  for (const { packageName, workspaceDirectory } of PUBLIC_PACKAGES) {
+    const surface = surfaces[workspaceDirectory];
+    if (surface === undefined) {
+      throw new Error(`Packed API surface was missing for ${packageName}.`);
+    }
+    assertApiBaseline(
+      readApiBaseline(root, workspaceDirectory),
+      surface,
+    );
   }
 }
 
@@ -274,19 +302,21 @@ function createFixture(fixtureRoot, tarballs) {
   type CaveConversationMessage,
   type CaveProject,
 } from '@opencoven/cave-client';
-import {
-  createManagedCaveClient,
-  type CaveManagedCredentialTransport,
-} from '@opencoven/cave-client/managed';
 import { COVEN_DAEMON_PROTOCOL, CovenClient } from '@opencoven/coven-client';
 import {
+  createFileOpenCovenProfileStore,
   createManagedMemorySecretStore,
+  createMemoryOpenCovenProfileStore,
   createMemorySecretStore,
+  createOpenCovenDiagnosticReport,
+  createOpenCovenProfileSecretReference,
   type BoundedPageOptions,
+  type FileOpenCovenProfileStoreOptions,
+  type OpenCovenDiagnosticReport,
+  type OpenCovenProfile,
   type OperationContext,
   type OperationEvent,
 } from '@opencoven/sdk-core';
-import { normalizePageOptions as normalizeBrowserPageOptions } from '@opencoven/sdk-core/browser';
 import { createOpenCovenSdk } from '@opencoven/sdk';
 
 const eventCursor: string = 'sequence';
@@ -322,48 +352,6 @@ const cave = new CaveClient({
     },
   },
 });
-const managedNativeTransport = {
-  health: async (context?: OperationContext) => {
-    void context?.signal;
-    return {
-      apiVersion: '1.0',
-      capabilities: ['health'],
-      minimumClientVersion: '0.1.0',
-      operations: ['health.read'],
-      data: {
-        instanceId: 'packed-managed-native-cave',
-        pairingRequired: true,
-        releaseVersion: '0.3.9',
-      },
-    };
-  },
-  managedPairingCreate: async () => ({
-    requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
-    expiresAt: 1_755_731_112_617,
-  }),
-  managedPairingPoll: async () => ({
-    id: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
-    status: 'pending',
-    expiresAt: 1_755_731_112_617,
-  }),
-  managedPairingExchange: async () => ({
-    credential: {
-      id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
-      appName: 'OpenCoven Chat',
-      installationId: 'packed-managed-native',
-      scopes: ['chat:read'],
-      createdAt: 1_755_730_812_617,
-      lastUsedAt: null,
-      revokedAt: null,
-      revocationReason: null,
-    },
-  }),
-  managedCredentialStatus: async () => ({ status: 'missing' }),
-  managedForgetCredential: async () => ({ status: 'missing' }),
-} satisfies CaveManagedCredentialTransport;
-const managedNativeCave = createManagedCaveClient({
-  transport: managedNativeTransport,
-});
 const coven = new CovenClient({
   transport: {
     health: async (context?: OperationContext) => {
@@ -386,6 +374,27 @@ const coven = new CovenClient({
 const sdk = createOpenCovenSdk({ cave, coven });
 const store = createMemorySecretStore();
 const managedStore = createManagedMemorySecretStore();
+const profile: OpenCovenProfile = {
+  version: 1,
+  name: 'packed-consumer',
+  defaultProjectId: 'project-1',
+};
+const profileStore = createMemoryOpenCovenProfileStore();
+const profileFileOptions: FileOpenCovenProfileStoreOptions = {
+  path: '/not-called/profiles.json',
+};
+const diagnostics: OpenCovenDiagnosticReport =
+  createOpenCovenDiagnosticReport({
+    generatedAt: '2026-08-25T06:50:00.000Z',
+    packageVersion: '0.1.0',
+    runtime: {
+      name: 'node',
+      version: 'v24.18.1',
+      platform: 'linux',
+      architecture: 'x64',
+    },
+    checks: [{ id: 'cave.discovery', status: 'ok' }],
+  });
 const controller = new AbortController();
 const boundedPageOptions: BoundedPageOptions = { maxPages: 1 };
 const caveIterators: [
@@ -404,6 +413,12 @@ await store.set('token', 'in-memory');
 await managedStore.set('token', 'managed');
 await managedStore.clear();
 await managedStore.dispose();
+await profileStore.set(profile);
+await profileStore.get(profile.name);
+createOpenCovenProfileSecretReference(profile.name);
+void createFileOpenCovenProfileStore;
+void profileFileOptions;
+void diagnostics;
 await cave.health({
   signal: controller.signal,
   timeoutMs: 500,
@@ -418,18 +433,27 @@ await sdk.healthReport({
 });
 void events;
 void caveIterators;
-void managedNativeCave;
-void normalizeBrowserPageOptions;
 `,
   );
   writeFileSync(
     resolve(fixtureRoot, 'verify.mjs'),
-    `await import('@opencoven/sdk-core');
-await import('@opencoven/sdk-core/browser');
+    `const core = await import('@opencoven/sdk-core');
 const { CaveClient } = await import('@opencoven/cave-client');
-await import('@opencoven/cave-client/managed');
 await import('@opencoven/coven-client');
 await import('@opencoven/sdk');
+
+for (const coreExport of [
+  'createOpenCovenDiagnosticReport',
+  'createFileOpenCovenProfileStore',
+  'createMemoryOpenCovenProfileStore',
+  'createOpenCovenProfileSecretReference',
+  'migrateOpenCovenProfileDocument',
+  'parseOpenCovenProfile',
+]) {
+  if (typeof core[coreExport] !== 'function') {
+    throw new Error(\`Packed core export \${coreExport} is unavailable.\`);
+  }
+}
 
 const iteratorClient = new CaveClient({
   transport: {
@@ -496,6 +520,7 @@ try {
 }
 
 function createManagedBrowserFixture(fixtureRoot, tarballs) {
+  const caveTarball = tarballSpecifier(tarballs, 'cave');
   const overrides = createPublicPackageOverrides(tarballs);
 
   mkdirSync(resolve(fixtureRoot, 'src'), { recursive: true });
@@ -507,7 +532,7 @@ function createManagedBrowserFixture(fixtureRoot, tarballs) {
         private: true,
         type: 'module',
         dependencies: {
-          '@opencoven/cave-client': tarballSpecifier(tarballs, 'cave'),
+          '@opencoven/cave-client': caveTarball,
         },
         pnpm: {
           overrides,
@@ -527,12 +552,10 @@ function createManagedBrowserFixture(fixtureRoot, tarballs) {
       {
         compilerOptions: {
           target: 'ES2024',
-          lib: ['ES2024', 'DOM'],
           module: 'NodeNext',
           moduleResolution: 'NodeNext',
           strict: true,
           types: [],
-          skipLibCheck: true,
           noEmit: true,
         },
         include: ['src/**/*.ts'],
@@ -548,32 +571,30 @@ function createManagedBrowserFixture(fixtureRoot, tarballs) {
   type CaveManagedCredentialTransport,
 } from '@opencoven/cave-client/managed';
 
-const transport = {
+const requestId = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
+const transport: CaveManagedCredentialTransport = {
   health: async () => ({
     apiVersion: '1.0',
-    minimumClientVersion: '0.1.0',
     capabilities: ['health'],
+    minimumClientVersion: '0.1.0',
     operations: ['health.read'],
     data: {
-      instanceId: 'packed-managed-browser-cave',
+      instanceId: 'packed-browser-cave',
       pairingRequired: true,
       releaseVersion: '0.3.9',
     },
   }),
-  managedPairingCreate: async () => ({
-    requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
-    expiresAt: 1_755_731_112_617,
-  }),
+  managedPairingCreate: async () => ({ requestId, expiresAt: 1_755_731_112_617 }),
   managedPairingPoll: async () => ({
-    id: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
-    status: 'pending',
+    id: requestId,
+    status: 'approved',
     expiresAt: 1_755_731_112_617,
   }),
   managedPairingExchange: async () => ({
     credential: {
       id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
-      appName: 'OpenCoven Chat',
-      installationId: 'packed-managed-browser',
+      appName: 'Packed browser',
+      installationId: 'packed-browser',
       scopes: ['chat:read'],
       createdAt: 1_755_730_812_617,
       lastUsedAt: null,
@@ -581,34 +602,13 @@ const transport = {
       revocationReason: null,
     },
   }),
-  managedCredentialStatus: async () => ({ status: 'missing' }),
+  managedCredentialStatus: async () => ({
+    status: 'missing',
+  }),
   managedForgetCredential: async () => ({ status: 'missing' }),
-} satisfies CaveManagedCredentialTransport;
+};
 
 void createManagedCaveClient({ transport });
-`,
-  );
-  writeFileSync(
-    resolve(fixtureRoot, 'bundle.mjs'),
-    `import { build } from 'esbuild';
-
-const result = await build({
-  bundle: true,
-  entryPoints: ['src/index.ts'],
-  format: 'esm',
-  logLevel: 'silent',
-  platform: 'browser',
-  target: 'es2024',
-  write: false,
-});
-const output = result.outputFiles.map(({ text }) => text).join('\\n');
-if (
-  /["']node:[^"']+["']/u.test(output) ||
-  /\\bBuffer\\b/u.test(output) ||
-  /\\bprocess\\s*\\.\\s*(?:env|cwd|platform|kill|get)/u.test(output)
-) {
-  throw new Error('Packed managed browser entry point includes a Node runtime dependency.');
-}
 `,
   );
   writeFileSync(
@@ -616,91 +616,35 @@ if (
     `import { inspect } from 'node:util';
 
 const { createManagedCaveClient } = await import('@opencoven/cave-client/managed');
-const managedEntrypoint = import.meta.resolve('@opencoven/cave-client/managed');
-if (
-  !managedEntrypoint.includes('node_modules') ||
-  managedEntrypoint.includes('/packages/cave/') ||
-  managedEntrypoint.includes('/src/')
-) {
-  throw new Error('Packed managed entry point resolved outside its installed tarball.');
-}
-
-const PACKED_MANAGED_SECRET = 'PACKED_MANAGED_PAIRING_SECRET';
-const PACKED_MANAGED_BEARER = 'PACKED_MANAGED_BEARER';
-const canaries = [PACKED_MANAGED_SECRET, PACKED_MANAGED_BEARER];
-const events = [];
+const secret = 'packed-managed-browser-secret-canary';
 const requestId = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
+const events = [];
+let resolveExchange;
+let exchangeCalls = 0;
+const health = {
+  apiVersion: '1.0',
+  capabilities: ['health'],
+  minimumClientVersion: '0.1.0',
+  operations: ['health.read'],
+  data: {
+    instanceId: 'packed-browser-cave',
+    pairingRequired: true,
+    releaseVersion: '0.3.9',
+  },
+};
 const credential = {
   id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
-  appName: 'Packed Managed Cave',
-  installationId: 'packed-managed-browser',
+  appName: 'Packed browser',
+  installationId: 'packed-browser',
   scopes: ['chat:read'],
   createdAt: 1_755_730_812_617,
   lastUsedAt: null,
   revokedAt: null,
   revocationReason: null,
 };
-const health = {
-  apiVersion: '1.0',
-  minimumClientVersion: '0.1.0',
-  capabilities: ['health', 'familiars', 'cursors'],
-  operations: ['health.read', 'familiars.list'],
-  data: {
-    instanceId: 'packed-managed-browser-cave',
-    pairingRequired: true,
-    releaseVersion: '0.3.9',
-  },
-};
-const canonicalFamiliars = {
-  apiVersion: '1.0',
-  minimumClientVersion: '0.1.0',
-  capabilities: ['familiars', 'cursors'],
-  operations: ['familiars.list'],
-  data: {
-    familiars: [{
-      id: 'familiar-packed',
-      displayName: 'Packed Familiar',
-      role: 'verifier',
-      nativeBearer: PACKED_MANAGED_BEARER,
-    }],
-  },
-  nativeBearer: PACKED_MANAGED_BEARER,
-};
-
-function serialized(error) {
-  return error instanceof Error
-    ? JSON.stringify(error, Object.getOwnPropertyNames(error))
-    : JSON.stringify(error);
-}
-
-function assertRedacted(value) {
-  const text = [String(value), inspect(value), JSON.stringify(value), serialized(value)].join('\\n');
-  if (canaries.some((canary) => text.includes(canary))) {
-    throw new Error('Cave managed result leaked a native canary.');
-  }
-}
-
-async function expectFailure(promise, code) {
-  try {
-    await promise;
-  } catch (error) {
-    if (error?.normalized?.code !== code) {
-      throw error;
-    }
-    return error;
-  }
-  throw new Error('Packed managed operation unexpectedly succeeded.');
-}
-
-let exchangeCalls = 0;
-let resolveLateExchange;
 const transport = {
   health: async () => health,
-  listFamiliars: async () => canonicalFamiliars,
-  managedPairingCreate: async () => ({
-    requestId,
-    expiresAt: 1_755_731_112_617,
-  }),
+  managedPairingCreate: async () => ({ requestId, expiresAt: 1_755_731_112_617 }),
   managedPairingPoll: async (id) => ({
     id,
     status: 'approved',
@@ -708,11 +652,8 @@ const transport = {
   }),
   managedPairingExchange: async () => {
     exchangeCalls += 1;
-    if (exchangeCalls === 1) {
-      return { credential };
-    }
-    return await new Promise((resolve) => {
-      resolveLateExchange = resolve;
+    return new Promise((resolve) => {
+      resolveExchange = resolve;
     });
   },
   managedCredentialStatus: async () => ({
@@ -721,134 +662,122 @@ const transport = {
     health,
   }),
   managedForgetCredential: async () => ({ status: 'deleted' }),
-};
-const observer = {
-  onEvent(event) {
-    events.push(event);
-  },
-  onObserverError(error) {
-    throw error;
-  },
+  listFamiliars: async () => ({
+    apiVersion: '1.0',
+    capabilities: [
+      'health',
+      'pairing',
+      'credentials',
+      'familiars',
+      'projects',
+      'conversations',
+      'conversation-messages',
+      'cursors',
+    ],
+    minimumClientVersion: '0.1.0',
+    operations: [
+      'familiars.list',
+      'projects.list',
+      'conversations.list',
+      'conversations.read',
+      'messages.list',
+    ],
+    data: {
+      familiars: [{ id: 'cedar', displayName: 'Cedar', role: 'guide' }],
+    },
+  }),
 };
 const client = createManagedCaveClient({
   transport,
-  operation: { observer },
+  operation: {
+    observer: {
+      onEvent(event) {
+        events.push(event);
+      },
+      onObserverError(error) {
+        throw error;
+      },
+    },
+  },
 });
-
-const healthy = await client.health();
 const session = await client.createPairing({
-  appName: 'Packed Managed Cave',
-  installationId: 'packed-managed-browser',
+  appName: 'Packed browser',
+  installationId: 'packed-browser',
   scopes: ['chat:read'],
 });
-const polled = await session.poll();
-const exchanged = await session.exchange();
+if (JSON.stringify(session).includes(secret)) {
+  throw new Error('Managed pairing session exposed the secret canary.');
+}
+await session.poll();
+const controller = new AbortController();
+const exchange = session.exchange({ signal: controller.signal }).catch((error) => error);
+await new Promise((resolve) => setImmediate(resolve));
+controller.abort(new Error(secret));
+const aborted = await exchange;
+if (!aborted || aborted.normalized?.code !== 'aborted') {
+  throw new Error('Managed browser exchange did not preserve abort semantics.');
+}
+resolveExchange({ credential });
+await new Promise((resolve) => setImmediate(resolve));
+if (exchangeCalls !== 1) {
+  throw new Error('Late managed browser exchange was replayed.');
+}
+const replay = await session.exchange().catch((error) => error);
+if (!replay || replay.normalized?.code !== 'conflict') {
+  throw new Error('Managed browser exchange replay was not rejected.');
+}
 const status = await client.credentialStatus();
-const forgotten = await client.forgetCredential();
+const forgot = await client.forgetCredential();
 const familiars = await client.listFamiliars();
-if (
-  healthy.instanceId !== health.data.instanceId ||
-  polled.id !== requestId ||
-  exchanged.id !== credential.id ||
-  status.status !== 'valid' ||
-  forgotten !== true ||
-  familiars.data[0]?.id !== 'familiar-packed' ||
-  'nativeBearer' in familiars ||
-  'nativeBearer' in familiars.data[0]
-) {
-  throw new Error('Packed managed lifecycle did not validate its public DTOs.');
-}
-
-const lateSession = await client.createPairing({
-  appName: 'Packed Managed Cave',
-  installationId: 'packed-managed-browser-late',
-  scopes: ['chat:read'],
-});
-const abortController = new AbortController();
-const cancelled = lateSession.exchange({ signal: abortController.signal });
-abortController.abort(new Error(PACKED_MANAGED_BEARER));
-const cancellation = await expectFailure(cancelled, 'aborted');
-if (typeof resolveLateExchange !== 'function') {
-  throw new Error('Packed managed late exchange was not dispatched.');
-}
-resolveLateExchange({ credential });
-await new Promise((resolve) => setTimeout(resolve, 0));
-const replay = await expectFailure(lateSession.exchange(), 'conflict');
-if (exchangeCalls !== 2) {
-  throw new Error('Packed managed late completion triggered a duplicate exchange.');
-}
-
 const malformedClient = createManagedCaveClient({
   transport: {
     ...transport,
     managedPairingCreate: async () => ({
       requestId,
       expiresAt: 1_755_731_112_617,
-      bearer: PACKED_MANAGED_BEARER,
+      bearer: secret,
     }),
   },
 });
-const malformed = await expectFailure(
-  malformedClient.createPairing({
-    appName: 'Packed Managed Cave',
-    installationId: 'packed-managed-malformed',
-    scopes: ['chat:read'],
-  }),
-  'invalid_response',
-);
-const hostileClient = createManagedCaveClient({
-  transport: {
-    ...transport,
-    managedCredentialStatus: async () => {
-      throw new Error(PACKED_MANAGED_BEARER);
-    },
-  },
-});
-const hostile = await expectFailure(hostileClient.credentialStatus(), 'invalid_response');
-const hostileSnapshotClient = createManagedCaveClient({
-  transport: {
-    ...transport,
-    managedPairingCreate: async () => new Proxy({}, {
-      ownKeys() {
-        throw new Error(PACKED_MANAGED_BEARER);
-      },
-    }),
-  },
-});
-const hostileSnapshot = await expectFailure(
-  hostileSnapshotClient.createPairing({
-    appName: 'Packed Managed Cave',
-    installationId: 'packed-managed-hostile-snapshot',
-    scopes: ['chat:read'],
-  }),
-  'invalid_response',
-);
-const redactedSnapshot = structuredClone({
-  cancellation,
-  replay,
-  malformed,
-  hostile,
-  hostileSnapshot,
-  events,
-});
-
-assertRedacted({
-  healthy,
+const malformed = await malformedClient.createPairing({
+  appName: 'Packed browser',
+  installationId: 'packed-browser-malformed',
+  scopes: ['chat:read'],
+}).catch((error) => error);
+const serialized = JSON.stringify({
   session,
-  polled,
-  exchanged,
   status,
-  forgotten,
+  forgot,
   familiars,
-  cancellation,
-  replay,
   malformed,
-  hostile,
-  hostileSnapshot,
-  redactedSnapshot,
   events,
+  inspect: inspect(malformed),
+  message: malformed?.message,
+  normalized: malformed?.normalized,
 });
-console.log('Packed managed lifecycle passed.');
+if (
+  serialized.includes(secret) ||
+  malformed?.normalized?.code !== 'invalid_response' ||
+  status.status !== 'valid' ||
+  forgot !== true ||
+  familiars.data[0]?.id !== 'cedar'
+) {
+  throw new Error('Managed browser packed lifecycle leaked a native secret or failed validation.');
+}
+console.log('Packed managed browser lifecycle passed.');
+`,
+  );
+  writeFileSync(
+    resolve(fixtureRoot, 'bundle.mjs'),
+    `import { build } from 'esbuild';
+
+await build({
+  bundle: true,
+  entryPoints: ['src/index.ts'],
+  format: 'esm',
+  outfile: 'bundle.mjs',
+  platform: 'browser',
+});
 `,
   );
 }
@@ -940,6 +869,11 @@ try {
   process.stdout.write('Packed package manifest contracts verified.\n');
   assertPackedContractFixtures(tarballs);
   process.stdout.write('Packed Cave contract fixtures verified.\n');
+  await assertPackedApiBaselines(
+    tarballs,
+    resolve(artifactRoot, 'api-baseline-runtime'),
+  );
+  process.stdout.write('Packed API baselines verified.\n');
 
   const releaseArtifactRoot = resolve(artifactRoot, 'release');
   createReleaseArtifacts({
@@ -972,25 +906,12 @@ try {
   runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);
   assertPackedPackagesExcludeSources(fixtureRoot);
   assertConsumerDependencyIsolation(managedBrowserFixtureRoot);
-  const managedBrowserManifest = JSON.parse(
-    readFileSync(resolve(managedBrowserFixtureRoot, 'package.json'), 'utf8'),
-  );
-  const managedBrowserTsconfig = JSON.parse(
-    readFileSync(resolve(managedBrowserFixtureRoot, 'tsconfig.json'), 'utf8'),
-  );
-  if (
-    managedBrowserManifest.devDependencies?.['@types/node'] !== undefined ||
-    !Array.isArray(managedBrowserTsconfig.compilerOptions?.types) ||
-    managedBrowserTsconfig.compilerOptions.types.length !== 0
-  ) {
-    throw new Error('Packed managed browser consumer must typecheck without Node ambient types.');
-  }
   runPnpm(
     ['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'],
     managedBrowserFixtureRoot,
   );
+  runPnpm(['--ignore-workspace', 'exec', 'node', 'bundle.mjs'], managedBrowserFixtureRoot);
   run(process.execPath, ['verify.mjs'], managedBrowserFixtureRoot);
-  run(process.execPath, ['bundle.mjs'], managedBrowserFixtureRoot);
   assertPackedPackagesExcludeSources(managedBrowserFixtureRoot);
 
   for (const workspaceDirectory of exampleWorkspaces) {

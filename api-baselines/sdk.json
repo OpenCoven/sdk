@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "packageName": "@opencoven/sdk",
+  "packageExports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "runtimeExports": [
+    "OpenCovenSdk",
+    "OpenCovenSdkError",
+    "createOpenCovenSdk"
+  ]
+}

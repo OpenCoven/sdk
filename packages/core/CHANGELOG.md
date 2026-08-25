@@ -11,3 +11,11 @@
 - Require each iterator to have a positive `maxPages` or caller-owned
   `AbortSignal`; iteration is lazy, one page at a time, with no prefetch,
   automatic retry, or implicit whole-corpus walk.
+- Freeze the packed declaration, runtime exports, and package export map in the
+  repository API baseline.
+- Add immutable versioned non-secret profiles, explicit version-zero migration,
+  separate profile-derived secret references, and memory or fail-closed atomic
+  Unix file stores.
+- Add a bounded versioned diagnostic report builder that emits only approved
+  environment, phase, capability, version, instance-suffix, health timestamp,
+  and safe error facts.

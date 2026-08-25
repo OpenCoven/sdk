@@ -14,6 +14,59 @@ type Equal<Left, Right> =
     : false;
 type Assert<Condition extends true> = Condition;
 
+type OpenCovenDiagnosticCheckIdContract = Assert<Equal<
+  core.OpenCovenDiagnosticCheckId,
+  | 'cave.discovery'
+  | 'cave.health'
+  | 'secure-store'
+  | 'coven.discovery'
+  | 'coven.health'
+>>;
+type OpenCovenDiagnosticStatusContract = Assert<Equal<
+  core.OpenCovenDiagnosticStatus,
+  'ok' | 'error' | 'skipped'
+>>;
+type CaveHealthDiagnosticInputContract = Assert<Equal<
+  Extract<
+    core.OpenCovenDiagnosticCheckInput,
+    { readonly id: 'cave.health'; readonly status: 'ok' }
+  >,
+  {
+    readonly id: 'cave.health';
+    readonly status: 'ok';
+    readonly observedAt: string;
+    readonly health: unknown;
+  }
+>>;
+
+type OpenCovenProfileContract = Assert<Equal<
+  core.OpenCovenProfile,
+  {
+    readonly version: 1;
+    readonly name: string;
+    readonly caveHome?: string;
+    readonly covenHome?: string;
+    readonly defaultFamiliarId?: string;
+    readonly defaultProjectId?: string;
+  }
+>>;
+type FileOpenCovenProfileStoreOptionsContract = Assert<Equal<
+  core.FileOpenCovenProfileStoreOptions,
+  {
+    readonly path: string;
+  }
+>>;
+type OpenCovenProfileErrorCodeContract = Assert<Equal<
+  core.OpenCovenProfileErrorCode,
+  | 'corrupt_profile_store'
+  | 'invalid_profile'
+  | 'invalid_profile_store_path'
+  | 'profile_platform_security_unavailable'
+  | 'profile_store_read_failed'
+  | 'profile_store_write_failed'
+  | 'unsafe_profile_store'
+>>;
+
 type CaveCanonicalFamiliarContract = Assert<Equal<
   cave.CaveCanonicalFamiliar,
   {
@@ -291,6 +344,12 @@ function managedBrowserCompileOnly(
 }
 
 void (undefined as unknown as CaveCanonicalFamiliarContract);
+void (undefined as unknown as OpenCovenDiagnosticCheckIdContract);
+void (undefined as unknown as OpenCovenDiagnosticStatusContract);
+void (undefined as unknown as CaveHealthDiagnosticInputContract);
+void (undefined as unknown as OpenCovenProfileContract);
+void (undefined as unknown as FileOpenCovenProfileStoreOptionsContract);
+void (undefined as unknown as OpenCovenProfileErrorCodeContract);
 void (undefined as unknown as CaveProjectContract);
 void (undefined as unknown as CaveConversationContract);
 void (undefined as unknown as CaveConversationMessageContract);
@@ -344,22 +403,32 @@ describe('public package entry points', () => {
       'DISCOVERY_RECORD_VERSION',
       'DiscoveryContractError',
       'InvalidSecretKeyError',
+      'OPENCOVEN_DIAGNOSTIC_VERSION',
+      'OPENCOVEN_PROFILE_VERSION',
+      'OpenCovenDiagnosticError',
+      'OpenCovenProfileError',
       'OperationAbortedError',
       'OperationConfigurationError',
       'OperationTimeoutError',
       'SecretStoreDisposedError',
       'assessCompatibility',
+      'createFileOpenCovenProfileStore',
       'createManagedMemorySecretStore',
+      'createMemoryOpenCovenProfileStore',
       'createMemorySecretStore',
+      'createOpenCovenDiagnosticReport',
+      'createOpenCovenProfileSecretReference',
       'createOperationScope',
       'createSecretStoreReference',
       'isOperationAbortedError',
       'isOperationTimeoutError',
       'iteratePages',
+      'migrateOpenCovenProfileDocument',
       'normalizeError',
       'normalizePageOptions',
       'parseDiscoveryEndpoint',
       'parseDiscoveryRecord',
+      'parseOpenCovenProfile',
       'runOperation',
     ]);
     expect(exportedKeys(cave)).toEqual([
@@ -374,6 +443,7 @@ describe('public package entry points', () => {
       'CavePairingSession',
       'createCaveClient',
       'createDiscoveredCaveClient',
+      'createManagedCaveClient',
       'digestCaveContractFixture',
       'discoverCaveEndpoint',
       'isCaveClientError',

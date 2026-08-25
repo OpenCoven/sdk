@@ -1207,7 +1207,7 @@ describe('CLI discovery and doctor helpers', () => {
       },
     });
     expect(caveMissing.output.human).toContain(
-      '- cave.health: skipped — Not run because Cave discovery failed.',
+      '- cave.health: skipped — Cave health dependency failed.',
     );
 
     const covenMissing = await runDoctor(
@@ -1230,7 +1230,7 @@ describe('CLI discovery and doctor helpers', () => {
       },
     });
     expect(covenMissing.output.human).toContain(
-      '- coven.health: skipped — Not run because Coven discovery failed.',
+      '- coven.health: skipped — Coven health dependency failed.',
     );
   });
 

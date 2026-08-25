@@ -51,8 +51,11 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain('function assertPackedPackageContracts(tarballs)');
     expect(verifier).toContain("manifest.main !== './dist/index.js'");
     expect(verifier).toContain("manifest.types !== './dist/index.d.ts'");
+    expect(verifier).toContain('function expectedPackageExports(workspaceDirectory)');
+    expect(verifier).toContain("workspaceDirectory === 'cave'");
+    expect(verifier).toContain("'./managed': {");
     expect(verifier).toContain(
-      '!isDeepStrictEqual(manifest.exports, expectedPackageExports(workspaceDirectory))',
+      '!isJsonOrderEqual(manifest.exports, expectedPackageExports(workspaceDirectory))',
     );
     expect(verifier).toContain(
       'const expectedDependencies = expectedPackedDependencies(workspaceDirectory, manifest.version);',
@@ -61,6 +64,19 @@ describe('packed package verifier contract', () => {
       '!isDeepStrictEqual(manifest.dependencies ?? {}, expectedDependencies)',
     );
     expect(verifier).toContain('assertPackedPackageContracts(tarballs);');
+  });
+
+  test('compares packed declarations and exports to committed API baselines', () => {
+    const verifier = readFileSync(
+      resolve(root, 'scripts/verify-package.mjs'),
+      'utf8',
+    );
+
+    expect(verifier).toContain('async function assertPackedApiBaselines');
+    expect(verifier).toContain('readPackedApiSurfaces({');
+    expect(verifier).toContain('readApiBaseline(root, workspaceDirectory)');
+    expect(verifier).toContain('assertApiBaseline(');
+    expect(verifier).toContain('await assertPackedApiBaselines(');
   });
 
   test('enforces the exact approved license contract in packed tarballs', () => {
@@ -140,41 +156,18 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain(
       "throw new Error('Packed Cave iterator methods are unavailable.');",
     );
-    expect(verifier).toContain('} satisfies CaveManagedCredentialTransport;');
-    expect(verifier).toContain('createManagedCaveClient');
-    expect(verifier).toContain("'@opencoven/cave-client/managed'");
-    expect(verifier).toContain("'@opencoven/sdk-core/browser'");
-    expect(verifier).toContain("await import('@opencoven/cave-client/managed');");
-    expect(verifier).toContain("await import('@opencoven/sdk-core/browser');");
   });
 
-  test('typechecks, imports, and bundles the packed managed browser entry without Node types', () => {
+  test('executes and bundles the managed browser subpath from its packed tarball', () => {
     const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
 
     expect(verifier).toContain('function createManagedBrowserFixture(fixtureRoot, tarballs)');
-    expect(verifier).toContain('packed-opencoven-managed-browser-consumer');
-    expect(verifier).toContain("types: []");
-    expect(verifier).toContain("esbuild: '0.28.1'");
+    expect(verifier).toContain("'@opencoven/cave-client/managed'");
+    expect(verifier).toContain('types: []');
     expect(verifier).toContain("platform: 'browser'");
+    expect(verifier).toContain('Packed managed browser lifecycle passed.');
     expect(verifier).toContain('managedBrowserFixtureRoot');
-    expect(verifier).toContain('assertConsumerDependencyIsolation(managedBrowserFixtureRoot);');
     expect(verifier).toContain("run(process.execPath, ['verify.mjs'], managedBrowserFixtureRoot);");
-    expect(verifier).toContain("run(process.execPath, ['bundle.mjs'], managedBrowserFixtureRoot);");
-    expect(verifier).toContain('assertPackedPackagesExcludeSources(managedBrowserFixtureRoot);');
-  });
-
-  test('executes the packed managed-native lifecycle rather than only importing it', () => {
-    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
-
-    expect(verifier).toContain('Packed managed lifecycle passed.');
-    expect(verifier).toContain('managedPairingCreate');
-    expect(verifier).toContain('managedPairingPoll');
-    expect(verifier).toContain('managedPairingExchange');
-    expect(verifier).toContain('managedCredentialStatus');
-    expect(verifier).toContain('managedForgetCredential');
-    expect(verifier).toContain('PACKED_MANAGED_BEARER');
-    expect(verifier).toContain('late completion');
-    expect(verifier).toContain('Cave managed result leaked a native canary.');
   });
 
 });

@@ -26,6 +26,8 @@ jobs:
   preflight:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -49,8 +51,8 @@ jobs:
       - name: Verify release tag
         run: >-
           node ./scripts/verify-release-readiness.mjs
-          --version "${{ inputs.version }}"
-          --tag "sdk-v${{ inputs.version }}"
+          --version "$RELEASE_VERSION"
+          --tag "sdk-v$RELEASE_VERSION"
           --require-tag
       - name: Require clean reviewed tree
         run: |
@@ -63,7 +65,7 @@ jobs:
         run: >-
           corepack pnpm@10.34.0 release:artifacts --
           --output .artifacts/release
-          --version "${{ inputs.version }}"
+          --version "$RELEASE_VERSION"
           --skip-build
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -78,6 +80,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: npm-release
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
     permissions:
       contents: read
       id-token: write
@@ -104,8 +108,8 @@ jobs:
         run: >-
           node ./scripts/verify-release-readiness.mjs
           --mode publish
-          --version "${{ inputs.version }}"
-          --tag "sdk-v${{ inputs.version }}"
+          --version "$RELEASE_VERSION"
+          --tag "sdk-v$RELEASE_VERSION"
           --require-tag
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -115,4 +119,4 @@ jobs:
           OPENCOVEN_RELEASE_AUTHORIZATION=publish \
             node ./scripts/publish-release-artifacts.mjs \
             --artifact-root .artifacts/release \
-            --version "${{ inputs.version }}"
+            --version "$RELEASE_VERSION"

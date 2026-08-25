@@ -76,8 +76,10 @@ import {
 import type {
   CaveCredentialPersistingTransport,
   CaveManagedCredentialTransport,
+  CaveStagedManagedCredentialTransport,
   CaveTransport,
 } from './transport.js';
+import { isCaveStagedManagedCredentialTransport } from './transport.js';
 import { CAVE_CLIENT_VERSION } from './version.js';
 
 const CAVE_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveClientError');
@@ -88,6 +90,8 @@ const ADVERTISED_ID_MAX_CHARACTERS = 64;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const BASE64URL_43_RE = /^[A-Za-z0-9_-]{43}$/u;
 const CAVE_PAIRING_SCOPE_SET = new Set<string>(CAVE_PAIRING_SCOPES);
+const REDACTED_REQUEST_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/u;
+const SECRET_TEXT_RE = /(?:bearer|secret)/iu;
 
 export interface CaveCredentialBinding {
   store: SecretStore;
@@ -561,9 +565,31 @@ function redactedManagedTransportError(error: unknown, operation: string): CaveC
       ? shape.code
       : 'invalid_response';
   const retryable = shape.retryable === true;
+  const requestId =
+    typeof shape.requestId === 'string' &&
+    REDACTED_REQUEST_ID_RE.test(shape.requestId) &&
+    !SECRET_TEXT_RE.test(shape.requestId) &&
+    !BASE64URL_43_RE.test(shape.requestId)
+      ? shape.requestId
+      : undefined;
+  const statusCode =
+    typeof shape.statusCode === 'number' &&
+    Number.isSafeInteger(shape.statusCode) &&
+    shape.statusCode >= 100 &&
+    shape.statusCode <= 599
+      ? shape.statusCode
+      : undefined;
 
   return new CaveClientError(
-    normalizeCaveError({ code, retryable }, operation),
+    normalizeCaveError(
+      {
+        code,
+        retryable,
+        ...(requestId === undefined ? {} : { requestId }),
+        ...(statusCode === undefined ? {} : { statusCode }),
+      },
+      operation,
+    ),
   );
 }
 
@@ -1612,6 +1638,7 @@ export class CaveClient {
   readonly #operation: OperationDefaults | undefined;
   readonly #credentials: CaveCredentialBinding | undefined;
   readonly #managedCredentialTransport: CaveManagedCredentialTransport | undefined;
+  readonly #stagedManagedCredentialTransport: CaveStagedManagedCredentialTransport | undefined;
 
   constructor(options: CaveClientOptions) {
     const captured = captureCaveClientOptions(options);
@@ -1637,6 +1664,11 @@ export class CaveClient {
     this.#managedCredentialTransport =
       captured.credentialCustody?.mode === 'managed-native'
         ? captured.transport as CaveManagedCredentialTransport
+        : undefined;
+    this.#stagedManagedCredentialTransport =
+      this.#managedCredentialTransport === undefined &&
+      isCaveStagedManagedCredentialTransport(captured.transport)
+        ? captured.transport
         : undefined;
   }
 
@@ -1932,7 +1964,8 @@ export class CaveClient {
       options,
       async (context) => this.#runHealth(context),
       true,
-      this.#managedCredentialTransport !== undefined,
+      this.#managedCredentialTransport !== undefined ||
+        this.#stagedManagedCredentialTransport !== undefined,
     );
   }
 
@@ -1962,7 +1995,8 @@ export class CaveClient {
         }
       },
       inheritDefaults,
-      this.#managedCredentialTransport !== undefined,
+      this.#managedCredentialTransport !== undefined ||
+        this.#stagedManagedCredentialTransport !== undefined,
     );
   }
 
@@ -2201,7 +2235,8 @@ export class CaveClient {
       options,
       async (context) => this.#runFamiliars(context),
       true,
-      this.#managedCredentialTransport !== undefined,
+      this.#managedCredentialTransport !== undefined ||
+        this.#stagedManagedCredentialTransport !== undefined,
     );
   }
 
@@ -2257,7 +2292,8 @@ export class CaveClient {
       return this.#managedCredentialTransport === undefined
         ? contract
         : immutableManagedResult(contract);
-    }, true, this.#managedCredentialTransport !== undefined);
+    }, true, this.#managedCredentialTransport !== undefined ||
+      this.#stagedManagedCredentialTransport !== undefined);
   }
 
   /**
@@ -2315,7 +2351,8 @@ export class CaveClient {
       return this.#managedCredentialTransport === undefined
         ? analytics
         : immutableManagedResult(analytics);
-    }, true, this.#managedCredentialTransport !== undefined);
+    }, true, this.#managedCredentialTransport !== undefined ||
+      this.#stagedManagedCredentialTransport !== undefined);
   }
 
   async #runPairingCreate(
@@ -2508,6 +2545,135 @@ export class CaveClient {
     });
   }
 
+  async #createStagedManagedPairing(
+    request: CavePairingRequest,
+    options: OperationOptions,
+    transport: CaveStagedManagedCredentialTransport,
+  ): Promise<CavePairingSession> {
+    const created = await this.#execute(
+      'pairingCreate',
+      options,
+      async (context) => await transport.pairingCreateManaged(request, context),
+      true,
+      true,
+    );
+    let state: 'ready' | 'poll_pending' | 'exchange_pending' | 'spent' = 'ready';
+    let pollAttempt = 0;
+    let activePollAttempt: number | undefined;
+
+    const requireReady = (operation: string): void => {
+      if (state === 'poll_pending') {
+        throw pairingOperationInProgress(operation);
+      }
+      if (state !== 'ready') {
+        throw replayedPairing(operation);
+      }
+    };
+    const spend = (): void => {
+      state = 'spent';
+      activePollAttempt = undefined;
+    };
+
+    return new CavePairingSession({
+      requestId: created.requestId,
+      expiresAt: created.expiresAt,
+      poll: async (pollOptions = {}) =>
+        this.#execute('pairingPoll', pollOptions, async (context) => {
+          requireReady('pairingPoll');
+          state = 'poll_pending';
+          const attempt = ++pollAttempt;
+          activePollAttempt = attempt;
+          const release = (): void => {
+            if (activePollAttempt === attempt) {
+              activePollAttempt = undefined;
+              if (state === 'poll_pending') {
+                state = 'ready';
+              }
+            }
+          };
+          const releaseOnAbort = (): void => {
+            release();
+          };
+          context.signal.addEventListener('abort', releaseOnAbort, { once: true });
+
+          try {
+            const status = await transport.pairingPollManaged(created.handle, context);
+            if (status.status === 'denied' || status.status === 'expired') {
+              spend();
+            } else {
+              release();
+            }
+            return status;
+          } catch (error) {
+            const code = isCaveClientError(error)
+              ? error.code
+              : normalizeCaveError(error, 'pairingPoll').code;
+            if (
+              code === 'pairing_denied' ||
+              code === 'pairing_expired' ||
+              code === 'conflict' ||
+              code === 'reconcile_required'
+            ) {
+              spend();
+            } else {
+              release();
+            }
+            throw error;
+          } finally {
+            context.signal.removeEventListener('abort', releaseOnAbort);
+          }
+        }, true, true),
+      exchange: async (exchangeOptions = {}) =>
+        this.#executePersistentMutation(
+          'pairingExchange',
+          exchangeOptions,
+          async (context, termination) => {
+            requireReady('pairingExchange');
+            state = 'exchange_pending';
+            let staged: Awaited<ReturnType<CaveStagedManagedCredentialTransport['pairingExchangeManaged']>>;
+            try {
+              staged = await racePrePersistencePhase(
+                transport.pairingExchangeManaged(created.handle, context),
+                termination,
+                (late) => {
+                  void transport.pairingDiscardManaged(late.commitHandle).catch(() => undefined);
+                },
+              );
+            } catch (error) {
+              spend();
+              throw error;
+            }
+
+            try {
+              this.#ensureActive(context, 'pairingExchange');
+            } catch (error) {
+              spend();
+              void transport.pairingDiscardManaged(staged.commitHandle).catch(() => undefined);
+              throw error;
+            }
+
+            spend();
+            try {
+              await racePrePersistencePhase(
+                transport.pairingCommitManaged(staged.commitHandle, context),
+                termination,
+                () => {
+                  void transport.pairingDiscardManaged(staged.commitHandle).catch(() => undefined);
+                },
+              );
+              this.#ensureActive(context, 'pairingExchange');
+            } catch (error) {
+              void transport.pairingDiscardManaged(staged.commitHandle).catch(() => undefined);
+              throw error;
+            }
+
+            return staged.credential;
+          },
+          true,
+        ),
+    });
+  }
+
   async createPairing(
     request: CavePairingRequest,
     options: OperationOptions = {},
@@ -2519,6 +2685,14 @@ export class CaveClient {
         normalizedRequest,
         options,
         managedTransport,
+      );
+    }
+    const stagedManagedTransport = this.#stagedManagedCredentialTransport;
+    if (stagedManagedTransport !== undefined) {
+      return await this.#createStagedManagedPairing(
+        normalizedRequest,
+        options,
+        stagedManagedTransport,
       );
     }
     const created = await this.#execute('pairingCreate', options, async (context) =>
@@ -2735,6 +2909,53 @@ export class CaveClient {
     }
 
     return this.#execute('credentialStatus', options, async (context) => {
+      const stagedManagedTransport = this.#stagedManagedCredentialTransport;
+      if (stagedManagedTransport !== undefined) {
+        const state = await stagedManagedTransport.credentialStateManaged(context);
+        if (state === 'missing') {
+          return { status: 'missing' };
+        }
+        if (state === 'update_in_progress') {
+          return {
+            status: 'disconnected',
+            reason: 'credential_update_in_progress',
+          };
+        }
+        if (state === 'invalid') {
+          return {
+            status: 'disconnected',
+            reason: 'reconcile_required',
+          };
+        }
+
+        const health = await this.#runHealth(context);
+        try {
+          await this.#runFamiliars(context);
+          return {
+            status: 'valid',
+            access: 'chat:read',
+            health,
+          };
+        } catch (error) {
+          const code = isCaveClientError(error)
+            ? error.code
+            : normalizeCaveError(error, 'credentialStatus').code;
+          if (code === 'unauthorized') {
+            return { status: 'revoked', health };
+          }
+          if (code === 'scope_denied') {
+            return { status: 'valid', access: 'scope_denied', health };
+          }
+          if (code === 'service_unavailable') {
+            return { status: 'valid', access: 'service_unavailable', health };
+          }
+          if (code === 'rate_limited') {
+            return { status: 'valid', access: 'rate_limited', health };
+          }
+          throw error;
+        }
+      }
+
       const credentials = this.#credentials;
       if (credentials === undefined) {
         throw unsupported('credentialStatus');
@@ -2837,7 +3058,7 @@ export class CaveClient {
         }
         throw error;
       }
-    });
+    }, true, this.#stagedManagedCredentialTransport !== undefined);
   }
 
   async forgetCredential(options: OperationOptions = {}): Promise<boolean> {
@@ -2869,6 +3090,11 @@ export class CaveClient {
     }
 
     return this.#execute('forgetCredential', options, async (context) => {
+      const stagedManagedTransport = this.#stagedManagedCredentialTransport;
+      if (stagedManagedTransport !== undefined) {
+        return await stagedManagedTransport.forgetCredentialManaged(context);
+      }
+
       const credentials = this.#credentials;
       if (credentials === undefined) {
         throw unsupported('forgetCredential');
@@ -2876,7 +3102,7 @@ export class CaveClient {
 
       this.#ensureActive(context, 'forgetCredential');
       return await forgetStoredCredential(credentials.store, credentials.reference, { context });
-    });
+    }, true, this.#stagedManagedCredentialTransport !== undefined);
   }
 }
 

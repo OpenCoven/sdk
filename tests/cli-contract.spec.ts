@@ -487,47 +487,73 @@ describe('opencoven CLI output', () => {
     expect(JSON.parse(healthy.stdout)).toEqual({
       command: 'doctor',
       data: {
+        version: 1,
+        generatedAt: '2025-08-20T22:46:40.000Z',
+        environment: {
+          packageVersion: cliVersion,
+          runtime: 'node',
+          runtimeVersion: process.version,
+          platform: process.platform,
+          architecture: process.arch,
+        },
         checks: [
           {
             id: 'cave.discovery',
+            system: 'cave',
+            phase: 'discovery',
             status: 'ok',
-            summary: 'Discovered the Cave client endpoint.',
-            data: {
-              endpoint: caveDiscovery.endpoint,
-              freshness: {
-                pid: caveDiscovery.freshness.pid,
-                startedAt: caveDiscovery.freshness.startedAt,
-              },
-              record: caveDiscovery.record,
-            },
+            outcome: 'discovered',
           },
           {
             id: 'cave.health',
+            system: 'cave',
+            phase: 'health',
             status: 'ok',
-            summary: 'Cave health is compatible.',
-            data: caveHealth,
+            facts: {
+              apiVersion: caveHealth.apiVersion,
+              releaseVersion: caveHealth.releaseVersion,
+              pairingRequired: true,
+              capabilities: ['pairing'],
+              operations: ['pairing.create'],
+              lastHealthyAt: '2025-08-20T22:46:40.000Z',
+            },
           },
           {
             id: 'secure-store',
+            system: 'secure-store',
+            phase: 'credential-store',
             status: 'ok',
-            summary: 'Native secure credential storage is available.',
-            data: {
+            facts: {
               backend: 'native',
+              lastHealthyAt: '2025-08-20T22:46:40.000Z',
             },
           },
           {
             id: 'coven.discovery',
+            system: 'coven',
+            phase: 'discovery',
             status: 'ok',
-            summary: 'Discovered the Coven daemon endpoint.',
-            data: covenDiscovery,
+            outcome: 'discovered',
+            facts: {
+              protocol: covenDiscovery.protocol,
+              transport: 'unix',
+            },
           },
           {
             id: 'coven.health',
+            system: 'coven',
+            phase: 'health',
             status: 'ok',
-            summary: 'Coven daemon health is compatible.',
-            data: {
-              covenVersion: covenHealth.covenVersion,
-              capabilities: covenHealth.capabilities,
+            facts: {
+              protocol: covenHealth.apiVersion,
+              releaseVersion: covenHealth.covenVersion,
+              capabilities: [
+                'sessions',
+                'events',
+                'event-cursor',
+                'structured-errors',
+              ],
+              lastHealthyAt: '2025-08-20T22:46:40.000Z',
             },
           },
         ],
@@ -565,6 +591,117 @@ describe('opencoven CLI output', () => {
     expect(unhealthy.stderr).not.toContain('admin token');
   });
 
+  test('redacts doctor observations before human or JSON formatting', async () => {
+    const hostileRuntime = runtime({
+      cave: {
+        createClient: () => ({
+          health: () =>
+            Promise.resolve({
+              ...caveHealth,
+              instanceId:
+                '018f4f1a-77c2-7a31-8a15-55a25aaba099',
+              capabilities: [
+                'health',
+                'pairing',
+                'PRIVATE_CAPABILITY',
+              ],
+              operations: [
+                'health.read',
+                'PRIVATE_OPERATION',
+              ],
+            }),
+        }),
+        discoverEndpoint: () =>
+          Promise.resolve({
+            ...caveDiscovery,
+            endpoint: {
+              kind: 'http',
+              url: 'http://PRIVATE_ENDPOINT.invalid',
+            },
+            record: {
+              ...caveDiscovery.record,
+              path: '/PRIVATE_RECORD/discovery.json',
+            },
+          }),
+      },
+      coven: {
+        discoverEndpoint: () =>
+          Promise.resolve({
+            ...covenDiscovery,
+            endpoint: {
+              kind: 'unix',
+              path: '/PRIVATE_DAEMON/coven.sock',
+            },
+          }),
+        readHealth: () =>
+          Promise.reject(
+            Object.assign(new Error('PRIVATE_MESSAGE'), {
+              code: 'private_secret_code',
+              retryable: true,
+              requestId:
+                '018f4f1a-77c2-7a31-8a15-55a25aaba098',
+              cause: new Error('PRIVATE_CAUSE'),
+              details: {
+                content: 'PRIVATE_CONTENT',
+                daemonOutput: 'PRIVATE_OUTPUT',
+                prompt: 'PRIVATE_PROMPT',
+              },
+            }),
+          ),
+      },
+    });
+    const [jsonResult, humanResult] = await Promise.all([
+      runCli(['doctor', '--json'], hostileRuntime),
+      runCli(['doctor'], hostileRuntime),
+    ]);
+    const rendered = `${jsonResult.stdout}\n${humanResult.stderr}`;
+
+    expect(rendered).not.toMatch(
+      /PRIVATE_(?:INSTANCE|CAPABILITY|OPERATION|ENDPOINT|RECORD|DAEMON|MESSAGE|CAUSE|CONTENT|OUTPUT|PROMPT)|private_secret_code/u,
+    );
+    expect(JSON.parse(jsonResult.stdout)).toMatchObject({
+      data: {
+        checks: [
+          {
+            id: 'cave.discovery',
+            status: 'ok',
+          },
+          {
+            id: 'cave.health',
+            status: 'ok',
+            facts: {
+              instanceSuffix: '5aaba099',
+              capabilities: ['health', 'pairing'],
+              operations: ['health.read'],
+            },
+          },
+          {
+            id: 'secure-store',
+            status: 'ok',
+          },
+          {
+            id: 'coven.discovery',
+            status: 'ok',
+            facts: {
+              protocol: 'coven.daemon.v1',
+              transport: 'unix',
+            },
+          },
+          {
+            id: 'coven.health',
+            status: 'error',
+            error: {
+              code: 'unknown',
+              retryable: true,
+              diagnosticId:
+                '018f4f1a-77c2-7a31-8a15-55a25aaba098',
+            },
+          },
+        ],
+      },
+    });
+  });
+
   test('times out a hung doctor check without starting later work', async () => {
     const createSecretStore = vi.fn(() => createProbeableStore());
     const { result, json } = await runTimedCli(
@@ -585,36 +722,53 @@ describe('opencoven CLI output', () => {
     expect(json).toEqual({
       command: 'doctor',
       data: {
+        version: 1,
+        generatedAt: '2026-08-24T02:06:12.004Z',
+        environment: {
+          packageVersion: cliVersion,
+          runtime: 'node',
+          runtimeVersion: process.version,
+          platform: process.platform,
+          architecture: process.arch,
+        },
         checks: [
           {
             id: 'cave.discovery',
+            system: 'cave',
+            phase: 'discovery',
             status: 'error',
-            summary: 'Cave runtime discovery failed.',
             error: {
               code: 'timeout',
-              message: 'Cave runtime discovery timed out.',
               retryable: true,
             },
           },
           {
             id: 'cave.health',
+            system: 'cave',
+            phase: 'health',
             status: 'skipped',
-            summary: 'Not run because the doctor deadline expired.',
+            skipReason: 'deadline-expired',
           },
           {
             id: 'secure-store',
+            system: 'secure-store',
+            phase: 'credential-store',
             status: 'skipped',
-            summary: 'Not run because the doctor deadline expired.',
+            skipReason: 'deadline-expired',
           },
           {
             id: 'coven.discovery',
+            system: 'coven',
+            phase: 'discovery',
             status: 'skipped',
-            summary: 'Not run because the doctor deadline expired.',
+            skipReason: 'deadline-expired',
           },
           {
             id: 'coven.health',
+            system: 'coven',
+            phase: 'health',
             status: 'skipped',
-            summary: 'Not run because the doctor deadline expired.',
+            skipReason: 'deadline-expired',
           },
         ],
         summary: {
@@ -728,13 +882,12 @@ describe('opencoven CLI output', () => {
       });
       expect(secureStoreCheck).toEqual({
         id: 'secure-store',
+        system: 'secure-store',
+        phase: 'credential-store',
         status: 'error',
-        summary: 'Native secure credential storage is unavailable.',
         error: {
           code: 'secure_store_unavailable',
-          message: 'Native secure credential storage is unavailable.',
           retryable: false,
-          action: 'Enable the platform secure-store backend for this user session and retry.',
         },
       });
       expect(output.error).toEqual({
@@ -2395,9 +2548,7 @@ describe('opencoven CLI output', () => {
       status: 'error',
       error: {
         code: 'reconcile_required',
-        details: {
-          reason: 'authority_restarted',
-        },
+        retryable: true,
       },
     });
     expect(discoverEndpoint).toHaveBeenCalledTimes(2);

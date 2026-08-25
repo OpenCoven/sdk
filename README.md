@@ -28,6 +28,7 @@ part of an intentional release process.
 - [0.1 dependency-ordered delivery program](docs/superpowers/plans/2026-08-22-sdk-0.1-delivery-program.md)
 - [GitHub delivery program](https://github.com/OpenCoven/sdk/issues/31)
 - [Support policy](SUPPORT.md)
+- [Compatibility and deprecation policy](COMPATIBILITY.md)
 - [Security policy](SECURITY.md)
 - [Release process](RELEASING.md)
 - [Contributing](CONTRIBUTING.md)
@@ -57,7 +58,7 @@ than the active release checklist.
 
 | Path | Package | 0.1 status | Current purpose |
 | --- | --- | --- | --- |
-| `packages/core` | `@opencoven/sdk-core` | Release inventory | Transport-neutral errors, compatibility/discovery contracts, operation controls, bounded pagination, and in-memory secret abstractions |
+| `packages/core` | `@opencoven/sdk-core` | Release inventory | Transport-neutral errors, compatibility/discovery contracts, operation controls, bounded pagination, allowlisted diagnostics, non-secret profiles, and in-memory secret abstractions |
 | `packages/cave` | `@opencoven/cave-client` | Release inventory | Constrained Cave client, runtime discovery/pairing, canonical reads, legacy familiar extensions, and reviewed contract fixtures |
 | `packages/coven` | `@opencoven/coven-client` | Release inventory | Constrained Coven discovery and health with explicit native transport-security providers |
 | `packages/sdk` | `@opencoven/sdk` | Release inventory | Optional Cave/Coven coordination without merging source-system identity or errors |
@@ -78,7 +79,7 @@ credential, or failure model.
 
 | Need | Package |
 | --- | --- |
-| Shared errors, compatibility/discovery contracts, operation controls, bounded pagination, or in-memory secrets | `@opencoven/sdk-core` |
+| Shared errors, compatibility/discovery contracts, operation controls, bounded pagination, allowlisted diagnostics, non-secret profiles, or in-memory secrets | `@opencoven/sdk-core` |
 | Cave health, runtime pairing/discovery, canonical reads, legacy familiar extensions, or reviewed contract fixtures | `@opencoven/cave-client` |
 | Explicit Coven discovery and owner-local daemon health | `@opencoven/coven-client` |
 | Optional Cave/Coven coordination | `@opencoven/sdk` |
@@ -224,23 +225,33 @@ the later HTTP request to the proven process. Final 0.1 security disposition
 and real-authority conformance remain blocked on
 [OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
 
-### Managed native custody for webviews
+## Managed native Cave credentials
 
-Tauri Chat should import `createManagedCaveClient` and
-`CaveManagedCredentialTransport` from `@opencoven/cave-client/managed`.
-This browser-safe subpath has no Node filesystem, network, crypto, or `Buffer`
-dependency, and its factory fixes `credentialCustody` to `managed-native` so
-it cannot be combined with `credentials`. Native code retains the pairing
-secret, pairing-secret headers, exchange bearer, and persistent credential,
-while JavaScript receives only validated pairing metadata, status, and
-credential metadata. The bridge has narrow pairing/status/forget methods, not
-generic fetch; canonical reads remain SDK-parsed raw envelopes returned by the
-native-authenticated transport. Its optional `CaveManagedDiscoverySource`
-accepts only Rust owner-checked discovery bytes and opaque metadata; the SDK
-validates the Client v1 schema, loopback endpoint, and PID freshness without
-browser filesystem access. Managed custody does not fix Client v1's separate
-atomic request-binding blocker in
-[OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
+Webview hosts can use `createManagedCaveClient()` with a
+`CaveManagedNativeTransport` implemented by their native IPC layer. Pairing
+secrets and bearers remain behind the native boundary; JavaScript receives only
+bounded opaque handles, non-secret authority binding, credential metadata, and
+raw non-secret Client v1 envelopes for authoritative SDK parsing. Exchange is
+staged and committed only after SDK validation, with exact-handle discard on
+validation failure, timeout, abort, or late completion.
+
+The adapter has narrow typed methods for health, pairing, credential state and
+forget, familiars, and all five canonical reads. It is not a generic fetch
+bridge. Native payloads are rejected if they contain accessors, cycles,
+non-JSON values, excessive complexity, or secret- or bearer-bearing fields.
+Native bridge rejections are sanitized to a generic availability failure;
+structured protocol errors travel through non-2xx raw Client v1 responses.
+The packed `cave-managed-native` example verifies pairing, native commit,
+credential status, canonical reads, errors, observers, and serialized state
+without exposing either secret sentinel.
+
+Tauri-style browser webviews can instead import the browser-safe
+`@opencoven/cave-client/managed` subpath. Its
+`CaveManagedCredentialTransport` keeps pairing secrets and bearers native while
+returning only validated request metadata, pairing status, credential metadata,
+and canonical envelopes to the SDK. It also accepts an owner-checked
+`CaveManagedDiscoverySource`, so discovery parsing never requires filesystem
+access in the webview.
 
 ## Cave canonical reads
 

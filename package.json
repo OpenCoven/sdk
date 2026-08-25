@@ -16,6 +16,7 @@
     }
   },
   "scripts": {
+    "api:baseline:update": "node ./scripts/update-api-baselines.mjs",
     "build": "corepack pnpm@10.34.0 --recursive --filter './packages/*' build && corepack pnpm@10.34.0 --recursive --filter './examples/*' build",
     "changeset": "changeset",
     "cleanup:merged": "node ./scripts/cleanup-merged-branch.mjs",
@@ -42,14 +43,14 @@
     "@changesets/cli": "3.0.1",
     "@eslint/js": "10.0.1",
     "@types/node": "24.13.3",
-    "@vitest/coverage-v8": "4.1.10",
+    "@vitest/coverage-v8": "4.1.11",
     "esbuild": "0.28.1",
-    "eslint": "10.8.1",
+    "eslint": "10.9.0",
     "fast-check": "4.9.0",
     "globals": "17.11.0",
     "tsup": "8.5.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.67.0",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   }
 }

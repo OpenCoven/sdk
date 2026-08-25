@@ -2,7 +2,10 @@ import { performance } from 'node:perf_hooks';
 
 import { describe, expect, test } from 'vitest';
 
-import { snapshotManagedResult } from '../packages/cave/src/managed-snapshot.js';
+import {
+  snapshotManagedResult,
+  snapshotManagedResultWithBudget,
+} from '../packages/cave/src/managed-snapshot.js';
 
 const NODE_BUDGET = 4_096;
 const ENTRY_BUDGET = 131_072;
@@ -73,5 +76,53 @@ describe('managed result snapshot resource limits', () => {
 
     expect(snapshot).toBeUndefined();
     expect(elapsedMs).toBeLessThan(100);
+  });
+
+  test('returns immutable descriptor snapshots and exposes bounded failure categories', () => {
+    const snapshot = snapshotManagedResult({
+      nested: [null, true, 42, 'safe', new Uint8Array([1, 2, 3])],
+    }) as {
+      nested: readonly [null, boolean, number, string, readonly number[]];
+    };
+    expect(snapshot).toEqual({
+      nested: [null, true, 42, 'safe', [1, 2, 3]],
+    });
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.nested)).toBe(true);
+    expect(Object.isFrozen(snapshot.nested[4])).toBe(true);
+
+    const accessor = {} as { value?: unknown };
+    Object.defineProperty(accessor, 'value', {
+      enumerable: true,
+      get: () => 'native-only-bearer',
+    });
+    const sparse = new Array<unknown>(2);
+    sparse[1] = 'sparse';
+    expect(snapshotManagedResult(accessor)).toBeUndefined();
+    expect(snapshotManagedResult(sparse)).toBeUndefined();
+    expect(snapshotManagedResult(new Date())).toBeUndefined();
+    expect(snapshotManagedResult(Object.create({ inherited: true }))).toBeUndefined();
+
+    expect(
+      snapshotManagedResultWithBudget(['one', 'two'], { maxArrayElements: 1 }),
+    ).toEqual({ valid: false, limitExceeded: true });
+    expect(
+      snapshotManagedResultWithBudget({ one: 1, two: 2 }, { maxEntries: 1 }),
+    ).toEqual({ valid: false, limitExceeded: true });
+    expect(
+      snapshotManagedResultWithBudget({ nested: {} }, { maxNodes: 1 }),
+    ).toEqual({ valid: false, limitExceeded: true });
+    expect(
+      snapshotManagedResultWithBudget('toolong', { maxStringCodeUnits: 3 }),
+    ).toEqual({ valid: false, limitExceeded: true });
+    expect(
+      snapshotManagedResultWithBudget(new Uint8Array([1, 2]), {
+        maxTypedArrayElements: 1,
+      }),
+    ).toEqual({ valid: false, limitExceeded: true });
+    expect(snapshotManagedResultWithBudget({}, { maxNodes: 0 })).toEqual({
+      valid: false,
+      limitExceeded: false,
+    });
   });
 });
