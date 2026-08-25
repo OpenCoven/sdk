@@ -9,9 +9,11 @@ The supported SDK surface is the root export of each publishable package:
 - `@opencoven/coven-client`
 - `@opencoven/sdk`
 
-Package subpaths other than `package.json`, source files, build directories,
-private CLI modules, and repository scripts are not public API. The supported
-runtime and maintenance window are defined in [SUPPORT.md](SUPPORT.md).
+Only each package root and its exported `package.json` subpath are supported.
+Source files, build directories, private CLI modules, repository scripts, and
+all other package subpaths are implementation details rather than public API.
+The supported runtime and maintenance window are defined in
+[SUPPORT.md](SUPPORT.md).
 
 ## Version compatibility
 
