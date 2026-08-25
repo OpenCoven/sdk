@@ -236,25 +236,105 @@ export function isCaveClientError(error: unknown): error is CaveClientError {
   }
 }
 
-const MANAGED_LOCAL_CAVE_CLIENT_ERRORS = new WeakSet<CaveClientError>();
-const MANAGED_VALIDATED_CAVE_CLIENT_ERRORS = new WeakSet<CaveClientError>();
-
-function managedLocalCaveClientError(error: CaveClientError): CaveClientError {
-  MANAGED_LOCAL_CAVE_CLIENT_ERRORS.add(error);
-  return error;
+interface ManagedTrustedCaveClientError {
+  normalized: NormalizedError;
+  compatibility: CompatibilityAssessment | undefined;
+  reason: 'pairing_poll_in_progress' | 'pairing_replayed' | undefined;
 }
 
-function isManagedLocalCaveClientError(error: unknown): error is CaveClientError {
-  return isCaveClientError(error) && MANAGED_LOCAL_CAVE_CLIENT_ERRORS.has(error);
+const MANAGED_TRUSTED_CAVE_CLIENT_ERRORS = new WeakMap<
+  CaveClientError,
+  ManagedTrustedCaveClientError
+>();
+
+function immutableManagedNormalizedError(
+  normalized: NormalizedError,
+): NormalizedError {
+  return Object.freeze({
+    system: normalized.system,
+    code: normalized.code,
+    retryable: normalized.retryable,
+    operation: normalized.operation,
+    ...(normalized.requestId === undefined
+      ? {}
+      : { requestId: normalized.requestId }),
+    ...(normalized.statusCode === undefined
+      ? {}
+      : { statusCode: normalized.statusCode }),
+  });
+}
+
+function immutableManagedCompatibility(
+  compatibility: CompatibilityAssessment | undefined,
+): CompatibilityAssessment | undefined {
+  return compatibility === undefined
+    ? undefined
+    : Object.freeze({
+        compatible: compatibility.compatible,
+        minimumClientVersion: compatibility.minimumClientVersion,
+        clientVersion: compatibility.clientVersion,
+      });
+}
+
+function managedLocalCaveClientError(error: CaveClientError): CaveClientError {
+  const reason =
+    error.details?.reason === 'pairing_poll_in_progress' ||
+    error.details?.reason === 'pairing_replayed'
+      ? error.details.reason
+      : undefined;
+  MANAGED_TRUSTED_CAVE_CLIENT_ERRORS.set(error, {
+    normalized: immutableManagedNormalizedError(error.normalized),
+    compatibility: undefined,
+    reason,
+  });
+  return error;
 }
 
 function managedValidatedCaveClientError(error: CaveClientError): CaveClientError {
-  MANAGED_VALIDATED_CAVE_CLIENT_ERRORS.add(error);
+  MANAGED_TRUSTED_CAVE_CLIENT_ERRORS.set(error, {
+    normalized: immutableManagedNormalizedError(error.normalized),
+    compatibility: immutableManagedCompatibility(error.compatibility),
+    reason: undefined,
+  });
   return error;
 }
 
-function isManagedValidatedCaveClientError(error: unknown): error is CaveClientError {
-  return isCaveClientError(error) && MANAGED_VALIDATED_CAVE_CLIENT_ERRORS.has(error);
+function consumeManagedTrustedCaveClientError(
+  error: unknown,
+): CaveClientError | undefined {
+  if (!isCaveClientError(error)) {
+    return undefined;
+  }
+
+  const trusted = MANAGED_TRUSTED_CAVE_CLIENT_ERRORS.get(error);
+  if (trusted === undefined) {
+    return undefined;
+  }
+  MANAGED_TRUSTED_CAVE_CLIENT_ERRORS.delete(error);
+
+  const cause =
+    trusted.reason === undefined
+      ? undefined
+      : Object.freeze({
+          code: trusted.normalized.code,
+          retryable: trusted.normalized.retryable,
+          details: Object.freeze({ reason: trusted.reason }),
+        });
+  const exposed = new CaveClientError(
+    trusted.normalized,
+    trusted.compatibility,
+    cause === undefined ? undefined : { cause },
+  );
+  if (exposed.details !== undefined) {
+    Object.freeze(exposed.details);
+  }
+  return Object.freeze(exposed);
+}
+
+function discardManagedTrustedCaveClientError(error: unknown): void {
+  if (isCaveClientError(error)) {
+    MANAGED_TRUSTED_CAVE_CLIENT_ERRORS.delete(error);
+  }
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -1712,12 +1792,11 @@ export class CaveClient {
           try {
             return await executor(context);
           } catch (error) {
-            if (
-              redactManagedErrors &&
-              (isManagedLocalCaveClientError(error) ||
-                isManagedValidatedCaveClientError(error))
-            ) {
-              throw error;
+            if (redactManagedErrors) {
+              const trusted = consumeManagedTrustedCaveClientError(error);
+              if (trusted !== undefined) {
+                throw trusted;
+              }
             }
             if (redactManagedErrors) {
               throw redactedManagedTransportError(error, operation);
@@ -1734,6 +1813,9 @@ export class CaveClient {
       );
     } catch (error) {
       if (isCaveClientError(error)) {
+        if (!redactManagedErrors) {
+          discardManagedTrustedCaveClientError(error);
+        }
         throw error;
       }
 
@@ -1834,14 +1916,18 @@ export class CaveClient {
           this.#ensureActive(scope.context, operation);
         }
       } catch (error) {
+        const trusted =
+          redactManagedErrors
+            ? consumeManagedTrustedCaveClientError(error)
+            : undefined;
+        if (!redactManagedErrors) {
+          discardManagedTrustedCaveClientError(error);
+        }
         const wrapped =
           redactManagedErrors
             ? isOperationTimeoutError(error) || isOperationAbortedError(error)
               ? redactedManagedCancellationError(error, operation)
-              : isManagedLocalCaveClientError(error)
-                || isManagedValidatedCaveClientError(error)
-                ? error
-                : redactedManagedTransportError(error, operation)
+              : (trusted ?? redactedManagedTransportError(error, operation))
             : this.#wrapOperationError(error, operation);
         notifyOperationObserver(observer, {
           phase:
@@ -1899,6 +1985,13 @@ export class CaveClient {
     }
   }
 
+  #usesManagedCredentialTransport(): boolean {
+    return (
+      this.#managedCredentialTransport !== undefined ||
+      this.#stagedManagedCredentialTransport !== undefined
+    );
+  }
+
   #validateHealthResponse(response: unknown, operation: string): CaveHealth {
     const parsed = parseHealthResponse(response);
 
@@ -1921,7 +2014,7 @@ export class CaveClient {
     }
 
     if (!compatibility.compatible) {
-      throw managedValidatedCaveClientError(new CaveClientError(
+      const error = new CaveClientError(
         normalizeCaveError(
           {
             code: 'incompatible_version',
@@ -1929,7 +2022,10 @@ export class CaveClient {
           operation,
         ),
         compatibility,
-      ));
+      );
+      throw this.#usesManagedCredentialTransport()
+        ? managedValidatedCaveClientError(error)
+        : error;
     }
 
     if (!CAVE_API_VERSION_PATTERN.test(parsed.apiVersion)) {
@@ -1940,14 +2036,17 @@ export class CaveClient {
     }
 
     if (parsed.apiVersion.split('.')[0] !== SUPPORTED_CAVE_API_MAJOR) {
-      throw managedValidatedCaveClientError(new CaveClientError(
+      const error = new CaveClientError(
         normalizeCaveError(
           {
             code: 'incompatible_version',
           },
           operation,
         ),
-      ));
+      );
+      throw this.#usesManagedCredentialTransport()
+        ? managedValidatedCaveClientError(error)
+        : error;
     }
 
     return parsed.health;

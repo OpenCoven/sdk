@@ -1,5 +1,6 @@
 import * as cave from '@opencoven/cave-client';
 import type { OperationContext } from '@opencoven/sdk-core';
+import { inspect } from 'node:util';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 const REQUEST_ID = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
@@ -1051,6 +1052,223 @@ describe('managed native Cave client', () => {
       },
       compatibility: undefined,
     });
+  });
+
+  test('consumes trusted compatibility errors before managed transport replay', async () => {
+    const secret = 'replayed-trusted-compatibility-bearer';
+    const events: unknown[] = [];
+    const replay = { error: undefined as Error | undefined };
+    const transport = {
+      health: () =>
+        replay.error === undefined
+          ? Promise.resolve({
+              ...healthEnvelope(),
+              minimumClientVersion: '999.0.0',
+            } as unknown as cave.CaveHealthResponse)
+          : Promise.reject(replay.error),
+      managedPairingCreate: () => Promise.reject(new Error('unused')),
+      managedPairingPoll: () => Promise.reject(new Error('unused')),
+      managedPairingExchange: () => Promise.reject(new Error('unused')),
+      managedCredentialStatus: () =>
+        Promise.reject(replay.error ?? new Error('missing replay error')),
+      managedForgetCredential: () => Promise.reject(new Error('unused')),
+    } satisfies cave.CaveManagedCredentialTransport;
+    const client = new cave.CaveClient({
+      transport,
+      credentialCustody: { mode: 'managed-native' },
+    });
+    const observer = {
+      onEvent(event: unknown) {
+        events.push(event);
+      },
+      onObserverError() {},
+    };
+
+    const first = await rejectedValue(client.health({ observer }));
+    expect(first).toMatchObject({
+      normalized: { code: 'incompatible_version', operation: 'health' },
+      compatibility: {
+        compatible: false,
+        minimumClientVersion: '999.0.0',
+        clientVersion: cave.CAVE_CLIENT_VERSION,
+      },
+    });
+    replay.error =
+      first instanceof Error ? first : new Error('Expected compatibility error.');
+    if (typeof first === 'object' && first !== null) {
+      Reflect.set(first, 'cause', { bearer: secret });
+      Reflect.set(first, 'details', { bearer: secret });
+      Reflect.set(first, 'message', secret);
+      Reflect.set(first, 'compatibility', {
+        compatible: false,
+        minimumClientVersion: secret,
+        clientVersion: secret,
+      });
+      const normalized = safeGet(first, 'normalized');
+      Reflect.set(first, 'normalized', {
+        ...(typeof normalized === 'object' && normalized !== null
+          ? normalized
+          : {}),
+        message: secret,
+      });
+    }
+
+    const replayedHealth = await rejectedValue(client.health({ observer }));
+    const replayedStatus = await rejectedValue(
+      client.credentialStatus({ observer }),
+    );
+    const exposed = [
+      String(replayedHealth),
+      String(replayedStatus),
+      inspect(replayedHealth),
+      inspect(replayedStatus),
+      JSON.stringify({
+        events,
+        health: replayedHealth,
+        healthCause: safeGet(replayedHealth, 'cause'),
+        healthDetails: safeGet(replayedHealth, 'details'),
+        healthNormalized: safeGet(replayedHealth, 'normalized'),
+        status: replayedStatus,
+        statusCause: safeGet(replayedStatus, 'cause'),
+        statusDetails: safeGet(replayedStatus, 'details'),
+        statusNormalized: safeGet(replayedStatus, 'normalized'),
+      }),
+    ].join('\n');
+
+    expect(replayedHealth).not.toBe(first);
+    expect(replayedStatus).not.toBe(first);
+    expect(replayedHealth).toMatchObject({
+      normalized: { code: 'incompatible_version', operation: 'health' },
+      compatibility: undefined,
+    });
+    expect(replayedStatus).toMatchObject({
+      normalized: {
+        code: 'incompatible_version',
+        operation: 'credentialStatus',
+      },
+      compatibility: undefined,
+    });
+    expect(safeGet(replayedHealth, 'cause')).toBeUndefined();
+    expect(safeGet(replayedHealth, 'details')).toBeUndefined();
+    expect(safeGet(replayedStatus, 'cause')).toBeUndefined();
+    expect(safeGet(replayedStatus, 'details')).toBeUndefined();
+    expect(exposed).not.toContain(secret);
+  });
+
+  test('does not retain compatibility trust after direct-client exposure', async () => {
+    const secret = 'direct-compatibility-replay-bearer';
+    const directClient = new cave.CaveClient({
+      transport: {
+        health: () =>
+          Promise.resolve({
+            ...healthEnvelope(),
+            minimumClientVersion: '999.0.0',
+          } as unknown as cave.CaveHealthResponse),
+      },
+    });
+    const exposedDirectError = await rejectedValue(directClient.health());
+    if (
+      typeof exposedDirectError === 'object' &&
+      exposedDirectError !== null
+    ) {
+      Reflect.set(exposedDirectError, 'cause', { bearer: secret });
+      Reflect.set(exposedDirectError, 'details', { bearer: secret });
+      Reflect.set(exposedDirectError, 'message', secret);
+    }
+    const managedClient = new cave.CaveClient({
+      transport: {
+        health: () =>
+          Promise.reject(
+            exposedDirectError instanceof Error
+              ? exposedDirectError
+              : new Error('Expected direct compatibility error.'),
+          ),
+        managedPairingCreate: () => Promise.reject(new Error('unused')),
+        managedPairingPoll: () => Promise.reject(new Error('unused')),
+        managedPairingExchange: () => Promise.reject(new Error('unused')),
+        managedCredentialStatus: () => Promise.reject(new Error('unused')),
+        managedForgetCredential: () => Promise.reject(new Error('unused')),
+      } satisfies cave.CaveManagedCredentialTransport,
+      credentialCustody: { mode: 'managed-native' },
+    });
+
+    const replayed = await rejectedValue(managedClient.health());
+    const serialized = JSON.stringify({
+      cause: safeGet(replayed, 'cause'),
+      details: safeGet(replayed, 'details'),
+      error: replayed,
+      normalized: safeGet(replayed, 'normalized'),
+    });
+
+    expect(replayed).not.toBe(exposedDirectError);
+    expect(safeGet(replayed, 'compatibility')).toBeUndefined();
+    expect(serialized).not.toContain(secret);
+  });
+
+  test('does not retain locally generated pairing-error trust after direct exposure', async () => {
+    const secret = 'direct-local-replay-bearer';
+    const directClient = new cave.CaveClient({
+      transport: {
+        health: () =>
+          Promise.resolve(healthEnvelope() as unknown as cave.CaveHealthResponse),
+        pairingCreate: () =>
+          Promise.resolve({
+            requestId: REQUEST_ID,
+            secret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+            expiresAt: EXPIRES_AT,
+          }),
+        pairingPoll: () =>
+          Promise.resolve({
+            id: REQUEST_ID,
+            status: 'denied' as const,
+            expiresAt: EXPIRES_AT,
+          }),
+      },
+    });
+    const session = await directClient.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await expect(session.poll()).resolves.toMatchObject({ status: 'denied' });
+    const exposedDirectError = await rejectedValue(session.poll());
+    if (
+      typeof exposedDirectError === 'object' &&
+      exposedDirectError !== null
+    ) {
+      Reflect.set(exposedDirectError, 'cause', { bearer: secret });
+      Reflect.set(exposedDirectError, 'details', { bearer: secret });
+      Reflect.set(exposedDirectError, 'message', secret);
+    }
+    const managedClient = new cave.CaveClient({
+      transport: {
+        health: () =>
+          Promise.reject(
+            exposedDirectError instanceof Error
+              ? exposedDirectError
+              : new Error('Expected direct pairing error.'),
+          ),
+        managedPairingCreate: () => Promise.reject(new Error('unused')),
+        managedPairingPoll: () => Promise.reject(new Error('unused')),
+        managedPairingExchange: () => Promise.reject(new Error('unused')),
+        managedCredentialStatus: () => Promise.reject(new Error('unused')),
+        managedForgetCredential: () => Promise.reject(new Error('unused')),
+      } satisfies cave.CaveManagedCredentialTransport,
+      credentialCustody: { mode: 'managed-native' },
+    });
+
+    const replayed = await rejectedValue(managedClient.health());
+    const serialized = JSON.stringify({
+      cause: safeGet(replayed, 'cause'),
+      details: safeGet(replayed, 'details'),
+      error: replayed,
+      normalized: safeGet(replayed, 'normalized'),
+    });
+
+    expect(replayed).not.toBe(exposedDirectError);
+    expect(safeGet(replayed, 'details')).toBeUndefined();
+    expect(serialized).not.toContain(secret);
   });
 
   test('redacts forged branded compatibility errors from a staged transport', async () => {
