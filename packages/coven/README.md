@@ -4,6 +4,11 @@ A constrained, owner-local Coven health client. Importing the package performs
 no filesystem, process, network, socket, or daemon I/O. Discovery and health
 checks happen only through explicit runtime calls.
 
+The supported root API, pre-1.0 compatibility rules, and deprecation process
+are documented in the repository
+[compatibility policy](https://github.com/OpenCoven/sdk/blob/main/COMPATIBILITY.md)
+and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
+
 ## Shipped surface
 
 - `discoverCovenEndpoint(options)` resolves the owner-local daemon endpoint

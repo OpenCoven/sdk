@@ -23,6 +23,11 @@ unauthenticated health request before every authenticated discovered call.
 Mismatched credentials are cleared locally rather than sent to a different
 Cave.
 
+The supported root API, pre-1.0 compatibility rules, and deprecation process
+are documented in the repository
+[compatibility policy](https://github.com/OpenCoven/sdk/blob/main/COMPATIBILITY.md)
+and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
+
 Discovery accepts only an explicit-port HTTP loopback authority at
 `127.0.0.1`, `localhost`, or `[::1]`. Discovered requests omit ambient
 credentials, disable cache reuse, reject redirects, enforce a positive safe

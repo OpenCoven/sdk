@@ -3,6 +3,11 @@
 Transport-neutral errors, SemVer-accurate compatibility assessment, and an
 in-memory secret store. It performs no I/O at import time.
 
+The supported root API, pre-1.0 compatibility rules, and deprecation process
+are documented in the repository
+[compatibility policy](https://github.com/OpenCoven/sdk/blob/main/COMPATIBILITY.md)
+and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
+
 ## Errors
 
 `normalizeError(error, options)` returns stable `system`, `code`, `retryable`,

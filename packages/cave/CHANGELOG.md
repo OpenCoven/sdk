@@ -50,3 +50,5 @@
 - Reject secret-bearing, accessor-backed, cyclic, non-finite, oversized, or
   overly complex native payloads, and verify the package-root API through a
   packed fake-native consumer.
+- Freeze the packed declaration, runtime exports, and package export map in the
+  repository API baseline.

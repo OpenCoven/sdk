@@ -51,7 +51,9 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain('function assertPackedPackageContracts(tarballs)');
     expect(verifier).toContain("manifest.main !== './dist/index.js'");
     expect(verifier).toContain("manifest.types !== './dist/index.d.ts'");
-    expect(verifier).toContain('!isDeepStrictEqual(manifest.exports, rootPackageExports)');
+    expect(verifier).toContain(
+      '!isJsonOrderEqual(manifest.exports, rootPackageExports)',
+    );
     expect(verifier).toContain(
       'const expectedDependencies = expectedPackedDependencies(workspaceDirectory, manifest.version);',
     );
@@ -59,6 +61,19 @@ describe('packed package verifier contract', () => {
       '!isDeepStrictEqual(manifest.dependencies ?? {}, expectedDependencies)',
     );
     expect(verifier).toContain('assertPackedPackageContracts(tarballs);');
+  });
+
+  test('compares packed declarations and exports to committed API baselines', () => {
+    const verifier = readFileSync(
+      resolve(root, 'scripts/verify-package.mjs'),
+      'utf8',
+    );
+
+    expect(verifier).toContain('async function assertPackedApiBaselines');
+    expect(verifier).toContain('readPackedApiSurfaces({');
+    expect(verifier).toContain('readApiBaseline(root, workspaceDirectory)');
+    expect(verifier).toContain('assertApiBaseline(');
+    expect(verifier).toContain('await assertPackedApiBaselines(');
   });
 
   test('enforces the exact approved license contract in packed tarballs', () => {
