@@ -62,3 +62,20 @@ export type {
   SecretStore,
   SecretStoreReference,
 } from './secret-store.js';
+
+export {
+  createFileOpenCovenProfileStore,
+  createMemoryOpenCovenProfileStore,
+  createOpenCovenProfileSecretReference,
+  migrateOpenCovenProfileDocument,
+  OPENCOVEN_PROFILE_VERSION,
+  OpenCovenProfileError,
+  parseOpenCovenProfile,
+} from './profiles.js';
+export type {
+  FileOpenCovenProfileStoreOptions,
+  OpenCovenProfile,
+  OpenCovenProfileDocument,
+  OpenCovenProfileErrorCode,
+  OpenCovenProfileStore,
+} from './profiles.js';
