@@ -19,10 +19,6 @@ function ownManagedClientOptions(
   }
 
   try {
-    const prototype = Reflect.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      return undefined;
-    }
     const descriptors = Object.getOwnPropertyDescriptors(value);
     const keys = Reflect.ownKeys(descriptors);
     if (
@@ -66,9 +62,7 @@ function ownManagedClientOptions(
 
     const operationDescriptors = Object.getOwnPropertyDescriptors(operationValue);
     const operationKeys = Reflect.ownKeys(operationDescriptors);
-    const operationPrototype = Reflect.getPrototypeOf(operationValue);
     if (
-      (operationPrototype !== Object.prototype && operationPrototype !== null) ||
       operationKeys.some(
         (key) => {
           if (typeof key !== 'string') {

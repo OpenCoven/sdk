@@ -535,6 +535,32 @@ describe('managed native Cave credential custody', () => {
     }
   });
 
+  test('keeps own-data JavaScript credentials mutually exclusive with managed custody', () => {
+    const error = (() => {
+      try {
+        new cave.CaveClient(
+          ({
+            transport: managedTransport(),
+            credentials: {
+              store: createMemorySecretStore(),
+              reference: createSecretStoreReference('constructor-mixed-data'),
+            },
+            credentialCustody: { mode: 'managed-native' },
+          }) as unknown as cave.CaveClientOptions,
+        );
+      } catch (caught) {
+        return caught;
+      }
+      return undefined;
+    })();
+
+    expect(error).toBeInstanceOf(TypeError);
+    expect(String(error)).toContain('cannot use a JavaScript SecretStore');
+    expect(JSON.stringify(error, error instanceof Error
+      ? Object.getOwnPropertyNames(error)
+      : undefined)).not.toContain(BEARER);
+  });
+
   test('rejects nested accessor, custom-array, and revoked-proxy managed results before they leak', async () => {
     const accessorCredential = credential() as unknown as Record<string, unknown>;
     let scopeReads = 0;

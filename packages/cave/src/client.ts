@@ -376,11 +376,6 @@ function ownConfigurationRecord(
   }
 
   try {
-    const prototype = Reflect.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      return undefined;
-    }
-
     const descriptors = Object.getOwnPropertyDescriptors(value);
     const keys = Reflect.ownKeys(descriptors);
     if (

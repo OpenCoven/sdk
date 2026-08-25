@@ -4,6 +4,7 @@ import { inspect } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 import {
+  CaveClient,
   createManagedCaveClient,
   discoverManagedCaveEndpoint,
   type CaveManagedCredentialTransport,
@@ -159,6 +160,55 @@ describe('managed browser entry point', () => {
       expect(error).toBeInstanceOf(TypeError);
       expect(JSON.stringify({ error, inspect: inspect(error) })).not.toContain(NATIVE_BEARER);
     }
+  });
+
+  test('accepts class-instance direct and managed configuration from own data descriptors only', async () => {
+    let inheritedGetterReads = 0;
+
+    class DirectOperation {
+      readonly timeoutMs = 1_000;
+
+      get observer(): never {
+        inheritedGetterReads += 1;
+        throw new Error(`inherited observer bearer ${NATIVE_BEARER}`);
+      }
+    }
+
+    class DirectOptions {
+      readonly transport = managedTransport;
+      readonly operation = new DirectOperation();
+
+      get credentials(): never {
+        inheritedGetterReads += 1;
+        throw new Error(`inherited credentials bearer ${NATIVE_BEARER}`);
+      }
+    }
+
+    class ManagedOperation {
+      readonly timeoutMs = 1_000;
+
+      get observer(): never {
+        inheritedGetterReads += 1;
+        throw new Error(`inherited managed observer bearer ${NATIVE_BEARER}`);
+      }
+    }
+
+    class ManagedOptions {
+      readonly transport = managedTransport;
+      readonly operation = new ManagedOperation();
+
+      get credentialCustody(): never {
+        inheritedGetterReads += 1;
+        throw new Error(`inherited custody bearer ${NATIVE_BEARER}`);
+      }
+    }
+
+    const direct = new CaveClient(new DirectOptions());
+    const managed = createManagedCaveClient(new ManagedOptions());
+
+    await expect(direct.health()).resolves.toMatchObject({ status: 'ok' });
+    await expect(managed.health()).resolves.toMatchObject({ status: 'ok' });
+    expect(inheritedGetterReads).toBe(0);
   });
 
   test('rejects native discovery records that Rust did not shape safely', async () => {
