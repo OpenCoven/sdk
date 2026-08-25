@@ -20,6 +20,8 @@ import {
 } from '@opencoven/sdk-core';
 import { describe, expect, test, vi } from 'vitest';
 
+const unixTest = test.runIf(process.platform !== 'win32');
+
 describe('non-secret profiles', () => {
   test('parses a versioned profile and derives a separate secret reference', () => {
     const profile = parseOpenCovenProfile({
@@ -169,7 +171,7 @@ describe('non-secret profiles', () => {
     await expect(store.list()).resolves.toEqual([]);
   });
 
-  test('persists profiles atomically with owner-only permissions and migrates version zero', async () => {
+  unixTest('persists profiles atomically with owner-only permissions and migrates version zero', async () => {
     const root = mkdtempSync(
       resolve(realpathSync(tmpdir()), 'opencoven-profiles-'),
     );
@@ -213,7 +215,7 @@ describe('non-secret profiles', () => {
     }
   });
 
-  test('rejects symlinks and unsafe profile file permissions', async () => {
+  unixTest('rejects symlinks and unsafe profile file permissions', async () => {
     const root = mkdtempSync(
       resolve(realpathSync(tmpdir()), 'opencoven-profiles-'),
     );
@@ -237,7 +239,7 @@ describe('non-secret profiles', () => {
     }
   });
 
-  test('requires explicit reset after corrupt profile data', async () => {
+  unixTest('requires explicit reset after corrupt profile data', async () => {
     const root = mkdtempSync(
       resolve(realpathSync(tmpdir()), 'opencoven-profiles-'),
     );
@@ -257,7 +259,7 @@ describe('non-secret profiles', () => {
     }
   });
 
-  test('requires a canonical absolute file in an owner-private directory', async () => {
+  unixTest('requires a canonical absolute file in an owner-private directory', async () => {
     expect(() =>
       createFileOpenCovenProfileStore(
         undefined as unknown as { path: string },
@@ -287,7 +289,7 @@ describe('non-secret profiles', () => {
     }
   });
 
-  test('rejects oversized, invalid UTF-8, and invalid documents', async () => {
+  unixTest('rejects oversized, invalid UTF-8, and invalid documents', async () => {
     const root = mkdtempSync(
       resolve(realpathSync(tmpdir()), 'opencoven-profiles-'),
     );
@@ -340,7 +342,7 @@ describe('non-secret profiles', () => {
     }
   });
 
-  test('creates missing stores and serializes concurrent mutations', async () => {
+  unixTest('creates missing stores and serializes concurrent mutations', async () => {
     const root = mkdtempSync(
       resolve(realpathSync(tmpdir()), 'opencoven-profiles-'),
     );

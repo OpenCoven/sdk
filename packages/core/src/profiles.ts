@@ -465,6 +465,32 @@ async function openValidatedProfileFile(
   }
 }
 
+async function readBoundedProfileFile(
+  handle: FileHandle,
+): Promise<Buffer> {
+  const buffer = Buffer.allocUnsafe(PROFILE_DOCUMENT_MAX_BYTES + 1);
+  let offset = 0;
+  while (offset < buffer.length) {
+    const { bytesRead } = await handle.read(
+      buffer,
+      offset,
+      buffer.length - offset,
+      offset,
+    );
+    if (bytesRead === 0) {
+      break;
+    }
+    offset += bytesRead;
+  }
+  if (offset > PROFILE_DOCUMENT_MAX_BYTES) {
+    throw profileStoreError(
+      'unsafe_profile_store',
+      'OpenCoven profile file exceeded its size limit while read.',
+    );
+  }
+  return buffer.subarray(0, offset);
+}
+
 function emptyProfileDocument(): OpenCovenProfileDocument {
   return Object.freeze({
     version: OPENCOVEN_PROFILE_VERSION,
@@ -486,8 +512,11 @@ async function readProfileDocument(
   const handle = await openValidatedProfileFile(path, expected);
   let bytes: Buffer;
   try {
-    bytes = await handle.readFile();
-  } catch {
+    bytes = await readBoundedProfileFile(handle);
+  } catch (error) {
+    if (error instanceof OpenCovenProfileError) {
+      throw error;
+    }
     throw profileStoreError(
       'profile_store_read_failed',
       'OpenCoven profile file could not be read.',
