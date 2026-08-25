@@ -31,10 +31,10 @@ On Windows, `discoverCaveEndpoint()` also requires a reviewed native
 `options.dependencies.windowsPathTrust` validator for the discovery root and
 record path. Metadata-only checks, shell commands, and fabricated ACL trust are
 rejected; the helper fails closed until a real validator is injected. A
-trusted Windows validator must also return a stable native identity when Node
-reports the filesystem device or inode as `0`, allowing the pre-open,
-post-open, and post-read snapshots to reject path replacement. Unix discovery
-still requires a positive inode.
+trusted Windows validator must also return a stable native identity and
+implement `validateOpenedFile(...)` when Node reports the filesystem device or
+inode as `0`, allowing the path snapshots to be compared with the actual opened
+record. Unix discovery still requires a positive inode.
 
 ## Shipped surface
 

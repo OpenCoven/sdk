@@ -1416,6 +1416,10 @@ describe('Cave discovery platform helpers', () => {
           realpath: async (path) => path,
           windowsPathTrust: {
             validate,
+            validateOpenedFile: async () => ({
+              trusted: true,
+              identity: 'windows-record-identity',
+            }),
           },
         },
       }),
@@ -1459,6 +1463,10 @@ describe('Cave discovery platform helpers', () => {
             validate: async (_path, purpose) => ({
               trusted: true,
               identity: `windows-${purpose}-identity`,
+            }),
+            validateOpenedFile: async () => ({
+              trusted: true,
+              identity: 'windows-record-identity',
             }),
           },
         },
@@ -1517,7 +1525,7 @@ describe('Cave discovery platform helpers', () => {
         },
       }),
     ).rejects.toMatchObject({
-      code: 'unsafe_endpoint',
+      code: 'owner_mismatch',
       retryable: false,
     });
 
@@ -1534,16 +1542,16 @@ describe('Cave discovery platform helpers', () => {
           openFile: () => Promise.resolve(memoryHandle(recordBytes, recordIdentity)),
           realpath: (path) => Promise.resolve(path),
           windowsPathTrust: {
-            validate: (_path, purpose) => {
-              if (purpose === 'root') {
-                return Promise.resolve({ trusted: true, identity: 'root-id' });
-              }
-              recordValidations += 1;
-              return Promise.resolve({
+            validate: (_path, purpose) =>
+              Promise.resolve({
                 trusted: true,
-                identity: `record-id-${recordValidations}`,
-              });
-            },
+                identity: purpose === 'root' ? 'root-id' : 'record-id',
+              }),
+            validateOpenedFile: () =>
+              Promise.resolve({
+                trusted: true,
+                identity: `record-id-${++recordValidations}`,
+              }),
           },
         },
       }),

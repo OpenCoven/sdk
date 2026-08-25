@@ -56,6 +56,11 @@ export interface CaveWindowsPathTrustValidator {
     path: string,
     purpose: 'root' | 'record',
   ): Promise<boolean | CaveWindowsPathTrustResult>;
+  validateOpenedFile?(
+    handle: CaveDiscoveryFileHandle,
+    path: string,
+    purpose: 'record',
+  ): Promise<boolean | CaveWindowsPathTrustResult>;
 }
 
 export interface CaveWindowsPathTrustResult {
@@ -477,6 +482,40 @@ async function validateWindowsTrust(
   return result.identity;
 }
 
+async function validateWindowsOpenedFileTrust(
+  validator: CaveWindowsPathTrustValidator | undefined,
+  handle: CaveDiscoveryFileHandle,
+  path: string,
+  deadline: DiscoveryDeadline,
+): Promise<string> {
+  if (
+    validator === undefined ||
+    typeof validator.validateOpenedFile !== 'function'
+  ) {
+    return fail(
+      'owner_mismatch',
+      'Windows Cave discovery opened-file identity validation is required.',
+    );
+  }
+  const validateOpenedFile = validator.validateOpenedFile.bind(validator);
+
+  const identity = await validateWindowsTrust(
+    {
+      validate: () => validateOpenedFile(handle, path, 'record'),
+    },
+    path,
+    'record',
+    deadline,
+  );
+  if (identity === undefined) {
+    return fail(
+      'owner_mismatch',
+      'Windows Cave discovery opened-file identity validation is required.',
+    );
+  }
+  return identity;
+}
+
 function validateStableIdentity(
   initial: CaveDiscoveryPathIdentity,
   current: CaveDiscoveryPathIdentity,
@@ -793,14 +832,15 @@ export async function discoverCaveEndpoint(
       const openedIdentity = await awaitStep(() => handle.stat(), deadline);
       validateRecordIdentity(openedIdentity, platform, expectedUid, maxRecordBytes);
       const openedRecordWindowsIdentity =
-        platform === 'win32'
-          ? await validateWindowsTrust(
+        platform === 'win32' &&
+        (initialIdentity.device === 0 || initialIdentity.inode === 0)
+          ? await validateWindowsOpenedFileTrust(
               dependencies?.windowsPathTrust,
+              handle,
               physicalRecordPath,
-              'record',
               deadline,
             )
-          : undefined;
+          : recordWindowsIdentity;
       validateStableIdentity(
         initialIdentity,
         openedIdentity,
