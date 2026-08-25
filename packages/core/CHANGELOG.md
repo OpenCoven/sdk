@@ -16,3 +16,6 @@
 - Add immutable versioned non-secret profiles, explicit version-zero migration,
   separate profile-derived secret references, and memory or fail-closed atomic
   Unix file stores.
+- Add a bounded versioned diagnostic report builder that emits only approved
+  environment, phase, capability, version, instance-suffix, health timestamp,
+  and safe error facts.

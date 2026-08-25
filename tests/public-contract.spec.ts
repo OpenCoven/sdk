@@ -12,6 +12,19 @@ type Equal<Left, Right> =
     : false;
 type Assert<Condition extends true> = Condition;
 
+type OpenCovenDiagnosticCheckIdContract = Assert<Equal<
+  core.OpenCovenDiagnosticCheckId,
+  | 'cave.discovery'
+  | 'cave.health'
+  | 'secure-store'
+  | 'coven.discovery'
+  | 'coven.health'
+>>;
+type OpenCovenDiagnosticStatusContract = Assert<Equal<
+  core.OpenCovenDiagnosticStatus,
+  'ok' | 'error' | 'skipped'
+>>;
+
 type OpenCovenProfileContract = Assert<Equal<
   core.OpenCovenProfile,
   {
@@ -227,6 +240,8 @@ function canonicalReadCompileOnly(
 }
 
 void (undefined as unknown as CaveCanonicalFamiliarContract);
+void (undefined as unknown as OpenCovenDiagnosticCheckIdContract);
+void (undefined as unknown as OpenCovenDiagnosticStatusContract);
 void (undefined as unknown as OpenCovenProfileContract);
 void (undefined as unknown as FileOpenCovenProfileStoreOptionsContract);
 void (undefined as unknown as OpenCovenProfileErrorCodeContract);
@@ -275,7 +290,9 @@ describe('public package entry points', () => {
       'DISCOVERY_RECORD_VERSION',
       'DiscoveryContractError',
       'InvalidSecretKeyError',
+      'OPENCOVEN_DIAGNOSTIC_VERSION',
       'OPENCOVEN_PROFILE_VERSION',
+      'OpenCovenDiagnosticError',
       'OpenCovenProfileError',
       'OperationAbortedError',
       'OperationConfigurationError',
@@ -286,6 +303,7 @@ describe('public package entry points', () => {
       'createManagedMemorySecretStore',
       'createMemoryOpenCovenProfileStore',
       'createMemorySecretStore',
+      'createOpenCovenDiagnosticReport',
       'createOpenCovenProfileSecretReference',
       'createOperationScope',
       'createSecretStoreReference',

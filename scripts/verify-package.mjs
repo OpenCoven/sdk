@@ -281,9 +281,11 @@ import {
   createManagedMemorySecretStore,
   createMemoryOpenCovenProfileStore,
   createMemorySecretStore,
+  createOpenCovenDiagnosticReport,
   createOpenCovenProfileSecretReference,
   type BoundedPageOptions,
   type FileOpenCovenProfileStoreOptions,
+  type OpenCovenDiagnosticReport,
   type OpenCovenProfile,
   type OperationContext,
   type OperationEvent,
@@ -354,6 +356,18 @@ const profileStore = createMemoryOpenCovenProfileStore();
 const profileFileOptions: FileOpenCovenProfileStoreOptions = {
   path: '/not-called/profiles.json',
 };
+const diagnostics: OpenCovenDiagnosticReport =
+  createOpenCovenDiagnosticReport({
+    generatedAt: '2026-08-25T06:50:00.000Z',
+    packageVersion: '0.1.0',
+    runtime: {
+      name: 'node',
+      version: 'v24.18.1',
+      platform: 'linux',
+      architecture: 'x64',
+    },
+    checks: [{ id: 'cave.discovery', status: 'ok' }],
+  });
 const controller = new AbortController();
 const boundedPageOptions: BoundedPageOptions = { maxPages: 1 };
 const caveIterators: [
@@ -377,6 +391,7 @@ await profileStore.get(profile.name);
 createOpenCovenProfileSecretReference(profile.name);
 void createFileOpenCovenProfileStore;
 void profileFileOptions;
+void diagnostics;
 await cave.health({
   signal: controller.signal,
   timeoutMs: 500,
@@ -400,15 +415,16 @@ const { CaveClient } = await import('@opencoven/cave-client');
 await import('@opencoven/coven-client');
 await import('@opencoven/sdk');
 
-for (const profileExport of [
+for (const coreExport of [
+  'createOpenCovenDiagnosticReport',
   'createFileOpenCovenProfileStore',
   'createMemoryOpenCovenProfileStore',
   'createOpenCovenProfileSecretReference',
   'migrateOpenCovenProfileDocument',
   'parseOpenCovenProfile',
 ]) {
-  if (typeof core[profileExport] !== 'function') {
-    throw new Error(\`Packed profile export \${profileExport} is unavailable.\`);
+  if (typeof core[coreExport] !== 'function') {
+    throw new Error(\`Packed core export \${coreExport} is unavailable.\`);
   }
 }
 

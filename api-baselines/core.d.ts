@@ -17,6 +17,94 @@ interface NormalizeErrorOptions {
 }
 declare function normalizeError(error: unknown, options: NormalizeErrorOptions): NormalizedError;
 
+declare const DIAGNOSTIC_CHECK_IDS: readonly ["cave.discovery", "cave.health", "secure-store", "coven.discovery", "coven.health"];
+declare const CAVE_CAPABILITIES: readonly ["health", "pairing", "credentials", "familiars", "projects", "conversations", "conversation-messages", "cursors"];
+declare const CAVE_OPERATIONS: readonly ["health.read", "pairing.create", "pairing.poll", "pairing.exchange", "pairing.admin.list", "pairing.admin.decide", "credentials.admin.list", "credentials.admin.revoke", "familiars.list", "projects.list", "conversations.list", "conversations.read", "messages.list"];
+declare const SAFE_DIAGNOSTIC_CODES: readonly ["aborted", "body_limit", "command_failed", "conflict", "connect_failure", "credential_update_in_progress", "frame_limit", "incompatible_version", "invalid_request", "invalid_response", "malformed_config", "not_found", "operation_in_progress", "owner_mismatch", "pairing_denied", "pairing_expired", "pairing_pending", "platform_security_unavailable", "rate_limited", "reconcile_required", "scope_denied", "secret_store_delete_failed", "secret_store_read_failed", "secret_store_rollback_failed", "secret_store_write_failed", "secure_store_unavailable", "service_unavailable", "stale_record", "timeout", "unknown", "unsafe_endpoint", "unsupported_operation"];
+declare const OPENCOVEN_DIAGNOSTIC_VERSION = 1;
+type OpenCovenDiagnosticCheckId = (typeof DIAGNOSTIC_CHECK_IDS)[number];
+type OpenCovenDiagnosticCode = (typeof SAFE_DIAGNOSTIC_CODES)[number];
+type OpenCovenDiagnosticCapability = (typeof CAVE_CAPABILITIES)[number] | 'event-cursor' | 'events' | 'sessions' | 'structured-errors';
+type OpenCovenDiagnosticOperation = (typeof CAVE_OPERATIONS)[number];
+type OpenCovenDiagnosticStatus = 'ok' | 'error' | 'skipped';
+type OpenCovenDiagnosticSkipReason = 'deadline-expired' | 'dependency-failed';
+type OpenCovenDiagnosticSystem = 'cave' | 'coven' | 'secure-store';
+type OpenCovenDiagnosticPhase = 'credential-store' | 'discovery' | 'health';
+interface OpenCovenDiagnosticRuntimeInput {
+    readonly name: 'node';
+    readonly version: string;
+    readonly platform: string;
+    readonly architecture: string;
+}
+interface OpenCovenDiagnosticCheckInput {
+    readonly id: OpenCovenDiagnosticCheckId;
+    readonly status: OpenCovenDiagnosticStatus;
+    readonly observedAt?: string;
+    readonly discovery?: unknown;
+    readonly health?: unknown;
+    readonly error?: unknown;
+    readonly skipReason?: OpenCovenDiagnosticSkipReason;
+}
+interface OpenCovenDiagnosticReportOptions {
+    readonly generatedAt: string;
+    readonly packageVersion: string;
+    readonly runtime: OpenCovenDiagnosticRuntimeInput;
+    readonly checks: readonly OpenCovenDiagnosticCheckInput[];
+}
+interface OpenCovenDiagnosticEnvironment {
+    readonly packageVersion: string;
+    readonly runtime: 'node';
+    readonly runtimeVersion: string;
+    readonly platform: string;
+    readonly architecture: string;
+}
+interface OpenCovenDiagnosticFailure {
+    readonly code: OpenCovenDiagnosticCode;
+    readonly retryable: boolean;
+    readonly diagnosticId?: string;
+}
+interface OpenCovenDiagnosticFacts {
+    readonly apiVersion?: string;
+    readonly releaseVersion?: string;
+    readonly instanceSuffix?: string;
+    readonly pairingRequired?: boolean;
+    readonly capabilities?: readonly OpenCovenDiagnosticCapability[];
+    readonly operations?: readonly OpenCovenDiagnosticOperation[];
+    readonly lastHealthyAt?: string;
+    readonly backend?: 'native';
+    readonly protocol?: 'coven.daemon.v1';
+    readonly transport?: 'unix' | 'windows-named-pipe';
+}
+interface OpenCovenDiagnosticCheck {
+    readonly id: OpenCovenDiagnosticCheckId;
+    readonly system: OpenCovenDiagnosticSystem;
+    readonly phase: OpenCovenDiagnosticPhase;
+    readonly status: OpenCovenDiagnosticStatus;
+    readonly outcome?: 'discovered';
+    readonly facts?: OpenCovenDiagnosticFacts;
+    readonly error?: OpenCovenDiagnosticFailure;
+    readonly skipReason?: OpenCovenDiagnosticSkipReason;
+}
+interface OpenCovenDiagnosticSummary {
+    readonly healthy: boolean;
+    readonly ok: number;
+    readonly error: number;
+    readonly skipped: number;
+}
+interface OpenCovenDiagnosticReport {
+    readonly version: 1;
+    readonly generatedAt: string;
+    readonly environment: OpenCovenDiagnosticEnvironment;
+    readonly checks: readonly OpenCovenDiagnosticCheck[];
+    readonly summary: OpenCovenDiagnosticSummary;
+}
+declare class OpenCovenDiagnosticError extends TypeError {
+    readonly code = "invalid_diagnostics";
+    readonly retryable = false;
+    constructor(message: string);
+}
+declare function createOpenCovenDiagnosticReport(options: OpenCovenDiagnosticReportOptions): OpenCovenDiagnosticReport;
+
 interface CompatibilityAssessment {
     compatible: boolean;
     minimumClientVersion: string;
@@ -213,4 +301,4 @@ declare function createMemoryOpenCovenProfileStore(initial?: unknown): OpenCoven
 declare function createFileOpenCovenProfileStore(options: FileOpenCovenProfileStoreOptions): OpenCovenProfileStore;
 declare function createOpenCovenProfileSecretReference(profileName: string): SecretStoreReference;
 
-export { type BoundedPageOptions, type CompatibilityAssessment, DISCOVERY_PROFILES, DISCOVERY_PROTOCOL, DISCOVERY_RECORD_VERSION, DiscoveryContractError, type DiscoveryDiagnosticCode, type DiscoveryEndpoint, type DiscoveryProfile, type DiscoveryRecord, type FileOpenCovenProfileStoreOptions, InvalidSecretKeyError, type ManagedSecretStore, type NormalizeErrorOptions, type NormalizedError, OPENCOVEN_PROFILE_VERSION, type OpenCovenProfile, type OpenCovenProfileDocument, OpenCovenProfileError, type OpenCovenProfileErrorCode, type OpenCovenProfileStore, type OpenCovenSystem, OperationAbortedError, OperationConfigurationError, type OperationContext, type OperationDefaults, type OperationDescriptor, type OperationEvent, type OperationObserver, type OperationOptions, type OperationScope, type OperationScopeOptions, OperationTimeoutError, type Page, type PageCursor, type PageOptions, type SecretStore, SecretStoreDisposedError, type SecretStoreReference, assessCompatibility, createFileOpenCovenProfileStore, createManagedMemorySecretStore, createMemoryOpenCovenProfileStore, createMemorySecretStore, createOpenCovenProfileSecretReference, createOperationScope, createSecretStoreReference, isOperationAbortedError, isOperationTimeoutError, iteratePages, migrateOpenCovenProfileDocument, normalizeError, normalizePageOptions, parseDiscoveryEndpoint, parseDiscoveryRecord, parseOpenCovenProfile, runOperation };
+export { type BoundedPageOptions, type CompatibilityAssessment, DISCOVERY_PROFILES, DISCOVERY_PROTOCOL, DISCOVERY_RECORD_VERSION, DiscoveryContractError, type DiscoveryDiagnosticCode, type DiscoveryEndpoint, type DiscoveryProfile, type DiscoveryRecord, type FileOpenCovenProfileStoreOptions, InvalidSecretKeyError, type ManagedSecretStore, type NormalizeErrorOptions, type NormalizedError, OPENCOVEN_DIAGNOSTIC_VERSION, OPENCOVEN_PROFILE_VERSION, type OpenCovenDiagnosticCapability, type OpenCovenDiagnosticCheck, type OpenCovenDiagnosticCheckId, type OpenCovenDiagnosticCheckInput, type OpenCovenDiagnosticCode, type OpenCovenDiagnosticEnvironment, OpenCovenDiagnosticError, type OpenCovenDiagnosticFacts, type OpenCovenDiagnosticFailure, type OpenCovenDiagnosticOperation, type OpenCovenDiagnosticPhase, type OpenCovenDiagnosticReport, type OpenCovenDiagnosticReportOptions, type OpenCovenDiagnosticRuntimeInput, type OpenCovenDiagnosticSkipReason, type OpenCovenDiagnosticStatus, type OpenCovenDiagnosticSummary, type OpenCovenDiagnosticSystem, type OpenCovenProfile, type OpenCovenProfileDocument, OpenCovenProfileError, type OpenCovenProfileErrorCode, type OpenCovenProfileStore, type OpenCovenSystem, OperationAbortedError, OperationConfigurationError, type OperationContext, type OperationDefaults, type OperationDescriptor, type OperationEvent, type OperationObserver, type OperationOptions, type OperationScope, type OperationScopeOptions, OperationTimeoutError, type Page, type PageCursor, type PageOptions, type SecretStore, SecretStoreDisposedError, type SecretStoreReference, assessCompatibility, createFileOpenCovenProfileStore, createManagedMemorySecretStore, createMemoryOpenCovenProfileStore, createMemorySecretStore, createOpenCovenDiagnosticReport, createOpenCovenProfileSecretReference, createOperationScope, createSecretStoreReference, isOperationAbortedError, isOperationTimeoutError, iteratePages, migrateOpenCovenProfileDocument, normalizeError, normalizePageOptions, parseDiscoveryEndpoint, parseDiscoveryRecord, parseOpenCovenProfile, runOperation };

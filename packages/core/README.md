@@ -1,7 +1,8 @@
 # @opencoven/sdk-core
 
-Transport-neutral errors, SemVer-accurate compatibility assessment, non-secret
-profiles, and in-memory secret stores. It performs no I/O at import time.
+Transport-neutral errors, SemVer-accurate compatibility assessment,
+allowlisted diagnostics, non-secret profiles, and in-memory secret stores. It
+performs no I/O at import time.
 
 The supported root API, pre-1.0 compatibility rules, and deprecation process
 are documented in the repository
@@ -14,6 +15,23 @@ and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
 and `operation` fields. It may also include an SDK-authored `message` plus
 validated `requestId` and `statusCode` scalar metadata. Unknown transport
 messages and payloads are never copied into the normalized object.
+
+## Diagnostics
+
+`createOpenCovenDiagnosticReport()` converts raw Cave health, Coven
+discovery/health, secure-store status, and error observations into an immutable
+version 1 report. The output contains only package/runtime versions, fixed
+check identifiers and phases, approved capabilities and operations, bounded
+stable-numeric Cave API and release versions, the final eight characters of a
+valid Cave UUID identity, Coven protocol and transport kind, safe error
+code/retryability/UUID diagnostic ID, and successful observation timestamps.
+
+Unknown error codes, capabilities, and operations are discarded or mapped to
+`unknown`. Endpoints, paths, records, process IDs, owners, prompts, messages,
+causes, details, daemon output, and arbitrary content have no field in the
+report model and are never copied. Reports are bounded to 16 unique supported
+checks, validate canonical timestamps and version metadata, and reject
+malformed runtime metadata.
 
 ## Compatibility
 

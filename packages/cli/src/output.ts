@@ -8,13 +8,7 @@ export interface CliError {
   details?: Record<string, unknown>;
 }
 
-export interface CliCheck {
-  id: string;
-  status: 'ok' | 'error' | 'skipped';
-  summary: string;
-  data?: Record<string, unknown>;
-  error?: CliError;
-}
+export type CliCheck = OpenCovenDiagnosticCheck;
 
 export interface CliOutput {
   command: string;
@@ -405,3 +399,4 @@ export function formatCliOutput(output: CliOutput, format: 'human' | 'json'): st
   const lines = output.human ?? [output.error?.message ?? 'OpenCoven command failed.'];
   return renderHumanLines(lines);
 }
+import type { OpenCovenDiagnosticCheck } from '@opencoven/sdk-core';
