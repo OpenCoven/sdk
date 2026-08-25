@@ -178,4 +178,39 @@ declare function createSecretStoreReference(key: string): SecretStoreReference;
 declare function createMemorySecretStore(): SecretStore;
 declare function createManagedMemorySecretStore(): ManagedSecretStore;
 
-export { type BoundedPageOptions, type CompatibilityAssessment, DISCOVERY_PROFILES, DISCOVERY_PROTOCOL, DISCOVERY_RECORD_VERSION, DiscoveryContractError, type DiscoveryDiagnosticCode, type DiscoveryEndpoint, type DiscoveryProfile, type DiscoveryRecord, InvalidSecretKeyError, type ManagedSecretStore, type NormalizeErrorOptions, type NormalizedError, type OpenCovenSystem, OperationAbortedError, OperationConfigurationError, type OperationContext, type OperationDefaults, type OperationDescriptor, type OperationEvent, type OperationObserver, type OperationOptions, type OperationScope, type OperationScopeOptions, OperationTimeoutError, type Page, type PageCursor, type PageOptions, type SecretStore, SecretStoreDisposedError, type SecretStoreReference, assessCompatibility, createManagedMemorySecretStore, createMemorySecretStore, createOperationScope, createSecretStoreReference, isOperationAbortedError, isOperationTimeoutError, iteratePages, normalizeError, normalizePageOptions, parseDiscoveryEndpoint, parseDiscoveryRecord, runOperation };
+declare const OPENCOVEN_PROFILE_VERSION = 1;
+interface OpenCovenProfile {
+    readonly version: 1;
+    readonly name: string;
+    readonly caveHome?: string;
+    readonly covenHome?: string;
+    readonly defaultFamiliarId?: string;
+    readonly defaultProjectId?: string;
+}
+interface OpenCovenProfileDocument {
+    readonly version: 1;
+    readonly profiles: readonly OpenCovenProfile[];
+}
+interface OpenCovenProfileStore {
+    list(): Promise<readonly OpenCovenProfile[]>;
+    get(name: string): Promise<OpenCovenProfile | undefined>;
+    set(profile: OpenCovenProfile): Promise<void>;
+    delete(name: string): Promise<boolean>;
+    reset(): Promise<void>;
+}
+interface FileOpenCovenProfileStoreOptions {
+    readonly path: string;
+}
+type OpenCovenProfileErrorCode = 'corrupt_profile_store' | 'invalid_profile' | 'invalid_profile_store_path' | 'profile_platform_security_unavailable' | 'profile_store_read_failed' | 'profile_store_write_failed' | 'unsafe_profile_store';
+declare class OpenCovenProfileError extends Error {
+    readonly code: OpenCovenProfileErrorCode;
+    readonly retryable = false;
+    constructor(code: OpenCovenProfileErrorCode, message: string);
+}
+declare function parseOpenCovenProfile(value: unknown): OpenCovenProfile;
+declare function migrateOpenCovenProfileDocument(value: unknown): OpenCovenProfileDocument;
+declare function createMemoryOpenCovenProfileStore(initial?: unknown): OpenCovenProfileStore;
+declare function createFileOpenCovenProfileStore(options: FileOpenCovenProfileStoreOptions): OpenCovenProfileStore;
+declare function createOpenCovenProfileSecretReference(profileName: string): SecretStoreReference;
+
+export { type BoundedPageOptions, type CompatibilityAssessment, DISCOVERY_PROFILES, DISCOVERY_PROTOCOL, DISCOVERY_RECORD_VERSION, DiscoveryContractError, type DiscoveryDiagnosticCode, type DiscoveryEndpoint, type DiscoveryProfile, type DiscoveryRecord, type FileOpenCovenProfileStoreOptions, InvalidSecretKeyError, type ManagedSecretStore, type NormalizeErrorOptions, type NormalizedError, OPENCOVEN_PROFILE_VERSION, type OpenCovenProfile, type OpenCovenProfileDocument, OpenCovenProfileError, type OpenCovenProfileErrorCode, type OpenCovenProfileStore, type OpenCovenSystem, OperationAbortedError, OperationConfigurationError, type OperationContext, type OperationDefaults, type OperationDescriptor, type OperationEvent, type OperationObserver, type OperationOptions, type OperationScope, type OperationScopeOptions, OperationTimeoutError, type Page, type PageCursor, type PageOptions, type SecretStore, SecretStoreDisposedError, type SecretStoreReference, assessCompatibility, createFileOpenCovenProfileStore, createManagedMemorySecretStore, createMemoryOpenCovenProfileStore, createMemorySecretStore, createOpenCovenProfileSecretReference, createOperationScope, createSecretStoreReference, isOperationAbortedError, isOperationTimeoutError, iteratePages, migrateOpenCovenProfileDocument, normalizeError, normalizePageOptions, parseDiscoveryEndpoint, parseDiscoveryRecord, parseOpenCovenProfile, runOperation };

@@ -58,7 +58,7 @@ than the active release checklist.
 
 | Path | Package | 0.1 status | Current purpose |
 | --- | --- | --- | --- |
-| `packages/core` | `@opencoven/sdk-core` | Release inventory | Transport-neutral errors, compatibility/discovery contracts, operation controls, bounded pagination, and in-memory secret abstractions |
+| `packages/core` | `@opencoven/sdk-core` | Release inventory | Transport-neutral errors, compatibility/discovery contracts, operation controls, bounded pagination, non-secret profiles, and in-memory secret abstractions |
 | `packages/cave` | `@opencoven/cave-client` | Release inventory | Constrained Cave client, runtime discovery/pairing, canonical reads, legacy familiar extensions, and reviewed contract fixtures |
 | `packages/coven` | `@opencoven/coven-client` | Release inventory | Constrained Coven discovery and health with explicit native transport-security providers |
 | `packages/sdk` | `@opencoven/sdk` | Release inventory | Optional Cave/Coven coordination without merging source-system identity or errors |
@@ -79,7 +79,7 @@ credential, or failure model.
 
 | Need | Package |
 | --- | --- |
-| Shared errors, compatibility/discovery contracts, operation controls, bounded pagination, or in-memory secrets | `@opencoven/sdk-core` |
+| Shared errors, compatibility/discovery contracts, operation controls, bounded pagination, non-secret profiles, or in-memory secrets | `@opencoven/sdk-core` |
 | Cave health, runtime pairing/discovery, canonical reads, legacy familiar extensions, or reviewed contract fixtures | `@opencoven/cave-client` |
 | Explicit Coven discovery and owner-local daemon health | `@opencoven/coven-client` |
 | Optional Cave/Coven coordination | `@opencoven/sdk` |

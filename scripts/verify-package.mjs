@@ -277,9 +277,14 @@ function createFixture(fixtureRoot, tarballs) {
 } from '@opencoven/cave-client';
 import { COVEN_DAEMON_PROTOCOL, CovenClient } from '@opencoven/coven-client';
 import {
+  createFileOpenCovenProfileStore,
   createManagedMemorySecretStore,
+  createMemoryOpenCovenProfileStore,
   createMemorySecretStore,
+  createOpenCovenProfileSecretReference,
   type BoundedPageOptions,
+  type FileOpenCovenProfileStoreOptions,
+  type OpenCovenProfile,
   type OperationContext,
   type OperationEvent,
 } from '@opencoven/sdk-core';
@@ -340,6 +345,15 @@ const coven = new CovenClient({
 const sdk = createOpenCovenSdk({ cave, coven });
 const store = createMemorySecretStore();
 const managedStore = createManagedMemorySecretStore();
+const profile: OpenCovenProfile = {
+  version: 1,
+  name: 'packed-consumer',
+  defaultProjectId: 'project-1',
+};
+const profileStore = createMemoryOpenCovenProfileStore();
+const profileFileOptions: FileOpenCovenProfileStoreOptions = {
+  path: '/not-called/profiles.json',
+};
 const controller = new AbortController();
 const boundedPageOptions: BoundedPageOptions = { maxPages: 1 };
 const caveIterators: [
@@ -358,6 +372,11 @@ await store.set('token', 'in-memory');
 await managedStore.set('token', 'managed');
 await managedStore.clear();
 await managedStore.dispose();
+await profileStore.set(profile);
+await profileStore.get(profile.name);
+createOpenCovenProfileSecretReference(profile.name);
+void createFileOpenCovenProfileStore;
+void profileFileOptions;
 await cave.health({
   signal: controller.signal,
   timeoutMs: 500,
@@ -376,10 +395,22 @@ void caveIterators;
   );
   writeFileSync(
     resolve(fixtureRoot, 'verify.mjs'),
-    `await import('@opencoven/sdk-core');
+    `const core = await import('@opencoven/sdk-core');
 const { CaveClient } = await import('@opencoven/cave-client');
 await import('@opencoven/coven-client');
 await import('@opencoven/sdk');
+
+for (const profileExport of [
+  'createFileOpenCovenProfileStore',
+  'createMemoryOpenCovenProfileStore',
+  'createOpenCovenProfileSecretReference',
+  'migrateOpenCovenProfileDocument',
+  'parseOpenCovenProfile',
+]) {
+  if (typeof core[profileExport] !== 'function') {
+    throw new Error(\`Packed profile export \${profileExport} is unavailable.\`);
+  }
+}
 
 const iteratorClient = new CaveClient({
   transport: {

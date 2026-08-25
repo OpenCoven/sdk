@@ -13,3 +13,6 @@
   automatic retry, or implicit whole-corpus walk.
 - Freeze the packed declaration, runtime exports, and package export map in the
   repository API baseline.
+- Add immutable versioned non-secret profiles, explicit version-zero migration,
+  separate profile-derived secret references, and memory or fail-closed atomic
+  Unix file stores.
