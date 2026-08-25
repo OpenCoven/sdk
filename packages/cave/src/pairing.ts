@@ -33,10 +33,11 @@ import {
   CAVE_CONTRACT_LIMITS,
   isCaveContractErrorCode,
 } from './contract-constraints.js';
-import { markPairingSecretUnsentError } from './pairing-secret.js';
+import { markPairingExchangeUnsentError } from './pairing-secret.js';
+import { parseCaveCredentialMetadata } from './credential-metadata.js';
 import {
   loadBoundCredential,
-} from './credential-binding.js';
+} from './credential-binding-node.js';
 import type {
   CaveAuthorityBoundPairingExchange,
   CaveCredentialMetadata,
@@ -46,10 +47,8 @@ import type {
   CaveHealthResponse,
   CavePairingCreated,
   CavePairingExchange,
-  CavePairingScope,
   CavePairingStatus,
 } from './schemas.js';
-import { CAVE_PAIRING_SCOPES } from './schemas.js';
 import type { CaveCredentialPersistingTransport } from './transport.js';
 import { CAVE_CLIENT_VERSION } from './version.js';
 
@@ -58,7 +57,6 @@ const CAVE_API_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const DECLARATION_ID_PATTERN = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/u;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const BASE64URL_43_RE = /^[A-Za-z0-9_-]{43}$/u;
-const CAVE_PAIRING_SCOPE_SET = new Set<string>(CAVE_PAIRING_SCOPES);
 
 export interface CaveCredentialBinding {
   store: SecretStore;
@@ -233,30 +231,6 @@ function expectTimestampNumber(value: unknown, label: string): number {
   return value;
 }
 
-function parseNullableTimestamp(value: unknown, label: string): number | null {
-  if (value === null) {
-    return null;
-  }
-
-  return expectTimestampNumber(value, label);
-}
-
-function parseScopeList(value: unknown): CavePairingScope[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw transportError('invalid_response', 'credential.scopes must be a non-empty array.');
-  }
-
-  const scopes: CavePairingScope[] = [];
-  for (const scope of value) {
-    if (typeof scope !== 'string' || !CAVE_PAIRING_SCOPE_SET.has(scope) || scopes.includes(scope as CavePairingScope)) {
-      throw transportError('invalid_response', 'credential.scopes contained an unsupported value.');
-    }
-    scopes.push(scope as CavePairingScope);
-  }
-
-  return scopes;
-}
-
 function parseAdvertisedIds(value: unknown, label: string): string[] | undefined {
   if (value === undefined) {
     return undefined;
@@ -360,25 +334,13 @@ export function parseHealthResponse(value: unknown): CaveHealthResponse {
 }
 
 export function parseCredentialMetadata(value: unknown): CaveCredentialMetadata {
-  const credential = expectObject(value, 'credential');
-  const id = expectString(credential.id, 'credential.id');
-  if (!UUID_RE.test(id)) {
-    throw transportError('invalid_response', 'credential.id must be a UUID.');
+  const credential = parseCaveCredentialMetadata(value, {
+    allowAdditionalFields: true,
+  });
+  if (credential === undefined) {
+    throw transportError('invalid_response', 'pairing.exchange credential was malformed.');
   }
-
-  return {
-    id,
-    appName: expectString(credential.appName, 'credential.appName'),
-    installationId: expectString(credential.installationId, 'credential.installationId'),
-    scopes: parseScopeList(credential.scopes),
-    createdAt: expectTimestampNumber(credential.createdAt, 'credential.createdAt'),
-    lastUsedAt: parseNullableTimestamp(credential.lastUsedAt, 'credential.lastUsedAt'),
-    revokedAt: parseNullableTimestamp(credential.revokedAt, 'credential.revokedAt'),
-    revocationReason:
-      credential.revocationReason === null
-        ? null
-        : expectString(credential.revocationReason, 'credential.revocationReason'),
-  };
+  return credential;
 }
 
 function parsePairingCreated(value: unknown): CavePairingCreated {
@@ -788,6 +750,7 @@ async function requestJson(
     fetchImplementation: typeof fetch;
     headers?: Record<string, string>;
     maxResponseBytes: number;
+    onPreDispatchFailure?: (error: unknown) => unknown;
     pairingSecretDispatch?: 'reusable' | 'single_use';
     pinnedAuthority?: CaveDiscoveredEndpoint;
     requireBearer?: boolean;
@@ -808,8 +771,8 @@ async function requestJson(
       assertPinnedPairingAuthority(discovered, options.pinnedAuthority);
     }
   } catch (error) {
-    if (options.pinnedAuthority !== undefined) {
-      throw markPairingSecretUnsentError(error);
+    if (options.onPreDispatchFailure !== undefined) {
+      throw options.onPreDispatchFailure(error);
     }
     throw error;
   }
@@ -1017,7 +980,7 @@ function createDiscoveredTransport(
         });
         expectedInstanceId = parseHealthResponse(expectedHealth.payload).data.instanceId;
       } catch (error) {
-        throw markPairingSecretUnsentError(error);
+        throw markPairingExchangeUnsentError(error, context);
       }
 
       const { payload, discovered } = await requestJson(
@@ -1033,6 +996,8 @@ function createDiscoveredTransport(
             'x-coven-pairing-secret': pairingSecret,
           },
           maxResponseBytes: options.maxResponseBytes,
+          onPreDispatchFailure: (error) =>
+            markPairingExchangeUnsentError(error, context),
           pairingSecretDispatch: 'single_use',
           pinnedAuthority: requirePinnedAuthority(requestId),
         },

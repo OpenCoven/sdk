@@ -19,15 +19,15 @@ import {
   parseEnvelopeBase,
   parseErrorPayload,
   parseFamiliarsResponse,
-  parseHealthResponse,
   parsePairingStatus,
 } from './pairing.js';
 import type {
+  CaveHealthResponse,
   CavePairingRequest,
 } from './schemas.js';
 import type {
-  CaveManagedCredentialState,
-  CaveManagedCredentialTransport,
+  CaveStagedManagedCredentialState,
+  CaveStagedManagedCredentialTransport,
 } from './transport.js';
 
 const UUID_RE =
@@ -452,7 +452,7 @@ function parseManagedPairingExchange(
   };
 }
 
-function parseCredentialState(value: unknown): CaveManagedCredentialState {
+function parseCredentialState(value: unknown): CaveStagedManagedCredentialState {
   const state = ownDataObject(value, 'Managed credential state');
   expectExactKeys(state, ['status'], 'Managed credential state');
   if (
@@ -494,14 +494,12 @@ export function createManagedCaveClient(
   options: CaveManagedClientOptions,
 ): CaveClient {
   const native = options.transport;
-  const transport: CaveManagedCredentialTransport = {
+  const transport: CaveStagedManagedCredentialTransport = {
     credentialMode: 'managed-native',
     async health(context) {
-      return parseHealthResponse(
-        parseResponse(
-          await invokeNative(native, 'health', [context], 'health'),
-        ),
-      );
+      return parseResponse(
+        await invokeNative(native, 'health', [context], 'health'),
+      ) as CaveHealthResponse;
     },
     async pairingCreateManaged(request, context) {
       return parseManagedPairingCreated(

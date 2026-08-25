@@ -51,8 +51,11 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain('function assertPackedPackageContracts(tarballs)');
     expect(verifier).toContain("manifest.main !== './dist/index.js'");
     expect(verifier).toContain("manifest.types !== './dist/index.d.ts'");
+    expect(verifier).toContain('function expectedPackageExports(workspaceDirectory)');
+    expect(verifier).toContain("workspaceDirectory === 'cave'");
+    expect(verifier).toContain("'./managed': {");
     expect(verifier).toContain(
-      '!isJsonOrderEqual(manifest.exports, rootPackageExports)',
+      '!isJsonOrderEqual(manifest.exports, expectedPackageExports(workspaceDirectory))',
     );
     expect(verifier).toContain(
       'const expectedDependencies = expectedPackedDependencies(workspaceDirectory, manifest.version);',
@@ -153,6 +156,18 @@ describe('packed package verifier contract', () => {
     expect(verifier).toContain(
       "throw new Error('Packed Cave iterator methods are unavailable.');",
     );
+  });
+
+  test('executes and bundles the managed browser subpath from its packed tarball', () => {
+    const verifier = readFileSync(resolve(root, 'scripts/verify-package.mjs'), 'utf8');
+
+    expect(verifier).toContain('function createManagedBrowserFixture(fixtureRoot, tarballs)');
+    expect(verifier).toContain("'@opencoven/cave-client/managed'");
+    expect(verifier).toContain('types: []');
+    expect(verifier).toContain("platform: 'browser'");
+    expect(verifier).toContain('Packed managed browser lifecycle passed.');
+    expect(verifier).toContain('managedBrowserFixtureRoot');
+    expect(verifier).toContain("run(process.execPath, ['verify.mjs'], managedBrowserFixtureRoot);");
   });
 
 });

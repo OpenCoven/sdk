@@ -9,6 +9,8 @@ import {
 } from '@opencoven/sdk-core';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
+import { markPairingExchangeUnsentError } from '../packages/cave/src/pairing-secret.js';
+
 interface HealthClient {
   health(): Promise<{ status: 'ok' }>;
 }
@@ -66,6 +68,43 @@ function recordingSecretStore() {
       delete: vi.fn((key: string) => Promise.resolve(retained.delete(key))),
     },
   };
+}
+
+type DirectPairingExchange = NonNullable<
+  cave.CaveCredentialPersistingTransport['pairingExchange']
+>;
+
+function pairingAttemptContext(value: unknown): object | undefined {
+  return typeof value === 'object' && value !== null ? value : undefined;
+}
+
+async function directPairingSession(
+  pairingExchange: DirectPairingExchange,
+  referenceName: string,
+) {
+  const { store } = recordingSecretStore();
+  const client = new cave.CaveClient({
+    transport: {
+      health: () => Promise.resolve(VALID_CAVE_HEALTH_RESPONSE),
+      pairingCreate: () =>
+        Promise.resolve({
+          requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+          secret: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          expiresAt: 1_755_731_112_617,
+        }),
+      pairingExchange,
+    } satisfies cave.CaveCredentialPersistingTransport,
+    credentials: {
+      store,
+      reference: createSecretStoreReference(referenceName),
+    },
+  });
+
+  return client.createPairing({
+    appName: 'OpenCoven Chat',
+    installationId: 'chat-install-1',
+    scopes: ['chat:read'],
+  });
 }
 
 function expectStoredCredentialRecord(serialized: string | undefined): void {
@@ -475,6 +514,149 @@ describe('constrained client transports', () => {
       details: {
         reason: 'pairing_replayed',
       },
+    });
+  });
+
+  test.each(['timeout', 'abort'] as const)(
+    'restores a proven pre-dispatch exchange after $0 wins its race',
+    async (disposition) => {
+      if (disposition === 'timeout') {
+        vi.useFakeTimers();
+      }
+      const proof = new Error('late pre-dispatch failure');
+      let rejectFirst: ((error: Error) => void) | undefined;
+      let calls = 0;
+      const pairingExchange: DirectPairingExchange = vi.fn(
+        (_requestId, _pairingSecret, context) => {
+          calls += 1;
+          if (calls !== 1) {
+            return Promise.reject(new Error('ambiguous dispatch failure'));
+          }
+          return new Promise<cave.CaveAuthorityBoundPairingExchange>(
+            (_resolve, reject) => {
+              rejectFirst = (error) =>
+                reject(
+                  markPairingExchangeUnsentError(
+                    error,
+                    pairingAttemptContext(context),
+                  ),
+                );
+            },
+          );
+        },
+      );
+      const session = await directPairingSession(
+        pairingExchange,
+        `late-unsent-${disposition}`,
+      );
+      const controller = new AbortController();
+      const first = session
+        .exchange(
+          disposition === 'timeout'
+            ? { timeoutMs: 10 }
+            : { signal: controller.signal },
+        )
+        .catch((error: unknown) => error);
+
+      if (disposition === 'timeout') {
+        await vi.advanceTimersByTimeAsync(10);
+      } else {
+        await Promise.resolve();
+        controller.abort();
+      }
+      await expect(first).resolves.toMatchObject({
+        normalized: {
+          code: disposition === 'abort' ? 'aborted' : 'timeout',
+          operation: 'pairingExchange',
+        },
+      });
+
+      rejectFirst?.(proof);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await expect(session.exchange()).rejects.toMatchObject({
+        normalized: { operation: 'pairingExchange' },
+      });
+      expect(pairingExchange).toHaveBeenCalledTimes(2);
+      await expect(session.exchange()).rejects.toMatchObject({
+        normalized: { code: 'conflict', operation: 'pairingExchange' },
+      });
+    },
+  );
+
+  test('keeps an exchange spent after timeout when late failure is ambiguous', async () => {
+    vi.useFakeTimers();
+    let rejectFirst: ((error: Error) => void) | undefined;
+    const pairingExchange: DirectPairingExchange = vi.fn(
+      () =>
+        new Promise<cave.CaveAuthorityBoundPairingExchange>((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    );
+    const session = await directPairingSession(
+      pairingExchange,
+      'late-ambiguous-exchange',
+    );
+    const first = session.exchange({ timeoutMs: 10 }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(first).resolves.toMatchObject({
+      normalized: { code: 'timeout', operation: 'pairingExchange' },
+    });
+
+    rejectFirst?.(new Error('ambiguous dispatch failure'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await expect(session.exchange()).rejects.toMatchObject({
+      normalized: { code: 'conflict', operation: 'pairingExchange' },
+    });
+    expect(pairingExchange).toHaveBeenCalledOnce();
+  });
+
+  test('keeps shared unsent error proof independent for concurrent sessions', async () => {
+    const sharedError = new Error('shared pre-dispatch failure');
+    const exchanges: DirectPairingExchange[] = [];
+    for (let index = 0; index < 2; index += 1) {
+      let calls = 0;
+      exchanges.push(
+        vi.fn((_requestId, _pairingSecret, context) => {
+          calls += 1;
+          return calls === 1
+            ? Promise.reject(
+                markPairingExchangeUnsentError(
+                  sharedError,
+                  pairingAttemptContext(context),
+                ),
+              )
+            : Promise.reject(new Error('ambiguous dispatch failure'));
+        }),
+      );
+    }
+    const [firstSession, secondSession] = await Promise.all([
+      directPairingSession(exchanges[0] as DirectPairingExchange, 'shared-unsent-first'),
+      directPairingSession(exchanges[1] as DirectPairingExchange, 'shared-unsent-second'),
+    ]);
+
+    await expect(
+      Promise.all([
+        firstSession.exchange().catch((error: unknown) => error),
+        secondSession.exchange().catch((error: unknown) => error),
+      ]),
+    ).resolves.toHaveLength(2);
+    await expect(firstSession.exchange()).rejects.toMatchObject({
+      normalized: { operation: 'pairingExchange' },
+    });
+    await expect(secondSession.exchange()).rejects.toMatchObject({
+      normalized: { operation: 'pairingExchange' },
+    });
+    expect(exchanges[0]).toHaveBeenCalledTimes(2);
+    expect(exchanges[1]).toHaveBeenCalledTimes(2);
+    await expect(firstSession.exchange()).rejects.toMatchObject({
+      normalized: { code: 'conflict', operation: 'pairingExchange' },
+    });
+    await expect(secondSession.exchange()).rejects.toMatchObject({
+      normalized: { code: 'conflict', operation: 'pairingExchange' },
     });
   });
 

@@ -9,6 +9,10 @@ are documented in the repository
 [compatibility policy](https://github.com/OpenCoven/sdk/blob/main/COMPATIBILITY.md)
 and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
 
+Browser consumers can import `@opencoven/sdk-core/browser` for operation,
+compatibility, pagination, error, and memory-secret APIs without bringing in
+the Node-only local-discovery helpers from the root entry point.
+
 ## Errors
 
 `normalizeError(error, options)` returns stable `system`, `code`, `retryable`,

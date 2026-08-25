@@ -4,10 +4,8 @@ import {
   type OperationContext,
   type SecretStore,
   type SecretStoreReference,
-} from '@opencoven/sdk-core';
+} from '@opencoven/sdk-core/browser';
 
-import { caveAuthorityBindingFromDiscoveredEndpoint } from './authority-binding.js';
-import type { CaveDiscoveredEndpoint } from './discovery.js';
 import type { CaveAuthorityBinding } from './schemas.js';
 
 const CAVE_STORED_CREDENTIAL_VERSION = 1 as const;
@@ -756,10 +754,10 @@ export async function storeBoundCredential(
   });
 }
 
-export async function loadBoundCredential(
+export async function loadBoundCredentialForAuthority(
   store: SecretStore,
   reference: SecretStoreReference,
-  discovered: CaveDiscoveredEndpoint,
+  authorityBindingForInstance: (instanceId: string) => CaveAuthorityBinding,
   isBearer: (value: string) => boolean,
   options: CredentialBindingMutationOptions = {},
 ): Promise<LoadedCaveCredential> {
@@ -796,8 +794,7 @@ export async function loadBoundCredential(
     return { status: 'invalid_bearer' };
   }
 
-  const currentAuthority = caveAuthorityBindingFromDiscoveredEndpoint(
-    discovered,
+  const currentAuthority = authorityBindingForInstance(
     stored.authorityBinding.instanceId,
   );
   const reason = mismatchReason(currentAuthority, stored.authorityBinding);

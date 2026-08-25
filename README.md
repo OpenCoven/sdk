@@ -245,6 +245,14 @@ The packed `cave-managed-native` example verifies pairing, native commit,
 credential status, canonical reads, errors, observers, and serialized state
 without exposing either secret sentinel.
 
+Tauri-style browser webviews can instead import the browser-safe
+`@opencoven/cave-client/managed` subpath. Its
+`CaveManagedCredentialTransport` keeps pairing secrets and bearers native while
+returning only validated request metadata, pairing status, credential metadata,
+and canonical envelopes to the SDK. It also accepts an owner-checked
+`CaveManagedDiscoverySource`, so discovery parsing never requires filesystem
+access in the webview.
+
 ## Cave canonical reads
 
 `CaveClient` ships five one-page methods:

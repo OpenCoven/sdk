@@ -33,6 +33,7 @@ export type {
   CaveClientOptions,
   CaveCredentialBinding,
   CaveFamiliarAnalyticsOptions,
+  CaveManagedNativeCredentialCustody,
 } from './client.js';
 export type {
   CaveDiscoveryDependencies,
@@ -97,6 +98,10 @@ export type {
   CaveHealthData,
   CaveHealthResponse,
   CavePairingCreated,
+  CaveManagedCredentialStatusResult,
+  CaveManagedForgetCredentialResult,
+  CaveManagedPairingCreated,
+  CaveManagedPairingExchange,
   CavePairingExchange,
   CavePairingRequest,
   CavePairingScope,
@@ -107,6 +112,7 @@ export type {
 } from './schemas.js';
 export type {
   CaveCredentialPersistingTransport,
+  CaveManagedCredentialTransport,
   CaveTransport,
 } from './transport.js';
 export { CAVE_CLIENT_VERSION } from './version.js';

@@ -18,12 +18,13 @@ import {
   type PageOptions,
   type SecretStore,
   type SecretStoreReference,
-} from '@opencoven/sdk-core';
+} from '@opencoven/sdk-core/browser';
 
 import {
   discardPairingExchangeBearer,
   parseCaveAuthorityBinding,
-} from './authority-binding.js';
+} from './authority-binding-contract.js';
+import { CAVE_CONTRACT_ERROR_CODES } from './contract-constraints.js';
 import {
   CaveCanonicalSchemaError,
   parseConversationEnvelope,
@@ -38,16 +39,26 @@ import {
   invalidateStoredCredential,
   storeBoundCredential,
 } from './credential-binding.js';
-import { isPairingSecretUnsentError } from './pairing-secret.js';
+import {
+  beginPairingExchangeUnsentAttempt,
+  consumePairingExchangeUnsentError,
+  endPairingExchangeUnsentAttempt,
+} from './pairing-secret.js';
+import { parseCaveCredentialMetadata } from './credential-metadata.js';
+import { snapshotManagedResult } from './managed-snapshot.js';
 import {
   CAVE_PAIRING_SCOPES,
   type CaveAuthorityBinding,
   type CaveCanonicalFamiliar,
   type CaveConversation,
   type CaveConversationMessage,
+  type CaveContractReport,
+  type CaveContractViolation,
   type CaveCredentialMetadata,
   type CaveCredentialStatus,
   type CaveExecutionAttempt,
+  type CaveExecutionBackfill,
+  type CaveExecutionCoverage,
   type CaveExecutionSlice,
   type CaveExecutionWindow,
   type CaveFamiliar,
@@ -56,18 +67,23 @@ import {
   type CaveFamiliarWire,
   type CaveHealth,
   type CavePairingCreated,
-  type CavePairingExchange,
+  type CaveManagedCredentialStatusResult,
+  type CaveManagedForgetCredentialResult,
+  type CaveManagedPairingCreated,
+  type CaveManagedPairingExchange,
   type CavePairingRequest,
   type CavePairingScope,
   type CavePairingStatus,
+  type CavePropertyCoverage,
   type CaveProject,
 } from './schemas.js';
 import type {
   CaveCredentialPersistingTransport,
   CaveManagedCredentialTransport,
+  CaveStagedManagedCredentialTransport,
   CaveTransport,
 } from './transport.js';
-import { isCaveManagedCredentialTransport } from './transport.js';
+import { isCaveStagedManagedCredentialTransport } from './transport.js';
 import { CAVE_CLIENT_VERSION } from './version.js';
 
 const CAVE_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveClientError');
@@ -78,10 +94,21 @@ const ADVERTISED_ID_MAX_CHARACTERS = 64;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const BASE64URL_43_RE = /^[A-Za-z0-9_-]{43}$/u;
 const CAVE_PAIRING_SCOPE_SET = new Set<string>(CAVE_PAIRING_SCOPES);
+const REDACTED_REQUEST_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/u;
+const SECRET_TEXT_RE = /(?:bearer|secret)/iu;
 
 export interface CaveCredentialBinding {
   store: SecretStore;
   reference: SecretStoreReference;
+}
+
+/**
+ * Selects native custody for every Cave pairing and credential secret. A
+ * managed transport is responsible for retaining, consuming, and persisting
+ * those values outside JavaScript.
+ */
+export interface CaveManagedNativeCredentialCustody {
+  mode: 'managed-native';
 }
 
 interface CaveClientOptionsBase {
@@ -91,16 +118,25 @@ interface CaveClientOptionsBase {
 interface CaveClientOptionsWithoutCredentials extends CaveClientOptionsBase {
   transport: CaveTransport;
   credentials?: undefined;
+  credentialCustody?: undefined;
 }
 
 interface CaveClientOptionsWithCredentials extends CaveClientOptionsBase {
   transport: CaveCredentialPersistingTransport;
   credentials: CaveCredentialBinding;
+  credentialCustody?: undefined;
+}
+
+interface CaveClientOptionsWithManagedNativeCredentials extends CaveClientOptionsBase {
+  transport: CaveManagedCredentialTransport;
+  credentials?: never;
+  credentialCustody: CaveManagedNativeCredentialCustody;
 }
 
 export type CaveClientOptions =
   | CaveClientOptionsWithoutCredentials
-  | CaveClientOptionsWithCredentials;
+  | CaveClientOptionsWithCredentials
+  | CaveClientOptionsWithManagedNativeCredentials;
 
 export interface CaveFamiliarAnalyticsOptions extends OperationOptions {
   recentLimit?: number;
@@ -204,8 +240,462 @@ export function isCaveClientError(error: unknown): error is CaveClientError {
   }
 }
 
+interface ManagedTrustedCaveClientError {
+  normalized: NormalizedError;
+  compatibility: CompatibilityAssessment | undefined;
+  reason: 'pairing_poll_in_progress' | 'pairing_replayed' | undefined;
+}
+
+const MANAGED_TRUSTED_CAVE_CLIENT_ERRORS = new WeakMap<
+  CaveClientError,
+  ManagedTrustedCaveClientError
+>();
+
+function immutableManagedNormalizedError(
+  normalized: NormalizedError,
+): NormalizedError {
+  return Object.freeze({
+    system: normalized.system,
+    code: normalized.code,
+    retryable: normalized.retryable,
+    operation: normalized.operation,
+    ...(normalized.requestId === undefined
+      ? {}
+      : { requestId: normalized.requestId }),
+    ...(normalized.statusCode === undefined
+      ? {}
+      : { statusCode: normalized.statusCode }),
+  });
+}
+
+function immutableManagedCompatibility(
+  compatibility: CompatibilityAssessment | undefined,
+): CompatibilityAssessment | undefined {
+  return compatibility === undefined
+    ? undefined
+    : Object.freeze({
+        compatible: compatibility.compatible,
+        minimumClientVersion: compatibility.minimumClientVersion,
+        clientVersion: compatibility.clientVersion,
+      });
+}
+
+function managedLocalCaveClientError(error: CaveClientError): CaveClientError {
+  const reason =
+    error.details?.reason === 'pairing_poll_in_progress' ||
+    error.details?.reason === 'pairing_replayed'
+      ? error.details.reason
+      : undefined;
+  MANAGED_TRUSTED_CAVE_CLIENT_ERRORS.set(error, {
+    normalized: immutableManagedNormalizedError(error.normalized),
+    compatibility: undefined,
+    reason,
+  });
+  return error;
+}
+
+function managedValidatedCaveClientError(error: CaveClientError): CaveClientError {
+  MANAGED_TRUSTED_CAVE_CLIENT_ERRORS.set(error, {
+    normalized: immutableManagedNormalizedError(error.normalized),
+    compatibility: immutableManagedCompatibility(error.compatibility),
+    reason: undefined,
+  });
+  return error;
+}
+
+function consumeManagedTrustedCaveClientError(
+  error: unknown,
+): CaveClientError | undefined {
+  if (!isCaveClientError(error)) {
+    return undefined;
+  }
+
+  const trusted = MANAGED_TRUSTED_CAVE_CLIENT_ERRORS.get(error);
+  if (trusted === undefined) {
+    return undefined;
+  }
+  MANAGED_TRUSTED_CAVE_CLIENT_ERRORS.delete(error);
+
+  const cause =
+    trusted.reason === undefined
+      ? undefined
+      : Object.freeze({
+          code: trusted.normalized.code,
+          retryable: trusted.normalized.retryable,
+          details: Object.freeze({ reason: trusted.reason }),
+        });
+  const exposed = new CaveClientError(
+    trusted.normalized,
+    trusted.compatibility,
+    cause === undefined ? undefined : { cause },
+  );
+  if (exposed.details !== undefined) {
+    Object.freeze(exposed.details);
+  }
+  return Object.freeze(exposed);
+}
+
+function discardManagedTrustedCaveClientError(error: unknown): void {
+  if (isCaveClientError(error)) {
+    MANAGED_TRUSTED_CAVE_CLIENT_ERRORS.delete(error);
+  }
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+/**
+ * Copies only own data properties from an untrusted native bridge result.
+ * Accessors and prototypes are rejected so a bridge cannot execute arbitrary
+ * code or smuggle values into SDK validation through a getter.
+ */
+function managedDataRecord(value: unknown): Record<string, unknown> | undefined {
+  const snapshot = snapshotManagedResult(value);
+  if (typeof snapshot !== 'object' || snapshot === null || Array.isArray(snapshot)) {
+    return undefined;
+  }
+
+  return snapshot as Record<string, unknown>;
+}
+
+function immutableManagedResult<T>(value: T): T {
+  const snapshot = snapshotManagedResult(value);
+  if (snapshot === undefined) {
+    throw new TypeError('Managed result snapshot was malformed.');
+  }
+  return snapshot as T;
+}
+
+function ownConfigurationRecord(
+  value: unknown,
+  allowedKeys: readonly string[],
+): Record<string, unknown> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+
+  try {
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Reflect.ownKeys(descriptors);
+    if (
+      keys.some(
+        (key) => {
+          if (typeof key !== 'string') {
+            return true;
+          }
+          const descriptor = descriptors[key];
+          return (
+            !allowedKeys.includes(key) ||
+            descriptor === undefined ||
+            !Object.hasOwn(descriptor, 'value')
+          );
+        },
+      )
+    ) {
+      return undefined;
+    }
+
+    const record = Object.create(null) as Record<string, unknown>;
+    for (const key of keys) {
+      const descriptor = descriptors[key as string];
+      if (descriptor === undefined) {
+        return undefined;
+      }
+      Object.defineProperty(record, key, {
+        configurable: false,
+        enumerable: true,
+        value: descriptor.value,
+        writable: false,
+      });
+    }
+    return Object.freeze(record);
+  } catch {
+    return undefined;
+  }
+}
+
+interface CapturedCaveClientOptions {
+  transport: CaveTransport;
+  operation: OperationDefaults | undefined;
+  credentials: CaveCredentialBinding | undefined;
+  credentialCustody: { mode: unknown } | undefined;
+}
+
+function captureCaveClientOptions(
+  value: unknown,
+): CapturedCaveClientOptions | undefined {
+  const options = ownConfigurationRecord(value, [
+    'transport',
+    'operation',
+    'credentials',
+    'credentialCustody',
+  ]);
+  if (options === undefined || !Object.hasOwn(options, 'transport')) {
+    return undefined;
+  }
+
+  let operation: OperationDefaults | undefined;
+  if (options.operation !== undefined) {
+    const capturedOperation = ownConfigurationRecord(options.operation, [
+      'timeoutMs',
+      'observer',
+    ]);
+    if (capturedOperation === undefined) {
+      return undefined;
+    }
+    operation = Object.freeze({
+      ...(capturedOperation.timeoutMs !== undefined
+        ? { timeoutMs: capturedOperation.timeoutMs as number }
+        : {}),
+      ...(capturedOperation.observer !== undefined
+        ? { observer: capturedOperation.observer as NonNullable<OperationDefaults['observer']> }
+        : {}),
+    });
+  }
+
+  let credentials: CaveCredentialBinding | undefined;
+  if (options.credentials !== undefined) {
+    const capturedCredentials = ownConfigurationRecord(options.credentials, [
+      'store',
+      'reference',
+    ]);
+    if (
+      capturedCredentials === undefined ||
+      !Object.hasOwn(capturedCredentials, 'store') ||
+      !Object.hasOwn(capturedCredentials, 'reference')
+    ) {
+      return undefined;
+    }
+    credentials = Object.freeze({
+      store: capturedCredentials.store as SecretStore,
+      reference: capturedCredentials.reference as SecretStoreReference,
+    });
+  }
+
+  let credentialCustody: { mode: unknown } | undefined;
+  if (options.credentialCustody !== undefined) {
+    const capturedCustody = ownConfigurationRecord(options.credentialCustody, ['mode']);
+    if (
+      capturedCustody === undefined ||
+      !Object.hasOwn(capturedCustody, 'mode')
+    ) {
+      return undefined;
+    }
+    credentialCustody = Object.freeze({ mode: capturedCustody.mode });
+  }
+
+  return Object.freeze({
+    transport: options.transport as CaveTransport,
+    operation,
+    credentials,
+    credentialCustody,
+  });
+}
+
+function hasExactManagedKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+): boolean {
+  const actual = Object.keys(value);
+  return actual.length === keys.length && actual.every((key) => keys.includes(key));
+}
+
+function parseManagedPairingCreated(
+  value: unknown,
+): CaveManagedPairingCreated | undefined {
+  const result = managedDataRecord(value);
+  if (
+    result === undefined ||
+    !hasExactManagedKeys(result, ['requestId', 'expiresAt']) ||
+    typeof result.requestId !== 'string' ||
+    !UUID_RE.test(result.requestId) ||
+    typeof result.expiresAt !== 'number' ||
+    !Number.isSafeInteger(result.expiresAt) ||
+    result.expiresAt <= 0
+  ) {
+    return undefined;
+  }
+
+  return immutableManagedResult({
+    requestId: result.requestId,
+    expiresAt: result.expiresAt,
+  });
+}
+
+function parseManagedPairingExchange(
+  value: unknown,
+): CaveManagedPairingExchange | undefined {
+  const result = managedDataRecord(value);
+  if (result === undefined || !hasExactManagedKeys(result, ['credential'])) {
+    return undefined;
+  }
+
+  const metadata = parseCaveCredentialMetadata(result.credential);
+  if (metadata === undefined) {
+    return undefined;
+  }
+
+  return immutableManagedResult({
+    credential: {
+      id: metadata.id,
+      appName: metadata.appName,
+      installationId: metadata.installationId,
+      scopes: [...metadata.scopes],
+      createdAt: metadata.createdAt,
+      lastUsedAt: metadata.lastUsedAt,
+      revokedAt: metadata.revokedAt,
+      revocationReason: metadata.revocationReason,
+    },
+  });
+}
+
+function parseManagedPairingStatus(
+  value: unknown,
+): CavePairingStatus | undefined {
+  const result = managedDataRecord(value);
+  const status = result === undefined
+    ? undefined
+    : parseDirectPairingStatus(result);
+  if (
+    result === undefined ||
+    status === undefined ||
+    !hasExactManagedKeys(result, ['id', 'status', 'expiresAt']) ||
+    status.id !== result.id ||
+    status.status !== result.status ||
+    status.expiresAt !== result.expiresAt
+  ) {
+    return undefined;
+  }
+
+  return immutableManagedResult({
+    id: status.id,
+    status: status.status,
+    expiresAt: status.expiresAt,
+  });
+}
+
+function parseManagedCredentialStatus(
+  value: unknown,
+): CaveManagedCredentialStatusResult | undefined {
+  const result = managedDataRecord(value);
+  if (result === undefined || typeof result.status !== 'string') {
+    return undefined;
+  }
+
+  if (result.status === 'missing' && hasExactManagedKeys(result, ['status'])) {
+    return immutableManagedResult({ status: 'missing' });
+  }
+  if (
+    result.status === 'disconnected' &&
+    hasExactManagedKeys(result, ['status', 'reason']) &&
+    (result.reason === 'credential_update_in_progress' ||
+      result.reason === 'reconcile_required')
+  ) {
+    return immutableManagedResult({
+      status: 'disconnected',
+      reason: result.reason,
+    });
+  }
+  if (result.status === 'revoked' && hasExactManagedKeys(result, ['status', 'health'])) {
+    return immutableManagedResult({ status: 'revoked', health: result.health });
+  }
+  if (
+    result.status === 'valid' &&
+    hasExactManagedKeys(result, ['status', 'access', 'health']) &&
+    (result.access === 'chat:read' ||
+      result.access === 'scope_denied' ||
+      result.access === 'service_unavailable' ||
+      result.access === 'rate_limited')
+  ) {
+    return immutableManagedResult({
+      status: 'valid',
+      access: result.access,
+      health: result.health,
+    });
+  }
+
+  return undefined;
+}
+
+function parseManagedForgetCredential(
+  value: unknown,
+): CaveManagedForgetCredentialResult | undefined {
+  const result = managedDataRecord(value);
+  if (
+    result === undefined ||
+    !hasExactManagedKeys(result, ['status']) ||
+    (result.status !== 'deleted' &&
+      result.status !== 'missing' &&
+      result.status !== 'credential_update_in_progress')
+  ) {
+    return undefined;
+  }
+
+  return immutableManagedResult({ status: result.status });
+}
+
+const MANAGED_NATIVE_ERROR_CODES = new Set<string>([
+  ...CAVE_CONTRACT_ERROR_CODES,
+  'aborted',
+  'body_limit',
+  'conflict',
+  'credential_update_in_progress',
+  'invalid_response',
+  'scope_denied',
+  'timeout',
+  'unsupported_operation',
+]);
+
+function redactedManagedTransportError(error: unknown, operation: string): CaveClientError {
+  const shape = ownDataErrorShape(error);
+  const code =
+    typeof shape.code === 'string' && MANAGED_NATIVE_ERROR_CODES.has(shape.code)
+      ? shape.code
+      : 'invalid_response';
+  const retryable = shape.retryable === true;
+  const requestId =
+    typeof shape.requestId === 'string' &&
+    REDACTED_REQUEST_ID_RE.test(shape.requestId) &&
+    !SECRET_TEXT_RE.test(shape.requestId) &&
+    !BASE64URL_43_RE.test(shape.requestId)
+      ? shape.requestId
+      : undefined;
+  const statusCode =
+    typeof shape.statusCode === 'number' &&
+    Number.isSafeInteger(shape.statusCode) &&
+    shape.statusCode >= 100 &&
+    shape.statusCode <= 599
+      ? shape.statusCode
+      : undefined;
+
+  return new CaveClientError(
+    normalizeCaveError(
+      {
+        code,
+        retryable,
+        ...(requestId === undefined ? {} : { requestId }),
+        ...(statusCode === undefined ? {} : { statusCode }),
+      },
+      operation,
+    ),
+  );
+}
+
+function redactedManagedCancellationError(
+  error: unknown,
+  operation: string,
+): CaveClientError {
+  const code = isOperationTimeoutError(error) ? 'timeout' : 'aborted';
+  return new CaveClientError(
+    normalizeCaveError(
+      {
+        code,
+        retryable: code === 'timeout',
+      },
+      operation,
+    ),
+  );
 }
 
 function invalidHealthResponse(): CaveClientError {
@@ -452,7 +942,7 @@ function errorCodeOf(error: unknown): string | undefined {
 }
 
 function replayedPairing(operation: string): CaveClientError {
-  return new CaveClientError(
+  return managedLocalCaveClientError(new CaveClientError(
     normalizeCaveError(
       {
         code: 'conflict',
@@ -469,7 +959,7 @@ function replayedPairing(operation: string): CaveClientError {
         details: { reason: 'pairing_replayed' },
       },
     },
-  );
+  ));
 }
 
 function pairingOperationInProgress(operation: string): CaveClientError {
@@ -479,7 +969,9 @@ function pairingOperationInProgress(operation: string): CaveClientError {
     details: { reason: 'pairing_poll_in_progress' },
   };
 
-  return new CaveClientError(normalizeCaveError(cause, operation), undefined, { cause });
+  return managedLocalCaveClientError(
+    new CaveClientError(normalizeCaveError(cause, operation), undefined, { cause }),
+  );
 }
 
 /**
@@ -598,7 +1090,7 @@ function isSlice(value: unknown): value is CaveExecutionSlice {
   return value.successRate === null || typeof value.successRate === 'number';
 }
 
-function isCoverage(value: unknown): boolean {
+function isCoverage(value: unknown): value is CaveExecutionCoverage {
   return (
     isObject(value) &&
     typeof value.known === 'number' &&
@@ -692,6 +1184,331 @@ function isAnalytics(value: unknown): value is CaveFamiliarAnalytics {
   return backfill.remaining === undefined || typeof backfill.remaining === 'number';
 }
 
+function managedContractViolation(
+  value: unknown,
+): CaveContractViolation | undefined {
+  if (
+    !isObject(value) ||
+    !isString(value.file) ||
+    !isString(value.field) ||
+    !isString(value.message)
+  ) {
+    return undefined;
+  }
+  return {
+    file: value.file as CaveContractViolation['file'],
+    field: value.field,
+    message: value.message,
+  };
+}
+
+function managedPropertyCoverage(
+  value: unknown,
+): CavePropertyCoverage | undefined {
+  if (
+    !isObject(value) ||
+    !isString(value.property) ||
+    typeof value.pass !== 'boolean'
+  ) {
+    return undefined;
+  }
+  return { property: value.property, pass: value.pass };
+}
+
+function managedContractReport(value: unknown): CaveContractReport | undefined {
+  if (
+    !isObject(value) ||
+    !isString(value.specVersion) ||
+    typeof value.pass !== 'boolean' ||
+    !Array.isArray(value.properties) ||
+    !Array.isArray(value.violations) ||
+    !Array.isArray(value.warnings)
+  ) {
+    return undefined;
+  }
+
+  const properties: CavePropertyCoverage[] = [];
+  const violations: CaveContractViolation[] = [];
+  const warnings: CaveContractViolation[] = [];
+  for (const property of value.properties) {
+    const parsed = managedPropertyCoverage(property);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    properties.push(parsed);
+  }
+  for (const violation of value.violations) {
+    const parsed = managedContractViolation(violation);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    violations.push(parsed);
+  }
+  for (const warning of value.warnings) {
+    const parsed = managedContractViolation(warning);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    warnings.push(parsed);
+  }
+
+  return {
+    specVersion: value.specVersion,
+    pass: value.pass,
+    properties,
+    violations,
+    warnings,
+  };
+}
+
+function optionalManagedString(
+  value: object,
+  key: string,
+): string | undefined | false {
+  const candidate = (value as Record<string, unknown>)[key];
+  return candidate === undefined || typeof candidate === 'string'
+    ? candidate
+    : false;
+}
+
+function optionalManagedNumber(
+  value: object,
+  key: string,
+): number | undefined | false {
+  const candidate = (value as Record<string, unknown>)[key];
+  return candidate === undefined || typeof candidate === 'number'
+    ? candidate
+    : false;
+}
+
+function managedExecutionSlice(
+  value: unknown,
+): CaveExecutionSlice | undefined {
+  if (!isSlice(value)) {
+    return undefined;
+  }
+  const label = optionalManagedString(value, 'label');
+  const medianDurationMs = optionalManagedNumber(value, 'medianDurationMs');
+  const totalTokens = optionalManagedNumber(value, 'totalTokens');
+  const costUsd = optionalManagedNumber(value, 'costUsd');
+  if (
+    label === false ||
+    medianDurationMs === false ||
+    totalTokens === false ||
+    costUsd === false
+  ) {
+    return undefined;
+  }
+  return {
+    key: value.key,
+    ...(label === undefined ? {} : { label }),
+    attempts: value.attempts,
+    completed: value.completed,
+    failed: value.failed,
+    cancelled: value.cancelled,
+    successRate: value.successRate,
+    ...(medianDurationMs === undefined ? {} : { medianDurationMs }),
+    ...(totalTokens === undefined ? {} : { totalTokens }),
+    ...(costUsd === undefined ? {} : { costUsd }),
+    toolCalls: value.toolCalls,
+    toolFailures: value.toolFailures,
+  };
+}
+
+function managedExecutionCoverage(
+  value: unknown,
+): CaveExecutionCoverage | undefined {
+  if (!isCoverage(value)) {
+    return undefined;
+  }
+  return {
+    known: value.known,
+    total: value.total,
+    ratio: value.ratio,
+  };
+}
+
+function managedExecutionWindow(
+  value: unknown,
+): CaveExecutionWindow | undefined {
+  if (!isWindow(value)) {
+    return undefined;
+  }
+  const medianDurationMs = optionalManagedNumber(value, 'medianDurationMs');
+  const p95DurationMs = optionalManagedNumber(value, 'p95DurationMs');
+  const totalTokens = optionalManagedNumber(value, 'totalTokens');
+  const costUsd = optionalManagedNumber(value, 'costUsd');
+  if (
+    medianDurationMs === false ||
+    p95DurationMs === false ||
+    totalTokens === false ||
+    costUsd === false
+  ) {
+    return undefined;
+  }
+
+  const models: CaveExecutionSlice[] = [];
+  const harnesses: CaveExecutionSlice[] = [];
+  for (const model of value.models) {
+    const parsed = managedExecutionSlice(model);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    models.push(parsed);
+  }
+  for (const harness of value.harnesses) {
+    const parsed = managedExecutionSlice(harness);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    harnesses.push(parsed);
+  }
+
+  const coverage: Record<string, CaveExecutionCoverage> = {};
+  if (value.coverage !== undefined) {
+    for (const [key, entry] of Object.entries(value.coverage)) {
+      const parsed = managedExecutionCoverage(entry);
+      if (parsed === undefined) {
+        return undefined;
+      }
+      coverage[key] = parsed;
+    }
+  }
+
+  return {
+    attempts: value.attempts,
+    completed: value.completed,
+    failed: value.failed,
+    cancelled: value.cancelled,
+    successRate: value.successRate,
+    ...(medianDurationMs === undefined ? {} : { medianDurationMs }),
+    ...(p95DurationMs === undefined ? {} : { p95DurationMs }),
+    ...(totalTokens === undefined ? {} : { totalTokens }),
+    ...(costUsd === undefined ? {} : { costUsd }),
+    toolCalls: value.toolCalls,
+    toolFailures: value.toolFailures,
+    models,
+    harnesses,
+    coverage,
+  };
+}
+
+function managedExecutionAttempt(
+  value: unknown,
+): CaveExecutionAttempt | undefined {
+  if (!isAttempt(value)) {
+    return undefined;
+  }
+  const sessionId = optionalManagedString(value, 'sessionId');
+  const turnId = optionalManagedString(value, 'turnId');
+  const harnessVersion = optionalManagedString(value, 'harnessVersion');
+  const requestedModel = optionalManagedString(value, 'requestedModel');
+  const forwardedModel = optionalManagedString(value, 'forwardedModel');
+  const confirmedModel = optionalManagedString(value, 'confirmedModel');
+  const durationMs = optionalManagedNumber(value, 'durationMs');
+  const totalTokens = optionalManagedNumber(value, 'totalTokens');
+  const costUsd = optionalManagedNumber(value, 'costUsd');
+  if (
+    sessionId === false ||
+    turnId === false ||
+    harnessVersion === false ||
+    requestedModel === false ||
+    forwardedModel === false ||
+    confirmedModel === false ||
+    durationMs === false ||
+    totalTokens === false ||
+    costUsd === false
+  ) {
+    return undefined;
+  }
+  return {
+    id: value.id,
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(turnId === undefined ? {} : { turnId }),
+    executionKind: value.executionKind,
+    occurredAt: value.occurredAt,
+    harnessId: value.harnessId,
+    ...(harnessVersion === undefined ? {} : { harnessVersion }),
+    ...(requestedModel === undefined ? {} : { requestedModel }),
+    ...(forwardedModel === undefined ? {} : { forwardedModel }),
+    ...(confirmedModel === undefined ? {} : { confirmedModel }),
+    status: value.status,
+    ...(durationMs === undefined ? {} : { durationMs }),
+    ...(totalTokens === undefined ? {} : { totalTokens }),
+    ...(costUsd === undefined ? {} : { costUsd }),
+    toolCalls: value.toolCalls,
+    toolFailures: value.toolFailures,
+  };
+}
+
+function managedExecutionBackfill(
+  value: unknown,
+): CaveExecutionBackfill | undefined {
+  if (
+    !isObject(value) ||
+    (value.state !== 'complete' &&
+      value.state !== 'partial' &&
+      value.state !== 'not-started') ||
+    typeof value.imported !== 'number'
+  ) {
+    return undefined;
+  }
+  if (value.remaining !== undefined && typeof value.remaining !== 'number') {
+    return undefined;
+  }
+  return {
+    state: value.state,
+    imported: value.imported,
+    ...(value.remaining === undefined ? {} : { remaining: value.remaining }),
+  };
+}
+
+function managedFamiliarAnalytics(
+  value: unknown,
+): CaveFamiliarAnalytics | undefined {
+  if (
+    !isObject(value) ||
+    !isString(value.generatedAt) ||
+    !isObject(value.windows) ||
+    !Array.isArray(value.recentAttempts)
+  ) {
+    return undefined;
+  }
+
+  const windows: CaveFamiliarAnalytics['windows'] = {};
+  for (const key of ['7d', '14d', '8w', 'all'] as const) {
+    const candidate = value.windows[key];
+    if (candidate === undefined) {
+      continue;
+    }
+    const parsed = managedExecutionWindow(candidate);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    windows[key] = parsed;
+  }
+
+  const recentAttempts: CaveExecutionAttempt[] = [];
+  for (const attempt of value.recentAttempts) {
+    const parsed = managedExecutionAttempt(attempt);
+    if (parsed === undefined) {
+      return undefined;
+    }
+    recentAttempts.push(parsed);
+  }
+  const backfill = managedExecutionBackfill(value.backfill);
+  if (backfill === undefined) {
+    return undefined;
+  }
+
+  return {
+    generatedAt: value.generatedAt,
+    windows,
+    recentAttempts,
+    backfill,
+  };
+}
+
 function isPairingRequest(value: unknown): value is CavePairingRequest {
   if (!isObject(value)) {
     return false;
@@ -766,76 +1583,121 @@ function validatePairingRequest(value: unknown): CavePairingRequest {
   };
 }
 
-function isPairingCreated(value: unknown): value is CavePairingCreated {
-  return (
-    isObject(value) &&
-    typeof value.requestId === 'string' &&
-    UUID_RE.test(value.requestId) &&
-    typeof value.secret === 'string' &&
-    BASE64URL_43_RE.test(value.secret) &&
-    Number.isSafeInteger(value.expiresAt) &&
-    (value.expiresAt as number) > 0
-  );
-}
-
-function isPairingStatus(value: unknown): value is CavePairingStatus {
-  return (
-    isObject(value) &&
-    typeof value.id === 'string' &&
-    UUID_RE.test(value.id) &&
-    (value.status === 'pending' ||
-      value.status === 'approved' ||
-      value.status === 'denied' ||
-      value.status === 'expired') &&
-    Number.isSafeInteger(value.expiresAt) &&
-    (value.expiresAt as number) > 0
-  );
-}
-
-function isCredentialMetadata(value: unknown): value is CaveCredentialMetadata {
-  if (!isObject(value)) {
-    return false;
+function parseDirectPairingCreated(
+  value: unknown,
+): CavePairingCreated | undefined {
+  if (!isObject(value) || Array.isArray(value)) {
+    return undefined;
   }
-
+  let requestId: unknown;
+  let secret: unknown;
+  let expiresAt: unknown;
+  try {
+    requestId = value.requestId;
+    secret = value.secret;
+    expiresAt = value.expiresAt;
+  } catch {
+    return undefined;
+  }
   return (
-    typeof value.id === 'string' &&
-    UUID_RE.test(value.id) &&
-    typeof value.appName === 'string' &&
-    typeof value.installationId === 'string' &&
-    Array.isArray(value.scopes) &&
-    value.scopes.length > 0 &&
-    value.scopes.every((scope) => typeof scope === 'string' && CAVE_PAIRING_SCOPE_SET.has(scope)) &&
-    Number.isSafeInteger(value.createdAt) &&
-    (value.lastUsedAt === null || Number.isSafeInteger(value.lastUsedAt)) &&
-    (value.revokedAt === null || Number.isSafeInteger(value.revokedAt)) &&
-    (value.revocationReason === null || typeof value.revocationReason === 'string')
-  );
+    typeof requestId === 'string' &&
+    UUID_RE.test(requestId) &&
+    typeof secret === 'string' &&
+    BASE64URL_43_RE.test(secret) &&
+    typeof expiresAt === 'number' &&
+    Number.isSafeInteger(expiresAt) &&
+    expiresAt > 0
+  )
+    ? { requestId, secret, expiresAt }
+    : undefined;
 }
 
-function isPairingExchange(value: unknown): value is CavePairingExchange {
+function parseDirectPairingStatus(
+  value: unknown,
+): CavePairingStatus | undefined {
+  if (!isObject(value) || Array.isArray(value)) {
+    return undefined;
+  }
+  let id: unknown;
+  let status: unknown;
+  let expiresAt: unknown;
+  try {
+    id = value.id;
+    status = value.status;
+    expiresAt = value.expiresAt;
+  } catch {
+    return undefined;
+  }
   return (
-    isObject(value) &&
-    typeof value.bearer === 'string' &&
-    BASE64URL_43_RE.test(value.bearer) &&
-    isCredentialMetadata(value.credential)
-  );
+    typeof id === 'string' &&
+    UUID_RE.test(id) &&
+    (status === 'pending' ||
+      status === 'approved' ||
+      status === 'denied' ||
+      status === 'expired') &&
+    typeof expiresAt === 'number' &&
+    Number.isSafeInteger(expiresAt) &&
+    expiresAt > 0
+  )
+    ? { id, status, expiresAt }
+    : undefined;
 }
 
-function pairingExchangeAuthorityBinding(
-  value: CavePairingExchange,
-):
+interface ParsedDirectPairingExchange {
+  bearer: string;
+  credential: CaveCredentialMetadata;
+  authorityBinding:
   | { status: 'missing' }
   | { status: 'invalid' }
-  | { status: 'valid'; authorityBinding: CaveAuthorityBinding } {
-  const candidate = (value as CavePairingExchange & { authorityBinding?: unknown }).authorityBinding;
-  if (candidate === undefined) {
-    return { status: 'missing' };
+  | { status: 'valid'; authorityBinding: CaveAuthorityBinding };
+}
+
+function parseDirectPairingExchange(
+  value: unknown,
+): ParsedDirectPairingExchange | undefined {
+  if (!isObject(value) || Array.isArray(value)) {
+    return undefined;
   }
 
-  const authorityBinding = parseCaveAuthorityBinding(candidate);
-  return authorityBinding === undefined
-    ? { status: 'invalid' }
-    : { status: 'valid', authorityBinding };
+  let bearer: unknown;
+  let credential: unknown;
+  let candidate: unknown;
+  try {
+    bearer = value.bearer;
+    credential = value.credential;
+    candidate = value.authorityBinding;
+  } catch {
+    return undefined;
+  }
+
+  if (typeof bearer !== 'string' || !BASE64URL_43_RE.test(bearer)) {
+    return undefined;
+  }
+  const parsedCredential = parseCaveCredentialMetadata(credential, {
+    allowAdditionalFields: true,
+  });
+  if (parsedCredential === undefined) {
+    return undefined;
+  }
+  if (candidate === undefined) {
+    return {
+      bearer,
+      credential: parsedCredential,
+      authorityBinding: { status: 'missing' },
+    };
+  }
+
+  const authorityBinding = parseCaveAuthorityBinding(
+    snapshotManagedResult(candidate),
+  );
+  return {
+    bearer,
+    credential: parsedCredential,
+    authorityBinding:
+      authorityBinding === undefined
+        ? { status: 'invalid' }
+        : { status: 'valid', authorityBinding },
+  };
 }
 
 export class CavePairingSession {
@@ -864,15 +1726,39 @@ export class CaveClient {
   readonly #transport: CaveTransport;
   readonly #operation: OperationDefaults | undefined;
   readonly #credentials: CaveCredentialBinding | undefined;
-  readonly #managedTransport: CaveManagedCredentialTransport | undefined;
+  readonly #managedCredentialTransport: CaveManagedCredentialTransport | undefined;
+  readonly #stagedManagedCredentialTransport: CaveStagedManagedCredentialTransport | undefined;
 
   constructor(options: CaveClientOptions) {
-    this.#transport = options.transport;
-    this.#operation = options.operation;
-    this.#credentials = options.credentials;
-    this.#managedTransport = isCaveManagedCredentialTransport(options.transport)
-      ? options.transport
-      : undefined;
+    const captured = captureCaveClientOptions(options);
+    if (captured === undefined) {
+      throw new TypeError('CaveClient options must use own data properties.');
+    }
+    if (
+      captured.credentialCustody !== undefined &&
+      captured.credentialCustody.mode !== 'managed-native'
+    ) {
+      throw new TypeError('credentialCustody.mode must be "managed-native".');
+    }
+    if (
+      captured.credentialCustody?.mode === 'managed-native' &&
+      captured.credentials !== undefined
+    ) {
+      throw new TypeError('Managed native credential custody cannot use a JavaScript SecretStore.');
+    }
+
+    this.#transport = captured.transport;
+    this.#operation = captured.operation;
+    this.#credentials = captured.credentials;
+    this.#managedCredentialTransport =
+      captured.credentialCustody?.mode === 'managed-native'
+        ? captured.transport as CaveManagedCredentialTransport
+        : undefined;
+    this.#stagedManagedCredentialTransport =
+      this.#managedCredentialTransport === undefined &&
+      isCaveStagedManagedCredentialTransport(captured.transport)
+        ? captured.transport
+        : undefined;
   }
 
   async #execute<T>(
@@ -880,6 +1766,7 @@ export class CaveClient {
     options: OperationOptions,
     executor: (context: OperationContext) => Promise<T>,
     inheritDefaults = true,
+    redactManagedErrors = false,
   ): Promise<T> {
     const timeoutMs =
       options.timeoutMs ??
@@ -904,6 +1791,15 @@ export class CaveClient {
           try {
             return await executor(context);
           } catch (error) {
+            if (redactManagedErrors) {
+              const trusted = consumeManagedTrustedCaveClientError(error);
+              if (trusted !== undefined) {
+                throw trusted;
+              }
+            }
+            if (redactManagedErrors) {
+              throw redactedManagedTransportError(error, operation);
+            }
             if (isCaveClientError(error)) {
               throw error;
             }
@@ -916,10 +1812,16 @@ export class CaveClient {
       );
     } catch (error) {
       if (isCaveClientError(error)) {
+        if (!redactManagedErrors) {
+          discardManagedTrustedCaveClientError(error);
+        }
         throw error;
       }
 
       if (isOperationTimeoutError(error) || isOperationAbortedError(error)) {
+        if (redactManagedErrors) {
+          throw redactedManagedCancellationError(error, operation);
+        }
         throw new CaveClientError(normalizeCaveError(error, operation), undefined, {
           cause: error,
         });
@@ -927,6 +1829,17 @@ export class CaveClient {
 
       throw error;
     }
+  }
+
+  #managedSnapshot(value: unknown, operation: string): unknown {
+    if (this.#managedCredentialTransport === undefined) {
+      return value;
+    }
+    const snapshot = snapshotManagedResult(value);
+    if (snapshot === undefined) {
+      throw invalidResponse(operation);
+    }
+    return snapshot;
   }
 
   #operationControls(options: OperationOptions): {
@@ -949,6 +1862,17 @@ export class CaveClient {
     });
   }
 
+  async #invokeManaged<T>(
+    operation: string,
+    call: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await call();
+    } catch (error) {
+      throw redactedManagedTransportError(error, operation);
+    }
+  }
+
   async #executePersistentMutation<T>(
     operation: string,
     options: OperationOptions,
@@ -956,6 +1880,7 @@ export class CaveClient {
       context: OperationContext,
       termination: Promise<never>,
     ) => Promise<T>,
+    redactManagedErrors = false,
   ): Promise<T> {
     const { observer, timeoutMs } = this.#operationControls(options);
     const scope = createOperationScope(
@@ -984,9 +1909,25 @@ export class CaveClient {
         } else {
           result = await executor(scope.context, scope.termination);
         }
-        this.#ensureActive(scope.context, operation);
+        if (redactManagedErrors) {
+          this.#ensureManagedActive(scope.context, operation);
+        } else {
+          this.#ensureActive(scope.context, operation);
+        }
       } catch (error) {
-        const wrapped = this.#wrapOperationError(error, operation);
+        const trusted =
+          redactManagedErrors
+            ? consumeManagedTrustedCaveClientError(error)
+            : undefined;
+        if (!redactManagedErrors) {
+          discardManagedTrustedCaveClientError(error);
+        }
+        const wrapped =
+          redactManagedErrors
+            ? isOperationTimeoutError(error) || isOperationAbortedError(error)
+              ? redactedManagedCancellationError(error, operation)
+              : (trusted ?? redactedManagedTransportError(error, operation))
+            : this.#wrapOperationError(error, operation);
         notifyOperationObserver(observer, {
           phase:
             wrapped.normalized.code === 'timeout'
@@ -1032,9 +1973,90 @@ export class CaveClient {
     }
   }
 
+  #ensureManagedActive(context: OperationContext, operation: string): void {
+    if (context.signal.aborted) {
+      throw redactedManagedCancellationError(context.signal.reason, operation);
+    }
+    if (context.deadline !== undefined && context.deadline - performance.now() <= 0) {
+      throw new CaveClientError(
+        normalizeCaveError({ code: 'timeout', retryable: true }, operation),
+      );
+    }
+  }
+
+  #usesManagedCredentialTransport(): boolean {
+    return (
+      this.#managedCredentialTransport !== undefined ||
+      this.#stagedManagedCredentialTransport !== undefined
+    );
+  }
+
+  #validateHealthResponse(response: unknown, operation: string): CaveHealth {
+    const parsed = parseHealthResponse(response);
+
+    if (parsed === undefined) {
+      if (operation === 'health') {
+        throw invalidHealthResponse();
+      }
+      throw invalidResponse(operation);
+    }
+
+    let compatibility: CompatibilityAssessment;
+
+    try {
+      compatibility = assessCompatibility(parsed.minimumClientVersion, CAVE_CLIENT_VERSION);
+    } catch {
+      if (operation === 'health') {
+        throw invalidHealthResponse();
+      }
+      throw invalidResponse(operation);
+    }
+
+    if (!compatibility.compatible) {
+      const error = new CaveClientError(
+        normalizeCaveError(
+          {
+            code: 'incompatible_version',
+          },
+          operation,
+        ),
+        compatibility,
+      );
+      throw this.#usesManagedCredentialTransport()
+        ? managedValidatedCaveClientError(error)
+        : error;
+    }
+
+    if (!CAVE_API_VERSION_PATTERN.test(parsed.apiVersion)) {
+      if (operation === 'health') {
+        throw invalidHealthResponse();
+      }
+      throw invalidResponse(operation);
+    }
+
+    if (parsed.apiVersion.split('.')[0] !== SUPPORTED_CAVE_API_MAJOR) {
+      const error = new CaveClientError(
+        normalizeCaveError(
+          {
+            code: 'incompatible_version',
+          },
+          operation,
+        ),
+      );
+      throw this.#usesManagedCredentialTransport()
+        ? managedValidatedCaveClientError(error)
+        : error;
+    }
+
+    return parsed.health;
+  }
+
   async #runHealth(context: OperationContext): Promise<CaveHealth> {
     this.#ensureActive(context, 'health');
-    const response: unknown = await this.#transport.health(context);
+    const response = this.#managedSnapshot(
+      await this.#transport.health(context),
+      'health',
+    );
 
     if (isObject(response)) {
       const refusal = refusalOf(response, 'health');
@@ -1043,52 +2065,18 @@ export class CaveClient {
       }
     }
 
-    const parsed = parseHealthResponse(response);
-
-    if (parsed === undefined) {
-      throw invalidHealthResponse();
-    }
-
-    let compatibility: CompatibilityAssessment;
-
-    try {
-      compatibility = assessCompatibility(parsed.minimumClientVersion, CAVE_CLIENT_VERSION);
-    } catch {
-      throw invalidHealthResponse();
-    }
-
-    if (!compatibility.compatible) {
-      throw new CaveClientError(
-        normalizeCaveError(
-          {
-            code: 'incompatible_version',
-          },
-          'health',
-        ),
-        compatibility,
-      );
-    }
-
-    if (!CAVE_API_VERSION_PATTERN.test(parsed.apiVersion)) {
-      throw invalidHealthResponse();
-    }
-
-    if (parsed.apiVersion.split('.')[0] !== SUPPORTED_CAVE_API_MAJOR) {
-      throw new CaveClientError(
-        normalizeCaveError(
-          {
-            code: 'incompatible_version',
-          },
-          'health',
-        ),
-      );
-    }
-
-    return parsed.health;
+    return this.#validateHealthResponse(response, 'health');
   }
 
   async health(options: OperationOptions = {}): Promise<CaveHealth> {
-    return this.#execute('health', options, async (context) => this.#runHealth(context));
+    return this.#execute(
+      'health',
+      options,
+      async (context) => this.#runHealth(context),
+      true,
+      this.#managedCredentialTransport !== undefined ||
+        this.#stagedManagedCredentialTransport !== undefined,
+    );
   }
 
   async #canonicalRead<T>(
@@ -1103,9 +2091,12 @@ export class CaveClient {
       options,
       async (context) => {
         this.#ensureActive(context, operation);
-        const response = await read(context);
+        const response = this.#managedSnapshot(await read(context), operation);
         try {
-          return parse(response);
+          const parsed = parse(response);
+          return this.#managedCredentialTransport === undefined
+            ? parsed
+            : immutableManagedResult(parsed);
         } catch (error) {
           if (error instanceof CaveCanonicalSchemaError) {
             throw invalidCanonicalResponse(operation, error.field);
@@ -1114,6 +2105,8 @@ export class CaveClient {
         }
       },
       inheritDefaults,
+      this.#managedCredentialTransport !== undefined ||
+        this.#stagedManagedCredentialTransport !== undefined,
     );
   }
 
@@ -1317,7 +2310,7 @@ export class CaveClient {
       throw unsupported(operation);
     }
 
-    const response: unknown = await call(context);
+    const response = this.#managedSnapshot(await call(context), operation);
 
     if (!isObject(response)) {
       throw invalidResponse(operation);
@@ -1340,11 +2333,21 @@ export class CaveClient {
       throw invalidResponse(operation);
     }
 
-    return response.familiars.map(toFamiliar);
+    const familiars = response.familiars.map(toFamiliar);
+    return this.#managedCredentialTransport === undefined
+      ? familiars
+      : immutableManagedResult(familiars);
   }
 
   async familiars(options: OperationOptions = {}): Promise<CaveFamiliar[]> {
-    return this.#execute('familiars', options, async (context) => this.#runFamiliars(context));
+    return this.#execute(
+      'familiars',
+      options,
+      async (context) => this.#runFamiliars(context),
+      true,
+      this.#managedCredentialTransport !== undefined ||
+        this.#stagedManagedCredentialTransport !== undefined,
+    );
   }
 
   /** The Familiar Contract report. Mirrors `GET /api/familiars/:id/contract`. */
@@ -1360,7 +2363,10 @@ export class CaveClient {
         throw unsupported('familiarContract');
       }
 
-      const response: unknown = await call(familiarId, context);
+      const response = this.#managedSnapshot(
+        await call(familiarId, context),
+        'familiarContract',
+      );
 
       if (!isObject(response)) {
         throw invalidResponse('familiarContract');
@@ -1380,13 +2386,24 @@ export class CaveClient {
         throw invalidResponse('familiarContract');
       }
 
-      return {
+      const report =
+        this.#managedCredentialTransport === undefined
+          ? response.report as CaveFamiliarContract['report']
+          : managedContractReport(response.report);
+      if (report === undefined) {
+        throw invalidResponse('familiarContract');
+      }
+      const contract = {
         id: isString(response.id) ? response.id : familiarId,
         ...(isString(response.workspace) ? { workspace: response.workspace } : {}),
         present: response.present,
-        report: response.report as CaveFamiliarContract['report'],
+        report,
       };
-    });
+      return this.#managedCredentialTransport === undefined
+        ? contract
+        : immutableManagedResult(contract);
+    }, true, this.#managedCredentialTransport !== undefined ||
+      this.#stagedManagedCredentialTransport !== undefined);
   }
 
   /**
@@ -1411,7 +2428,10 @@ export class CaveClient {
         throw unsupported('familiarAnalytics');
       }
 
-      const response: unknown = await call(familiarId, transportOptions, context);
+      const response = this.#managedSnapshot(
+        await call(familiarId, transportOptions, context),
+        'familiarAnalytics',
+      );
 
       if (!isObject(response)) {
         throw invalidResponse('familiarAnalytics');
@@ -1431,8 +2451,18 @@ export class CaveClient {
         throw invalidResponse('familiarAnalytics');
       }
 
-      return response.analytics;
-    });
+      const analytics =
+        this.#managedCredentialTransport === undefined
+          ? response.analytics
+          : managedFamiliarAnalytics(response.analytics);
+      if (analytics === undefined) {
+        throw invalidResponse('familiarAnalytics');
+      }
+      return this.#managedCredentialTransport === undefined
+        ? analytics
+        : immutableManagedResult(analytics);
+    }, true, this.#managedCredentialTransport !== undefined ||
+      this.#stagedManagedCredentialTransport !== undefined);
   }
 
   async #runPairingCreate(
@@ -1446,8 +2476,8 @@ export class CaveClient {
       throw unsupported('pairingCreate');
     }
 
-    const created: unknown = await call(request, context);
-    if (!isPairingCreated(created)) {
+    const created = parseDirectPairingCreated(await call(request, context));
+    if (created === undefined) {
       throw invalidResponse('pairingCreate');
     }
 
@@ -1466,8 +2496,10 @@ export class CaveClient {
       throw unsupported('pairingPoll');
     }
 
-    const status: unknown = await call(requestId, pairingSecret, context);
-    if (!isPairingStatus(status)) {
+    const status = parseDirectPairingStatus(
+      await call(requestId, pairingSecret, context),
+    );
+    if (status === undefined) {
       throw invalidResponse('pairingPoll');
     }
 
@@ -1484,160 +2516,294 @@ export class CaveClient {
     return call;
   }
 
+  async #createManagedPairing(
+    request: CavePairingRequest,
+    options: OperationOptions,
+    transport: CaveManagedCredentialTransport,
+  ): Promise<CavePairingSession> {
+    const created = await this.#execute('pairingCreate', options, async (context) => {
+      this.#ensureManagedActive(context, 'pairingCreate');
+      const value = await this.#invokeManaged(
+        'pairingCreate',
+        () => transport.managedPairingCreate(request, context),
+      );
+      const parsed = parseManagedPairingCreated(value);
+      if (parsed === undefined) {
+        throw invalidResponse('pairingCreate');
+      }
+      return parsed;
+    }, true, true);
+
+    let pairingState: 'ready' | 'poll_pending' | 'exchange_pending' | 'spent' = 'ready';
+    let nextPollAttempt = 0;
+    let activePollAttempt: number | undefined;
+    const spendPairing = (): void => {
+      pairingState = 'spent';
+      activePollAttempt = undefined;
+    };
+    const requireReadyPairing = (operation: string): void => {
+      if (pairingState === 'poll_pending') {
+        throw pairingOperationInProgress(operation);
+      }
+      if (pairingState !== 'ready') {
+        throw replayedPairing(operation);
+      }
+    };
+    const beginPoll = (): { attempt: number; release: () => void } => {
+      requireReadyPairing('pairingPoll');
+      pairingState = 'poll_pending';
+      const attempt = ++nextPollAttempt;
+      activePollAttempt = attempt;
+      return {
+        attempt,
+        release: () => {
+          if (activePollAttempt !== attempt) {
+            return;
+          }
+          activePollAttempt = undefined;
+          if (pairingState === 'poll_pending') {
+            pairingState = 'ready';
+          }
+        },
+      };
+    };
+    const beginExchange = (): void => {
+      requireReadyPairing('pairingExchange');
+      pairingState = 'exchange_pending';
+    };
+
+    return new CavePairingSession({
+      requestId: created.requestId,
+      expiresAt: created.expiresAt,
+      poll: async (pollOptions = {}) =>
+        this.#execute('pairingPoll', pollOptions, async (context) => {
+          const { attempt, release } = beginPoll();
+          const releaseOnAbort = (): void => {
+            release();
+          };
+          context.signal.addEventListener('abort', releaseOnAbort, { once: true });
+
+          let status: CavePairingStatus;
+          try {
+            this.#ensureManagedActive(context, 'pairingPoll');
+            const value = await this.#invokeManaged(
+              'pairingPoll',
+              () => transport.managedPairingPoll(created.requestId, context),
+            );
+            const parsed = parseManagedPairingStatus(value);
+            if (parsed === undefined || parsed.id !== created.requestId) {
+              throw invalidResponse('pairingPoll');
+            }
+            status = parsed;
+          } catch (error) {
+            if (activePollAttempt === attempt) {
+              if (
+                isCaveClientError(error) &&
+                (error.code === 'pairing_denied' ||
+                  error.code === 'pairing_expired' ||
+                  error.code === 'conflict' ||
+                  error.code === 'reconcile_required')
+              ) {
+                spendPairing();
+              } else {
+                release();
+              }
+            }
+            throw error;
+          } finally {
+            context.signal.removeEventListener('abort', releaseOnAbort);
+          }
+
+          if (activePollAttempt === attempt) {
+            if (status.status === 'denied' || status.status === 'expired') {
+              spendPairing();
+            } else {
+              release();
+            }
+          }
+          return status;
+        }, true, true),
+      exchange: async (exchangeOptions = {}) =>
+        this.#executePersistentMutation('pairingExchange', exchangeOptions, async (
+          context,
+          termination,
+        ) => {
+          this.#ensureManagedActive(context, 'pairingExchange');
+          beginExchange();
+          try {
+            const value = await racePrePersistencePhase(
+              this.#invokeManaged(
+                'pairingExchange',
+                () => transport.managedPairingExchange(created.requestId, context),
+              ),
+              termination,
+              () => undefined,
+            );
+            const parsed = parseManagedPairingExchange(value);
+            if (parsed === undefined) {
+              throw invalidResponse('pairingExchange');
+            }
+            spendPairing();
+            return parsed.credential;
+          } catch (error) {
+            // Native code owns the single-use secret, exchange dispatch, and
+            // durable persistence. Any observed attempt is terminal in JS.
+            spendPairing();
+            throw error;
+          }
+        }, true),
+    });
+  }
+
+  async #createStagedManagedPairing(
+    request: CavePairingRequest,
+    options: OperationOptions,
+    transport: CaveStagedManagedCredentialTransport,
+  ): Promise<CavePairingSession> {
+    const created = await this.#execute(
+      'pairingCreate',
+      options,
+      async (context) => await transport.pairingCreateManaged(request, context),
+      true,
+      true,
+    );
+    let state: 'ready' | 'poll_pending' | 'exchange_pending' | 'spent' = 'ready';
+    let pollAttempt = 0;
+    let activePollAttempt: number | undefined;
+
+    const requireReady = (operation: string): void => {
+      if (state === 'poll_pending') {
+        throw pairingOperationInProgress(operation);
+      }
+      if (state !== 'ready') {
+        throw replayedPairing(operation);
+      }
+    };
+    const spend = (): void => {
+      state = 'spent';
+      activePollAttempt = undefined;
+    };
+
+    return new CavePairingSession({
+      requestId: created.requestId,
+      expiresAt: created.expiresAt,
+      poll: async (pollOptions = {}) =>
+        this.#execute('pairingPoll', pollOptions, async (context) => {
+          requireReady('pairingPoll');
+          state = 'poll_pending';
+          const attempt = ++pollAttempt;
+          activePollAttempt = attempt;
+          const release = (): void => {
+            if (activePollAttempt === attempt) {
+              activePollAttempt = undefined;
+              if (state === 'poll_pending') {
+                state = 'ready';
+              }
+            }
+          };
+          const releaseOnAbort = (): void => {
+            release();
+          };
+          context.signal.addEventListener('abort', releaseOnAbort, { once: true });
+
+          try {
+            const status = await transport.pairingPollManaged(created.handle, context);
+            if (status.status === 'denied' || status.status === 'expired') {
+              spend();
+            } else {
+              release();
+            }
+            return status;
+          } catch (error) {
+            const code = isCaveClientError(error)
+              ? error.code
+              : normalizeCaveError(error, 'pairingPoll').code;
+            if (
+              code === 'pairing_denied' ||
+              code === 'pairing_expired' ||
+              code === 'conflict' ||
+              code === 'reconcile_required'
+            ) {
+              spend();
+            } else {
+              release();
+            }
+            throw error;
+          } finally {
+            context.signal.removeEventListener('abort', releaseOnAbort);
+          }
+        }, true, true),
+      exchange: async (exchangeOptions = {}) =>
+        this.#executePersistentMutation(
+          'pairingExchange',
+          exchangeOptions,
+          async (context, termination) => {
+            requireReady('pairingExchange');
+            state = 'exchange_pending';
+            let staged: Awaited<ReturnType<CaveStagedManagedCredentialTransport['pairingExchangeManaged']>>;
+            try {
+              staged = await racePrePersistencePhase(
+                transport.pairingExchangeManaged(created.handle, context),
+                termination,
+                (late) => {
+                  void transport.pairingDiscardManaged(late.commitHandle).catch(() => undefined);
+                },
+              );
+            } catch (error) {
+              spend();
+              throw error;
+            }
+
+            try {
+              this.#ensureActive(context, 'pairingExchange');
+            } catch (error) {
+              spend();
+              void transport.pairingDiscardManaged(staged.commitHandle).catch(() => undefined);
+              throw error;
+            }
+
+            spend();
+            try {
+              await racePrePersistencePhase(
+                transport.pairingCommitManaged(staged.commitHandle, context),
+                termination,
+                () => {
+                  void transport.pairingDiscardManaged(staged.commitHandle).catch(() => undefined);
+                },
+              );
+              this.#ensureActive(context, 'pairingExchange');
+            } catch (error) {
+              void transport.pairingDiscardManaged(staged.commitHandle).catch(() => undefined);
+              throw error;
+            }
+
+            return staged.credential;
+          },
+          true,
+        ),
+    });
+  }
+
   async createPairing(
     request: CavePairingRequest,
     options: OperationOptions = {},
   ): Promise<CavePairingSession> {
     const normalizedRequest = validatePairingRequest(request);
-    const managedTransport = this.#managedTransport;
+    const managedTransport = this.#managedCredentialTransport;
     if (managedTransport !== undefined) {
-      const created = await this.#execute(
-        'pairingCreate',
+      return await this.#createManagedPairing(
+        normalizedRequest,
         options,
-        async (context) =>
-          await managedTransport.pairingCreateManaged(
-            normalizedRequest,
-            context,
-          ),
+        managedTransport,
       );
-      let state: 'ready' | 'poll_pending' | 'exchange_pending' | 'spent' =
-        'ready';
-      let pollAttempt = 0;
-      let activePollAttempt: number | undefined;
-
-      const requireReady = (operation: string): void => {
-        if (state === 'poll_pending') {
-          throw pairingOperationInProgress(operation);
-        }
-        if (state !== 'ready') {
-          throw replayedPairing(operation);
-        }
-      };
-      const spend = (): void => {
-        state = 'spent';
-        activePollAttempt = undefined;
-      };
-
-      return new CavePairingSession({
-        requestId: created.requestId,
-        expiresAt: created.expiresAt,
-        poll: async (pollOptions = {}) =>
-          this.#execute('pairingPoll', pollOptions, async (context) => {
-            requireReady('pairingPoll');
-            state = 'poll_pending';
-            const attempt = ++pollAttempt;
-            activePollAttempt = attempt;
-            const release = (): void => {
-              if (activePollAttempt === attempt) {
-                activePollAttempt = undefined;
-                if (state === 'poll_pending') {
-                  state = 'ready';
-                }
-              }
-            };
-            const releaseOnAbort = (): void => {
-              release();
-            };
-            context.signal.addEventListener('abort', releaseOnAbort, {
-              once: true,
-            });
-
-            try {
-              const status = await managedTransport.pairingPollManaged(
-                created.handle,
-                context,
-              );
-              if (status.status === 'denied' || status.status === 'expired') {
-                spend();
-              } else {
-                release();
-              }
-              return status;
-            } catch (error) {
-              const code = isCaveClientError(error)
-                ? error.code
-                : normalizeCaveError(error, 'pairingPoll').code;
-              if (
-                code === 'pairing_denied' ||
-                code === 'pairing_expired' ||
-                code === 'conflict' ||
-                code === 'reconcile_required'
-              ) {
-                spend();
-              } else {
-                release();
-              }
-              throw error;
-            } finally {
-              context.signal.removeEventListener('abort', releaseOnAbort);
-            }
-          }),
-        exchange: async (exchangeOptions = {}) =>
-          this.#executePersistentMutation(
-            'pairingExchange',
-            exchangeOptions,
-            async (context, termination) => {
-              requireReady('pairingExchange');
-              state = 'exchange_pending';
-              let staged: Awaited<
-                ReturnType<
-                  CaveManagedCredentialTransport['pairingExchangeManaged']
-                >
-              >;
-              try {
-                staged = await racePrePersistencePhase(
-                  managedTransport.pairingExchangeManaged(
-                    created.handle,
-                    context,
-                  ),
-                  termination,
-                  (late) => {
-                    void managedTransport
-                      .pairingDiscardManaged(late.commitHandle)
-                      .catch(() => undefined);
-                  },
-                );
-              } catch (error) {
-                spend();
-                throw error;
-              }
-
-              try {
-                this.#ensureActive(context, 'pairingExchange');
-              } catch (error) {
-                spend();
-                void managedTransport
-                  .pairingDiscardManaged(staged.commitHandle)
-                  .catch(() => undefined);
-                throw error;
-              }
-
-              spend();
-              try {
-                await racePrePersistencePhase(
-                  managedTransport.pairingCommitManaged(
-                    staged.commitHandle,
-                    context,
-                  ),
-                  termination,
-                  () => {
-                    void managedTransport
-                      .pairingDiscardManaged(staged.commitHandle)
-                      .catch(() => undefined);
-                  },
-                );
-                this.#ensureActive(context, 'pairingExchange');
-              } catch (error) {
-                void managedTransport
-                  .pairingDiscardManaged(staged.commitHandle)
-                  .catch(() => undefined);
-                throw error;
-              }
-
-              return staged.credential;
-            },
-          ),
-      });
+    }
+    const stagedManagedTransport = this.#stagedManagedCredentialTransport;
+    if (stagedManagedTransport !== undefined) {
+      return await this.#createStagedManagedPairing(
+        normalizedRequest,
+        options,
+        stagedManagedTransport,
+      );
     }
     const created = await this.#execute('pairingCreate', options, async (context) =>
       this.#runPairingCreate(normalizedRequest, context),
@@ -1748,31 +2914,64 @@ export class CaveClient {
           const call = this.#pairingExchangeCall();
           this.#ensureActive(context, 'pairingExchange');
           const secret = beginPairingExchange();
-          let exchanged: CavePairingExchange;
+          const unsentAttempt = beginPairingExchangeUnsentAttempt(context);
+          let exchanged: ParsedDirectPairingExchange;
+          let endUnsentAttemptAfterSettlement = false;
+          const exchangeOperation = (async () => {
+            const response: unknown = await call(created.requestId, secret, context);
+            const parsed = parseDirectPairingExchange(response);
+            if (parsed === undefined) {
+              throw invalidResponse('pairingExchange');
+            }
+            return parsed;
+          })();
 
           try {
             exchanged = await racePrePersistencePhase(
-              (async () => {
-                const response: unknown = await call(created.requestId, secret, context);
-                if (!isPairingExchange(response)) {
-                  throw invalidResponse('pairingExchange');
-                }
-                return response;
-              })(),
+              exchangeOperation,
               termination,
               discardPairingExchangeBearer,
             );
           } catch (error) {
-            if (isPairingSecretUnsentError(error)) {
+            if (consumePairingExchangeUnsentError(error, unsentAttempt)) {
               restorePairingSecret(secret);
             } else {
               clearPairingSecret();
             }
+            if (
+              isOperationTimeoutError(error) ||
+              isOperationAbortedError(error)
+            ) {
+              endUnsentAttemptAfterSettlement = true;
+              void exchangeOperation.then(
+                () => {
+                  endPairingExchangeUnsentAttempt(context, unsentAttempt);
+                },
+                (lateError) => {
+                  try {
+                    if (
+                      consumePairingExchangeUnsentError(
+                        lateError,
+                        unsentAttempt,
+                      )
+                    ) {
+                      restorePairingSecret(secret);
+                    }
+                  } finally {
+                    endPairingExchangeUnsentAttempt(context, unsentAttempt);
+                  }
+                },
+              );
+            }
             throw error;
+          } finally {
+            if (!endUnsentAttemptAfterSettlement) {
+              endPairingExchangeUnsentAttempt(context, unsentAttempt);
+            }
           }
 
           clearPairingSecret();
-          const authorityBinding = pairingExchangeAuthorityBinding(exchanged);
+          const authorityBinding = exchanged.authorityBinding;
           this.#ensureActive(context, 'pairingExchange');
           if (authorityBinding.status !== 'valid') {
             throw invalidAuthorityBinding(
@@ -1783,9 +2982,9 @@ export class CaveClient {
             );
           }
 
-          const bearerBytes = Buffer.from(exchanged.bearer, 'utf8');
+          const bearerBytes = new TextEncoder().encode(exchanged.bearer);
           try {
-            const bearer = bearerBytes.toString('utf8');
+            const bearer = new TextDecoder().decode(bearerBytes);
             await storeBoundCredential(
               credentials.store,
               credentials.reference,
@@ -1818,11 +3017,43 @@ export class CaveClient {
   }
 
   async credentialStatus(options: OperationOptions = {}): Promise<CaveCredentialStatus> {
-    return this.#execute('credentialStatus', options, async (context) => {
-      if (this.#managedTransport !== undefined) {
-        const state = await this.#managedTransport.credentialStateManaged(
-          context,
+    const managedTransport = this.#managedCredentialTransport;
+    if (managedTransport !== undefined) {
+      return this.#execute('credentialStatus', options, async (context) => {
+        this.#ensureManagedActive(context, 'credentialStatus');
+        const value = await this.#invokeManaged(
+          'credentialStatus',
+          () => managedTransport.managedCredentialStatus(context),
         );
+        const managedStatus = parseManagedCredentialStatus(value);
+        if (managedStatus === undefined) {
+          throw invalidResponse('credentialStatus');
+        }
+        if (
+          managedStatus.status === 'missing' ||
+          managedStatus.status === 'disconnected'
+        ) {
+          return managedStatus;
+        }
+
+        const health = this.#validateHealthResponse(
+          managedStatus.health,
+          'credentialStatus',
+        );
+        return managedStatus.status === 'revoked'
+          ? immutableManagedResult({ status: 'revoked', health })
+          : immutableManagedResult({
+              status: 'valid',
+              access: managedStatus.access,
+              health,
+            });
+      }, true, true);
+    }
+
+    return this.#execute('credentialStatus', options, async (context) => {
+      const stagedManagedTransport = this.#stagedManagedCredentialTransport;
+      if (stagedManagedTransport !== undefined) {
+        const state = await stagedManagedTransport.credentialStateManaged(context);
         if (state === 'missing') {
           return { status: 'missing' };
         }
@@ -1858,11 +3089,7 @@ export class CaveClient {
             return { status: 'valid', access: 'scope_denied', health };
           }
           if (code === 'service_unavailable') {
-            return {
-              status: 'valid',
-              access: 'service_unavailable',
-              health,
-            };
+            return { status: 'valid', access: 'service_unavailable', health };
           }
           if (code === 'rate_limited') {
             return { status: 'valid', access: 'rate_limited', health };
@@ -1973,13 +3200,41 @@ export class CaveClient {
         }
         throw error;
       }
-    });
+    }, true, this.#stagedManagedCredentialTransport !== undefined);
   }
 
   async forgetCredential(options: OperationOptions = {}): Promise<boolean> {
+    const managedTransport = this.#managedCredentialTransport;
+    if (managedTransport !== undefined) {
+      return this.#execute('forgetCredential', options, async (context) => {
+        this.#ensureManagedActive(context, 'forgetCredential');
+        const value = await this.#invokeManaged(
+          'forgetCredential',
+          () => managedTransport.managedForgetCredential(context),
+        );
+        const result = parseManagedForgetCredential(value);
+        if (result === undefined) {
+          throw invalidResponse('forgetCredential');
+        }
+        if (result.status === 'credential_update_in_progress') {
+          const cause = {
+            code: 'credential_update_in_progress',
+            retryable: true,
+          };
+          throw new CaveClientError(
+            normalizeCaveError(cause, 'forgetCredential'),
+            undefined,
+            { cause },
+          );
+        }
+        return result.status === 'deleted';
+      }, true, true);
+    }
+
     return this.#execute('forgetCredential', options, async (context) => {
-      if (this.#managedTransport !== undefined) {
-        return await this.#managedTransport.forgetCredentialManaged(context);
+      const stagedManagedTransport = this.#stagedManagedCredentialTransport;
+      if (stagedManagedTransport !== undefined) {
+        return await stagedManagedTransport.forgetCredentialManaged(context);
       }
 
       const credentials = this.#credentials;
@@ -1989,7 +3244,7 @@ export class CaveClient {
 
       this.#ensureActive(context, 'forgetCredential');
       return await forgetStoredCredential(credentials.store, credentials.reference, { context });
-    });
+    }, true, this.#stagedManagedCredentialTransport !== undefined);
   }
 }
 

@@ -49,7 +49,7 @@ try {
           version: surface.version,
           packageName: surface.packageName,
           packageExports: surface.packageExports,
-          runtimeExports: surface.runtimeExports,
+          entrypoints: surface.entrypoints,
         },
         null,
         2,

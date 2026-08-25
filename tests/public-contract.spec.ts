@@ -1,8 +1,10 @@
 import * as cave from '@opencoven/cave-client';
+import * as caveManaged from '@opencoven/cave-client/managed';
 import * as coven from '@opencoven/coven-client';
 import * as cli from '@opencoven/dev-cli';
 import * as sdk from '@opencoven/sdk';
 import * as core from '@opencoven/sdk-core';
+import * as coreBrowser from '@opencoven/sdk-core/browser';
 import { describe, expect, test } from 'vitest';
 
 type Equal<Left, Right> =
@@ -215,6 +217,44 @@ type IterateConversationMessagesContract = Assert<Equal<
     options: core.BoundedPageOptions,
   ) => AsyncGenerator<cave.CaveConversationMessage>
 >>;
+type CaveManagedPairingCreatedContract = Assert<Equal<
+  cave.CaveManagedPairingCreated,
+  {
+    requestId: string;
+    expiresAt: number;
+  }
+>>;
+type CaveManagedPairingExchangeContract = Assert<Equal<
+  cave.CaveManagedPairingExchange,
+  {
+    credential: cave.CaveCredentialMetadata;
+  }
+>>;
+type CaveManagedPairingCreateTransportContract = Assert<Equal<
+  cave.CaveManagedCredentialTransport['managedPairingCreate'],
+  (
+    request: cave.CavePairingRequest,
+    context?: core.OperationContext,
+  ) => Promise<unknown>
+>>;
+type CaveManagedForgetTransportContract = Assert<Equal<
+  cave.CaveManagedCredentialTransport['managedForgetCredential'],
+  (
+    context?: core.OperationContext,
+  ) => Promise<unknown>
+>>;
+type CaveManagedBrowserFactoryContract = Assert<Equal<
+  typeof caveManaged.createManagedCaveClient,
+  (
+    options: caveManaged.CaveManagedClientOptions,
+  ) => cave.CaveClient
+>>;
+type CaveManagedDiscoverySourceContract = Assert<Equal<
+  caveManaged.CaveManagedDiscoverySource,
+  {
+    read(context?: core.OperationContext): Promise<unknown>;
+  }
+>>;
 
 function canonicalReadCompileOnly(
   client: cave.CaveClient,
@@ -251,6 +291,58 @@ function canonicalReadCompileOnly(
   void messageIterator;
 }
 
+function managedNativeCustodyCompileOnly(
+  transport: cave.CaveManagedCredentialTransport,
+): void {
+  const client = new cave.CaveClient({
+    transport,
+    credentialCustody: { mode: 'managed-native' },
+  });
+  const session: Promise<cave.CavePairingSession> = client.createPairing({
+    appName: 'OpenCoven Chat',
+    installationId: 'chat-install-1',
+    scopes: ['chat:read'],
+  });
+  const status: Promise<cave.CaveCredentialStatus> = client.credentialStatus();
+  const forgotten: Promise<boolean> = client.forgetCredential();
+  const created: Promise<unknown> = transport.managedPairingCreate({
+    appName: 'OpenCoven Chat',
+    installationId: 'chat-install-1',
+    scopes: ['chat:read'],
+  });
+
+  // @ts-expect-error Managed native custody cannot be combined with a JS SecretStore.
+  void new cave.CaveClient({
+    transport,
+    credentialCustody: { mode: 'managed-native' },
+    credentials: {
+      store: core.createMemorySecretStore(),
+      reference: core.createSecretStoreReference('managed-native-contract'),
+    },
+  });
+
+  void session;
+  void status;
+  void forgotten;
+  void created;
+}
+
+function managedBrowserCompileOnly(
+  transport: caveManaged.CaveManagedCredentialTransport,
+  source: caveManaged.CaveManagedDiscoverySource,
+): void {
+  const client: cave.CaveClient = caveManaged.createManagedCaveClient({
+    transport,
+  });
+  const endpoint: Promise<caveManaged.CaveManagedDiscoveredEndpoint> =
+    caveManaged.discoverManagedCaveEndpoint(source);
+  const page = coreBrowser.normalizePageOptions({ limit: 25 });
+
+  void client;
+  void endpoint;
+  void page;
+}
+
 void (undefined as unknown as CaveCanonicalFamiliarContract);
 void (undefined as unknown as OpenCovenDiagnosticCheckIdContract);
 void (undefined as unknown as OpenCovenDiagnosticStatusContract);
@@ -275,7 +367,15 @@ void (undefined as unknown as IterateFamiliarsContract);
 void (undefined as unknown as IterateProjectsContract);
 void (undefined as unknown as IterateConversationsContract);
 void (undefined as unknown as IterateConversationMessagesContract);
+void (undefined as unknown as CaveManagedPairingCreatedContract);
+void (undefined as unknown as CaveManagedPairingExchangeContract);
+void (undefined as unknown as CaveManagedPairingCreateTransportContract);
+void (undefined as unknown as CaveManagedForgetTransportContract);
+void (undefined as unknown as CaveManagedBrowserFactoryContract);
+void (undefined as unknown as CaveManagedDiscoverySourceContract);
 void canonicalReadCompileOnly;
+void managedNativeCustodyCompileOnly;
+void managedBrowserCompileOnly;
 
 interface NormalizedError {
   system: 'cave' | 'coven';

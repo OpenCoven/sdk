@@ -7,7 +7,13 @@ import packagesAndExamples from './vitest.workspace.js';
 export default defineConfig({
   resolve: {
     alias: {
+      '@opencoven/sdk-core/browser': fileURLToPath(
+        new URL('./packages/core/src/browser.ts', import.meta.url),
+      ),
       '@opencoven/sdk-core': fileURLToPath(new URL('./packages/core/src/index.ts', import.meta.url)),
+      '@opencoven/cave-client/managed': fileURLToPath(
+        new URL('./packages/cave/src/managed.ts', import.meta.url),
+      ),
       '@opencoven/cave-client': fileURLToPath(new URL('./packages/cave/src/index.ts', import.meta.url)),
       '@opencoven/coven-client': fileURLToPath(new URL('./packages/coven/src/index.ts', import.meta.url)),
       '@opencoven/sdk': fileURLToPath(new URL('./packages/sdk/src/index.ts', import.meta.url)),

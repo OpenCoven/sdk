@@ -1,4 +1,4 @@
-import type { OperationContext, PageOptions } from '@opencoven/sdk-core';
+import type { OperationContext, PageOptions } from '@opencoven/sdk-core/browser';
 
 import type {
   CaveAuthorityBinding,
@@ -80,30 +80,47 @@ export interface CaveCredentialPersistingTransport extends CaveTransport {
   ): Promise<CaveAuthorityBoundPairingExchange>;
 }
 
-export interface CaveManagedPairingCreated {
-  requestId: string;
-  handle: string;
-  expiresAt: number;
-}
-
-export interface CaveManagedPairingExchange {
-  authorityBinding: CaveAuthorityBinding;
-  commitHandle: string;
-  credential: CaveCredentialMetadata;
-}
-
-export type CaveManagedCredentialState =
-  | 'missing'
-  | 'present'
-  | 'update_in_progress'
-  | 'invalid';
-
+/**
+ * A native credential-custody bridge. Its implementation owns all network
+ * authorization, pairing secrets, exchanged bearers, and durable credential
+ * storage outside the JavaScript runtime. It intentionally has no generic
+ * request method.
+ *
+ * Results are `unknown` at this trust boundary. `CaveClient` validates every
+ * non-secret value before exposing a public DTO.
+ */
 export interface CaveManagedCredentialTransport extends CaveTransport {
+  managedPairingCreate(
+    request: CavePairingRequest,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  managedPairingPoll(
+    requestId: string,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  managedPairingExchange(
+    requestId: string,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  managedCredentialStatus(
+    context?: OperationContext,
+  ): Promise<unknown>;
+  managedForgetCredential(
+    context?: OperationContext,
+  ): Promise<unknown>;
+}
+
+/**
+ * Internal transport used by the root managed-native adapter. It retains
+ * opaque staging/commit handles in the SDK while the native adapter retains
+ * credentials and bearer material.
+ */
+export interface CaveStagedManagedCredentialTransport extends CaveTransport {
   readonly credentialMode: 'managed-native';
   pairingCreateManaged(
     request: CavePairingRequest,
     context?: OperationContext,
-  ): Promise<CaveManagedPairingCreated>;
+  ): Promise<{ requestId: string; handle: string; expiresAt: number }>;
   pairingPollManaged(
     handle: string,
     context?: OperationContext,
@@ -111,7 +128,11 @@ export interface CaveManagedCredentialTransport extends CaveTransport {
   pairingExchangeManaged(
     handle: string,
     context?: OperationContext,
-  ): Promise<CaveManagedPairingExchange>;
+  ): Promise<{
+    authorityBinding: CaveAuthorityBinding;
+    commitHandle: string;
+    credential: CaveCredentialMetadata;
+  }>;
   pairingCommitManaged(
     commitHandle: string,
     context?: OperationContext,
@@ -119,23 +140,27 @@ export interface CaveManagedCredentialTransport extends CaveTransport {
   pairingDiscardManaged(commitHandle: string): Promise<void>;
   credentialStateManaged(
     context?: OperationContext,
-  ): Promise<CaveManagedCredentialState>;
-  forgetCredentialManaged(
-    context?: OperationContext,
-  ): Promise<boolean>;
+  ): Promise<CaveStagedManagedCredentialState>;
+  forgetCredentialManaged(context?: OperationContext): Promise<boolean>;
 }
 
-export function isCaveManagedCredentialTransport(
+export type CaveStagedManagedCredentialState =
+  | 'missing'
+  | 'present'
+  | 'update_in_progress'
+  | 'invalid';
+
+export function isCaveStagedManagedCredentialTransport(
   transport: CaveTransport,
-): transport is CaveManagedCredentialTransport {
+): transport is CaveStagedManagedCredentialTransport {
   return (
-    (transport as Partial<CaveManagedCredentialTransport>).credentialMode ===
+    (transport as Partial<CaveStagedManagedCredentialTransport>).credentialMode ===
       'managed-native' &&
-    typeof (transport as Partial<CaveManagedCredentialTransport>)
+    typeof (transport as Partial<CaveStagedManagedCredentialTransport>)
       .pairingCreateManaged === 'function' &&
-    typeof (transport as Partial<CaveManagedCredentialTransport>)
+    typeof (transport as Partial<CaveStagedManagedCredentialTransport>)
       .pairingPollManaged === 'function' &&
-    typeof (transport as Partial<CaveManagedCredentialTransport>)
+    typeof (transport as Partial<CaveStagedManagedCredentialTransport>)
       .pairingExchangeManaged === 'function'
   );
 }

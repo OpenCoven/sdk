@@ -20,7 +20,7 @@ import {
   invalidateStoredCredential,
   loadBoundCredential,
   storeBoundCredential,
-} from '../packages/cave/src/credential-binding.js';
+} from '../packages/cave/src/credential-binding-node.js';
 import {
   discoverCaveEndpoint,
   type CaveDiscoveredEndpoint,
@@ -28,10 +28,12 @@ import {
   type CaveDiscoveryPathIdentity,
 } from '../packages/cave/src/discovery.js';
 import {
-  isPairingSecretUnsentError,
-  markPairingSecretUnsentError,
+  beginPairingExchangeUnsentAttempt,
+  consumePairingExchangeUnsentError,
+  endPairingExchangeUnsentAttempt,
+  markPairingExchangeUnsentError,
 } from '../packages/cave/src/pairing-secret.js';
-import type * as CredentialBindingModule from '../packages/cave/src/credential-binding.js';
+import type * as CredentialBindingModule from '../packages/cave/src/credential-binding-node.js';
 
 const discovered: CaveDiscoveredEndpoint = {
   version: 1,
@@ -1343,17 +1345,75 @@ describe('Cave authority binding helpers', () => {
 });
 
 describe('Cave pairing secret marker', () => {
-  test('marks objects, ignores primitives, and survives descriptor or getter failures', () => {
+  test('binds unsent proof to one exchange attempt and consumes it once', () => {
+    const firstContext = {};
+    const secondContext = {};
+    const firstAttempt = beginPairingExchangeUnsentAttempt(firstContext);
+    const secondAttempt = beginPairingExchangeUnsentAttempt(secondContext);
     const error = new Error('pairing');
-    expect(markPairingSecretUnsentError(error)).toBe(error);
-    expect(isPairingSecretUnsentError(error)).toBe(true);
+    expect(markPairingExchangeUnsentError(error, firstContext)).toBe(error);
+    Object.assign(error, {
+      cause: { bearer: 'mutated-pairing-secret' },
+      message: 'mutated-pairing-secret',
+    });
+    expect(consumePairingExchangeUnsentError(error, secondAttempt)).toBe(false);
+    expect(consumePairingExchangeUnsentError(error, firstAttempt)).toBe(true);
+    expect(consumePairingExchangeUnsentError(error, firstAttempt)).toBe(false);
 
-    expect(markPairingSecretUnsentError('pairing-secret')).toBe('pairing-secret');
-    expect(isPairingSecretUnsentError('pairing-secret')).toBe(false);
+    const staleAttempt = beginPairingExchangeUnsentAttempt(firstContext);
+    const stale = markPairingExchangeUnsentError(
+      new Error('stale attempt'),
+      firstContext,
+    );
+    const replacementAttempt = beginPairingExchangeUnsentAttempt(firstContext);
+    expect(consumePairingExchangeUnsentError(stale, replacementAttempt)).toBe(false);
+
+    const shared = new Error('shared error');
+    markPairingExchangeUnsentError(shared, firstContext);
+    markPairingExchangeUnsentError(shared, secondContext);
+    expect(consumePairingExchangeUnsentError(shared, replacementAttempt)).toBe(true);
+    expect(consumePairingExchangeUnsentError(shared, secondAttempt)).toBe(true);
+    expect(consumePairingExchangeUnsentError(shared, secondAttempt)).toBe(false);
+
+    const settled = markPairingExchangeUnsentError(
+      new Error('settled attempt'),
+      secondContext,
+    );
+    endPairingExchangeUnsentAttempt(secondContext, secondAttempt);
+    expect(consumePairingExchangeUnsentError(settled, secondAttempt)).toBe(false);
+
+    const genuine = markPairingExchangeUnsentError(
+      new Error('same attempt'),
+      firstContext,
+    );
+    expect(consumePairingExchangeUnsentError(genuine, replacementAttempt)).toBe(true);
+    expect(consumePairingExchangeUnsentError(genuine, replacementAttempt)).toBe(false);
+    Reflect.set(
+      genuine,
+      Symbol.for('@opencoven/cave-client/pairing-secret-unsent'),
+      true,
+    );
+    expect(consumePairingExchangeUnsentError(genuine, replacementAttempt)).toBe(false);
+
+    expect(markPairingExchangeUnsentError('pairing-secret', firstContext)).toBe(
+      'pairing-secret',
+    );
+    expect(
+      consumePairingExchangeUnsentError('pairing-secret', replacementAttempt),
+    ).toBe(false);
 
     const frozen = Object.freeze({ code: 'frozen' });
-    expect(markPairingSecretUnsentError(frozen)).toBe(frozen);
-    expect(isPairingSecretUnsentError(frozen)).toBe(false);
+    expect(markPairingExchangeUnsentError(frozen, firstContext)).toBe(frozen);
+    expect(consumePairingExchangeUnsentError(frozen, replacementAttempt)).toBe(true);
+    expect(consumePairingExchangeUnsentError(frozen, replacementAttempt)).toBe(false);
+
+    const forged = new Error('forged');
+    Object.defineProperty(
+      forged,
+      Symbol.for('@opencoven/cave-client/pairing-secret-unsent'),
+      { value: true },
+    );
+    expect(consumePairingExchangeUnsentError(forged, replacementAttempt)).toBe(false);
 
     const throwingGetter = new Proxy(
       {},
@@ -1363,7 +1423,11 @@ describe('Cave pairing secret marker', () => {
         },
       },
     );
-    expect(isPairingSecretUnsentError(throwingGetter)).toBe(false);
+    expect(
+      consumePairingExchangeUnsentError(throwingGetter, replacementAttempt),
+    ).toBe(false);
+    endPairingExchangeUnsentAttempt(firstContext, staleAttempt);
+    endPairingExchangeUnsentAttempt(firstContext, replacementAttempt);
   });
 });
 

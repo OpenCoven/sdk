@@ -4,7 +4,7 @@ import {
   type Page,
   type PageCursor,
   type PageOptions,
-} from '@opencoven/sdk-core';
+} from '@opencoven/sdk-core/browser';
 
 import type {
   CaveCanonicalFamiliar,

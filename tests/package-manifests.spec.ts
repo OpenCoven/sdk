@@ -49,6 +49,30 @@ const ROOT_PACKAGE_EXPORTS = {
   },
   './package.json': './package.json',
 } as const;
+
+function expectedPackageExports(workspaceDirectory: string) {
+  return {
+    ...ROOT_PACKAGE_EXPORTS,
+    ...(workspaceDirectory === 'core'
+      ? {
+          './browser': {
+            types: './dist/browser.d.ts',
+            import: './dist/browser.js',
+            default: './dist/browser.js',
+          },
+        }
+      : {}),
+    ...(workspaceDirectory === 'cave'
+      ? {
+          './managed': {
+            types: './dist/managed.d.ts',
+            import: './dist/managed.js',
+            default: './dist/managed.js',
+          },
+        }
+      : {}),
+  };
+}
 const EXPECTED_WORKSPACE_DEPENDENCIES = {
   core: {},
   cave: {
@@ -95,7 +119,7 @@ describe('workspace package manifests', () => {
 
   test('runs the clean Phase 0 matrix before the remaining full verification', () => {
     expect(rootManifest.scripts?.verify).toBe(
-      'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 --recursive build && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint',
+      'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 clean:public-dist && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint',
     );
   });
 
@@ -179,6 +203,9 @@ describe('workspace package manifests', () => {
   }, 15_000);
 
   test('verifies the release contract and artifacts on the compatibility path', () => {
+    expect(rootManifest.scripts?.['verify:compat']).toBe(
+      'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 verify:package',
+    );
     expect(rootManifest.scripts?.['verify:compat']).toContain('verify:release');
     expect(rootManifest.scripts?.['verify:compat']).toMatch(
       /verify:release.*verify:package/,
@@ -250,7 +277,7 @@ describe('workspace package manifests', () => {
       expect(manifest.main).toBe('./dist/index.js');
       expect(manifest.types).toBe('./dist/index.d.ts');
       expect(manifest.sideEffects).toBe(false);
-      expect(manifest.exports).toEqual(ROOT_PACKAGE_EXPORTS);
+      expect(manifest.exports).toEqual(expectedPackageExports(workspaceDirectory));
       expect(manifest.dependencies ?? {}).toEqual(expectedDependencies);
       expect(manifest.license).toBe('AGPL-3.0-only OR MIT');
       expect(manifest.version).toBe('0.1.0');

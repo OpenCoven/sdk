@@ -18,10 +18,11 @@
   "scripts": {
     "api:baseline:update": "node ./scripts/update-api-baselines.mjs",
     "build": "corepack pnpm@10.34.0 --recursive --filter './packages/*' build && corepack pnpm@10.34.0 --recursive --filter './examples/*' build",
+    "clean:public-dist": "node ./scripts/clean-public-package-dist.mjs",
     "changeset": "changeset",
     "cleanup:merged": "node ./scripts/cleanup-merged-branch.mjs",
     "typecheck": "corepack pnpm@10.34.0 exec tsc --pretty false --noEmit -p tsconfig.eslint.json",
-    "test": "vitest run",
+    "test": "corepack pnpm@10.34.0 build && vitest run",
     "test:coverage": "vitest run --coverage",
     "test:stress": "node ./scripts/run-operation-stress.mjs",
     "lint": "pnpm exec eslint . --max-warnings=0",
@@ -34,16 +35,17 @@
     "verify-package": "node ./scripts/verify-package.mjs",
     "verify:contracts": "node ./scripts/verify-contracts.mjs",
     "verify:cave-authority": "node ./scripts/verify-cave-contract-authority.mjs",
-    "verify:compat": "corepack pnpm@10.34.0 build && corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 verify:package",
+    "verify:compat": "corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 verify:package",
     "verify:package": "node ./scripts/verify-package.mjs",
     "verify:release": "node ./scripts/verify-release-readiness.mjs",
-    "verify": "corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 --recursive build && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint"
+    "verify": "corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 clean:public-dist && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint"
   },
   "devDependencies": {
     "@changesets/cli": "3.0.1",
     "@eslint/js": "10.0.1",
     "@types/node": "24.13.3",
     "@vitest/coverage-v8": "4.1.11",
+    "esbuild": "0.28.1",
     "eslint": "10.9.0",
     "fast-check": "4.9.0",
     "globals": "17.11.0",

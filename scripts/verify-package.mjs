@@ -52,6 +52,33 @@ const rootPackageExports = {
   './package.json': './package.json',
 };
 
+function expectedPackageExports(workspaceDirectory) {
+  const root = rootPackageExports['.'];
+  if (workspaceDirectory === 'core') {
+    return {
+      '.': root,
+      './browser': {
+        types: './dist/browser.d.ts',
+        import: './dist/browser.js',
+        default: './dist/browser.js',
+      },
+      './package.json': './package.json',
+    };
+  }
+  if (workspaceDirectory === 'cave') {
+    return {
+      '.': root,
+      './managed': {
+        types: './dist/managed.d.ts',
+        import: './dist/managed.js',
+        default: './dist/managed.js',
+      },
+      './package.json': './package.json',
+    };
+  }
+  return rootPackageExports;
+}
+
 function readTarballFile(tarball, path) {
   return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
     encoding: 'utf8',
@@ -126,7 +153,7 @@ function assertPackedPackageContracts(tarballs) {
     if (
       manifest.main !== './dist/index.js' ||
       manifest.types !== './dist/index.d.ts' ||
-      !isJsonOrderEqual(manifest.exports, rootPackageExports)
+      !isJsonOrderEqual(manifest.exports, expectedPackageExports(workspaceDirectory))
     ) {
       throw new Error(
         `Packed ${packageName} package must ship only the reviewed root export map.`,
@@ -492,6 +519,269 @@ try {
   );
 }
 
+function createManagedBrowserFixture(fixtureRoot, tarballs) {
+  const caveTarball = tarballSpecifier(tarballs, 'cave');
+  const overrides = createPublicPackageOverrides(tarballs);
+
+  mkdirSync(resolve(fixtureRoot, 'src'), { recursive: true });
+  writeFileSync(
+    resolve(fixtureRoot, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: 'packed-opencoven-managed-browser-consumer',
+        private: true,
+        type: 'module',
+        dependencies: {
+          '@opencoven/cave-client': caveTarball,
+        },
+        pnpm: {
+          overrides,
+        },
+        devDependencies: {
+          esbuild: '0.28.1',
+          typescript: '6.0.3',
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFileSync(
+    resolve(fixtureRoot, 'tsconfig.json'),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          target: 'ES2024',
+          module: 'NodeNext',
+          moduleResolution: 'NodeNext',
+          strict: true,
+          types: [],
+          noEmit: true,
+        },
+        include: ['src/**/*.ts'],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  writeFileSync(
+    resolve(fixtureRoot, 'src', 'index.ts'),
+    `import {
+  createManagedCaveClient,
+  type CaveManagedCredentialTransport,
+} from '@opencoven/cave-client/managed';
+
+const requestId = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
+const transport: CaveManagedCredentialTransport = {
+  health: async () => ({
+    apiVersion: '1.0',
+    capabilities: ['health'],
+    minimumClientVersion: '0.1.0',
+    operations: ['health.read'],
+    data: {
+      instanceId: 'packed-browser-cave',
+      pairingRequired: true,
+      releaseVersion: '0.3.9',
+    },
+  }),
+  managedPairingCreate: async () => ({ requestId, expiresAt: 1_755_731_112_617 }),
+  managedPairingPoll: async () => ({
+    id: requestId,
+    status: 'approved',
+    expiresAt: 1_755_731_112_617,
+  }),
+  managedPairingExchange: async () => ({
+    credential: {
+      id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+      appName: 'Packed browser',
+      installationId: 'packed-browser',
+      scopes: ['chat:read'],
+      createdAt: 1_755_730_812_617,
+      lastUsedAt: null,
+      revokedAt: null,
+      revocationReason: null,
+    },
+  }),
+  managedCredentialStatus: async () => ({
+    status: 'missing',
+  }),
+  managedForgetCredential: async () => ({ status: 'missing' }),
+};
+
+void createManagedCaveClient({ transport });
+`,
+  );
+  writeFileSync(
+    resolve(fixtureRoot, 'verify.mjs'),
+    `import { inspect } from 'node:util';
+
+const { createManagedCaveClient } = await import('@opencoven/cave-client/managed');
+const secret = 'packed-managed-browser-secret-canary';
+const requestId = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
+const events = [];
+let resolveExchange;
+let exchangeCalls = 0;
+const health = {
+  apiVersion: '1.0',
+  capabilities: ['health'],
+  minimumClientVersion: '0.1.0',
+  operations: ['health.read'],
+  data: {
+    instanceId: 'packed-browser-cave',
+    pairingRequired: true,
+    releaseVersion: '0.3.9',
+  },
+};
+const credential = {
+  id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+  appName: 'Packed browser',
+  installationId: 'packed-browser',
+  scopes: ['chat:read'],
+  createdAt: 1_755_730_812_617,
+  lastUsedAt: null,
+  revokedAt: null,
+  revocationReason: null,
+};
+const transport = {
+  health: async () => health,
+  managedPairingCreate: async () => ({ requestId, expiresAt: 1_755_731_112_617 }),
+  managedPairingPoll: async (id) => ({
+    id,
+    status: 'approved',
+    expiresAt: 1_755_731_112_617,
+  }),
+  managedPairingExchange: async () => {
+    exchangeCalls += 1;
+    return new Promise((resolve) => {
+      resolveExchange = resolve;
+    });
+  },
+  managedCredentialStatus: async () => ({
+    status: 'valid',
+    access: 'chat:read',
+    health,
+  }),
+  managedForgetCredential: async () => ({ status: 'deleted' }),
+  listFamiliars: async () => ({
+    apiVersion: '1.0',
+    capabilities: [
+      'health',
+      'pairing',
+      'credentials',
+      'familiars',
+      'projects',
+      'conversations',
+      'conversation-messages',
+      'cursors',
+    ],
+    minimumClientVersion: '0.1.0',
+    operations: [
+      'familiars.list',
+      'projects.list',
+      'conversations.list',
+      'conversations.read',
+      'messages.list',
+    ],
+    data: {
+      familiars: [{ id: 'cedar', displayName: 'Cedar', role: 'guide' }],
+    },
+  }),
+};
+const client = createManagedCaveClient({
+  transport,
+  operation: {
+    observer: {
+      onEvent(event) {
+        events.push(event);
+      },
+      onObserverError(error) {
+        throw error;
+      },
+    },
+  },
+});
+const session = await client.createPairing({
+  appName: 'Packed browser',
+  installationId: 'packed-browser',
+  scopes: ['chat:read'],
+});
+if (JSON.stringify(session).includes(secret)) {
+  throw new Error('Managed pairing session exposed the secret canary.');
+}
+await session.poll();
+const controller = new AbortController();
+const exchange = session.exchange({ signal: controller.signal }).catch((error) => error);
+await new Promise((resolve) => setImmediate(resolve));
+controller.abort(new Error(secret));
+const aborted = await exchange;
+if (!aborted || aborted.normalized?.code !== 'aborted') {
+  throw new Error('Managed browser exchange did not preserve abort semantics.');
+}
+resolveExchange({ credential });
+await new Promise((resolve) => setImmediate(resolve));
+if (exchangeCalls !== 1) {
+  throw new Error('Late managed browser exchange was replayed.');
+}
+const replay = await session.exchange().catch((error) => error);
+if (!replay || replay.normalized?.code !== 'conflict') {
+  throw new Error('Managed browser exchange replay was not rejected.');
+}
+const status = await client.credentialStatus();
+const forgot = await client.forgetCredential();
+const familiars = await client.listFamiliars();
+const malformedClient = createManagedCaveClient({
+  transport: {
+    ...transport,
+    managedPairingCreate: async () => ({
+      requestId,
+      expiresAt: 1_755_731_112_617,
+      bearer: secret,
+    }),
+  },
+});
+const malformed = await malformedClient.createPairing({
+  appName: 'Packed browser',
+  installationId: 'packed-browser-malformed',
+  scopes: ['chat:read'],
+}).catch((error) => error);
+const serialized = JSON.stringify({
+  session,
+  status,
+  forgot,
+  familiars,
+  malformed,
+  events,
+  inspect: inspect(malformed),
+  message: malformed?.message,
+  normalized: malformed?.normalized,
+});
+if (
+  serialized.includes(secret) ||
+  malformed?.normalized?.code !== 'invalid_response' ||
+  status.status !== 'valid' ||
+  forgot !== true ||
+  familiars.data[0]?.id !== 'cedar'
+) {
+  throw new Error('Managed browser packed lifecycle leaked a native secret or failed validation.');
+}
+console.log('Packed managed browser lifecycle passed.');
+`,
+  );
+  writeFileSync(
+    resolve(fixtureRoot, 'bundle.mjs'),
+    `import { build } from 'esbuild';
+
+await build({
+  bundle: true,
+  entryPoints: ['src/index.ts'],
+  format: 'esm',
+  outfile: 'bundle.mjs',
+  platform: 'browser',
+});
+`,
+  );
+}
+
 function createPackedExamples({ artifactRoot, exampleRoot, tarballs }) {
   mkdirSync(exampleRoot, { recursive: true });
   writeFileSync(resolve(artifactRoot, 'tsconfig.base.json'), readFileSync(resolve(root, 'tsconfig.base.json')));
@@ -562,6 +852,7 @@ try {
   const artifactRoot = artifactContext.rootPath;
   const tarballRoot = resolve(artifactRoot, 'tarballs');
   const fixtureRoot = resolve(artifactRoot, 'packed-consumer');
+  const managedBrowserFixtureRoot = resolve(artifactRoot, 'packed-managed-browser-consumer');
   const exampleRoot = resolve(artifactRoot, 'examples');
   mkdirSync(tarballRoot, { recursive: true });
 
@@ -597,6 +888,7 @@ try {
   process.stdout.write('Release artifact manifest verified.\n');
 
   createFixture(fixtureRoot, tarballs);
+  createManagedBrowserFixture(managedBrowserFixtureRoot, tarballs);
   createPackedExamples({
     artifactRoot,
     exampleRoot,
@@ -604,6 +896,7 @@ try {
   });
   const consumerRoots = [
     fixtureRoot,
+    managedBrowserFixtureRoot,
     ...exampleWorkspaces.map((workspaceDirectory) =>
       resolve(exampleRoot, workspaceDirectory),
     ),
@@ -612,6 +905,14 @@ try {
   assertConsumerDependencyIsolation(fixtureRoot);
   runPnpm(['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'], fixtureRoot);
   assertPackedPackagesExcludeSources(fixtureRoot);
+  assertConsumerDependencyIsolation(managedBrowserFixtureRoot);
+  runPnpm(
+    ['--ignore-workspace', 'exec', 'tsc', '--pretty', 'false'],
+    managedBrowserFixtureRoot,
+  );
+  runPnpm(['--ignore-workspace', 'exec', 'node', 'bundle.mjs'], managedBrowserFixtureRoot);
+  run(process.execPath, ['verify.mjs'], managedBrowserFixtureRoot);
+  assertPackedPackagesExcludeSources(managedBrowserFixtureRoot);
 
   for (const workspaceDirectory of exampleWorkspaces) {
     const destinationDirectory = resolve(exampleRoot, workspaceDirectory);

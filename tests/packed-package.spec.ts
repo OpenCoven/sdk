@@ -54,6 +54,30 @@ const ROOT_PACKAGE_EXPORTS = {
   './package.json': './package.json',
 } as const;
 
+function expectedPackageExports(workspaceDirectory: string) {
+  return {
+    ...ROOT_PACKAGE_EXPORTS,
+    ...(workspaceDirectory === 'core'
+      ? {
+          './browser': {
+            types: './dist/browser.d.ts',
+            import: './dist/browser.js',
+            default: './dist/browser.js',
+          },
+        }
+      : {}),
+    ...(workspaceDirectory === 'cave'
+      ? {
+          './managed': {
+            types: './dist/managed.d.ts',
+            import: './dist/managed.js',
+            default: './dist/managed.js',
+          },
+        }
+      : {}),
+  };
+}
+
 function expectedPackedDependencies(workspaceDirectory: string, version: string): Record<string, string> {
   switch (workspaceDirectory) {
     case 'core':
@@ -335,10 +359,25 @@ if (existsSync(rootModules) || existsSync(nestedModules) || !existsSync(lockfile
 
         expect(manifest.main).toBe('./dist/index.js');
         expect(manifest.types).toBe('./dist/index.d.ts');
-        expect(manifest.exports).toEqual(ROOT_PACKAGE_EXPORTS);
+        expect(manifest.exports).toEqual(expectedPackageExports(workspaceDirectory));
         expect(manifest.dependencies ?? {}).toEqual(
           expectedPackedDependencies(workspaceDirectory, manifest.version),
         );
+        if (workspaceDirectory === 'cave') {
+          const declarations = readTarballFile(tarball, 'dist/index.d.ts');
+          expect(declarations).toContain('CaveManagedCredentialTransport');
+          expect(declarations).toContain('CaveManagedNativeCredentialCustody');
+          const managedDeclarations = readTarballFile(tarball, 'dist/managed.d.ts');
+          expect(managedDeclarations).toContain('createManagedCaveClient');
+          expect(managedDeclarations).not.toMatch(
+            /\bNodeJS\.(?:ProcessEnv|Platform)\b/u,
+          );
+        }
+        if (workspaceDirectory === 'core') {
+          expect(readTarballFile(tarball, 'dist/browser.d.ts')).toContain(
+            'normalizePageOptions',
+          );
+        }
         if (workspaceDirectory === 'cli') {
           expect(manifest.optionalDependencies?.['@napi-rs/keyring']).toBeUndefined();
         }
