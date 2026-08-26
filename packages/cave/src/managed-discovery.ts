@@ -12,6 +12,7 @@ import {
   parseCaveDiscoveryRecord,
   type CaveDiscoveryErrorCode,
 } from './discovery-record.js';
+import type { CaveHpkeDiscoveryAuthority } from './discovery-record.js';
 import {
   MANAGED_SNAPSHOT_LIMITS,
   snapshotManagedResult,
@@ -64,7 +65,7 @@ export type CaveManagedDiscoveredEndpoint =
   | (CaveManagedDiscoveredEndpointBase & { version: 1 })
   | (CaveManagedDiscoveredEndpointBase & {
       version: 2;
-      authority: import('./discovery-record.js').CaveHpkeDiscoveryAuthority;
+      authority: CaveHpkeDiscoveryAuthority;
     });
 
 function isDataRecord(value: unknown): value is Record<string, unknown> {

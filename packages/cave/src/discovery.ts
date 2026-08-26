@@ -13,6 +13,7 @@ import {
   parseCaveDiscoveryRecord,
   type CaveDiscoveryErrorCode,
 } from './discovery-record.js';
+import type { CaveHpkeDiscoveryAuthority } from './discovery-record.js';
 export {
   CaveDiscoveryError,
   isCaveDiscoveryError,
@@ -115,7 +116,7 @@ export interface CaveDiscoveredEndpointV2 {
     url: string;
   };
   freshness: CaveEndpointFreshness;
-  authority: import('./discovery-record.js').CaveHpkeDiscoveryAuthority;
+  authority: CaveHpkeDiscoveryAuthority;
   record: CaveDiscoveryRecordIdentity;
 }
 

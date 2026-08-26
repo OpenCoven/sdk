@@ -17,6 +17,8 @@ import {
   caveHpkeBase64UrlDecode,
   caveHpkeBase64UrlEncode,
   encodeCaveHpkeAad,
+  type CaveHpkeRuntimeKey,
+  type CaveHpkeRuntimeSuite,
   type CaveHpkeAuthorization,
   type CaveHpkeBinding,
 } from '../../packages/cave/src/hpke-bound-v1-node.js';
@@ -26,12 +28,12 @@ const UTF8 = new TextEncoder();
 const UTF8_FATAL = new TextDecoder('utf-8', { fatal: true });
 const INSTANCE_ID = '00000000-0000-4000-8000-000000000000';
 
-function suite(): CipherSuite {
+function suite(): CaveHpkeRuntimeSuite {
   return new CipherSuite({
     kem: new DhkemX25519HkdfSha256(),
     kdf: new HkdfSha256(),
     aead: new Aes256Gcm(),
-  });
+  }) as unknown as CaveHpkeRuntimeSuite;
 }
 
 function exactObject(value: unknown): Record<string, unknown> {
@@ -44,9 +46,7 @@ function exactObject(value: unknown): Record<string, unknown> {
 export interface OpenedTestRequest {
   authorization: CaveHpkeAuthorization;
   binding: CaveHpkeBinding;
-  responsePublicKey: Awaited<
-    ReturnType<CipherSuite['kem']['deserializePublicKey']>
-  >;
+  responsePublicKey: CaveHpkeRuntimeKey;
   responsePublicKeyEncoded: string;
 }
 

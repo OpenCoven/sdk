@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { constants as fsConstants } from 'node:fs';
 import { chmod, mkdir, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:net';
-import { resolve } from 'node:path';
+import { createConnection, createServer } from 'node:net';
+import { relative, resolve } from 'node:path';
 
 import {
   COVEN_DAEMON_PROTOCOL,
@@ -3165,6 +3165,10 @@ describe('Unix owner-local health transport', () => {
     async () => {
       const shortRoot = createOwnedTempDirectory({ prefix: 'c' });
       const socketPath = resolve(shortRoot.rootPath, 's');
+      const listenPath = relative(
+        process.cwd(),
+        socketPath,
+      );
       let clientSocket: CovenConnectedSocket | undefined;
       const server = createServer((socket) => {
         socket.once('data', () => {
@@ -3173,7 +3177,7 @@ describe('Unix owner-local health transport', () => {
       });
       await new Promise<void>((resolvePromise, reject) => {
         server.once('error', reject);
-        server.listen(socketPath, resolvePromise);
+        server.listen(listenPath, resolvePromise);
       });
 
       try {
@@ -3188,6 +3192,9 @@ describe('Unix owner-local health transport', () => {
           endpoint: { kind: 'unix', path: socketPath },
           owner: { kind: 'unix', uid },
         }, {
+          dependencies: {
+            connect: () => createConnection(listenPath),
+          },
           peerIdentity: {
             inspectConnected(socket) {
               clientSocket = socket;

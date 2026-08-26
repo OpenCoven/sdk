@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/require-await */
 import {
   CaveClientError,
   createDiscoveredCaveClient,
@@ -886,7 +887,10 @@ describe('direct Cave hpke-bound-v1 transport', () => {
       authority.discovered,
       authority.instanceId,
     );
-    const fetchImplementation = vi.fn(async (input, init) => {
+    const fetchImplementation = vi.fn(async (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
       const request = input instanceof Request ? input : new Request(input, init);
       const opened = await authority.open(request);
       return await authority.respond(
@@ -923,7 +927,10 @@ describe('direct Cave hpke-bound-v1 transport', () => {
       authority.instanceId,
     );
     const controller = new AbortController();
-    const fetchImplementation = vi.fn(async (input, init) => {
+    const fetchImplementation = vi.fn(async (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
       const request = input instanceof Request ? input : new Request(input, init);
       const opened = await authority.open(request);
       const response = await authority.respond(

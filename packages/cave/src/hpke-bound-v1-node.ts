@@ -1,7 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
-import type { CipherSuite } from '@hpke/core';
-
 import type { CaveHpkeDiscoveryAuthority } from './discovery-record.js';
 
 const UTF8 = new TextEncoder();
@@ -18,6 +16,38 @@ const KEY_ID_DOMAIN = 'OpenCoven/client-v1/hpke-bound-v1/key-id\0';
 const RESPONSE_ERROR =
   'Cave HPKE transport authentication failed.';
 type Canonicalize = (value: unknown) => string | undefined;
+export type CaveHpkeRuntimeKey = object;
+export interface CaveHpkeRuntimeKeyPair {
+  privateKey: CaveHpkeRuntimeKey;
+  publicKey: CaveHpkeRuntimeKey;
+}
+export interface CaveHpkeRuntimeSender {
+  enc: Uint8Array;
+  seal(plaintext: Uint8Array, aad: Uint8Array): Promise<ArrayBufferLike>;
+}
+export interface CaveHpkeRuntimeRecipient {
+  open(ciphertext: Uint8Array, aad: Uint8Array): Promise<ArrayBufferLike>;
+}
+export interface CaveHpkeRuntimeSuite {
+  kem: {
+    generateKeyPair(): Promise<CaveHpkeRuntimeKeyPair>;
+    deriveKeyPair(ikm: Uint8Array): Promise<CaveHpkeRuntimeKeyPair>;
+    serializePublicKey(key: CaveHpkeRuntimeKey): Promise<ArrayBufferLike>;
+    deserializePublicKey(bytes: Uint8Array): Promise<CaveHpkeRuntimeKey>;
+  };
+  createSenderContext(options: {
+    recipientPublicKey: CaveHpkeRuntimeKey;
+    senderKey?: CaveHpkeRuntimeKey;
+    info: Uint8Array;
+    ekm?: Uint8Array;
+  }): Promise<CaveHpkeRuntimeSender>;
+  createRecipientContext(options: {
+    recipientKey: CaveHpkeRuntimeKey;
+    senderPublicKey?: CaveHpkeRuntimeKey;
+    enc: Uint8Array;
+    info: Uint8Array;
+  }): Promise<CaveHpkeRuntimeRecipient>;
+}
 
 export const CAVE_HPKE_REQUEST_INFO = UTF8.encode(
   'OpenCoven/client-v1/hpke-bound-v1/request',
@@ -262,7 +292,7 @@ export function encodeCaveHpkeAad(
 }
 
 async function loadCaveHpkeRuntime(): Promise<{
-  suite: CipherSuite;
+  suite: CaveHpkeRuntimeSuite;
   canonicalize: Canonicalize;
 }> {
   const [core, x25519, canonicalizeModule] = await Promise.all([
@@ -275,7 +305,7 @@ async function loadCaveHpkeRuntime(): Promise<{
       kem: new x25519.DhkemX25519HkdfSha256(),
       kdf: new core.HkdfSha256(),
       aead: new core.Aes256Gcm(),
-    }),
+    }) as unknown as CaveHpkeRuntimeSuite,
     canonicalize: canonicalizeModule.default,
   };
 }
@@ -374,7 +404,8 @@ async function readBounded(
   if (response.body === null) {
     return new Uint8Array();
   }
-  const reader = response.body.getReader();
+  const reader =
+    response.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
   const chunks: Uint8Array[] = [];
   let length = 0;
   try {

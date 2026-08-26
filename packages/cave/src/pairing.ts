@@ -890,7 +890,12 @@ async function waitForHpkeRetry(
       action();
     };
     const onAbort = (): void => {
-      finish(() => reject(context?.signal.reason ?? new Error('aborted')));
+      const reason: unknown = (
+        context?.signal as (AbortSignal & { reason?: unknown }) | undefined
+      )?.reason;
+      finish(() =>
+        reject(reason instanceof Error ? reason : new Error('aborted')),
+      );
     };
     const timer = setTimeout(() => finish(resolve), delayMs);
     (timer as ReturnType<typeof setTimeout> & { unref?: () => void }).unref?.();

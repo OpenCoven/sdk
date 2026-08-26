@@ -12,7 +12,6 @@ import {
 } from './managed-hpke.js';
 import type {
   CaveManagedCredentialTransport,
-  CaveTransport,
 } from './transport.js';
 
 export interface CaveManagedClientOptions {
@@ -159,14 +158,18 @@ function wrapManagedHpkeTransport(
   discovery: CaveManagedHpkeDiscovery,
 ): CaveManagedCredentialTransport {
   const resolveAuthority = createManagedHpkeAuthorityResolver(discovery);
-  const requireMethod = <T extends (...args: never[]) => unknown>(
-    method: T | undefined,
+  const invokeManaged = async (
+    methodName: keyof CaveManagedCredentialTransport,
+    arguments_: readonly unknown[],
     operation: string,
-  ): T => {
+  ): Promise<unknown> => {
+    const method: unknown = Reflect.get(transport, methodName);
     if (typeof method !== 'function') {
       throw missingManagedHpkeOperation(operation);
     }
-    return method;
+    return await Promise.resolve(
+      Reflect.apply(method, transport, arguments_) as unknown,
+    );
   };
   const wrapped: CaveManagedCredentialTransport = {
     health: (context) => transport.health(context),
@@ -177,10 +180,11 @@ function wrapManagedHpkeTransport(
       return authority === undefined
         ? await transport.managedPairingPoll(requestId, context)
         : unwrapManagedHpkeResult(
-            await requireMethod(
-              transport.managedHpkePairingPoll,
+            await invokeManaged(
+              'managedHpkePairingPoll',
+              [requestId, authority, context],
               'pairingPoll',
-            ).call(transport, requestId, authority, context),
+            ),
             authority,
           );
     },
@@ -189,10 +193,11 @@ function wrapManagedHpkeTransport(
       return authority === undefined
         ? await transport.managedPairingExchange(requestId, context)
         : unwrapManagedHpkeResult(
-            await requireMethod(
-              transport.managedHpkePairingExchange,
+            await invokeManaged(
+              'managedHpkePairingExchange',
+              [requestId, authority, context],
               'pairingExchange',
-            ).call(transport, requestId, authority, context),
+            ),
             authority,
           );
     },
@@ -201,10 +206,11 @@ function wrapManagedHpkeTransport(
       return authority === undefined
         ? await transport.managedCredentialStatus(context)
         : unwrapManagedHpkeResult(
-            await requireMethod(
-              transport.managedHpkeCredentialStatus,
+            await invokeManaged(
+              'managedHpkeCredentialStatus',
+              [authority, context],
               'credentialStatus',
-            ).call(transport, authority, context),
+            ),
             authority,
           );
     },
@@ -213,101 +219,112 @@ function wrapManagedHpkeTransport(
     async familiars(context) {
       const authority = await resolveAuthority(context);
       if (authority === undefined) {
-        return await requireMethod(
-          transport.familiars,
+        return await invokeManaged(
           'familiars',
-        ).call(transport, context);
+          [context],
+          'familiars',
+        ) as never;
       }
       return unwrapManagedHpkeResult(
-        await requireMethod(
-          transport.managedHpkeFamiliars,
+        await invokeManaged(
+          'managedHpkeFamiliars',
+          [authority, context],
           'familiars',
-        ).call(transport, authority, context),
+        ),
         authority,
       ) as never;
     },
     async listFamiliars(pageOptions, context) {
       const authority = await resolveAuthority(context);
       if (authority === undefined) {
-        return await requireMethod(
-          transport.listFamiliars,
+        return await invokeManaged(
           'listFamiliars',
-        ).call(transport, pageOptions, context);
+          [pageOptions, context],
+          'listFamiliars',
+        );
       }
       return unwrapManagedHpkeResult(
-        await requireMethod(
-          transport.managedHpkeListFamiliars,
+        await invokeManaged(
+          'managedHpkeListFamiliars',
+          [pageOptions, authority, context],
           'listFamiliars',
-        ).call(transport, pageOptions, authority, context),
+        ),
         authority,
       );
     },
     async listProjects(pageOptions, context) {
       const authority = await resolveAuthority(context);
       if (authority === undefined) {
-        return await requireMethod(
-          transport.listProjects,
+        return await invokeManaged(
           'listProjects',
-        ).call(transport, pageOptions, context);
+          [pageOptions, context],
+          'listProjects',
+        );
       }
       return unwrapManagedHpkeResult(
-        await requireMethod(
-          transport.managedHpkeListProjects,
+        await invokeManaged(
+          'managedHpkeListProjects',
+          [pageOptions, authority, context],
           'listProjects',
-        ).call(transport, pageOptions, authority, context),
+        ),
         authority,
       );
     },
     async listConversations(pageOptions, context) {
       const authority = await resolveAuthority(context);
       if (authority === undefined) {
-        return await requireMethod(
-          transport.listConversations,
+        return await invokeManaged(
           'listConversations',
-        ).call(transport, pageOptions, context);
+          [pageOptions, context],
+          'listConversations',
+        );
       }
       return unwrapManagedHpkeResult(
-        await requireMethod(
-          transport.managedHpkeListConversations,
+        await invokeManaged(
+          'managedHpkeListConversations',
+          [pageOptions, authority, context],
           'listConversations',
-        ).call(transport, pageOptions, authority, context),
+        ),
         authority,
       );
     },
     async getConversation(conversationId, context) {
       const authority = await resolveAuthority(context);
       if (authority === undefined) {
-        return await requireMethod(
-          transport.getConversation,
+        return await invokeManaged(
           'getConversation',
-        ).call(transport, conversationId, context);
+          [conversationId, context],
+          'getConversation',
+        );
       }
       return unwrapManagedHpkeResult(
-        await requireMethod(
-          transport.managedHpkeGetConversation,
+        await invokeManaged(
+          'managedHpkeGetConversation',
+          [conversationId, authority, context],
           'getConversation',
-        ).call(transport, conversationId, authority, context),
+        ),
         authority,
       );
     },
     async listConversationMessages(conversationId, pageOptions, context) {
       const authority = await resolveAuthority(context);
       if (authority === undefined) {
-        return await requireMethod(
-          transport.listConversationMessages,
+        return await invokeManaged(
           'listConversationMessages',
-        ).call(transport, conversationId, pageOptions, context);
+          [conversationId, pageOptions, context],
+          'listConversationMessages',
+        );
       }
       return unwrapManagedHpkeResult(
-        await requireMethod(
-          transport.managedHpkeListConversationMessages,
+        await invokeManaged(
+          'managedHpkeListConversationMessages',
+          [
+            conversationId,
+            pageOptions,
+            authority,
+            context,
+          ],
           'listConversationMessages',
-        ).call(
-          transport,
-          conversationId,
-          pageOptions,
-          authority,
-          context,
         ),
         authority,
       );
