@@ -15,11 +15,18 @@ export {
   createManagedCaveClient,
   type CaveManagedClientOptions,
   type CaveManagedNativeDiscardResult,
+  type CaveManagedNativeAuthenticatedResponse,
+  type CaveManagedNativeHpkePairingExchange,
   type CaveManagedNativePairingCreated,
   type CaveManagedNativePairingExchange,
   type CaveManagedNativeResponse,
   type CaveManagedNativeTransport,
 } from './managed-native.js';
+export type {
+  CaveManagedHpkeAuthentication,
+  CaveManagedHpkeDiscovery,
+  CaveManagedHpkeResult,
+} from './managed-hpke.js';
 export {
   createDiscoveredCaveClient,
 } from './pairing.js';

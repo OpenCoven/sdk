@@ -13,6 +13,12 @@ import type {
   CavePairingRequest,
   CavePairingStatus,
 } from './schemas.js';
+import type {
+  CaveManagedHpkeResult,
+} from './managed-hpke.js';
+import type {
+  CaveManagedDiscoveredEndpoint,
+} from './managed-discovery.js';
 
 export interface CaveTransport {
   health(context?: OperationContext): Promise<CaveHealthResponse>;
@@ -108,6 +114,50 @@ export interface CaveManagedCredentialTransport extends CaveTransport {
   managedForgetCredential(
     context?: OperationContext,
   ): Promise<unknown>;
+  managedHpkePairingPoll?(
+    requestId: string,
+    discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>,
+    context?: OperationContext,
+  ): Promise<CaveManagedHpkeResult>;
+  managedHpkePairingExchange?(
+    requestId: string,
+    discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>,
+    context?: OperationContext,
+  ): Promise<CaveManagedHpkeResult>;
+  managedHpkeCredentialStatus?(
+    discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>,
+    context?: OperationContext,
+  ): Promise<CaveManagedHpkeResult>;
+  managedHpkeFamiliars?(
+    discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>,
+    context?: OperationContext,
+  ): Promise<CaveManagedHpkeResult>;
+  managedHpkeListFamiliars?(
+    options: PageOptions,
+    discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>,
+    context?: OperationContext,
+  ): Promise<CaveManagedHpkeResult>;
+  managedHpkeListProjects?(
+    options: PageOptions,
+    discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>,
+    context?: OperationContext,
+  ): Promise<CaveManagedHpkeResult>;
+  managedHpkeListConversations?(
+    options: PageOptions,
+    discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>,
+    context?: OperationContext,
+  ): Promise<CaveManagedHpkeResult>;
+  managedHpkeGetConversation?(
+    conversationId: string,
+    discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>,
+    context?: OperationContext,
+  ): Promise<CaveManagedHpkeResult>;
+  managedHpkeListConversationMessages?(
+    conversationId: string,
+    options: PageOptions,
+    discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>,
+    context?: OperationContext,
+  ): Promise<CaveManagedHpkeResult>;
 }
 
 /**
