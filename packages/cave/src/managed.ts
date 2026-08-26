@@ -142,6 +142,7 @@ export type {
   CaveManagedDiscoverySource,
   CaveManagedDiscoveredEndpoint,
 } from './managed-discovery.js';
+export type { CaveHpkeDiscoveryAuthority } from './discovery-record.js';
 export type {
   CaveManagedCredentialTransport,
   CaveTransport,

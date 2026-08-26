@@ -43,8 +43,7 @@ export interface CaveManagedDiscoveryOptions extends OperationOptions {
   operation?: OperationDefaults;
 }
 
-export interface CaveManagedDiscoveredEndpoint {
-  version: 1;
+interface CaveManagedDiscoveredEndpointBase {
   endpoint: {
     kind: 'http';
     url: string;
@@ -60,6 +59,13 @@ export interface CaveManagedDiscoveredEndpoint {
     inode: number;
   };
 }
+
+export type CaveManagedDiscoveredEndpoint =
+  | (CaveManagedDiscoveredEndpointBase & { version: 1 })
+  | (CaveManagedDiscoveredEndpointBase & {
+      version: 2;
+      authority: import('./discovery-record.js').CaveHpkeDiscoveryAuthority;
+    });
 
 function isDataRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -238,10 +244,10 @@ function snapshotDiscoverySource(
   }
 }
 
-function parseSourceResult(
+async function parseSourceResult(
   value: unknown,
   maxRecordBytes: number,
-): CaveManagedDiscoveredEndpoint {
+): Promise<CaveManagedDiscoveredEndpoint> {
   const snapshot = snapshotDiscoverySource(value, maxRecordBytes);
   if (snapshot === undefined) {
     return invalidRecord();
@@ -307,11 +313,12 @@ function parseSourceResult(
     return invalidRecord();
   }
 
-  const parsed = parseCaveDiscoveryRecord(serialized, () => processAlive);
+  const parsed = await parseCaveDiscoveryRecord(serialized, () => processAlive);
   const endpoint = {
     version: parsed.version,
     endpoint: parsed.endpoint,
     freshness: parsed.freshness,
+    ...('authority' in parsed ? { authority: parsed.authority } : {}),
     record: { identity, device, inode },
   };
   const result = snapshotManagedResult(endpoint);
@@ -395,7 +402,7 @@ export async function discoverManagedCaveEndpoint(
           );
         }
         try {
-          return parseSourceResult(value, maxRecordBytes);
+          return await parseSourceResult(value, maxRecordBytes);
         } catch (error) {
           throw sanitizedDiscoveryError(error);
         }

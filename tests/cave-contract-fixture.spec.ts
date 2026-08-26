@@ -35,8 +35,45 @@ describe('Cave contract fixture parsing', () => {
         ],
         discovery: {
           fileName: 'client-v1-discovery.json',
+          hpkeBoundVersion: 2,
           mode: '0600',
           version: 1,
+        },
+        authority: {
+          defaultMode: 'off',
+          modes: ['off', 'advertise', 'enforce'],
+          mechanism: {
+            id: 'hpke-bound-v1',
+            discoveryVersion: 2,
+            suite: {
+              kemId: 32,
+              kdfId: 1,
+              aeadId: 2,
+            },
+            requestHeaders: {
+              mechanism: 'x-coven-client-v1-authority',
+              keyId: 'x-coven-client-v1-authority-key-id',
+              instanceId: 'x-coven-client-v1-authority-instance',
+              runtimeNonce: 'x-coven-client-v1-authority-runtime-nonce',
+              requestNonce: 'x-coven-client-v1-authority-request-nonce',
+              issuedAt: 'x-coven-client-v1-authority-issued-at',
+              enc: 'x-coven-client-v1-authority-enc',
+              ciphertext: 'x-coven-client-v1-authority-ciphertext',
+            },
+            protectedOperations: [
+              'pairing.poll',
+              'pairing.exchange',
+              'familiars.list',
+              'projects.list',
+              'conversations.list',
+              'conversations.read',
+              'messages.list',
+            ],
+            vectorFixture: {
+              fileName: 'hpke-bound-v1-vectors.json',
+              sha256FileName: 'hpke-bound-v1-vectors.sha256',
+            },
+          },
         },
         errorCodes: [
           'invalid_request',
@@ -78,11 +115,41 @@ describe('Cave contract fixture parsing', () => {
     });
     expect(parsed.contract.operations).toContainEqual(expect.objectContaining({
       id: 'health.read',
+      binding: 'none',
+      credential: 'none',
       ingress: 'public',
       method: 'GET',
       path: '/api/client/v1/health',
       scope: null,
     }));
+    expect(parsed.contract.operations).toContainEqual(expect.objectContaining({
+      id: 'pairing.exchange',
+      binding: 'hpke-bound-v1',
+      credential: 'pairing-secret',
+    }));
+    expect(parsed.contract.operations).toContainEqual(expect.objectContaining({
+      id: 'familiars.list',
+      binding: 'hpke-bound-v1',
+      credential: 'bearer',
+    }));
+    expect(parsed.examples.discoveryRecordV2).toEqual({
+      version: 2,
+      endpoint: 'http://127.0.0.1:3020',
+      pid: 4321,
+      nonce: 'gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8',
+      startedAt: '2026-08-25T15:42:58.109Z',
+      authority: {
+        mechanism: 'hpke-bound-v1',
+        mode: 'advertise',
+        keyId: 'Tq04GMSX5BPPPijzO9pHfQ1lAnna_RQKzL1ncDGl-4g',
+        publicKey: 'sfG4QN56MkGwJ0jPmwW3TcjF6EUSmHOIF712qo6-jCs',
+        suite: {
+          kemId: 32,
+          kdfId: 1,
+          aeadId: 2,
+        },
+      },
+    });
     expect(parsed.examples.healthEnvelope.operations).toEqual(
       parsed.contract.operations.map(({ id }) => id),
     );

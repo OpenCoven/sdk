@@ -42,19 +42,29 @@ export type {
   CaveDiscoveryPathIdentity,
   CaveDiscoveryRecordIdentity,
   CaveDiscoveredEndpoint,
+  CaveDiscoveredEndpointV1,
+  CaveDiscoveredEndpointV2,
   CaveEndpointFreshness,
   CaveWindowsPathTrustResult,
   CaveWindowsPathTrustValidator,
   DiscoverCaveEndpointOptions,
 } from './discovery.js';
+export type {
+  CaveHpkeDiscoveryAuthority,
+  CaveParsedDiscoveryRecord,
+  CaveParsedDiscoveryRecordV1,
+  CaveParsedDiscoveryRecordV2,
+} from './discovery-record.js';
 export type { CaveDiscoveredClientOptions } from './pairing.js';
 export type {
   CaveContractCursor,
   CaveContractEnvelopeMetadata,
   CaveContractFixture,
+  CaveContractHpkeAuthority,
   CaveContractHealthData,
   CaveContractIdentity,
   CaveContractOperation,
+  CaveContractDiscoveryRecordV2,
   CaveContractPairingCreatedData,
   CaveContractPairingExchangeData,
   CaveContractPairingStatusData,

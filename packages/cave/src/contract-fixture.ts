@@ -18,6 +18,8 @@ export interface CaveContractRevision {
 }
 
 export interface CaveContractOperation {
+  binding: string;
+  credential: string;
   families: readonly string[];
   id: string;
   ingress: string;
@@ -71,12 +73,92 @@ export interface CaveContractPairingExchangeData {
   };
 }
 
+export interface CaveContractHpkeAuthority {
+  defaultMode: string;
+  modes: readonly string[];
+  mechanism: {
+    aadEncoding: string;
+    canonicalRoute: string;
+    discoveryVersion: number;
+    freshness: {
+      maximumAgeMs: number;
+      maximumFutureSkewMs: number;
+      replayCapacity: number;
+      replayTtlMs: number;
+    };
+    id: string;
+    keyIdDerivation: string;
+    limits: {
+      canonicalRouteBytes: number;
+      encodedKeyCharacters: number;
+      instanceIdBytes: number;
+      rawKeyBytes: number;
+      requestBodyBytes: number;
+      requestCiphertextBytes: number;
+      requestPlaintextBytes: number;
+      responseCiphertextBytes: number;
+      responseEnvelopeBytes: number;
+      responsePlaintextBytes: number;
+    };
+    protectedOperations: readonly string[];
+    requestEncoding: string;
+    requestHeaders: {
+      ciphertext: string;
+      enc: string;
+      instanceId: string;
+      issuedAt: string;
+      keyId: string;
+      mechanism: string;
+      requestNonce: string;
+      runtimeNonce: string;
+    };
+    requestHpkeMode: string;
+    requestInfo: string;
+    responseHpkeMode: string;
+    responseInfo: string;
+    responseMediaType: string;
+    suite: {
+      aead: string;
+      aeadId: number;
+      kdf: string;
+      kdfId: number;
+      kem: string;
+      kemId: number;
+    };
+    vectorFixture: {
+      fileName: string;
+      sha256FileName: string;
+    };
+  };
+}
+
+export interface CaveContractDiscoveryRecordV2 {
+  authority: {
+    keyId: string;
+    mechanism: string;
+    mode: string;
+    publicKey: string;
+    suite: {
+      aeadId: number;
+      kdfId: number;
+      kemId: number;
+    };
+  };
+  endpoint: string;
+  nonce: string;
+  pid: number;
+  startedAt: string;
+  version: number;
+}
+
 export interface CaveContractFixture {
   contract: {
     apiVersion: string;
+    authority: CaveContractHpkeAuthority;
     capabilities: readonly string[];
     discovery: {
       fileName: string;
+      hpkeBoundVersion: number;
       mode: string;
       version: number;
     };
@@ -112,6 +194,7 @@ export interface CaveContractFixture {
       startedAt: string;
       version: number;
     };
+    discoveryRecordV2: CaveContractDiscoveryRecordV2;
     errorEnvelope: CaveContractEnvelopeMetadata & {
       error: {
         code: string;
@@ -414,12 +497,220 @@ function parseOperation(value: unknown, path: string): CaveContractOperation {
   const operation = expectObject(value, path);
 
   return {
+    binding: expectString(operation.binding, `${path}.binding`),
+    credential: expectString(operation.credential, `${path}.credential`),
     families: expectStringArray(operation.families, `${path}.families`),
     id: expectString(operation.id, `${path}.id`),
     ingress: expectString(operation.ingress, `${path}.ingress`),
     method: expectString(operation.method, `${path}.method`),
     path: expectString(operation.path, `${path}.path`),
     scope: expectNullableString(operation.scope, `${path}.scope`),
+  };
+}
+
+function parseIntegerFields<T extends readonly string[]>(
+  value: unknown,
+  path: string,
+  keys: T,
+): { [K in T[number]]: number } {
+  const record = expectObject(value, path);
+  return Object.fromEntries(
+    keys.map((key) => [key, expectInteger(record[key], `${path}.${key}`)]),
+  ) as { [K in T[number]]: number };
+}
+
+function parseAuthority(value: unknown, path: string): CaveContractHpkeAuthority {
+  const authority = expectObject(value, path);
+  const mechanism = expectObject(authority.mechanism, `${path}.mechanism`);
+  const requestHeaders = expectObject(
+    mechanism.requestHeaders,
+    `${path}.mechanism.requestHeaders`,
+  );
+  const suite = expectObject(mechanism.suite, `${path}.mechanism.suite`);
+  const vectorFixture = expectObject(
+    mechanism.vectorFixture,
+    `${path}.mechanism.vectorFixture`,
+  );
+
+  return {
+    defaultMode: expectString(authority.defaultMode, `${path}.defaultMode`),
+    modes: expectStringArray(authority.modes, `${path}.modes`),
+    mechanism: {
+      aadEncoding: expectString(
+        mechanism.aadEncoding,
+        `${path}.mechanism.aadEncoding`,
+      ),
+      canonicalRoute: expectString(
+        mechanism.canonicalRoute,
+        `${path}.mechanism.canonicalRoute`,
+      ),
+      discoveryVersion: expectInteger(
+        mechanism.discoveryVersion,
+        `${path}.mechanism.discoveryVersion`,
+      ),
+      freshness: parseIntegerFields(
+        mechanism.freshness,
+        `${path}.mechanism.freshness`,
+        [
+          'maximumAgeMs',
+          'maximumFutureSkewMs',
+          'replayCapacity',
+          'replayTtlMs',
+        ] as const,
+      ),
+      id: expectString(mechanism.id, `${path}.mechanism.id`),
+      keyIdDerivation: expectString(
+        mechanism.keyIdDerivation,
+        `${path}.mechanism.keyIdDerivation`,
+      ),
+      limits: parseIntegerFields(
+        mechanism.limits,
+        `${path}.mechanism.limits`,
+        [
+          'canonicalRouteBytes',
+          'encodedKeyCharacters',
+          'instanceIdBytes',
+          'rawKeyBytes',
+          'requestBodyBytes',
+          'requestCiphertextBytes',
+          'requestPlaintextBytes',
+          'responseCiphertextBytes',
+          'responseEnvelopeBytes',
+          'responsePlaintextBytes',
+        ] as const,
+      ),
+      protectedOperations: expectStringArray(
+        mechanism.protectedOperations,
+        `${path}.mechanism.protectedOperations`,
+      ),
+      requestEncoding: expectString(
+        mechanism.requestEncoding,
+        `${path}.mechanism.requestEncoding`,
+      ),
+      requestHeaders: {
+        ciphertext: expectString(
+          requestHeaders.ciphertext,
+          `${path}.mechanism.requestHeaders.ciphertext`,
+        ),
+        enc: expectString(
+          requestHeaders.enc,
+          `${path}.mechanism.requestHeaders.enc`,
+        ),
+        instanceId: expectString(
+          requestHeaders.instanceId,
+          `${path}.mechanism.requestHeaders.instanceId`,
+        ),
+        issuedAt: expectString(
+          requestHeaders.issuedAt,
+          `${path}.mechanism.requestHeaders.issuedAt`,
+        ),
+        keyId: expectString(
+          requestHeaders.keyId,
+          `${path}.mechanism.requestHeaders.keyId`,
+        ),
+        mechanism: expectString(
+          requestHeaders.mechanism,
+          `${path}.mechanism.requestHeaders.mechanism`,
+        ),
+        requestNonce: expectString(
+          requestHeaders.requestNonce,
+          `${path}.mechanism.requestHeaders.requestNonce`,
+        ),
+        runtimeNonce: expectString(
+          requestHeaders.runtimeNonce,
+          `${path}.mechanism.requestHeaders.runtimeNonce`,
+        ),
+      },
+      requestHpkeMode: expectString(
+        mechanism.requestHpkeMode,
+        `${path}.mechanism.requestHpkeMode`,
+      ),
+      requestInfo: expectString(
+        mechanism.requestInfo,
+        `${path}.mechanism.requestInfo`,
+      ),
+      responseHpkeMode: expectString(
+        mechanism.responseHpkeMode,
+        `${path}.mechanism.responseHpkeMode`,
+      ),
+      responseInfo: expectString(
+        mechanism.responseInfo,
+        `${path}.mechanism.responseInfo`,
+      ),
+      responseMediaType: expectString(
+        mechanism.responseMediaType,
+        `${path}.mechanism.responseMediaType`,
+      ),
+      suite: {
+        aead: expectString(suite.aead, `${path}.mechanism.suite.aead`),
+        aeadId: expectInteger(
+          suite.aeadId,
+          `${path}.mechanism.suite.aeadId`,
+        ),
+        kdf: expectString(suite.kdf, `${path}.mechanism.suite.kdf`),
+        kdfId: expectInteger(
+          suite.kdfId,
+          `${path}.mechanism.suite.kdfId`,
+        ),
+        kem: expectString(suite.kem, `${path}.mechanism.suite.kem`),
+        kemId: expectInteger(
+          suite.kemId,
+          `${path}.mechanism.suite.kemId`,
+        ),
+      },
+      vectorFixture: {
+        fileName: expectString(
+          vectorFixture.fileName,
+          `${path}.mechanism.vectorFixture.fileName`,
+        ),
+        sha256FileName: expectString(
+          vectorFixture.sha256FileName,
+          `${path}.mechanism.vectorFixture.sha256FileName`,
+        ),
+      },
+    },
+  };
+}
+
+function parseDiscoveryRecordV2(
+  value: unknown,
+  path: string,
+): CaveContractDiscoveryRecordV2 {
+  const record = expectObject(value, path);
+  const authority = expectObject(record.authority, `${path}.authority`);
+  const suite = expectObject(authority.suite, `${path}.authority.suite`);
+  return {
+    authority: {
+      keyId: expectString(authority.keyId, `${path}.authority.keyId`),
+      mechanism: expectString(
+        authority.mechanism,
+        `${path}.authority.mechanism`,
+      ),
+      mode: expectString(authority.mode, `${path}.authority.mode`),
+      publicKey: expectString(
+        authority.publicKey,
+        `${path}.authority.publicKey`,
+      ),
+      suite: {
+        aeadId: expectInteger(
+          suite.aeadId,
+          `${path}.authority.suite.aeadId`,
+        ),
+        kdfId: expectInteger(
+          suite.kdfId,
+          `${path}.authority.suite.kdfId`,
+        ),
+        kemId: expectInteger(
+          suite.kemId,
+          `${path}.authority.suite.kemId`,
+        ),
+      },
+    },
+    endpoint: expectString(record.endpoint, `${path}.endpoint`),
+    nonce: expectString(record.nonce, `${path}.nonce`),
+    pid: expectInteger(record.pid, `${path}.pid`),
+    startedAt: expectString(record.startedAt, `${path}.startedAt`),
+    version: expectInteger(record.version, `${path}.version`),
   };
 }
 
@@ -458,6 +749,10 @@ function parseContractFixtureObject(value: unknown): CaveContractFixture {
   return {
     contract: {
       apiVersion: expectString(contract.apiVersion, 'fixture.contract.apiVersion'),
+      authority: parseAuthority(
+        contract.authority,
+        'fixture.contract.authority',
+      ),
       capabilities: expectStringArray(
         contract.capabilities,
         'fixture.contract.capabilities',
@@ -466,6 +761,10 @@ function parseContractFixtureObject(value: unknown): CaveContractFixture {
         fileName: expectString(
           discovery.fileName,
           'fixture.contract.discovery.fileName',
+        ),
+        hpkeBoundVersion: expectInteger(
+          discovery.hpkeBoundVersion,
+          'fixture.contract.discovery.hpkeBoundVersion',
         ),
         mode: expectString(discovery.mode, 'fixture.contract.discovery.mode'),
         version: expectInteger(discovery.version, 'fixture.contract.discovery.version'),
@@ -576,6 +875,10 @@ function parseContractFixtureObject(value: unknown): CaveContractFixture {
           'fixture.examples.discoveryRecord.version',
         ),
       },
+      discoveryRecordV2: parseDiscoveryRecordV2(
+        examples.discoveryRecordV2,
+        'fixture.examples.discoveryRecordV2',
+      ),
       errorEnvelope: parseErrorEnvelope(
         examples.errorEnvelope,
         'fixture.examples.errorEnvelope',

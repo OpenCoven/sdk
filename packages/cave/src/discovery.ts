@@ -98,7 +98,7 @@ export interface CaveDiscoveryRecordIdentity {
   inode: number;
 }
 
-export interface CaveDiscoveredEndpoint {
+export interface CaveDiscoveredEndpointV1 {
   version: 1;
   endpoint: {
     kind: 'http';
@@ -107,6 +107,21 @@ export interface CaveDiscoveredEndpoint {
   freshness: CaveEndpointFreshness;
   record: CaveDiscoveryRecordIdentity;
 }
+
+export interface CaveDiscoveredEndpointV2 {
+  version: 2;
+  endpoint: {
+    kind: 'http';
+    url: string;
+  };
+  freshness: CaveEndpointFreshness;
+  authority: import('./discovery-record.js').CaveHpkeDiscoveryAuthority;
+  record: CaveDiscoveryRecordIdentity;
+}
+
+export type CaveDiscoveredEndpoint =
+  | CaveDiscoveredEndpointV1
+  | CaveDiscoveredEndpointV2;
 
 interface DiscoveryDeadline {
   expiresAt: number | undefined;
@@ -746,7 +761,7 @@ export async function discoverCaveEndpoint(
     );
 
     return {
-      ...parseCaveDiscoveryRecord(serialized, isProcessAlive),
+      ...await parseCaveDiscoveryRecord(serialized, isProcessAlive),
       record: {
         path: physicalRecordPath,
         device: initialIdentity.device,
