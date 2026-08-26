@@ -16,6 +16,27 @@ function replaceExactly(source, before, after, label, expected = 1) {
 let hpke = await readFile(hpkePath, 'utf8');
 hpke = replaceExactly(
   hpke,
+  `async function serializePublicKey(
+  suite: CipherSuite,
+  key: CryptoKey,
+): Promise<Uint8Array> {
+  return new Uint8Array(await suite.kem.serializePublicKey(key));
+}
+
+`,
+  '',
+  'unnecessary CryptoKey helper',
+);
+hpke = replaceExactly(
+  hpke,
+  `    const responsePublicKey = await serializePublicKey(suite, responseRecipient.publicKey);`,
+  `    const responsePublicKey = new Uint8Array(
+      await suite.kem.serializePublicKey(responseRecipient.publicKey),
+    );`,
+  'inferred public-key serialization',
+);
+hpke = replaceExactly(
+  hpke,
   `      ...(input.requestEkm === undefined ? {} : { ekm: input.requestEkm }),`,
   `      ...(input.requestEkm === undefined
         ? {}
