@@ -16,6 +16,11 @@ import {
 } from './discovery.js';
 import { caveAuthorityBindingFromDiscoveredEndpoint } from './authority-binding.js';
 import {
+  createCaveHpkeBoundRequest,
+  type CaveHpkeAuthorization,
+  type CaveHpkeBoundRequest,
+} from './hpke-bound-v1.js';
+import {
   CAVE_CANONICAL_CONVERSATION_REQUIREMENTS,
   CAVE_CANONICAL_CONVERSATIONS_REQUIREMENTS,
   CAVE_CANONICAL_FAMILIARS_REQUIREMENTS,
@@ -143,6 +148,7 @@ function pairingAuthorityMismatchReason(
   current: CaveDiscoveredEndpoint,
 ): PairingAuthorityMismatchReason | undefined {
   if (
+    current.version !== expected.version ||
     current.endpoint.url !== expected.endpoint.url ||
     current.record.path !== expected.record.path
   ) {
@@ -160,6 +166,22 @@ function pairingAuthorityMismatchReason(
     current.freshness.pid !== expected.freshness.pid ||
     current.freshness.nonce !== expected.freshness.nonce ||
     current.freshness.startedAt !== expected.freshness.startedAt
+  ) {
+    return 'authority_restarted';
+  }
+
+  if (
+    expected.version === 2 &&
+    current.version === 2 &&
+    (
+      current.authority.mechanism !== expected.authority.mechanism ||
+      current.authority.mode !== expected.authority.mode ||
+      current.authority.keyId !== expected.authority.keyId ||
+      current.authority.publicKey !== expected.authority.publicKey ||
+      current.authority.suite.kemId !== expected.authority.suite.kemId ||
+      current.authority.suite.kdfId !== expected.authority.suite.kdfId ||
+      current.authority.suite.aeadId !== expected.authority.suite.aeadId
+    )
   ) {
     return 'authority_restarted';
   }
@@ -740,6 +762,8 @@ async function requestJson(
   method: 'GET' | 'POST',
   route: string,
   options: {
+    authorityAuthorization?: CaveHpkeAuthorization;
+    authorityInstanceId?: string;
     body?: string;
     context?: OperationContext;
     credentials?: CaveCredentialBinding;
@@ -779,6 +803,8 @@ async function requestJson(
 
   const url = new URL(route, discovered.endpoint.url).toString();
   const headers = new Headers(options.headers);
+  let authorityAuthorization = options.authorityAuthorization;
+  let authorityInstanceId = options.authorityInstanceId;
 
   if (options.requireBearer === true) {
     const credentials = options.credentials;
@@ -804,7 +830,11 @@ async function requestJson(
             maxResponseBytes: options.maxResponseBytes,
             pinnedAuthority: discovered,
           });
-          return parseHealthResponse(payload).data.instanceId === instanceId;
+          const verified = parseHealthResponse(payload).data.instanceId === instanceId;
+          if (verified) {
+            authorityInstanceId = instanceId;
+          }
+          return verified;
         },
       },
     );
@@ -830,7 +860,51 @@ async function requestJson(
       );
     }
 
-    headers.set('authorization', `Bearer ${credential.bearer}`);
+    authorityAuthorization = {
+      kind: 'bearer',
+      value: credential.bearer,
+    };
+  }
+
+  let hpkeRequest: CaveHpkeBoundRequest | undefined;
+  try {
+    if (authorityAuthorization !== undefined) {
+      if (discovered.version === 2) {
+        if (authorityInstanceId === undefined) {
+          const { payload } = await requestJson('GET', '/api/client/v1/health', {
+            ...(options.context === undefined ? {} : { context: options.context }),
+            discoverEndpoint: options.discoverEndpoint,
+            discovery: options.discovery,
+            fetchImplementation: options.fetchImplementation,
+            maxResponseBytes: options.maxResponseBytes,
+            pinnedAuthority: discovered,
+          });
+          authorityInstanceId = parseHealthResponse(payload).data.instanceId;
+        }
+        hpkeRequest = await createCaveHpkeBoundRequest({
+          discovered,
+          instanceId: authorityInstanceId,
+          url,
+          method,
+          ...(options.body === undefined
+            ? {}
+            : { body: new TextEncoder().encode(options.body) }),
+          authorization: authorityAuthorization,
+        });
+        for (const [name, value] of hpkeRequest.headers) {
+          headers.set(name, value);
+        }
+      } else if (authorityAuthorization.kind === 'pairing-secret') {
+        headers.set('x-coven-pairing-secret', authorityAuthorization.value);
+      } else {
+        headers.set('authorization', `Bearer ${authorityAuthorization.value}`);
+      }
+    }
+  } catch (error) {
+    if (options.onPreDispatchFailure !== undefined) {
+      throw options.onPreDispatchFailure(error);
+    }
+    throw error;
   }
 
   let response: Response;
@@ -862,19 +936,45 @@ async function requestJson(
     void response.body?.cancel().catch(() => undefined);
     throw error;
   }
-  const text = await readResponseText(response, options.context, options.maxResponseBytes);
+  let responseStatus = response.status;
+  let responseBody: string;
+  if (hpkeRequest === undefined) {
+    responseBody = await readResponseText(
+      response,
+      options.context,
+      options.maxResponseBytes,
+    );
+  } else {
+    const opened = await hpkeRequest.open(response, {
+      maxBodyBytes: options.maxResponseBytes,
+      ...(options.context?.signal === undefined
+        ? {}
+        : { signal: options.context.signal }),
+    });
+    responseStatus = opened.status;
+    try {
+      responseBody = new TextDecoder('utf-8', { fatal: true }).decode(opened.body);
+    } catch (cause) {
+      throw transportError(
+        'invalid_response',
+        'The authenticated Cave response body was not valid UTF-8.',
+        { cause, statusCode: responseStatus },
+      );
+    }
+  }
+
   let payload: unknown;
   try {
-    payload = JSON.parse(text) as unknown;
+    payload = JSON.parse(responseBody) as unknown;
   } catch {
     throw transportError('invalid_response', 'Cave response was not valid JSON.', {
-      statusCode: response.status,
+      statusCode: responseStatus,
     });
   }
 
-  if (response.status < 200 || response.status >= 300) {
+  if (responseStatus < 200 || responseStatus >= 300) {
     throw parseErrorPayload(
-      response.status,
+      responseStatus,
       payload,
       options.canonicalRequirements,
     );
@@ -953,8 +1053,9 @@ function createDiscoveredTransport(
           discoverEndpoint: options.discoverEndpoint,
           discovery: options.discovery,
           fetchImplementation: options.fetchImplementation,
-          headers: {
-            'x-coven-pairing-secret': pairingSecret,
+          authorityAuthorization: {
+            kind: 'pairing-secret',
+            value: pairingSecret,
           },
           maxResponseBytes: options.maxResponseBytes,
           pairingSecretDispatch: 'reusable',
@@ -992,9 +1093,11 @@ function createDiscoveredTransport(
           discoverEndpoint: options.discoverEndpoint,
           discovery: options.discovery,
           fetchImplementation: options.fetchImplementation,
-          headers: {
-            'x-coven-pairing-secret': pairingSecret,
+          authorityAuthorization: {
+            kind: 'pairing-secret',
+            value: pairingSecret,
           },
+          authorityInstanceId: expectedInstanceId,
           maxResponseBytes: options.maxResponseBytes,
           onPreDispatchFailure: (error) =>
             markPairingExchangeUnsentError(error, context),
