@@ -16,7 +16,7 @@ export function caveAuthorityBindingFromDiscoveredEndpoint(
   instanceId: string,
 ): CaveAuthorityBinding {
   return {
-    version: discovered.version,
+    version: 1,
     instanceId,
     endpoint: {
       kind: 'http',
