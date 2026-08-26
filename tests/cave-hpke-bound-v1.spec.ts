@@ -164,12 +164,6 @@ function vectorResponse(vector: HpkeVector): Response {
   );
 }
 
-function errorCode(error: unknown): string | undefined {
-  return typeof error === 'object' && error !== null
-    ? Reflect.get(error, 'code') as string | undefined
-    : undefined;
-}
-
 describe('Cave hpke-bound-v1 producer interoperability', () => {
   test('vendors the exact producer vector bytes', async () => {
     const { bytes, digest } = await loadVector();
@@ -214,7 +208,7 @@ describe('Cave hpke-bound-v1 producer interoperability', () => {
         }),
         { maxBodyBytes: 64 * 1_024 },
       ),
-    ).rejects.toSatisfy((error: unknown) => errorCode(error) === 'reconcile_required');
+    ).rejects.toMatchObject({ code: 'reconcile_required' });
 
     const mutatedCiphertext = `${vector.response.ciphertext.slice(0, -1)}${
       vector.response.ciphertext.endsWith('A') ? 'B' : 'A'
@@ -237,7 +231,7 @@ describe('Cave hpke-bound-v1 producer interoperability', () => {
         ),
         { maxBodyBytes: 64 * 1_024 },
       ),
-    ).rejects.toSatisfy((error: unknown) => errorCode(error) === 'reconcile_required');
+    ).rejects.toMatchObject({ code: 'reconcile_required' });
 
     await expect(
       request.open(
@@ -258,7 +252,7 @@ describe('Cave hpke-bound-v1 producer interoperability', () => {
         ),
         { maxBodyBytes: 64 * 1_024 },
       ),
-    ).rejects.toSatisfy((error: unknown) => errorCode(error) === 'reconcile_required');
+    ).rejects.toMatchObject({ code: 'reconcile_required' });
   });
 
   test('canonicalizes routes and validates strict discovery v2', async () => {

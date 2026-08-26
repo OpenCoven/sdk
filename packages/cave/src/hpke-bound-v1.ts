@@ -282,13 +282,6 @@ export function createCaveHpkeSuite(): CipherSuite {
   });
 }
 
-async function serializePublicKey(
-  suite: CipherSuite,
-  key: CryptoKey,
-): Promise<Uint8Array> {
-  return new Uint8Array(await suite.kem.serializePublicKey(key));
-}
-
 export function caveHpkeKeyId(publicKey: Uint8Array): Uint8Array {
   if (publicKey.byteLength !== CAVE_HPKE_LIMITS.rawKeyBytes) {
     throw new Error('Cave HPKE public key length was invalid.');
@@ -436,7 +429,9 @@ export async function createCaveHpkeBoundRequest(input: {
     const responseRecipient = input.responseRecipientIkm === undefined
       ? await suite.kem.generateKeyPair()
       : await suite.kem.deriveKeyPair(input.responseRecipientIkm);
-    const responsePublicKey = await serializePublicKey(suite, responseRecipient.publicKey);
+    const responsePublicKey = new Uint8Array(
+      await suite.kem.serializePublicKey(responseRecipient.publicKey),
+    );
     const method = input.method.toUpperCase();
     const url = new URL(input.url);
     const binding: CaveHpkeBinding = {
@@ -458,7 +453,9 @@ export async function createCaveHpkeBoundRequest(input: {
     const requestSender = await suite.createSenderContext({
       recipientPublicKey: authorityPublicKey,
       info: CAVE_HPKE_REQUEST_INFO,
-      ...(input.requestEkm === undefined ? {} : { ekm: input.requestEkm }),
+      ...(input.requestEkm === undefined
+        ? {}
+        : { ekm: await suite.kem.deriveKeyPair(input.requestEkm) }),
     });
     const plaintext = jcs({
       authorization: input.authorization,
