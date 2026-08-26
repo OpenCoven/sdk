@@ -12,6 +12,7 @@
   "license": "AGPL-3.0-only OR MIT",
   "pnpm": {
     "overrides": {
+      "@hpke/common": "1.10.0",
       "esbuild": "0.28.1"
     }
   },
