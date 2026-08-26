@@ -8,7 +8,11 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fixtureChecks = [
   {
     path: 'packages/cave/fixtures/contract-fixture.json',
-    digest: 'b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd',
+    digest: '1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d',
+  },
+  {
+    path: 'packages/cave/fixtures/hpke-bound-v1-vectors.json',
+    digest: 'f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797',
   },
   {
     path: 'packages/coven/fixtures/health.json',
@@ -39,6 +43,17 @@ const caveDigest = readFileSync(caveDigestPath, 'utf8');
 if (caveDigest !== `${fixtureChecks[0].digest}\n`) {
   throw new Error('packages/cave/fixtures/contract-fixture.sha256 does not match the approved digest.');
 }
+const caveVectorDigestPath = resolve(
+  root,
+  'packages/cave/fixtures/hpke-bound-v1-vectors.sha256',
+);
+const caveVectorDigest = readFileSync(caveVectorDigestPath, 'utf8');
+
+if (caveVectorDigest !== `${fixtureChecks[1].digest}\n`) {
+  throw new Error(
+    'packages/cave/fixtures/hpke-bound-v1-vectors.sha256 does not match the approved digest.',
+  );
+}
 
 const caveProvenancePath = resolve(
   root,
@@ -47,10 +62,13 @@ const caveProvenancePath = resolve(
 const caveProvenance = JSON.parse(readFileSync(caveProvenancePath, 'utf8'));
 const expectedCaveProvenance = {
   repository: 'https://github.com/OpenCoven/coven-cave',
-  commit: '4adc97b1bdafd1012ce4c66de598e82f49329f79',
+  commit: '2a0ff9237e94e652e477b22f60fd6d721b9e6451',
   fixturePath: 'src/lib/server/client-v1/contract-fixture.json',
   digestPath: 'src/lib/server/client-v1/contract-fixture.sha256',
   sha256: fixtureChecks[0].digest,
+  vectorPath: 'src/lib/server/client-v1/hpke-bound-v1-vectors.json',
+  vectorDigestPath: 'src/lib/server/client-v1/hpke-bound-v1-vectors.sha256',
+  vectorSha256: fixtureChecks[1].digest,
 };
 
 if (JSON.stringify(caveProvenance) !== JSON.stringify(expectedCaveProvenance)) {

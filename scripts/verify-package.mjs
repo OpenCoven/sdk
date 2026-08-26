@@ -173,6 +173,8 @@ function assertPackedContractFixtures(tarballs) {
     'fixtures/contract-fixture.json',
     'fixtures/contract-fixture.sha256',
     'fixtures/contract-fixture.provenance.json',
+    'fixtures/hpke-bound-v1-vectors.json',
+    'fixtures/hpke-bound-v1-vectors.sha256',
   ]) {
     const packed = readTarballFile(tarballs.cave, path);
     const source = readFileSync(resolve(root, 'packages/cave', path), 'utf8');

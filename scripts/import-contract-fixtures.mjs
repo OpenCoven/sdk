@@ -98,6 +98,16 @@ function buildCopyPlan(caveRoot, covenRoot) {
       bytes: cave.digest,
     },
     {
+      sourcePath: cave.vectorPath,
+      destinationPath: resolve(root, 'packages', 'cave', 'fixtures', 'hpke-bound-v1-vectors.json'),
+      bytes: cave.vector,
+    },
+    {
+      sourcePath: cave.vectorDigestPath,
+      destinationPath: resolve(root, 'packages', 'cave', 'fixtures', 'hpke-bound-v1-vectors.sha256'),
+      bytes: cave.vectorDigest,
+    },
+    {
       sourcePath: resolve(covenRoot, 'crates', 'coven-client', 'fixtures', 'health.json'),
       destinationPath: resolve(root, 'packages', 'coven', 'fixtures', 'health.json'),
       bytes: requireFile(resolve(covenRoot, 'crates', 'coven-client', 'fixtures', 'health.json')),
@@ -127,14 +137,38 @@ function verifyCaveAuthority(caveRoot) {
     'client-v1',
     'contract-fixture.sha256',
   );
+  const vectorPath = resolve(
+    caveRoot,
+    'src',
+    'lib',
+    'server',
+    'client-v1',
+    'hpke-bound-v1-vectors.json',
+  );
+  const vectorDigestPath = resolve(
+    caveRoot,
+    'src',
+    'lib',
+    'server',
+    'client-v1',
+    'hpke-bound-v1-vectors.sha256',
+  );
 
   const fixture = requireFile(fixturePath);
   const digest = requireFile(digestPath);
+  const vector = requireFile(vectorPath);
+  const vectorDigest = requireFile(vectorDigestPath);
   const expectedDigest = `${sha256(fixture)}\n`;
+  const expectedVectorDigest = `${sha256(vector)}\n`;
 
   if (digest.toString('utf8') !== expectedDigest) {
     throw new Error(
       `Authority Cave fixture digest mismatch at ${digestPath}: expected ${expectedDigest.trim()}, received ${digest.toString('utf8').trim()}.`,
+    );
+  }
+  if (vectorDigest.toString('utf8') !== expectedVectorDigest) {
+    throw new Error(
+      `Authority Cave HPKE vector digest mismatch at ${vectorDigestPath}: expected ${expectedVectorDigest.trim()}, received ${vectorDigest.toString('utf8').trim()}.`,
     );
   }
 
@@ -143,6 +177,10 @@ function verifyCaveAuthority(caveRoot) {
     digestPath,
     fixture,
     digest,
+    vectorPath,
+    vectorDigestPath,
+    vector,
+    vectorDigest,
   };
 }
 

@@ -66,10 +66,35 @@ export function verifyCaveContractAuthority({
   if (!fixture.equals(vendoredFixture)) {
     throw new Error('Vendored Cave fixture bytes differ from the pinned authority checkout.');
   }
+  const vector = readFileSync(resolve(caveRoot, provenance.vectorPath));
+  const vectorDigest = readFileSync(
+    resolve(caveRoot, provenance.vectorDigestPath),
+    'utf8',
+  );
+  const actualVectorDigest = sha256(vector);
+  if (vectorDigest !== `${actualVectorDigest}\n`) {
+    throw new Error(
+      'Cave authority HPKE vector digest file does not match its vector bytes.',
+    );
+  }
+  if (actualVectorDigest !== provenance.vectorSha256) {
+    throw new Error(
+      `Cave authority HPKE vector digest is ${actualVectorDigest}; expected ${provenance.vectorSha256}.`,
+    );
+  }
+  const vendoredVector = readFileSync(
+    resolve(root, 'packages/cave/fixtures/hpke-bound-v1-vectors.json'),
+  );
+  if (!vector.equals(vendoredVector)) {
+    throw new Error(
+      'Vendored Cave HPKE vector bytes differ from the pinned authority checkout.',
+    );
+  }
 
   return {
     commit: actualCommit,
     sha256: actualDigest,
+    vectorSha256: actualVectorDigest,
   };
 }
 
@@ -94,5 +119,7 @@ if (
   const result = verifyCaveContractAuthority(
     parseCaveContractAuthorityArguments(process.argv.slice(2)),
   );
-  console.log(`Cave authority verified at ${result.commit} (${result.sha256}).`);
+  console.log(
+    `Cave authority verified at ${result.commit} (${result.sha256}; HPKE ${result.vectorSha256}).`,
+  );
 }

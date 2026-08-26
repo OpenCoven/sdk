@@ -23,6 +23,8 @@ const scratchRoots: string[] = [];
 const destinationFiles = [
   'packages/cave/fixtures/contract-fixture.json',
   'packages/cave/fixtures/contract-fixture.sha256',
+  'packages/cave/fixtures/hpke-bound-v1-vectors.json',
+  'packages/cave/fixtures/hpke-bound-v1-vectors.sha256',
   'packages/coven/fixtures/health.json',
   'packages/coven/fixtures/error.json',
 ] as const;
@@ -86,7 +88,11 @@ function createAuthorityRoots(workspaceRoot: string) {
   };
 }
 
-function stageCaveAuthority(caveRoot: string, fixture: Buffer): void {
+function stageCaveAuthority(
+  caveRoot: string,
+  fixture: Buffer,
+  vector: Buffer = Buffer.from('{"vector":"test"}\n', 'utf8'),
+): void {
   const caveFixturePath = resolve(
     caveRoot,
     'src',
@@ -106,6 +112,20 @@ function stageCaveAuthority(caveRoot: string, fixture: Buffer): void {
 
   writeBinary(caveFixturePath, fixture);
   writeBinary(caveDigestPath, Buffer.from(`${sha256(fixture)}\n`, 'utf8'));
+  writeBinary(
+    resolve(
+      caveRoot,
+      'src/lib/server/client-v1/hpke-bound-v1-vectors.json',
+    ),
+    vector,
+  );
+  writeBinary(
+    resolve(
+      caveRoot,
+      'src/lib/server/client-v1/hpke-bound-v1-vectors.sha256',
+    ),
+    Buffer.from(`${sha256(vector)}\n`, 'utf8'),
+  );
 }
 
 function stageCovenAuthority(covenRoot: string, fixtures: { health: Buffer; error?: Buffer }): void {
@@ -179,8 +199,9 @@ describe('import contract fixtures script', () => {
     );
     const healthFixture = Buffer.from('{"ok":true,"source":"test-health"}\n', 'utf8');
     const errorFixture = Buffer.from('{"error":{"code":"test-error"}}\n', 'utf8');
+    const vectorFixture = Buffer.from('{"vector":"replacement"}\n', 'utf8');
 
-    stageCaveAuthority(caveRoot, caveFixture);
+    stageCaveAuthority(caveRoot, caveFixture, vectorFixture);
     stageCovenAuthority(covenRoot, {
       health: healthFixture,
       error: errorFixture,
@@ -193,6 +214,8 @@ describe('import contract fixtures script', () => {
     expect(readWorkspaceFixtures(workspaceRoot)).toEqual({
       'packages/cave/fixtures/contract-fixture.json': caveFixture,
       'packages/cave/fixtures/contract-fixture.sha256': Buffer.from(`${sha256(caveFixture)}\n`, 'utf8'),
+      'packages/cave/fixtures/hpke-bound-v1-vectors.json': vectorFixture,
+      'packages/cave/fixtures/hpke-bound-v1-vectors.sha256': Buffer.from(`${sha256(vectorFixture)}\n`, 'utf8'),
       'packages/coven/fixtures/health.json': healthFixture,
       'packages/coven/fixtures/error.json': errorFixture,
     });
@@ -205,8 +228,9 @@ describe('import contract fixtures script', () => {
     const caveFixture = Buffer.from('{"contract":{"identityKinds":["stable"]}}\n', 'utf8');
     const healthFixture = Buffer.from('{"ok":true,"source":"lookalike-health"}\n', 'utf8');
     const errorFixture = Buffer.from('{"error":{"code":"lookalike-error"}}\n', 'utf8');
+    const vectorFixture = Buffer.from('{"vector":"lookalike"}\n', 'utf8');
 
-    stageCaveAuthority(caveRoot, caveFixture);
+    stageCaveAuthority(caveRoot, caveFixture, vectorFixture);
     stageCovenAuthority(covenRoot, {
       health: healthFixture,
       error: errorFixture,
@@ -221,6 +245,8 @@ describe('import contract fixtures script', () => {
     expect(readWorkspaceFixtures(workspaceRoot)).toEqual({
       'packages/cave/fixtures/contract-fixture.json': caveFixture,
       'packages/cave/fixtures/contract-fixture.sha256': Buffer.from(`${sha256(caveFixture)}\n`, 'utf8'),
+      'packages/cave/fixtures/hpke-bound-v1-vectors.json': vectorFixture,
+      'packages/cave/fixtures/hpke-bound-v1-vectors.sha256': Buffer.from(`${sha256(vectorFixture)}\n`, 'utf8'),
       'packages/coven/fixtures/health.json': healthFixture,
       'packages/coven/fixtures/error.json': errorFixture,
     });
@@ -228,9 +254,9 @@ describe('import contract fixtures script', () => {
   });
 
   test.each([
-    ['stage-write:2', 'stage-write'],
+    ['stage-write:4', 'stage-write'],
     ['backup-rename:1', 'backup-rename'],
-    ['commit-rename:2', 'commit-rename'],
+    ['commit-rename:4', 'commit-rename'],
   ])(
     'restores every destination fixture after an injected %s failure',
     (faultValue, faultPhase) => {

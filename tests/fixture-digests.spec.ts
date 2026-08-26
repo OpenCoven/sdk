@@ -16,18 +16,39 @@ function digest(path: string): string | undefined {
 }
 
 describe('reviewed authority fixtures', () => {
-  test('copies the approved Cave fixture bytes and digest', () => {
+  test('copies the approved Cave contract and HPKE vector bytes and digests', () => {
     const fixture = resolve(root, 'packages/cave/fixtures/contract-fixture.json');
     const digestFile = resolve(root, 'packages/cave/fixtures/contract-fixture.sha256');
+    const vector = resolve(root, 'packages/cave/fixtures/hpke-bound-v1-vectors.json');
+    const vectorDigestFile = resolve(
+      root,
+      'packages/cave/fixtures/hpke-bound-v1-vectors.sha256',
+    );
     const parsed = JSON.parse(readFileSync(fixture, 'utf8')) as {
       contract: {
+        authority: {
+          mechanism: {
+            vectorFixture: {
+              fileName: string;
+              sha256FileName: string;
+            };
+          };
+        };
         identityKinds: string[];
       };
       examples: Record<string, unknown>;
     };
 
-    expect(digest(fixture)).toBe('b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd');
-    expect(readFileSync(digestFile, 'utf8')).toBe('b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd\n');
+    expect(digest(fixture)).toBe('1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d');
+    expect(readFileSync(digestFile, 'utf8')).toBe('1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d\n');
+    expect(digest(vector)).toBe('f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797');
+    expect(readFileSync(vectorDigestFile, 'utf8')).toBe(
+      'f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797\n',
+    );
+    expect(parsed.contract.authority.mechanism.vectorFixture).toEqual({
+      fileName: 'hpke-bound-v1-vectors.json',
+      sha256FileName: 'hpke-bound-v1-vectors.sha256',
+    });
     expect(parsed.contract.identityKinds).toEqual([
       'client',
       'credential',
@@ -40,6 +61,7 @@ describe('reviewed authority fixtures', () => {
     expect(Object.keys(parsed.examples)).toEqual([
       'cursor',
       'discoveryRecord',
+      'discoveryRecordV2',
       'errorEnvelope',
       'health',
       'healthEnvelope',
