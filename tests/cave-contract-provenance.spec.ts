@@ -39,6 +39,7 @@ describe('Cave contract provenance', () => {
       parseCaveContractAuthorityArguments(['--', '--cave-root', '/tmp/coven-cave']),
     ).toEqual({
       caveRoot: '/tmp/coven-cave',
+      allowEquivalentHead: false,
     });
   });
 
@@ -101,8 +102,60 @@ describe('Cave contract provenance', () => {
       }),
     ).toEqual({
       commit: '2a0ff9237e94e652e477b22f60fd6d721b9e6451',
+      checkoutCommit: '2a0ff9237e94e652e477b22f60fd6d721b9e6451',
       sha256: '1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d',
       vectorSha256: 'f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797',
+    });
+  });
+
+  test('accepts an explicitly allowed content-equivalent feature head', () => {
+    const caveRoot = mkdtempSync(resolve(tmpdir(), 'opencoven-cave-equivalent-'));
+    scratchRoots.push(caveRoot);
+    const fixture = readFileSync(
+      resolve(root, 'packages/cave/fixtures/contract-fixture.json'),
+    );
+    const vector = readFileSync(
+      resolve(root, 'packages/cave/fixtures/hpke-bound-v1-vectors.json'),
+    );
+    for (const [name, bytes] of [
+      ['contract-fixture.json', fixture],
+      ['hpke-bound-v1-vectors.json', vector],
+    ] as const) {
+      const path = resolve(caveRoot, 'src/lib/server/client-v1', name);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, bytes);
+      writeFileSync(
+        path.replace(/\.json$/u, '.sha256'),
+        `${sha256(bytes)}\n`,
+      );
+    }
+
+    expect(
+      verifyCaveContractAuthority({
+        caveRoot,
+        allowEquivalentHead: true,
+        resolveCommit: () => '0453bfa8d4cae1b7bca01a43ed08349fcdd39de9',
+        isEquivalentCommit: () => true,
+      }),
+    ).toEqual({
+      commit: '2a0ff9237e94e652e477b22f60fd6d721b9e6451',
+      checkoutCommit: '0453bfa8d4cae1b7bca01a43ed08349fcdd39de9',
+      sha256: '1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d',
+      vectorSha256: 'f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797',
+    });
+  });
+
+  test('parses the explicit equivalent-head CLI gate', () => {
+    expect(
+      parseCaveContractAuthorityArguments([
+        '--',
+        '--cave-root',
+        '/tmp/coven-cave',
+        '--allow-equivalent-head',
+      ]),
+    ).toEqual({
+      caveRoot: '/tmp/coven-cave',
+      allowEquivalentHead: true,
     });
   });
 

@@ -52,3 +52,17 @@
   packed fake-native consumer.
 - Freeze the packed declaration, runtime exports, and package export map in the
   repository API baseline.
+- Vendor Cave merge `2a0ff9237e94e652e477b22f60fd6d721b9e6451`
+  contract and `hpke-bound-v1` vector artifacts at SHA-256
+  `1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d`
+  and
+  `f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797`.
+- Add strict discovery v2 parsing and direct Base-request/Auth-response HPKE
+  protection for pairing poll/exchange and all five canonical reads, with no
+  plaintext fallback after v2 observation.
+- Authenticate inner response status before applying credential semantics,
+  preserve credentials on plaintext/forged/replacement responses, and add
+  bounded stale-key and authenticated replay-capacity retries.
+- Add browser-safe managed-native discovery handoff and named HPKE operation
+  attestations without exposing pairing secrets, bearers, or a generic native
+  request API.

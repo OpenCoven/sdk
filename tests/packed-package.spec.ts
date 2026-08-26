@@ -83,6 +83,12 @@ function expectedPackedDependencies(workspaceDirectory: string, version: string)
     case 'core':
       return {};
     case 'cave':
+      return {
+        '@hpke/core': '1.9.0',
+        '@hpke/dhkem-x25519': '1.8.0',
+        '@opencoven/sdk-core': version,
+        canonicalize: '3.0.0',
+      };
     case 'coven':
       return {
         '@opencoven/sdk-core': version,
@@ -367,8 +373,11 @@ if (existsSync(rootModules) || existsSync(nestedModules) || !existsSync(lockfile
           const declarations = readTarballFile(tarball, 'dist/index.d.ts');
           expect(declarations).toContain('CaveManagedCredentialTransport');
           expect(declarations).toContain('CaveManagedNativeCredentialCustody');
+          expect(declarations).toContain('CaveManagedNativeAuthenticatedResponse');
+          expect(declarations).toContain('CaveManagedHpkeDiscovery');
           const managedDeclarations = readTarballFile(tarball, 'dist/managed.d.ts');
           expect(managedDeclarations).toContain('createManagedCaveClient');
+          expect(managedDeclarations).toContain('CaveManagedHpkeResult');
           expect(managedDeclarations).not.toMatch(
             /\bNodeJS\.(?:ProcessEnv|Platform)\b/u,
           );

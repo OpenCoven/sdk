@@ -401,16 +401,23 @@ secure-store, and platform-security errors require repair before rerunning.
 Reviewed Cave and Coven fixture bytes are committed under their client
 packages and verified locally. The Cave fixture provenance manifest pins
 `OpenCoven/coven-cave` commit
-`4adc97b1bdafd1012ce4c66de598e82f49329f79`, producer paths, and SHA-256.
+`2a0ff9237e94e652e477b22f60fd6d721b9e6451`, producer paths, contract SHA-256
+`1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d`,
+and HPKE vector SHA-256
+`f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797`.
 Refresh fixture bytes with
 `pnpm sync:contracts -- --cave-root <path> --coven-root <path>` before running
 the offline contract verifier. Explicitly prove a checkout is at the pinned
 producer commit and byte-identical with
 `pnpm verify:cave-authority -- --cave-root <path>`. No authority source tree is
-imported at runtime, and packed-package verification compares all three
-vendored Cave contract artifacts byte for byte. Packed tests also install the
+imported at runtime, and packed-package verification compares all five
+vendored Cave contract/vector artifacts byte for byte. Packed tests also install the
 generated tarballs and verify canonical-read methods, iterators, and types
 through package-root imports without source-checkout or deep-import fallback.
+For the reviewed pre-squash feature head whose four normative artifact files
+are byte-equivalent to the pinned merge, add `--allow-equivalent-head`; the
+verifier still requires the pinned merge object and a zero diff for all four
+producer artifact paths.
 
 ## Validation
 

@@ -13,15 +13,17 @@ discovered helper reads Cave's `client-v1-discovery.json` only when an
 operation is called, validates owner-local discovery metadata before and after
 the bounded read, and stores the
 paired bearer together with non-secret authority-binding metadata in one
-versioned `SecretStore` record per credential reference. Pairing sessions pin
-to the exact discovered authority
-record and freshness; if rediscovery shows a restart, record replacement, or
-authority mismatch, `poll()`/`exchange()` fail locally before the pairing
-secret is sent. Stored bearers are rediscovered against the same authority
-identity and proven against the stored Cave `instanceId` through an
-unauthenticated health request before every authenticated discovered call.
-Mismatched credentials are cleared locally rather than sent to a different
-Cave.
+versioned `SecretStore` record per credential reference.
+
+Discovery v1 retains the legacy authority-pinning and plaintext credential
+headers for compatibility. Discovery v2 publishes immutable
+`hpke-bound-v1` authority metadata. In v2, pairing poll/exchange and the five
+canonical reads carry their pairing secret or bearer only inside an HPKE
+Base-mode request and accept application status/body only from an Auth-mode
+response. Once v2 is observed, protected calls never fall back to v1
+plaintext. Runtime restarts and unauthenticated responses preserve stored
+credentials; only an Auth-opened inner result may report credential
+unauthorized/revoked state.
 
 The supported root API, pre-1.0 compatibility rules, and deprecation process
 are documented in the repository
@@ -67,6 +69,11 @@ record. Unix discovery still requires a positive inode.
 - `createManagedCaveClient(...)` keeps secret-bearing wire fields and
   credentials behind narrow native calls while the SDK validates all
   non-secret Client v1 envelopes, metadata, cursors, DTOs, and errors.
+- Managed adapters that observe discovery v2 receive the exact frozen
+  discovery metadata and must implement the named `*Hpke` methods for the
+  seven protected operations. Each returned result carries a strict
+  `authentication: { mechanism: "hpke-bound-v1", keyId }` attestation matching
+  discovery. There is no generic native request escape hatch.
 - Runtime exports also include `CAVE_CLIENT_VERSION`,
   `CAVE_PAIRING_SCOPES`, `CAVE_PAIRING_STATUSES`,
   `CAVE_FAMILIAR_PROPERTIES`, and `CAVE_ANALYTICS_WINDOWS`.
@@ -446,12 +453,41 @@ Public-contract and packed-package tests import the canonical methods,
 iterators, and types from `@opencoven/cave-client`'s package root and exercise
 the generated tarball without source-checkout or deep-import dependencies.
 
+## HPKE-bound Client v1 authority
+
+The direct Node transport implements Cave's exact RFC 9180 suite
+`DHKEM(X25519, HKDF-SHA256) / HKDF-SHA256 / AES-256-GCM` (`32/1/2`) with
+RFC 8785 JSON, the producer-defined binary AAD, and canonical
+RFC 3986-sorted routes. Every attempt creates a fresh 32-byte request nonce,
+fresh X25519 response-recipient key, HPKE encapsulation, and monotonic
+millisecond timestamp.
+
+Protected wire operations are exactly `pairing.poll`, `pairing.exchange`,
+`familiars.list`, `projects.list`, `conversations.list`,
+`conversations.read`, and `messages.list`. Health and pairing create remain
+public. Plaintext stale-key guidance permits one rediscovery/reseal.
+Authenticated replay-capacity `503` permits one deadline-bounded retry using
+the authenticated `retry-after`. Pairing exchange is not retried after an
+unproved dispatch; the authenticated replay-capacity result is the only
+post-open retry case.
+
+Plaintext, forged, replacement-listener, malformed, or incorrectly sealed
+responses map to the fixed `invalid_response` transport failure. They cannot
+delete a credential, report it revoked, or start re-pairing. Plaintext
+`authority_unavailable` maps to retryable `service_unavailable` while
+preserving credentials and pairing state.
+
 Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,
 `verifyCaveContractFixtureDigest`, and `digestCaveContractFixture`.
-The vendored fixture is byte-identical to `OpenCoven/coven-cave` commit
-`4adc97b1bdafd1012ce4c66de598e82f49329f79`; its source paths and SHA-256 are
-recorded in `fixtures/contract-fixture.provenance.json`.
+The vendored contract fixture and HPKE vectors are byte-identical to
+`OpenCoven/coven-cave` merge
+`2a0ff9237e94e652e477b22f60fd6d721b9e6451`. Their SHA-256 values are
+`1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d`
+and
+`f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797`;
+paths and provenance are recorded in
+`fixtures/contract-fixture.provenance.json`.
 
 Migration note: transports that returned `{ data: { status: "ok" } }` must now
 return the complete Client v1 health envelope shown above. Consumers may keep
@@ -462,12 +498,12 @@ the normalized metadata.
 
 Cave Client v1 health accepts additive Cave API updates on major version `1`
 and rejects incompatible API or minimum-client versions with
-`incompatible_version`. There is no default timeout and no automatic retry.
-Retry transient `timeout`, `not_found`, `service_unavailable`, or
+`incompatible_version`. There is no default timeout. Apart from the two
+bounded HPKE protocol retries described above, operations are not retried.
+Retry other transient `timeout`, `not_found`, `service_unavailable`, or
 `rate_limited` failures only after the operator confirms the local runtime is
 ready. `reconcile_required` is not a transient retry instruction: reload
-canonical state before continuing. Repair `stale_record`, pairing denial or
-expiry, and incompatible versions before running the operation again.
+canonical state before continuing.
 
 ## License
 

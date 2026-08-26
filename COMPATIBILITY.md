@@ -28,6 +28,15 @@ unsupported protocol majors, and minimum-client requirements newer than the
 installed client. Unknown additive fields do not become SDK API unless they are
 documented, typed, and added to the reviewed baseline.
 
+Discovery v1 remains compatible with legacy plaintext credential transport.
+Discovery v2 is a security upgrade boundary: after a client observes v2,
+protected operations never downgrade to plaintext during that client
+lifetime. Unauthenticated HTTP status or bodies cannot revoke/delete a
+credential or initiate re-pairing; those transitions require an Auth-opened
+inner `hpke-bound-v1` result. Managed adapters must provide the named HPKE
+operations and matching discovery-key attestation rather than a generic native
+request method.
+
 ## Deprecation
 
 An API planned for removal is documented as deprecated, receives a Changeset,

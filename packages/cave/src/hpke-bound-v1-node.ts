@@ -1,12 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
-import {
-  Aes256Gcm,
-  CipherSuite,
-  HkdfSha256,
-} from '@hpke/core';
-import { DhkemX25519HkdfSha256 } from '@hpke/dhkem-x25519';
-import canonicalize from 'canonicalize';
+import type { CipherSuite } from '@hpke/core';
 
 import type { CaveHpkeDiscoveryAuthority } from './discovery-record.js';
 
@@ -23,6 +17,7 @@ const RESPONSE_AAD_DOMAIN = UTF8.encode(
 const KEY_ID_DOMAIN = 'OpenCoven/client-v1/hpke-bound-v1/key-id\0';
 const RESPONSE_ERROR =
   'Cave HPKE transport authentication failed.';
+type Canonicalize = (value: unknown) => string | undefined;
 
 export const CAVE_HPKE_REQUEST_INFO = UTF8.encode(
   'OpenCoven/client-v1/hpke-bound-v1/request',
@@ -266,12 +261,23 @@ export function encodeCaveHpkeAad(
   );
 }
 
-function createCaveHpkeSuite(): CipherSuite {
-  return new CipherSuite({
-    kem: new DhkemX25519HkdfSha256(),
-    kdf: new HkdfSha256(),
-    aead: new Aes256Gcm(),
-  });
+async function loadCaveHpkeRuntime(): Promise<{
+  suite: CipherSuite;
+  canonicalize: Canonicalize;
+}> {
+  const [core, x25519, canonicalizeModule] = await Promise.all([
+    import('@hpke/core'),
+    import('@hpke/dhkem-x25519'),
+    import('canonicalize'),
+  ]);
+  return {
+    suite: new core.CipherSuite({
+      kem: new x25519.DhkemX25519HkdfSha256(),
+      kdf: new core.HkdfSha256(),
+      aead: new core.Aes256Gcm(),
+    }),
+    canonicalize: canonicalizeModule.default,
+  };
 }
 
 function exactKeys(
@@ -289,7 +295,7 @@ function exactKeys(
   );
 }
 
-function jcs(value: unknown): Uint8Array {
+function jcs(value: unknown, canonicalize: Canonicalize): Uint8Array {
   const rendered = canonicalize(value);
   if (typeof rendered !== 'string') {
     throw new Error(RESPONSE_ERROR);
@@ -405,7 +411,7 @@ export async function createCaveHpkeBoundRequest(input: {
   try {
     requireAuthority(input.authority);
     requireOperation(input.operation, input.authorization);
-    const suite = createCaveHpkeSuite();
+    const { suite, canonicalize } = await loadCaveHpkeRuntime();
     const authorityPublicKeyBytes = caveHpkeBase64UrlDecode(
       input.authority.publicKey,
       {
@@ -480,11 +486,14 @@ export async function createCaveHpkeBoundRequest(input: {
     });
     const ciphertext = new Uint8Array(
       await requestSender.seal(
-        jcs({
-          authorization: input.authorization,
-          responsePublicKey: caveHpkeBase64UrlEncode(responsePublicKey),
-          version: 1,
-        }),
+        jcs(
+          {
+            authorization: input.authorization,
+            responsePublicKey: caveHpkeBase64UrlEncode(responsePublicKey),
+            version: 1,
+          },
+          canonicalize,
+        ),
         requestAad,
       ),
     );

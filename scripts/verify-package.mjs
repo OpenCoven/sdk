@@ -130,6 +130,12 @@ function expectedPackedDependencies(workspaceDirectory, version) {
     case 'core':
       return {};
     case 'cave':
+      return {
+        '@hpke/core': '1.9.0',
+        '@hpke/dhkem-x25519': '1.8.0',
+        '@opencoven/sdk-core': version,
+        canonicalize: '3.0.0',
+      };
     case 'coven':
       return {
         '@opencoven/sdk-core': version,
@@ -440,7 +446,7 @@ void caveIterators;
   writeFileSync(
     resolve(fixtureRoot, 'verify.mjs'),
     `const core = await import('@opencoven/sdk-core');
-const { CaveClient } = await import('@opencoven/cave-client');
+const { CaveClient, createDiscoveredCaveClient } = await import('@opencoven/cave-client');
 await import('@opencoven/coven-client');
 await import('@opencoven/sdk');
 
@@ -477,6 +483,84 @@ if (
   )
 ) {
   throw new Error('Packed Cave iterator methods are unavailable.');
+}
+
+const packedHpkeStore = core.createMemorySecretStore();
+const packedHpkeReference = core.createSecretStoreReference('packed-hpke');
+const packedHpkeDiscovery = {
+  version: 2,
+  endpoint: { kind: 'http', url: 'http://127.0.0.1:3020' },
+  freshness: {
+    pid: 4321,
+    nonce: 'gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8',
+    startedAt: '2026-08-25T15:42:58.109Z',
+  },
+  authority: {
+    mechanism: 'hpke-bound-v1',
+    mode: 'advertise',
+    keyId: 'Tq04GMSX5BPPPijzO9pHfQ1lAnna_RQKzL1ncDGl-4g',
+    publicKey: 'sfG4QN56MkGwJ0jPmwW3TcjF6EUSmHOIF712qo6-jCs',
+    suite: { kemId: 32, kdfId: 1, aeadId: 2 },
+  },
+  record: {
+    path: '/packed/client-v1-discovery.json',
+    device: 7,
+    inode: 11,
+  },
+};
+const packedBearer = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+const packedRecord = JSON.stringify({
+  version: 1,
+  bearer: packedBearer,
+  authorityBinding: {
+    version: 1,
+    instanceId: '00000000-0000-4000-8000-000000000000',
+    endpoint: packedHpkeDiscovery.endpoint,
+    record: {
+      identity: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      device: 7,
+      inode: 11,
+    },
+    freshness: packedHpkeDiscovery.freshness,
+  },
+});
+await packedHpkeStore.set(packedHpkeReference.key, packedRecord);
+let packedHpkeHeaders;
+const packedHpkeClient = createDiscoveredCaveClient({
+  credentials: {
+    store: packedHpkeStore,
+    reference: packedHpkeReference,
+  },
+  discoverEndpoint: async () => packedHpkeDiscovery,
+  fetch: async (_input, init) => {
+    packedHpkeHeaders = new Headers(init?.headers);
+    return Response.json(
+      {
+        apiVersion: '1.0',
+        minimumClientVersion: '0.1.0',
+        capabilities: ['familiars'],
+        operations: ['familiars.list'],
+        error: {
+          code: 'unauthorized',
+          message: 'Replacement listener.',
+          retryable: false,
+        },
+      },
+      { status: 401 },
+    );
+  },
+});
+const packedHpkeError = await packedHpkeClient
+  .listFamiliars()
+  .catch((error) => error);
+if (
+  packedHpkeError?.normalized?.code !== 'invalid_response' ||
+  packedHpkeHeaders?.get('authorization') !== null ||
+  packedHpkeHeaders?.get('x-coven-pairing-secret') !== null ||
+  packedHpkeHeaders?.get('x-coven-client-v1-authority') !== 'hpke-bound-v1' ||
+  (await packedHpkeStore.get(packedHpkeReference.key)) !== packedRecord
+) {
+  throw new Error('Packed direct HPKE downgrade canary failed.');
 }
 
 const startedAt = Date.now();
@@ -571,10 +655,16 @@ function createManagedBrowserFixture(fixtureRoot, tarballs) {
     `import {
   createManagedCaveClient,
   type CaveManagedCredentialTransport,
-} from '@opencoven/cave-client/managed';
+      type CaveManagedHpkeResult,
+    } from '@opencoven/cave-client/managed';
 
-const requestId = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
-const transport: CaveManagedCredentialTransport = {
+    const requestId = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
+    const keyId = 'Tq04GMSX5BPPPijzO9pHfQ1lAnna_RQKzL1ncDGl-4g';
+    const authenticated = <T>(value: T): CaveManagedHpkeResult<T> => ({
+      authentication: { mechanism: 'hpke-bound-v1', keyId },
+      value,
+    });
+    const transport: CaveManagedCredentialTransport = {
   health: async () => ({
     apiVersion: '1.0',
     capabilities: ['health'],
@@ -608,9 +698,60 @@ const transport: CaveManagedCredentialTransport = {
     status: 'missing',
   }),
   managedForgetCredential: async () => ({ status: 'missing' }),
+  managedHpkePairingPoll: async (id, discovered) => {
+    void discovered.authority.publicKey;
+    return authenticated({
+      id,
+      status: 'approved',
+      expiresAt: 1_755_731_112_617,
+    });
+  },
+  managedHpkePairingExchange: async () =>
+    authenticated({
+      credential: {
+        id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+        appName: 'Packed browser',
+        installationId: 'packed-browser',
+        scopes: ['chat:read'],
+        createdAt: 1_755_730_812_617,
+        lastUsedAt: null,
+        revokedAt: null,
+        revocationReason: null,
+      },
+    }),
+  managedHpkeCredentialStatus: async () =>
+    authenticated({ status: 'missing' }),
 };
 
-void createManagedCaveClient({ transport });
+void createManagedCaveClient({
+  transport,
+  discovery: {
+    source: {
+      read: async () => ({
+        bytes: JSON.stringify({
+          version: 2,
+          endpoint: 'http://127.0.0.1:3020',
+          pid: 4321,
+          nonce: 'gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8',
+          startedAt: '2026-08-25T15:42:58.109Z',
+          authority: {
+            mechanism: 'hpke-bound-v1',
+            mode: 'advertise',
+            keyId,
+            publicKey: 'sfG4QN56MkGwJ0jPmwW3TcjF6EUSmHOIF712qo6-jCs',
+            suite: { kemId: 32, kdfId: 1, aeadId: 2 },
+          },
+        }),
+        record: {
+          identity: 'packed:owner-checked',
+          device: 7,
+          inode: 11,
+          processAlive: true,
+        },
+      }),
+    },
+  },
+});
 `,
   );
   writeFileSync(
