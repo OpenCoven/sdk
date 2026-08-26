@@ -1,0 +1,49 @@
+name: verify-cave-hpke-vector
+
+on:
+  push:
+    branches:
+      - security/cave-hpke-bound-v1
+    paths:
+      - scripts/verify-cave-hpke-vector.mjs
+      - .github/workflows/verify-cave-hpke-vector.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: verify-cave-hpke-vector
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: security/cave-hpke-bound-v1
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10.34.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.1
+          cache: pnpm
+      - name: Apply asserted vector fixes
+        run: node scripts/verify-cave-hpke-vector.mjs
+      - name: Install exact dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run focused producer-vector tests
+        run: pnpm exec vitest run tests/cave-hpke-bound-v1.spec.ts
+      - name: Typecheck the workspace
+        run: pnpm typecheck
+      - name: Commit verified vector implementation
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'test(cave): prove HPKE producer-vector interoperability'
+          git push origin HEAD:security/cave-hpke-bound-v1
