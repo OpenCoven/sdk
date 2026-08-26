@@ -20,6 +20,7 @@ export async function loadBoundCredential(
   options: {
     context?: OperationContext;
     invalidateInvalid?: boolean;
+    preserveForAuthenticatedAuthority?: boolean;
     verifyAuthorityInstance?: (instanceId: string) => Promise<boolean>;
   } = {},
 ): Promise<LoadedCaveCredential> {

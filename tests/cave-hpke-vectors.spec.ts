@@ -5,8 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 import {
+  CAVE_HPKE_LIMITS,
   CAVE_HPKE_REQUEST_INFO,
   CAVE_HPKE_RESPONSE_INFO,
+  canonicalCaveHpkeRoute,
+  caveHpkeBase64UrlDecode,
   createCaveHpkeBoundRequest,
 } from '../packages/cave/src/hpke-bound-v1-node.js';
 
@@ -131,5 +134,110 @@ describe('Cave hpke-bound-v1 deterministic vectors', () => {
     expect(new TextDecoder().decode(opened.body)).toBe(
       vector.response.bodyUtf8,
     );
+  });
+
+  test('enforces canonical base64url, route, and protocol bounds', async () => {
+    expect(CAVE_HPKE_LIMITS).toEqual({
+      rawKeyBytes: 32,
+      encodedKeyCharacters: 43,
+      requestPlaintextBytes: 1_024,
+      requestCiphertextBytes: 2_048,
+      requestBodyBytes: 65_536,
+      responsePlaintextBytes: 8_388_608,
+      responseCiphertextBytes: 8_388_624,
+      responseEnvelopeBytes: 11_185_056,
+      canonicalRouteBytes: 2_048,
+      instanceIdBytes: 256,
+    });
+    expect(
+      canonicalCaveHpkeRoute(
+        new URL(
+          'http://127.0.0.1/api/client/v1/familiars?b=two+words&a=%21*&a=z',
+        ),
+      ),
+    ).toBe('/api/client/v1/familiars?a=%21%2A&a=z&b=two%20words');
+    expect(() =>
+      canonicalCaveHpkeRoute(
+        new URL('http://127.0.0.1/api/client/v1/%66amiliars'),
+      ),
+    ).toThrowError('Cave HPKE transport authentication failed.');
+    expect(() =>
+      caveHpkeBase64UrlDecode(`${vector.inputs.requestNonce}=`, {
+        minimum: 32,
+        maximum: 32,
+      }),
+    ).toThrowError('Cave HPKE transport authentication failed.');
+
+    await expect(
+      createCaveHpkeBoundRequest({
+        authority: {
+          mechanism: 'hpke-bound-v1',
+          mode: 'advertise',
+          keyId: vector.authority.keyId,
+          publicKey: vector.authority.publicKey,
+          suite: vector.suite,
+        },
+        instanceId: 'i'.repeat(257),
+        runtimeNonce: vector.inputs.runtimeNonce,
+        operation: 'pairing.exchange',
+        url: `http://127.0.0.1:3020${vector.inputs.route}`,
+        method: vector.inputs.method,
+        body: new Uint8Array(65_537),
+        authorization: vector.inputs.authorization,
+      }),
+    ).rejects.toThrowError('Cave HPKE transport authentication failed.');
+  });
+
+  test('rejects oversized and structurally altered outer responses before Auth open', async () => {
+    const sealed = await createCaveHpkeBoundRequest({
+      authority: {
+        mechanism: 'hpke-bound-v1',
+        mode: 'advertise',
+        keyId: vector.authority.keyId,
+        publicKey: vector.authority.publicKey,
+        suite: vector.suite,
+      },
+      instanceId: vector.inputs.instanceId,
+      runtimeNonce: vector.inputs.runtimeNonce,
+      operation: 'pairing.exchange',
+      url: `http://127.0.0.1:3020${vector.inputs.route}`,
+      method: vector.inputs.method,
+      issuedAt: vector.inputs.issuedAt,
+      authorization: vector.inputs.authorization,
+    });
+
+    await expect(
+      sealed.open(
+        new Response('{}', {
+          status: 200,
+          headers: {
+            'content-length': String(CAVE_HPKE_LIMITS.responseEnvelopeBytes + 1),
+            'content-type':
+              'application/vnd.opencoven.client-v1.hpke-bound-v1+json',
+          },
+        }),
+      ),
+    ).rejects.toThrowError('Cave HPKE transport authentication failed.');
+    await expect(
+      sealed.open(
+        Response.json(
+          {
+            version: 1,
+            mechanism: 'hpke-bound-v1',
+            keyId: vector.authority.keyId,
+            requestNonce: sealed.binding.requestNonce,
+            enc: vector.response.enc,
+            ciphertext: vector.response.ciphertext,
+            extra: true,
+          },
+          {
+            headers: {
+              'content-type':
+                'application/vnd.opencoven.client-v1.hpke-bound-v1+json',
+            },
+          },
+        ),
+      ),
+    ).rejects.toThrowError('Cave HPKE transport authentication failed.');
   });
 });

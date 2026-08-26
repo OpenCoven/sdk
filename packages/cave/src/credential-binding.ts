@@ -74,7 +74,11 @@ export type LoadedCaveCredential =
   | { status: 'missing' }
   | { status: 'invalid_bearer' }
   | { status: 'invalid'; reason: CaveStoredCredentialInvalidReason }
-  | { status: 'ready'; bearer: string };
+  | {
+      status: 'ready';
+      bearer: string;
+      authorityBinding?: CaveAuthorityBinding;
+    };
 
 export type StoredCaveCredentialMaterial =
   | { status: 'missing' }
@@ -86,6 +90,7 @@ interface CredentialBindingMutationOptions {
   context?: OperationContext;
   invalidateInvalid?: boolean;
   mutationGraceMs?: number;
+  preserveForAuthenticatedAuthority?: boolean;
   termination?: Promise<never>;
   verifyAuthorityInstance?: (instanceId: string) => Promise<boolean>;
 }
@@ -794,32 +799,37 @@ export async function loadBoundCredentialForAuthority(
     return { status: 'invalid_bearer' };
   }
 
-  const currentAuthority = authorityBindingForInstance(
-    stored.authorityBinding.instanceId,
-  );
-  const reason = mismatchReason(currentAuthority, stored.authorityBinding);
-  if (reason !== undefined) {
-    await invalidateObserved();
-    return {
-      status: 'invalid',
-      reason,
-    };
-  }
+  if (options.preserveForAuthenticatedAuthority !== true) {
+    const currentAuthority = authorityBindingForInstance(
+      stored.authorityBinding.instanceId,
+    );
+    const reason = mismatchReason(currentAuthority, stored.authorityBinding);
+    if (reason !== undefined) {
+      await invalidateObserved();
+      return {
+        status: 'invalid',
+        reason,
+      };
+    }
 
-  if (
-    options.verifyAuthorityInstance !== undefined &&
-    !(await options.verifyAuthorityInstance(stored.authorityBinding.instanceId))
-  ) {
-    await invalidateObserved();
-    return {
-      status: 'invalid',
-      reason: 'authority_restarted',
-    };
+    if (
+      options.verifyAuthorityInstance !== undefined &&
+      !(await options.verifyAuthorityInstance(stored.authorityBinding.instanceId))
+    ) {
+      await invalidateObserved();
+      return {
+        status: 'invalid',
+        reason: 'authority_restarted',
+      };
+    }
   }
 
   return {
     status: 'ready',
     bearer: stored.bearer,
+    ...(options.preserveForAuthenticatedAuthority === true
+      ? { authorityBinding: stored.authorityBinding }
+      : {}),
   };
 }
 
