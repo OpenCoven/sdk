@@ -13,7 +13,7 @@ import {
   parseCaveDiscoveryRecord,
   type CaveDiscoveryErrorCode,
   type CaveHpkeAuthority,
-} from './discovery-record.js';
+} from './discovery-record-node.js';
 export {
   CaveDiscoveryError,
   isCaveDiscoveryError,

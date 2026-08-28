@@ -9,6 +9,7 @@ import { DhkemX25519HkdfSha256 } from '@hpke/dhkem-x25519';
 import canonicalize from 'canonicalize';
 
 import type { CaveDiscoveredEndpointV2 } from './discovery.js';
+import { CAVE_HPKE_KEY_ID_DOMAIN } from './discovery-record.js';
 
 const UTF8 = new TextEncoder();
 const UTF8_FATAL = new TextDecoder('utf-8', { fatal: true });
@@ -288,7 +289,7 @@ export function caveHpkeKeyId(publicKey: Uint8Array): Uint8Array {
   }
   return new Uint8Array(
     createHash('sha256')
-      .update('OpenCoven/client-v1/hpke-bound-v1/key-id\0', 'utf8')
+      .update(CAVE_HPKE_KEY_ID_DOMAIN, 'utf8')
       .update(publicKey)
       .digest(),
   );

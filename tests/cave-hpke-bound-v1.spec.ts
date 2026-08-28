@@ -7,13 +7,15 @@ import { describe, expect, test } from 'vitest';
 
 import {
   CAVE_HPKE_HEADERS,
+  CAVE_HPKE_LIMITS,
   CAVE_HPKE_RESPONSE_MEDIA_TYPE,
   canonicalCaveHpkeRoute,
   caveBase64UrlDecode,
   caveBase64UrlEncode,
+  caveHpkeKeyId,
   createCaveHpkeBoundRequest,
 } from '../packages/cave/src/hpke-bound-v1.js';
-import { parseCaveDiscoveryRecord } from '../packages/cave/src/discovery-record.js';
+import { parseCaveDiscoveryRecord } from '../packages/cave/src/discovery-record-node.js';
 import type { CaveDiscoveredEndpointV2 } from '../packages/cave/src/discovery.js';
 
 interface HpkeVector {
@@ -210,6 +212,16 @@ describe('Cave hpke-bound-v1 producer interoperability', () => {
       ),
     ).rejects.toMatchObject({ code: 'reconcile_required' });
 
+    await expect(
+      request.open(
+        new Response(null, {
+          status: 200,
+          headers: { 'content-type': CAVE_HPKE_RESPONSE_MEDIA_TYPE },
+        }),
+        { maxBodyBytes: 64 * 1_024 },
+      ),
+    ).rejects.toMatchObject({ code: 'reconcile_required' });
+
     const mutatedCiphertext = `${vector.response.ciphertext.slice(0, -1)}${
       vector.response.ciphertext.endsWith('A') ? 'B' : 'A'
     }`;
@@ -253,6 +265,93 @@ describe('Cave hpke-bound-v1 producer interoperability', () => {
         { maxBodyBytes: 64 * 1_024 },
       ),
     ).rejects.toMatchObject({ code: 'reconcile_required' });
+  });
+
+  test('rejects malformed HPKE inputs before emitting a request', async () => {
+    const { vector } = await loadVector();
+    const discovered = discoveredAuthority(vector);
+    const request = {
+      discovered,
+      instanceId: vector.inputs.instanceId,
+      url: `http://127.0.0.1:3020${vector.inputs.route}`,
+      method: vector.inputs.method,
+      authorization: vector.inputs.authorization,
+      issuedAt: vector.inputs.issuedAt,
+      requestNonce: caveBase64UrlDecode(vector.inputs.requestNonce, {
+        minimum: 32,
+        maximum: 32,
+      }),
+      requestEkm: fromHex(vector.inputs.requestEkmIkm),
+      responseRecipientIkm: fromHex(vector.inputs.responseRecipientIkm),
+    } as const;
+
+    expect(() =>
+      caveBase64UrlDecode('=', { minimum: 0, maximum: 32 }),
+    ).toThrowError(/canonical base64url/u);
+    expect(() =>
+      caveBase64UrlDecode('', { minimum: 32, maximum: 32 }),
+    ).toThrowError(/invalid length/u);
+    expect(() => caveHpkeKeyId(new Uint8Array(31))).toThrowError(
+      /public key length/u,
+    );
+    expect(() =>
+      canonicalCaveHpkeRoute(new URL('http://127.0.0.1:3020/a%2Fb')),
+    ).toThrowError(/route path/u);
+    expect(() =>
+      canonicalCaveHpkeRoute(
+        new URL(
+          `http://127.0.0.1:3020/${'a'.repeat(
+            CAVE_HPKE_LIMITS.canonicalRouteBytes,
+          )}`,
+        ),
+      ),
+    ).toThrowError(/size limit/u);
+    expect(
+      caveBase64UrlEncode(new DataView(new Uint8Array([1, 2, 3]).buffer)),
+    ).toBe('AQID');
+
+    await expect(
+      createCaveHpkeBoundRequest({
+        ...request,
+        authorization: { kind: 'bearer', value: '' },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
+    await expect(
+      createCaveHpkeBoundRequest({
+        ...request,
+        discovered: {
+          ...discovered,
+          authority: {
+            ...discovered.authority,
+            mode: 'unsupported',
+          },
+        } as unknown as CaveDiscoveredEndpointV2,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
+    await expect(
+      createCaveHpkeBoundRequest({
+        ...request,
+        discovered: {
+          ...discovered,
+          authority: {
+            ...discovered.authority,
+            keyId: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
+    await expect(
+      createCaveHpkeBoundRequest({
+        ...request,
+        requestNonce: new Uint8Array(31),
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
+    await expect(
+      createCaveHpkeBoundRequest({
+        ...request,
+        body: new Uint8Array(CAVE_HPKE_LIMITS.requestBodyBytes + 1),
+      }),
+    ).rejects.toMatchObject({ code: 'body_limit' });
   });
 
   test('canonicalizes routes and validates strict discovery v2', async () => {

@@ -1,8 +1,12 @@
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+
+import {
+  installIsolatedOfflineAfterWarming,
+  tarballSpecifier,
+} from './package-artifacts.mjs';
 
 export const API_BASELINE_VERSION = 2;
 
@@ -391,28 +395,36 @@ export async function readPackedApiSurfaces({
   packages,
   tarballs,
 }) {
+  mkdirSync(artifactRoot, { recursive: true });
+  const packedDependencies = Object.fromEntries(
+    packages.map(({ packageName, workspaceDirectory }) => [
+      packageName,
+      tarballSpecifier(tarballs, workspaceDirectory),
+    ]),
+  );
+  writeFileSync(
+    resolve(artifactRoot, 'package.json'),
+    `${JSON.stringify(
+      {
+        private: true,
+        type: 'module',
+        packageManager: 'pnpm@10.34.0',
+        dependencies: packedDependencies,
+        pnpm: {
+          overrides: packedDependencies,
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  installIsolatedOfflineAfterWarming(artifactRoot);
+
   const scopeRoot = resolve(
     artifactRoot,
     'node_modules',
     '@opencoven',
   );
-  mkdirSync(scopeRoot, { recursive: true });
-
-  for (const { packageName, workspaceDirectory } of packages) {
-    const destination = resolve(scopeRoot, packageName.split('/')[1]);
-    mkdirSync(destination, { recursive: true });
-    execFileSync(
-      'tar',
-      [
-        '-xzf',
-        tarballs[workspaceDirectory],
-        '-C',
-        destination,
-        '--strip-components=1',
-      ],
-      { stdio: 'ignore' },
-    );
-  }
 
   const surfaces = {};
   for (const { packageName, workspaceDirectory } of packages) {

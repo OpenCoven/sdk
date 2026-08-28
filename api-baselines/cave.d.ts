@@ -501,7 +501,20 @@ export { b as CAVE_ANALYTICS_WINDOWS, c as CAVE_FAMILIAR_PROPERTIES, d as CAVE_P
 import { OperationOptions, OperationContext, PageOptions, OperationDefaults, SecretStore, SecretStoreReference } from '@opencoven/sdk-core';
 import '@opencoven/sdk-core/browser';
 
+declare const CAVE_HPKE_MECHANISM: "hpke-bound-v1";
+declare const CAVE_HPKE_SUITE: Readonly<{
+    readonly kemId: 32;
+    readonly kdfId: 1;
+    readonly aeadId: 2;
+}>;
 type CaveDiscoveryErrorCode = 'not_found' | 'owner_mismatch' | 'unsafe_endpoint' | 'stale_record' | 'body_limit' | 'invalid_response' | 'timeout' | 'aborted';
+interface CaveHpkeAuthority {
+    mechanism: typeof CAVE_HPKE_MECHANISM;
+    mode: 'advertise' | 'enforce';
+    keyId: string;
+    publicKey: string;
+    suite: typeof CAVE_HPKE_SUITE;
+}
 declare class CaveDiscoveryError extends Error {
     readonly code: CaveDiscoveryErrorCode;
     readonly retryable: boolean;
@@ -563,8 +576,7 @@ interface CaveDiscoveryRecordIdentity {
     device: number;
     inode: number;
 }
-interface CaveDiscoveredEndpoint {
-    version: 1;
+interface CaveDiscoveredEndpointBase {
     endpoint: {
         kind: 'http';
         url: string;
@@ -572,6 +584,14 @@ interface CaveDiscoveredEndpoint {
     freshness: CaveEndpointFreshness;
     record: CaveDiscoveryRecordIdentity;
 }
+interface CaveDiscoveredEndpointV1 extends CaveDiscoveredEndpointBase {
+    version: 1;
+}
+interface CaveDiscoveredEndpointV2 extends CaveDiscoveredEndpointBase {
+    version: 2;
+    authority: CaveHpkeAuthority;
+}
+type CaveDiscoveredEndpoint = CaveDiscoveredEndpointV1 | CaveDiscoveredEndpointV2;
 declare function discoverCaveEndpoint(options?: DiscoverCaveEndpointOptions): Promise<CaveDiscoveredEndpoint>;
 
 interface CaveManagedNativeResponse {
@@ -1286,8 +1306,7 @@ interface CaveManagedDiscoveryOptions extends OperationOptions {
     maxRecordBytes?: number;
     operation?: OperationDefaults;
 }
-interface CaveManagedDiscoveredEndpoint {
-    version: 1;
+interface CaveManagedDiscoveredEndpointBase {
     endpoint: {
         kind: 'http';
         url: string;
@@ -1303,6 +1322,23 @@ interface CaveManagedDiscoveredEndpoint {
         inode: number;
     };
 }
+interface CaveManagedHpkeAuthority {
+    mechanism: 'hpke-bound-v1';
+    mode: 'advertise' | 'enforce';
+    keyId: string;
+    publicKey: string;
+    suite: {
+        kemId: 32;
+        kdfId: 1;
+        aeadId: 2;
+    };
+}
+type CaveManagedDiscoveredEndpoint = CaveManagedDiscoveredEndpointBase & {
+    version: 1;
+} | CaveManagedDiscoveredEndpointBase & {
+    version: 2;
+    authority: CaveManagedHpkeAuthority;
+};
 declare function discoverManagedCaveEndpoint(source: CaveManagedDiscoverySource, options?: CaveManagedDiscoveryOptions): Promise<CaveManagedDiscoveredEndpoint>;
 
 interface CaveManagedClientOptions {

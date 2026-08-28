@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 import type { DiscoveryEndpoint } from '@opencoven/sdk-core';
 
 export const CAVE_DISCOVERY_RECORD_VERSION = 1 as const;
@@ -10,12 +8,15 @@ export const CAVE_HPKE_SUITE = Object.freeze({
   kdfId: 1,
   aeadId: 2,
 } as const);
+export const CAVE_HPKE_KEY_ID_DOMAIN =
+  'OpenCoven/client-v1/hpke-bound-v1/key-id\0' as const;
 
 const DISCOVERY_TIMESTAMP_RE =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/u;
 const CAVE_HTTP_ENDPOINT_RE =
   /^http:\/\/(\[[^\]]+\]|[^/?#:@\\]+):([0-9]{1,5})\/?$/iu;
-const BASE64URL_RE = /^[A-Za-z0-9_-]+$/u;
+const BASE64URL_ALPHABET =
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const CAVE_DISCOVERY_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveDiscoveryError');
 
 export type CaveDiscoveryErrorCode =
@@ -57,6 +58,16 @@ export interface CaveParsedDiscoveryRecordV2 extends CaveParsedDiscoveryRecordBa
 export type CaveParsedDiscoveryRecord =
   | CaveParsedDiscoveryRecordV1
   | CaveParsedDiscoveryRecordV2;
+
+export interface CaveDiscoveryRecordCandidate {
+  record: CaveParsedDiscoveryRecord;
+  authorityKey:
+    | {
+        publicKey: Uint8Array;
+        keyId: Uint8Array;
+      }
+    | undefined;
+}
 
 export class CaveDiscoveryError extends Error {
   readonly retryable: boolean;
@@ -206,27 +217,42 @@ function parseCanonical32ByteBase64Url(value: unknown, label: string): Uint8Arra
   if (
     typeof value !== 'string' ||
     value.length !== 43 ||
-    value.includes('=') ||
-    !BASE64URL_RE.test(value)
+    value.includes('=')
   ) {
     return fail('invalid_response', `${label} was not canonical 32-byte base64url.`);
   }
 
-  const bytes = Uint8Array.from(Buffer.from(value, 'base64url'));
-  if (bytes.byteLength !== 32 || Buffer.from(bytes).toString('base64url') !== value) {
+  const bytes = new Uint8Array(32);
+  let accumulator = 0;
+  let bits = 0;
+  let offset = 0;
+
+  for (const character of value) {
+    const digit = BASE64URL_ALPHABET.indexOf(character);
+    if (digit < 0) {
+      return fail('invalid_response', `${label} was not canonical 32-byte base64url.`);
+    }
+    accumulator = (accumulator << 6) | digit;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes[offset] = (accumulator >>> bits) & 0xFF;
+      offset += 1;
+      accumulator &= (1 << bits) - 1;
+    }
+  }
+
+  if (accumulator !== 0) {
     return fail('invalid_response', `${label} was not canonical 32-byte base64url.`);
   }
   return bytes;
 }
 
-function hpkeKeyId(publicKey: Uint8Array): string {
-  return createHash('sha256')
-    .update('OpenCoven/client-v1/hpke-bound-v1/key-id\0', 'utf8')
-    .update(publicKey)
-    .digest('base64url');
-}
-
-function parseAuthority(value: unknown): CaveHpkeAuthority {
+function parseAuthority(value: unknown): {
+  authority: CaveHpkeAuthority;
+  publicKey: Uint8Array;
+  keyId: Uint8Array;
+} {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return fail('invalid_response', 'Cave discovery authority must be an object.');
   }
@@ -259,24 +285,28 @@ function parseAuthority(value: unknown): CaveHpkeAuthority {
     authority.publicKey,
     'Cave discovery authority public key',
   );
-  parseCanonical32ByteBase64Url(authority.keyId, 'Cave discovery authority key id');
-  if (authority.keyId !== hpkeKeyId(publicKeyBytes)) {
-    return fail('invalid_response', 'Cave discovery authority key id did not match its public key.');
-  }
+  const keyIdBytes = parseCanonical32ByteBase64Url(
+    authority.keyId,
+    'Cave discovery authority key id',
+  );
 
   return {
-    mechanism: CAVE_HPKE_MECHANISM,
-    mode: authority.mode,
-    keyId: authority.keyId,
-    publicKey: authority.publicKey as string,
-    suite: CAVE_HPKE_SUITE,
+    authority: {
+      mechanism: CAVE_HPKE_MECHANISM,
+      mode: authority.mode,
+      keyId: authority.keyId as string,
+      publicKey: authority.publicKey as string,
+      suite: CAVE_HPKE_SUITE,
+    },
+    publicKey: publicKeyBytes,
+    keyId: keyIdBytes,
   };
 }
 
-export function parseCaveDiscoveryRecord(
+export function parseCaveDiscoveryRecordCandidate(
   serialized: string,
   isProcessAlive: (pid: number) => boolean,
-): CaveParsedDiscoveryRecord {
+): CaveDiscoveryRecordCandidate {
   let parsed: unknown;
 
   try {
@@ -335,25 +365,66 @@ export function parseCaveDiscoveryRecord(
     }
 
     return {
-      version: CAVE_DISCOVERY_RECORD_VERSION,
-      endpoint,
-      freshness: {
-        pid: record.pid,
-        nonce: record.nonce,
-        startedAt: record.startedAt,
+      record: {
+        version: CAVE_DISCOVERY_RECORD_VERSION,
+        endpoint,
+        freshness: {
+          pid: record.pid,
+          nonce: record.nonce,
+          startedAt: record.startedAt,
+        },
       },
+      authorityKey: undefined,
     };
   }
 
   parseCanonical32ByteBase64Url(record.nonce, 'Cave discovery runtime nonce');
+  const authority = parseAuthority(record.authority);
   return {
-    version: CAVE_HPKE_DISCOVERY_RECORD_VERSION,
-    endpoint,
-    freshness: {
-      pid: record.pid,
-      nonce: record.nonce as string,
-      startedAt: record.startedAt,
+    record: {
+      version: CAVE_HPKE_DISCOVERY_RECORD_VERSION,
+      endpoint,
+      freshness: {
+        pid: record.pid,
+        nonce: record.nonce as string,
+        startedAt: record.startedAt,
+      },
+      authority: authority.authority,
     },
-    authority: parseAuthority(record.authority),
+    authorityKey: {
+      publicKey: authority.publicKey,
+      keyId: authority.keyId,
+    },
   };
+}
+
+export function verifyCaveDiscoveryRecordCandidate(
+  candidate: CaveDiscoveryRecordCandidate,
+  computedKeyId: Uint8Array | undefined,
+): CaveParsedDiscoveryRecord {
+  if (candidate.authorityKey === undefined) {
+    return candidate.record;
+  }
+  if (
+    computedKeyId?.byteLength !== candidate.authorityKey.keyId.byteLength
+  ) {
+    return fail(
+      'invalid_response',
+      'Cave discovery authority key id did not match its public key.',
+    );
+  }
+
+  let difference = 0;
+  for (let index = 0; index < computedKeyId.byteLength; index += 1) {
+    difference |=
+      computedKeyId[index]! ^
+      candidate.authorityKey.keyId[index]!;
+  }
+  if (difference !== 0) {
+    return fail(
+      'invalid_response',
+      'Cave discovery authority key id did not match its public key.',
+    );
+  }
+  return candidate.record;
 }
