@@ -44,7 +44,7 @@ The following state was verified on 2026-08-28:
 | SDK #41 | Open | Publication remains locked. |
 | SDK #40 | Open with **BLOCK** disposition | Exact-candidate review still waits on #38 evidence. |
 | SDK #38 | Open | Real-authority evidence remains required on `darwin-arm64`, `linux-x64`, and `win32-x64`. |
-| `OpenCoven/coven-cave` | `main` at `3ba4bf00e261b470d78a754da02c816a044e2f0d` | Client v1 has fourteen reviewed operations: bootstrap, admin, and five reads. It has no Client v1 write or event route. |
+| `OpenCoven/coven-cave` | `main` at `74fc4e010cc79287415a10821882baf64e6f08f9` | Client v1 has fourteen reviewed operations: bootstrap, admin, and five reads. It has no Client v1 write or event route. The latest private-chat change reinforces server-owned conversation origin rather than adding a public mutation contract. |
 | Cave Client v1 contract | `apiVersion: "1.0"`; write scopes and a 36-character idempotency-key limit are reserved but unused | #42 is additive within Client v1, but Cave must author and export the mutation contract before the SDK implements it. |
 | Cave private chat | `/api/chat/send`, `/api/chat/stream`, and `/api/chat/stop` exist | They are implementation evidence only. Their optional `runId`, process-local stop registry, 512 KiB process-local event ring, two-minute finished retention, SSE shapes, and benign resume-gap progress row are not public Client v1 contracts. |
 | Cave open PR #5163 | iOS application retry work | It is not Client v1 idempotency or mutation authority and is not a #42 dependency. |
