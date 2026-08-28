@@ -41,6 +41,10 @@ const rootManifest = JSON.parse(readFileSync(resolve(workspaceRoot, 'package.jso
 };
 const vitestConfig = readFileSync(resolve(workspaceRoot, 'vitest.config.ts'), 'utf8');
 const lockfile = readFileSync(resolve(workspaceRoot, 'pnpm-lock.yaml'), 'utf8');
+const hpkeChangeset = readFileSync(
+  resolve(workspaceRoot, '.changeset/honest-caves-bind.md'),
+  'utf8',
+);
 const ROOT_PACKAGE_EXPORTS = {
   '.': {
     types: './dist/index.d.ts',
@@ -76,6 +80,7 @@ function expectedPackageExports(workspaceDirectory: string) {
 const EXPECTED_WORKSPACE_DEPENDENCIES = {
   core: {},
   cave: {
+    '@hpke/common': '1.10.0',
     '@hpke/core': '1.9.0',
     '@hpke/dhkem-x25519': '1.8.0',
     '@opencoven/sdk-core': 'workspace:0.1.0',
@@ -204,6 +209,12 @@ describe('workspace package manifests', () => {
       expect(changelog).toContain('## 0.1.0');
     }
   }, 15_000);
+
+  test('releases the public discovery union as a pre-1.0 minor change', () => {
+    expect(hpkeChangeset).toContain('"@opencoven/cave-client": minor');
+    expect(hpkeChangeset).toContain('"@opencoven/sdk": minor');
+    expect(hpkeChangeset).not.toContain('"@opencoven/cave-client": patch');
+  });
 
   test('verifies the release contract and artifacts on the compatibility path', () => {
     expect(rootManifest.scripts?.['verify:compat']).toBe(

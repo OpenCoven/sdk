@@ -12,8 +12,30 @@ import { describe, expect, test } from 'vitest';
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const fixturePath = resolve(root, 'packages/cave/fixtures/contract-fixture.json');
 const digestPath = resolve(root, 'packages/cave/fixtures/contract-fixture.sha256');
+const legacyFixturePath = resolve(
+  root,
+  'tests/fixtures/cave-contract-fixture-v1.json',
+);
 
 describe('Cave contract fixture parsing', () => {
+  test('parses the exact legacy Client v1 fixture without HPKE extensions', () => {
+    const legacyFixture = readFileSync(legacyFixturePath, 'utf8');
+    const parsed = parseCaveContractFixture(legacyFixture);
+
+    expect(digestCaveContractFixture(legacyFixture)).toBe(
+      'b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd',
+    );
+    expect(parsed.contract).not.toHaveProperty('authority');
+    expect(parsed.contract.discovery).toEqual({
+      fileName: 'client-v1-discovery.json',
+      mode: '0600',
+      version: 1,
+    });
+    expect(parsed.contract.operations[0]).not.toHaveProperty('binding');
+    expect(parsed.contract.operations[0]).not.toHaveProperty('credential');
+    expect(parsed.examples).not.toHaveProperty('discoveryRecordV2');
+  });
+
   test('parses the reviewed fixture through the public package entry point', () => {
     const fixture = readFileSync(fixturePath, 'utf8');
     const digest = readFileSync(digestPath, 'utf8');
@@ -249,5 +271,36 @@ describe('Cave contract fixture parsing', () => {
         },
       },
     });
+  });
+
+  test.each([
+    ['authority declaration', (fixture: Record<string, unknown>) => {
+      delete (fixture.contract as Record<string, unknown>).authority;
+    }],
+    ['discovery version', (fixture: Record<string, unknown>) => {
+      delete (
+        (fixture.contract as Record<string, unknown>)
+          .discovery as Record<string, unknown>
+      ).hpkeBoundVersion;
+    }],
+    ['operation binding', (fixture: Record<string, unknown>) => {
+      delete (
+        (
+          (fixture.contract as Record<string, unknown>)
+            .operations as Record<string, unknown>[]
+        )[0] as Record<string, unknown>
+      ).binding;
+    }],
+    ['v2 example', (fixture: Record<string, unknown>) => {
+      delete (fixture.examples as Record<string, unknown>).discoveryRecordV2;
+    }],
+  ])('rejects a partial HPKE fixture extension missing %s', (_label, mutate) => {
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    mutate(fixture);
+
+    expect(() => parseCaveContractFixture(fixture)).toThrow(TypeError);
   });
 });

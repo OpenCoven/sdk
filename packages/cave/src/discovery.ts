@@ -761,8 +761,12 @@ export async function discoverCaveEndpoint(
       'Cave discovery root changed while the record was read.',
     );
 
+    const parsed = await awaitStep(
+      () => parseCaveDiscoveryRecord(serialized, isProcessAlive),
+      deadline,
+    );
     return {
-      ...await parseCaveDiscoveryRecord(serialized, isProcessAlive),
+      ...parsed,
       record: {
         path: physicalRecordPath,
         device: initialIdentity.device,

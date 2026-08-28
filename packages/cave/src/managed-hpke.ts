@@ -110,16 +110,11 @@ export function createManagedHpkeAuthorityResolver(
     if (discovery === undefined) {
       return undefined;
     }
-    const remaining =
-      context?.deadline === undefined
-        ? undefined
-        : Math.max(0, context.deadline - performance.now());
     const discovered = await discoverManagedCaveEndpoint(
       discovery.source,
       {
         ...(discovery.options ?? {}),
         ...(context?.signal === undefined ? {} : { signal: context.signal }),
-        ...(remaining === undefined ? {} : { timeoutMs: remaining }),
       },
     );
     if (discovered.version === 2) {

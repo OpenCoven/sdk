@@ -3,10 +3,12 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { delimiter, resolve } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, test } from 'vitest';
@@ -84,6 +86,7 @@ function expectedPackedDependencies(workspaceDirectory: string, version: string)
       return {};
     case 'cave':
       return {
+        '@hpke/common': '1.10.0',
         '@hpke/core': '1.9.0',
         '@hpke/dhkem-x25519': '1.8.0',
         '@opencoven/sdk-core': version,
@@ -115,6 +118,34 @@ function readTarballFile(tarball: string, path: string): string {
   return execFileSync('tar', ['-xOf', tarball, `package/${path}`], {
     encoding: 'utf8',
   });
+}
+
+function collectDependencyVersions(
+  tree: unknown,
+  dependencyName: string,
+  versions = new Set<string>(),
+): Set<string> {
+  if (typeof tree !== 'object' || tree === null) {
+    return versions;
+  }
+  const dependencies = (tree as {
+    dependencies?: Record<string, unknown>;
+  }).dependencies;
+  if (dependencies === undefined) {
+    return versions;
+  }
+  for (const [name, dependency] of Object.entries(dependencies)) {
+    if (
+      name === dependencyName &&
+      typeof dependency === 'object' &&
+      dependency !== null &&
+      typeof (dependency as { version?: unknown }).version === 'string'
+    ) {
+      versions.add((dependency as { version: string }).version);
+    }
+    collectDependencyVersions(dependency, dependencyName, versions);
+  }
+  return versions;
 }
 
 async function waitForPath(path: string) {
@@ -395,6 +426,67 @@ if (existsSync(rootModules) || existsSync(nestedModules) || !existsSync(lockfile
       cleanupOwnedTempRoot(artifactContext);
     }
   }, 60_000);
+
+  test('pins HPKE common in an npm consumer without workspace overrides', () => {
+    const scratchRoot = resolve(
+      root,
+      `.scratch-packed-hpke-common-${randomUUID()}`,
+    );
+    const tarballRoot = resolve(scratchRoot, 'tarballs');
+    const consumerRoot = resolve(scratchRoot, 'consumer');
+
+    try {
+      mkdirSync(resolve(tarballRoot, 'core'), { recursive: true });
+      mkdirSync(resolve(tarballRoot, 'cave'), { recursive: true });
+      mkdirSync(consumerRoot, { recursive: true });
+      packageArtifactHelpers.runPnpm(
+        ['pack', '--pack-destination', resolve(tarballRoot, 'core')],
+        resolve(root, 'packages/core'),
+      );
+      packageArtifactHelpers.runPnpm(
+        ['pack', '--pack-destination', resolve(tarballRoot, 'cave')],
+        resolve(root, 'packages/cave'),
+      );
+      const coreTarball = packageArtifactHelpers.findTarball(
+        resolve(tarballRoot, 'core'),
+      );
+      const caveTarball = packageArtifactHelpers.findTarball(
+        resolve(tarballRoot, 'cave'),
+      );
+      writeFileSync(
+        resolve(consumerRoot, 'package.json'),
+        `${JSON.stringify({
+          private: true,
+          dependencies: {
+            '@opencoven/cave-client': `file:${caveTarball}`,
+            '@opencoven/sdk-core': `file:${coreTarball}`,
+          },
+        }, null, 2)}\n`,
+      );
+      const installed = spawnSync(
+        'npm',
+        ['install', '--ignore-scripts', '--no-audit', '--no-fund'],
+        {
+          cwd: consumerRoot,
+          encoding: 'utf8',
+        },
+      );
+      expect(installed.status, installed.stderr).toBe(0);
+      const tree = JSON.parse(
+        execFileSync(
+          'npm',
+          ['ls', '@hpke/common', '--all', '--json'],
+          { cwd: consumerRoot, encoding: 'utf8' },
+        ),
+      ) as unknown;
+
+      expect([...collectDependencyVersions(tree, '@hpke/common')]).toEqual([
+        '1.10.0',
+      ]);
+    } finally {
+      rmSync(scratchRoot, { force: true, recursive: true });
+    }
+  }, 120_000);
 
   test.each(['warm', 'offline'] as const)(
     'waits for every parallel %s install before propagating a child failure',

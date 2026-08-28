@@ -15,6 +15,10 @@ const RESPONSE_AAD_DOMAIN = UTF8.encode(
 const KEY_ID_DOMAIN = 'OpenCoven/client-v1/hpke-bound-v1/key-id\0';
 const RESPONSE_ERROR =
   'Cave HPKE transport authentication failed.';
+
+function failResponse(): never {
+  throw new Error(RESPONSE_ERROR);
+}
 type Canonicalize = (value: unknown) => string | undefined;
 export type CaveHpkeRuntimeKey = object;
 export interface CaveHpkeRuntimeKeyPair {
@@ -131,7 +135,23 @@ export interface CaveHpkeBoundRequest {
   requestAad: Uint8Array;
   responseAad: Uint8Array;
   responsePublicKey: Uint8Array;
-  open(response: Response): Promise<CaveHpkeOpenedResponse>;
+  open(
+    response: Response,
+    options?: {
+      context?: {
+        signal: AbortSignal;
+        deadline: number | undefined;
+      };
+      maxResponseBytes?: number;
+    },
+  ): Promise<CaveHpkeOpenedResponse>;
+}
+
+export class CaveHpkeResponseBodyLimitError extends Error {
+  constructor(readonly statusCode: number) {
+    super('Cave authenticated response exceeded its size limit.');
+    this.name = 'CaveHpkeResponseBodyLimitError';
+  }
 }
 
 function bytesOf(value: ArrayBufferLike | ArrayBufferView): Uint8Array {
@@ -389,6 +409,10 @@ function keyIdForPublicKey(publicKey: Uint8Array): Uint8Array {
 async function readBounded(
   response: Response,
   maximumBytes: number,
+  context?: {
+    signal: AbortSignal;
+    deadline: number | undefined;
+  },
 ): Promise<Uint8Array> {
   const contentLength = response.headers.get('content-length');
   if (contentLength !== null) {
@@ -398,6 +422,7 @@ async function readBounded(
       !Number.isSafeInteger(parsed) ||
       parsed > maximumBytes
     ) {
+      void response.body?.cancel().catch(() => undefined);
       throw new Error(RESPONSE_ERROR);
     }
   }
@@ -408,20 +433,52 @@ async function readBounded(
     response.body.getReader() as ReadableStreamDefaultReader<Uint8Array>;
   const chunks: Uint8Array[] = [];
   let length = 0;
+  let cancellationStarted = false;
+  const cancelReader = (reason?: unknown): void => {
+    if (cancellationStarted) {
+      return;
+    }
+    cancellationStarted = true;
+    try {
+      void reader.cancel(reason).catch(() => undefined);
+    } catch {
+      // Cancellation is best-effort; the operation error must still settle.
+    }
+  };
+  let rejectAbort: ((reason: unknown) => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    rejectAbort = reject;
+  });
+  void aborted.catch(() => undefined);
+  const onAbort = (): void => {
+    const reason: unknown = context?.signal.reason;
+    rejectAbort?.(
+      reason instanceof Error ? reason : new Error(RESPONSE_ERROR),
+    );
+    cancelReader(reason);
+  };
+  context?.signal.addEventListener('abort', onAbort, { once: true });
+  if (context?.signal.aborted === true) {
+    onAbort();
+  }
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await Promise.race([
+        reader.read(),
+        aborted,
+      ]);
       if (done) {
         break;
       }
       length += value.byteLength;
       if (length > maximumBytes) {
-        await reader.cancel();
+        cancelReader();
         throw new Error(RESPONSE_ERROR);
       }
       chunks.push(value);
     }
   } finally {
+    context?.signal.removeEventListener('abort', onAbort);
     reader.releaseLock();
   }
   return concatBytes(...chunks);
@@ -560,7 +617,7 @@ export async function createCaveHpkeBoundRequest(input: {
       requestAad,
       responseAad,
       responsePublicKey,
-      async open(response) {
+      async open(response, options = {}) {
         try {
           if (
             response.status !== 200 ||
@@ -572,6 +629,7 @@ export async function createCaveHpkeBoundRequest(input: {
           const envelopeBytes = await readBounded(
             response,
             CAVE_HPKE_LIMITS.responseEnvelopeBytes,
+            options.context,
           );
           const envelope: unknown = JSON.parse(
             UTF8_FATAL.decode(envelopeBytes),
@@ -664,6 +722,18 @@ export async function createCaveHpkeBoundRequest(input: {
           ) {
             throw new Error(RESPONSE_ERROR);
           }
+          const body = caveHpkeBase64UrlDecode(parsed.body, {
+            minimum: 0,
+            maximum: CAVE_HPKE_LIMITS.responsePlaintextBytes,
+          });
+          if (
+            options.maxResponseBytes !== undefined &&
+            body.byteLength > options.maxResponseBytes
+          ) {
+            throw new CaveHpkeResponseBodyLimitError(
+              parsed.status as number,
+            );
+          }
           return {
             status: parsed.status as number,
             headers: {
@@ -672,13 +742,19 @@ export async function createCaveHpkeBoundRequest(input: {
                 ? { retryAfter: parsed.headers.retryAfter as string }
                 : {}),
             },
-            body: caveHpkeBase64UrlDecode(parsed.body, {
-              minimum: 0,
-              maximum: CAVE_HPKE_LIMITS.responsePlaintextBytes,
-            }),
+            body,
           };
-        } catch {
-          throw new Error(RESPONSE_ERROR);
+        } catch (error) {
+          if (error instanceof CaveHpkeResponseBodyLimitError) {
+            throw error;
+          }
+          if (
+            options.context?.signal.aborted === true &&
+            error === options.context.signal.reason
+          ) {
+            throw error;
+          }
+          return failResponse();
         }
       },
     };

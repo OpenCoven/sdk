@@ -17,9 +17,7 @@ export interface CaveContractRevision {
   updatedAt: string;
 }
 
-export interface CaveContractOperation {
-  binding: string;
-  credential: string;
+interface CaveContractOperationBase {
   families: readonly string[];
   id: string;
   ingress: string;
@@ -27,6 +25,16 @@ export interface CaveContractOperation {
   path: string;
   scope: string | null;
 }
+
+export type CaveContractOperation =
+  | (CaveContractOperationBase & {
+      binding?: never;
+      credential?: never;
+    })
+  | (CaveContractOperationBase & {
+      binding: string;
+      credential: string;
+    });
 
 export interface CaveContractPublicRoute {
   method: string;
@@ -151,88 +159,116 @@ export interface CaveContractDiscoveryRecordV2 {
   version: number;
 }
 
-export interface CaveContractFixture {
-  contract: {
-    apiVersion: string;
-    authority: CaveContractHpkeAuthority;
-    capabilities: readonly string[];
-    discovery: {
-      fileName: string;
-      hpkeBoundVersion: number;
-      mode: string;
-      version: number;
-    };
-    errorCodes: readonly string[];
-    identityKinds: readonly string[];
-    limits: {
-      cursorCharacters: number;
-      declarationIdCharacters: number;
-      defaultPageSize: number;
-      errorDetailEntries: number;
-      errorDetailValueCharacters: number;
-      errorMessageCharacters: number;
-      idempotencyKeyCharacters: number;
-      instanceIdCharacters: number;
-      maxPageSize: number;
-      releaseVersionCharacters: number;
-      requestIdCharacters: number;
-      revisionTokenCharacters: number;
-    };
-    minimumClientVersion: string;
-    operations: readonly CaveContractOperation[];
-    pairingRequired: boolean;
-    pairingScopes: readonly string[];
-    pairingSecretHeader: string;
-    publicRoutes: readonly CaveContractPublicRoute[];
+interface CaveContractDiscoveryBase {
+  fileName: string;
+  mode: string;
+  version: number;
+}
+
+interface CaveContractContractBase {
+  apiVersion: string;
+  capabilities: readonly string[];
+  errorCodes: readonly string[];
+  identityKinds: readonly string[];
+  limits: {
+    cursorCharacters: number;
+    declarationIdCharacters: number;
+    defaultPageSize: number;
+    errorDetailEntries: number;
+    errorDetailValueCharacters: number;
+    errorMessageCharacters: number;
+    idempotencyKeyCharacters: number;
+    instanceIdCharacters: number;
+    maxPageSize: number;
+    releaseVersionCharacters: number;
+    requestIdCharacters: number;
+    revisionTokenCharacters: number;
   };
-  examples: {
+  minimumClientVersion: string;
+  pairingRequired: boolean;
+  pairingScopes: readonly string[];
+  pairingSecretHeader: string;
+  publicRoutes: readonly CaveContractPublicRoute[];
+}
+
+interface CaveContractExamplesBase {
+  cursor: CaveContractCursor;
+  discoveryRecord: {
+    endpoint: string;
+    nonce: string;
+    pid: number;
+    startedAt: string;
+    version: number;
+  };
+  errorEnvelope: CaveContractEnvelopeMetadata & {
+    error: {
+      code: string;
+      details: Record<string, string>;
+      message: string;
+      retryable: boolean;
+    };
+    requestId: string;
+  };
+  health: CaveContractHealthData;
+  healthEnvelope: CaveContractEnvelopeMetadata & {
+    data: CaveContractHealthData;
+  };
+  identity: CaveContractIdentity;
+  pairingCreatedEnvelope: CaveContractEnvelopeMetadata & {
+    data: CaveContractPairingCreatedData;
+  };
+  pairingExchangeEnvelope: CaveContractEnvelopeMetadata & {
+    data: CaveContractPairingExchangeData;
+  };
+  pairingStatusEnvelope: CaveContractEnvelopeMetadata & {
+    data: CaveContractPairingStatusData;
+  };
+  revision: CaveContractRevision;
+  status: {
+    status: 'ok';
+  };
+  successEnvelope: CaveContractEnvelopeMetadata & {
     cursor: CaveContractCursor;
-    discoveryRecord: {
-      endpoint: string;
-      nonce: string;
-      pid: number;
-      startedAt: string;
-      version: number;
-    };
-    discoveryRecordV2: CaveContractDiscoveryRecordV2;
-    errorEnvelope: CaveContractEnvelopeMetadata & {
-      error: {
-        code: string;
-        details: Record<string, string>;
-        message: string;
-        retryable: boolean;
-      };
-      requestId: string;
-    };
-    health: CaveContractHealthData;
-    healthEnvelope: CaveContractEnvelopeMetadata & {
-      data: CaveContractHealthData;
-    };
-    identity: CaveContractIdentity;
-    pairingCreatedEnvelope: CaveContractEnvelopeMetadata & {
-      data: CaveContractPairingCreatedData;
-    };
-    pairingExchangeEnvelope: CaveContractEnvelopeMetadata & {
-      data: CaveContractPairingExchangeData;
-    };
-    pairingStatusEnvelope: CaveContractEnvelopeMetadata & {
-      data: CaveContractPairingStatusData;
-    };
-    revision: CaveContractRevision;
-    status: {
+    data: {
       status: 'ok';
     };
-    successEnvelope: CaveContractEnvelopeMetadata & {
-      cursor: CaveContractCursor;
-      data: {
-        status: 'ok';
-      };
-      identity: CaveContractIdentity;
-      requestId: string;
-      revision: CaveContractRevision;
-    };
+    identity: CaveContractIdentity;
+    requestId: string;
+    revision: CaveContractRevision;
   };
 }
+
+export type CaveContractFixture =
+  | {
+      contract: CaveContractContractBase & {
+        authority?: never;
+        discovery: CaveContractDiscoveryBase & {
+          hpkeBoundVersion?: never;
+        };
+        operations: readonly Extract<
+          CaveContractOperation,
+          { binding?: never }
+        >[];
+      };
+      examples: CaveContractExamplesBase & {
+        discoveryRecordV2?: never;
+      };
+    }
+  | {
+      contract: CaveContractContractBase & {
+        authority: CaveContractHpkeAuthority;
+        discovery: CaveContractDiscoveryBase & {
+          hpkeBoundVersion: number;
+        };
+        operations: readonly Extract<
+          CaveContractOperation,
+          { binding: string }
+        >[];
+      };
+      examples: CaveContractExamplesBase & {
+        discoveryRecordV2: CaveContractDiscoveryRecordV2;
+      };
+    };
 
 type JsonObject = Record<string, unknown>;
 
@@ -493,18 +529,30 @@ function parseSuccessEnvelope(value: unknown, path: string) {
   };
 }
 
-function parseOperation(value: unknown, path: string): CaveContractOperation {
+function parseOperation(
+  value: unknown,
+  path: string,
+  hpkeExtension: boolean,
+): CaveContractOperation {
   const operation = expectObject(value, path);
-
-  return {
-    binding: expectString(operation.binding, `${path}.binding`),
-    credential: expectString(operation.credential, `${path}.credential`),
+  const parsed: CaveContractOperationBase = {
     families: expectStringArray(operation.families, `${path}.families`),
     id: expectString(operation.id, `${path}.id`),
     ingress: expectString(operation.ingress, `${path}.ingress`),
     method: expectString(operation.method, `${path}.method`),
     path: expectString(operation.path, `${path}.path`),
     scope: expectNullableString(operation.scope, `${path}.scope`),
+  };
+  if (!hpkeExtension) {
+    return parsed;
+  }
+  return {
+    ...parsed,
+    binding: expectString(operation.binding, `${path}.binding`),
+    credential: expectString(
+      operation.credential,
+      `${path}.credential`,
+    ),
   };
 }
 
@@ -745,14 +793,35 @@ function parseContractFixtureObject(value: unknown): CaveContractFixture {
     examples.discoveryRecord,
     'fixture.examples.discoveryRecord',
   );
+  const operations = Array.isArray(contract.operations)
+    ? contract.operations
+    : (() => {
+        throw new TypeError('fixture.contract.operations must be an array.');
+      })();
+  const hpkeExtension =
+    Object.hasOwn(contract, 'authority') ||
+    Object.hasOwn(discovery, 'hpkeBoundVersion') ||
+    Object.hasOwn(examples, 'discoveryRecordV2') ||
+    operations.some(
+      (operation) =>
+        isObject(operation) &&
+        (
+          Object.hasOwn(operation, 'binding') ||
+          Object.hasOwn(operation, 'credential')
+        ),
+    );
 
   return {
     contract: {
       apiVersion: expectString(contract.apiVersion, 'fixture.contract.apiVersion'),
-      authority: parseAuthority(
-        contract.authority,
-        'fixture.contract.authority',
-      ),
+      ...(hpkeExtension
+        ? {
+            authority: parseAuthority(
+              contract.authority,
+              'fixture.contract.authority',
+            ),
+          }
+        : {}),
       capabilities: expectStringArray(
         contract.capabilities,
         'fixture.contract.capabilities',
@@ -762,10 +831,14 @@ function parseContractFixtureObject(value: unknown): CaveContractFixture {
           discovery.fileName,
           'fixture.contract.discovery.fileName',
         ),
-        hpkeBoundVersion: expectInteger(
-          discovery.hpkeBoundVersion,
-          'fixture.contract.discovery.hpkeBoundVersion',
-        ),
+        ...(hpkeExtension
+          ? {
+              hpkeBoundVersion: expectInteger(
+                discovery.hpkeBoundVersion,
+                'fixture.contract.discovery.hpkeBoundVersion',
+              ),
+            }
+          : {}),
         mode: expectString(discovery.mode, 'fixture.contract.discovery.mode'),
         version: expectInteger(discovery.version, 'fixture.contract.discovery.version'),
       },
@@ -829,10 +902,11 @@ function parseContractFixtureObject(value: unknown): CaveContractFixture {
         'fixture.contract.minimumClientVersion',
       ),
       operations: parseObjectArray(
-        contract.operations,
+        operations,
         'fixture.contract.operations',
-        parseOperation,
-      ),
+        (operation, path) =>
+          parseOperation(operation, path, hpkeExtension),
+      ) as CaveContractFixture['contract']['operations'],
       pairingRequired: expectBoolean(
         contract.pairingRequired,
         'fixture.contract.pairingRequired',
@@ -875,10 +949,14 @@ function parseContractFixtureObject(value: unknown): CaveContractFixture {
           'fixture.examples.discoveryRecord.version',
         ),
       },
-      discoveryRecordV2: parseDiscoveryRecordV2(
-        examples.discoveryRecordV2,
-        'fixture.examples.discoveryRecordV2',
-      ),
+      ...(hpkeExtension
+        ? {
+            discoveryRecordV2: parseDiscoveryRecordV2(
+              examples.discoveryRecordV2,
+              'fixture.examples.discoveryRecordV2',
+            ),
+          }
+        : {}),
       errorEnvelope: parseErrorEnvelope(
         examples.errorEnvelope,
         'fixture.examples.errorEnvelope',
@@ -911,7 +989,7 @@ function parseContractFixtureObject(value: unknown): CaveContractFixture {
         'fixture.examples.successEnvelope',
       ),
     },
-  };
+  } as CaveContractFixture;
 }
 
 export function digestCaveContractFixture(value: string | Uint8Array): string {

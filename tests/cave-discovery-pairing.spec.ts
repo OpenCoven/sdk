@@ -254,6 +254,27 @@ function discoveryRecord(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function discoveryRecordV2() {
+  return {
+    version: 2,
+    endpoint: DEFAULT_DISCOVERY_ENDPOINT,
+    pid: DISCOVERY_PID,
+    nonce: 'gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8',
+    startedAt: '2026-08-25T15:42:58.109Z',
+    authority: {
+      mechanism: 'hpke-bound-v1',
+      mode: 'advertise',
+      keyId: 'Tq04GMSX5BPPPijzO9pHfQ1lAnna_RQKzL1ncDGl-4g',
+      publicKey: 'sfG4QN56MkGwJ0jPmwW3TcjF6EUSmHOIF712qo6-jCs',
+      suite: {
+        kemId: 32,
+        kdfId: 1,
+        aeadId: 2,
+      },
+    },
+  };
+}
+
 function createScratchRoot(label: string): string {
   const root = resolve(
     process.cwd(),
@@ -638,6 +659,113 @@ describe('discoverCaveEndpoint', () => {
         inode: stats.ino,
       },
     });
+  });
+
+  test('keeps discovery v2 key parsing inside the active timeout', async () => {
+    const root = createScratchRoot('discover-v2-digest-timeout');
+    await writeDiscoveryRecord(root, discoveryRecordV2());
+    let resolveDigest: ((value: ArrayBuffer) => void) | undefined;
+    let markDigestStarted: (() => void) | undefined;
+    const digestStarted = new Promise<void>((resolveStarted) => {
+      markDigestStarted = resolveStarted;
+    });
+    const digestResult = new Promise<ArrayBuffer>((resolveResult) => {
+      resolveDigest = resolveResult;
+    });
+    vi.spyOn(crypto.subtle, 'digest').mockImplementation(async () => {
+      markDigestStarted?.();
+      return await digestResult;
+    });
+    const operation = discoverCaveEndpoint({
+      root,
+      timeoutMs: 50,
+      dependencies: discoveryDependencies(),
+    });
+    await digestStarted;
+
+    let outcome:
+      | { error: unknown }
+      | { late: true }
+      | { value: unknown };
+    try {
+      outcome = await Promise.race([
+        operation.then(
+          (value) => ({ value }),
+          (error: unknown) => ({ error }),
+        ),
+        new Promise<{ late: true }>((resolveLate) => {
+          setTimeout(() => resolveLate({ late: true }), 150);
+        }),
+      ]);
+      expect(outcome).toMatchObject({
+        error: { code: 'timeout' },
+      });
+    } finally {
+      resolveDigest?.(
+        Uint8Array.from(
+          Buffer.from(
+            discoveryRecordV2().authority.keyId,
+            'base64url',
+          ),
+        ).buffer,
+      );
+    }
+    await expect(operation).rejects.toMatchObject({ code: 'timeout' });
+  });
+
+  test('keeps discovery v2 key parsing inside the active abort', async () => {
+    const root = createScratchRoot('discover-v2-digest-abort');
+    await writeDiscoveryRecord(root, discoveryRecordV2());
+    const controller = new AbortController();
+    let resolveDigest: ((value: ArrayBuffer) => void) | undefined;
+    let markDigestStarted: (() => void) | undefined;
+    const digestStarted = new Promise<void>((resolveStarted) => {
+      markDigestStarted = resolveStarted;
+    });
+    const digestResult = new Promise<ArrayBuffer>((resolveResult) => {
+      resolveDigest = resolveResult;
+    });
+    vi.spyOn(crypto.subtle, 'digest').mockImplementation(async () => {
+      markDigestStarted?.();
+      return await digestResult;
+    });
+    const operation = discoverCaveEndpoint({
+      root,
+      signal: controller.signal,
+      timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
+      dependencies: discoveryDependencies(),
+    });
+    await digestStarted;
+    controller.abort(new Error('stop'));
+
+    let outcome:
+      | { error: unknown }
+      | { late: true }
+      | { value: unknown };
+    try {
+      outcome = await Promise.race([
+        operation.then(
+          (value) => ({ value }),
+          (error: unknown) => ({ error }),
+        ),
+        new Promise<{ late: true }>((resolveLate) => {
+          setTimeout(() => resolveLate({ late: true }), 100);
+        }),
+      ]);
+      expect(outcome).toMatchObject({
+        error: { code: 'aborted' },
+      });
+    } finally {
+      resolveDigest?.(
+        Uint8Array.from(
+          Buffer.from(
+            discoveryRecordV2().authority.keyId,
+            'base64url',
+          ),
+        ).buffer,
+      );
+    }
+    await expect(operation).rejects.toMatchObject({ code: 'aborted' });
   });
 
   test('accepts the producer-supported localhost endpoint with an explicit port', async () => {

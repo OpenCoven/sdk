@@ -40,6 +40,7 @@ import {
 } from './credential-binding-node.js';
 import {
   CAVE_HPKE_RESPONSE_MEDIA_TYPE,
+  CaveHpkeResponseBodyLimitError,
   createCaveHpkeBoundRequest,
   type CaveHpkeAuthorization,
   type CaveHpkeProtectedOperation,
@@ -1157,11 +1158,7 @@ async function requestJson(
           outerPayload,
         );
         if (guidance === 'unavailable') {
-          const error = authorityUnavailable();
-          if (options.onPreDispatchFailure !== undefined) {
-            throw options.onPreDispatchFailure(error);
-          }
-          throw error;
+          throw authorityUnavailable();
         }
         if (
           !retried &&
@@ -1172,20 +1169,28 @@ async function requestJson(
           retried = true;
           continue;
         }
-        const error = hpkeTransportFailure();
-        if (
-          guidance !== undefined &&
-          options.onPreDispatchFailure !== undefined
-        ) {
-          throw options.onPreDispatchFailure(error);
-        }
-        throw error;
+        throw hpkeTransportFailure();
       }
 
       let opened: Awaited<ReturnType<typeof sealed.open>>;
       try {
-        opened = await sealed.open(response);
-      } catch {
+        opened = await sealed.open(response, {
+          ...(options.context === undefined
+            ? {}
+            : { context: options.context }),
+          maxResponseBytes: options.maxResponseBytes,
+        });
+      } catch (error) {
+        if (isOperationTimeoutError(error) || isOperationAbortedError(error)) {
+          throw error;
+        }
+        if (error instanceof CaveHpkeResponseBodyLimitError) {
+          throw transportError(
+            'body_limit',
+            'Cave response exceeded its size limit.',
+            { statusCode: error.statusCode },
+          );
+        }
         throw hpkeTransportFailure();
       }
       ensureActive(options.context);
@@ -1200,15 +1205,34 @@ async function requestJson(
         const retryAfter = retryAfterMilliseconds(
           opened.headers.retryAfter,
         );
+        const replayCapacity =
+          opened.status === 503 &&
+          reason === 'authority_replay_capacity';
         if (
           !retried &&
-          opened.status === 503 &&
-          reason === 'authority_replay_capacity' &&
+          replayCapacity &&
           retryAfter !== undefined
         ) {
           retried = true;
-          await waitForHpkeRetry(retryAfter, options.context);
+          try {
+            await waitForHpkeRetry(retryAfter, options.context);
+          } catch (waitError) {
+            if (
+              options.pairingSecretDispatch === 'single_use' &&
+              options.onPreDispatchFailure !== undefined
+            ) {
+              throw options.onPreDispatchFailure(waitError);
+            }
+            throw waitError;
+          }
           continue;
+        }
+        if (
+          replayCapacity &&
+          options.pairingSecretDispatch === 'single_use' &&
+          options.onPreDispatchFailure !== undefined
+        ) {
+          throw options.onPreDispatchFailure(error);
         }
         throw error;
       }

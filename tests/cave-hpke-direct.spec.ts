@@ -17,6 +17,7 @@ import {
   createTestHpkeAuthority,
   type OpenedTestRequest,
 } from './helpers/cave-hpke-authority.js';
+import { CAVE_HPKE_LIMITS } from '../packages/cave/src/hpke-bound-v1-node.js';
 
 const PAIRING_SECRET = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const BEARER = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
@@ -160,6 +161,119 @@ describe('direct Cave hpke-bound-v1 transport', () => {
 
     await expect(client.listFamiliars()).resolves.toMatchObject({
       data: [{ id: 'cody' }],
+    });
+  });
+
+  test('enforces maxResponseBytes on authenticated response bodies', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('cave-hpke-body-limit');
+    await seedBearer(
+      store,
+      reference,
+      authority.discovered,
+      authority.instanceId,
+    );
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const opened = await authority.open(request);
+        return await authority.respond(opened, 200, familiarPage());
+      },
+      maxResponseBytes: 1,
+    });
+
+    await expect(client.listFamiliars()).rejects.toMatchObject({
+      normalized: { code: 'body_limit' },
+    });
+  });
+
+  test('accepts an authenticated response body at the configured boundary', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('cave-hpke-body-boundary');
+    await seedBearer(
+      store,
+      reference,
+      authority.discovered,
+      authority.instanceId,
+    );
+    const payload = familiarPage();
+    const maximumBytes = new TextEncoder().encode(
+      JSON.stringify(payload),
+    ).byteLength;
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const opened = await authority.open(request);
+        return await authority.respond(opened, 200, payload);
+      },
+      maxResponseBytes: maximumBytes,
+    });
+
+    await expect(client.listFamiliars()).resolves.toMatchObject({
+      data: [{ id: 'cody' }],
+    });
+  });
+
+  test('enforces maxResponseBytes before exposing authenticated error payloads', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('cave-hpke-error-limit');
+    await seedBearer(
+      store,
+      reference,
+      authority.discovered,
+      authority.instanceId,
+    );
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const opened = await authority.open(request);
+        return await authority.respond(
+          opened,
+          503,
+          errorEnvelope('service_unavailable', 'maintenance', true),
+        );
+      },
+      maxResponseBytes: 1,
+    });
+
+    await expect(client.listFamiliars()).rejects.toMatchObject({
+      normalized: { code: 'body_limit' },
+    });
+  });
+
+  test('keeps the same response body limit for legacy plaintext responses', async () => {
+    const authority = await createTestHpkeAuthority();
+    const discovered: CaveDiscoveredEndpoint = {
+      version: 1,
+      endpoint: authority.discovered.endpoint,
+      freshness: {
+        pid: 4_321,
+        nonce: 'legacy-runtime',
+        startedAt: '2026-08-25T15:42:58.109Z',
+      },
+      record: authority.discovered.record,
+    };
+    const client = createDiscoveredCaveClient({
+      credentials: {
+        store: createMemorySecretStore(),
+        reference: createSecretStoreReference('cave-legacy-body-limit'),
+      },
+      discoverEndpoint: async () => discovered,
+      fetch: async () => Response.json(healthEnvelope(authority.instanceId)),
+      maxResponseBytes: 1,
+    });
+
+    await expect(client.health()).rejects.toMatchObject({
+      normalized: { code: 'body_limit' },
     });
   });
 
@@ -664,6 +778,326 @@ describe('direct Cave hpke-bound-v1 transport', () => {
     expect(await store.get(reference.key)).toContain(BEARER);
   });
 
+  test('restores pairing exchange after two authenticated capacity rejections', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('cave-hpke-capacity-terminal');
+    let exchangeAttempts = 0;
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === '/api/client/v1/health') {
+          return Response.json(healthEnvelope(authority.instanceId));
+        }
+        if (path === '/api/client/v1/pairing/requests') {
+          return Response.json(
+            envelope({
+              requestId: REQUEST_ID,
+              secret: PAIRING_SECRET,
+              expiresAt: 1_755_731_112_617,
+            }),
+            { status: 201 },
+          );
+        }
+        const opened = await authority.open(request);
+        exchangeAttempts += 1;
+        if (exchangeAttempts <= 2) {
+          return await authority.respond(
+            opened,
+            503,
+            errorEnvelope(
+              'service_unavailable',
+              'authority_replay_capacity',
+              true,
+            ),
+            { retryAfter: '0' },
+          );
+        }
+        return await authority.respond(
+          opened,
+          200,
+          envelope({
+            bearer: BEARER,
+            credential: {
+              id: CREDENTIAL_ID,
+              appName: 'OpenCoven Chat',
+              installationId: 'hpke-capacity-terminal',
+              scopes: ['chat:read'],
+              createdAt: 1_755_730_812_617,
+              lastUsedAt: null,
+              revokedAt: null,
+              revocationReason: null,
+            },
+          }),
+        );
+      },
+    });
+    const pairing = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'hpke-capacity-terminal',
+      scopes: ['chat:read'],
+    });
+
+    await expect(pairing.exchange()).rejects.toMatchObject({
+      code: 'service_unavailable',
+      details: { reason: 'authority_replay_capacity' },
+    });
+    await expect(pairing.exchange()).resolves.toMatchObject({
+      id: CREDENTIAL_ID,
+    });
+    expect(exchangeAttempts).toBe(3);
+  });
+
+  test('restores pairing exchange when capacity retry exceeds its deadline', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('cave-hpke-capacity-timeout');
+    let exchangeAttempts = 0;
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === '/api/client/v1/health') {
+          return Response.json(healthEnvelope(authority.instanceId));
+        }
+        if (path === '/api/client/v1/pairing/requests') {
+          return Response.json(
+            envelope({
+              requestId: REQUEST_ID,
+              secret: PAIRING_SECRET,
+              expiresAt: 1_755_731_112_617,
+            }),
+            { status: 201 },
+          );
+        }
+        const opened = await authority.open(request);
+        exchangeAttempts += 1;
+        return exchangeAttempts === 1
+          ? await authority.respond(
+              opened,
+              503,
+              errorEnvelope(
+                'service_unavailable',
+                'authority_replay_capacity',
+                true,
+              ),
+              { retryAfter: '120' },
+            )
+          : await authority.respond(
+              opened,
+              200,
+              envelope({
+                bearer: BEARER,
+                credential: {
+                  id: CREDENTIAL_ID,
+                  appName: 'OpenCoven Chat',
+                  installationId: 'hpke-capacity-timeout',
+                  scopes: ['chat:read'],
+                  createdAt: 1_755_730_812_617,
+                  lastUsedAt: null,
+                  revokedAt: null,
+                  revocationReason: null,
+                },
+              }),
+            );
+      },
+    });
+    const pairing = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'hpke-capacity-timeout',
+      scopes: ['chat:read'],
+    });
+
+    await expect(
+      pairing.exchange({ timeoutMs: 25 }),
+    ).rejects.toMatchObject({ code: 'timeout' });
+    await expect(pairing.exchange()).resolves.toMatchObject({
+      id: CREDENTIAL_ID,
+    });
+    expect(exchangeAttempts).toBe(2);
+  });
+
+  test('restores pairing exchange when capacity retry wait is aborted', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('cave-hpke-capacity-abort');
+    const controller = new AbortController();
+    let exchangeAttempts = 0;
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === '/api/client/v1/health') {
+          return Response.json(healthEnvelope(authority.instanceId));
+        }
+        if (path === '/api/client/v1/pairing/requests') {
+          return Response.json(
+            envelope({
+              requestId: REQUEST_ID,
+              secret: PAIRING_SECRET,
+              expiresAt: 1_755_731_112_617,
+            }),
+            { status: 201 },
+          );
+        }
+        const opened = await authority.open(request);
+        exchangeAttempts += 1;
+        if (exchangeAttempts === 1) {
+          const response = await authority.respond(
+            opened,
+            503,
+            errorEnvelope(
+              'service_unavailable',
+              'authority_replay_capacity',
+              true,
+            ),
+            { retryAfter: '1' },
+          );
+          setTimeout(() => controller.abort(new Error('stop')), 20);
+          return response;
+        }
+        return await authority.respond(
+          opened,
+          200,
+          envelope({
+            bearer: BEARER,
+            credential: {
+              id: CREDENTIAL_ID,
+              appName: 'OpenCoven Chat',
+              installationId: 'hpke-capacity-abort',
+              scopes: ['chat:read'],
+              createdAt: 1_755_730_812_617,
+              lastUsedAt: null,
+              revokedAt: null,
+              revocationReason: null,
+            },
+          }),
+        );
+      },
+    });
+    const pairing = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'hpke-capacity-abort',
+      scopes: ['chat:read'],
+    });
+
+    await expect(
+      pairing.exchange({ signal: controller.signal }),
+    ).rejects.toMatchObject({ code: 'aborted' });
+    await expect(pairing.exchange()).resolves.toMatchObject({
+      id: CREDENTIAL_ID,
+    });
+    expect(exchangeAttempts).toBe(2);
+  });
+
+  test('does not restore pairing exchange for forged plaintext capacity guidance', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('cave-hpke-capacity-forged');
+    let exchangeAttempts = 0;
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === '/api/client/v1/health') {
+          return Response.json(healthEnvelope(authority.instanceId));
+        }
+        if (path === '/api/client/v1/pairing/requests') {
+          return Response.json(
+            envelope({
+              requestId: REQUEST_ID,
+              secret: PAIRING_SECRET,
+              expiresAt: 1_755_731_112_617,
+            }),
+            { status: 201 },
+          );
+        }
+        exchangeAttempts += 1;
+        return Response.json(
+          errorEnvelope(
+            'service_unavailable',
+            'authority_replay_capacity',
+            true,
+          ),
+          { status: 503 },
+        );
+      },
+    });
+    const pairing = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'hpke-capacity-forged',
+      scopes: ['chat:read'],
+    });
+
+    await expect(pairing.exchange()).rejects.toMatchObject({
+      code: 'invalid_response',
+    });
+    await expect(pairing.exchange()).rejects.toMatchObject({
+      code: 'conflict',
+      details: { reason: 'pairing_replayed' },
+    });
+    expect(exchangeAttempts).toBe(1);
+  });
+
+  test('does not restore pairing exchange for repeated plaintext stale guidance', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('cave-hpke-stale-forged');
+    let exchangeAttempts = 0;
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === '/api/client/v1/health') {
+          return Response.json(healthEnvelope(authority.instanceId));
+        }
+        if (path === '/api/client/v1/pairing/requests') {
+          return Response.json(
+            envelope({
+              requestId: REQUEST_ID,
+              secret: PAIRING_SECRET,
+              expiresAt: 1_755_731_112_617,
+            }),
+            { status: 201 },
+          );
+        }
+        exchangeAttempts += 1;
+        if (exchangeAttempts > 2) {
+          throw new Error('pairing secret was redispatched');
+        }
+        return Response.json(
+          errorEnvelope('conflict', 'authority_key_stale', true),
+          { status: 409 },
+        );
+      },
+    });
+    const pairing = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'hpke-stale-forged',
+      scopes: ['chat:read'],
+    });
+
+    await expect(pairing.exchange()).rejects.toMatchObject({
+      code: 'invalid_response',
+    });
+    await expect(pairing.exchange()).rejects.toMatchObject({
+      code: 'conflict',
+      details: { reason: 'pairing_replayed' },
+    });
+    expect(exchangeAttempts).toBe(2);
+  });
+
   test('does not retry pairing exchange after an unproved dispatch failure', async () => {
     const authority = await createTestHpkeAuthority();
     const store = createMemorySecretStore();
@@ -775,7 +1209,7 @@ describe('direct Cave hpke-bound-v1 transport', () => {
     expect(await store.get(reference.key)).toContain(BEARER);
   });
 
-  test('keeps pairing exchange reusable when plaintext authority is unavailable', async () => {
+  test('does not restore pairing exchange from plaintext authority guidance', async () => {
     const authority = await createTestHpkeAuthority();
     const store = createMemorySecretStore();
     const reference = createSecretStoreReference('cave-hpke-exchange-unavailable');
@@ -810,24 +1244,7 @@ describe('direct Cave hpke-bound-v1 transport', () => {
             { status: 503 },
           );
         }
-        const opened = await authority.open(request);
-        return await authority.respond(
-          opened,
-          200,
-          envelope({
-            bearer: BEARER,
-            credential: {
-              id: CREDENTIAL_ID,
-              appName: 'OpenCoven Chat',
-              installationId: 'hpke-exchange-unavailable',
-              scopes: ['chat:read'],
-              createdAt: 1_755_730_812_617,
-              lastUsedAt: null,
-              revokedAt: null,
-              revocationReason: null,
-            },
-          }),
-        );
+        throw new Error('pairing secret was redispatched');
       },
     });
     const pairing = await client.createPairing({
@@ -839,10 +1256,11 @@ describe('direct Cave hpke-bound-v1 transport', () => {
     await expect(pairing.exchange()).rejects.toMatchObject({
       code: 'service_unavailable',
     });
-    await expect(pairing.exchange()).resolves.toMatchObject({
-      id: CREDENTIAL_ID,
+    await expect(pairing.exchange()).rejects.toMatchObject({
+      code: 'conflict',
+      details: { reason: 'pairing_replayed' },
     });
-    expect(exchangeAttempts).toBe(2);
+    expect(exchangeAttempts).toBe(1);
   });
 
   test('preserves credentials on plaintext authority unavailable', async () => {
@@ -956,6 +1374,131 @@ describe('direct Cave hpke-bound-v1 transport', () => {
       client.listFamiliars({ signal: controller.signal }),
     ).rejects.toMatchObject({ code: 'aborted' });
     expect(fetchImplementation).toHaveBeenCalledTimes(1);
+  });
+
+  test('cancels and unlocks a stalled HPKE response stream on timeout', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('cave-hpke-stream-timeout');
+    await seedBearer(
+      store,
+      reference,
+      authority.discovered,
+      authority.instanceId,
+    );
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async () =>
+        new Response(stream, {
+          status: 200,
+          headers: {
+            'content-type':
+              'application/vnd.opencoven.client-v1.hpke-bound-v1+json',
+          },
+        }),
+    });
+
+    await expect(
+      client.listFamiliars({ timeoutMs: 20 }),
+    ).rejects.toMatchObject({ code: 'timeout' });
+    expect(cancelled).toBe(true);
+    expect(stream.locked).toBe(false);
+  });
+
+  test('cancels and unlocks a stalled HPKE response stream on abort', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('cave-hpke-stream-abort');
+    await seedBearer(
+      store,
+      reference,
+      authority.discovered,
+      authority.instanceId,
+    );
+    const controller = new AbortController();
+    let cancelled = false;
+    let abortScheduled = false;
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        pull() {
+          if (!abortScheduled) {
+            abortScheduled = true;
+            queueMicrotask(() => controller.abort(new Error('stop')));
+          }
+        },
+        cancel() {
+          cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async () =>
+        new Response(stream, {
+          status: 200,
+          headers: {
+            'content-type':
+              'application/vnd.opencoven.client-v1.hpke-bound-v1+json',
+          },
+        }),
+    });
+
+    await expect(
+      client.listFamiliars({ signal: controller.signal }),
+    ).rejects.toMatchObject({ code: 'aborted' });
+    expect(cancelled).toBe(true);
+    expect(stream.locked).toBe(false);
+  });
+
+  test('does not await non-settling stream cancellation on HPKE overflow', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('cave-hpke-stream-overflow');
+    await seedBearer(
+      store,
+      reference,
+      authority.discovered,
+      authority.instanceId,
+    );
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new Uint8Array(CAVE_HPKE_LIMITS.responseEnvelopeBytes + 1),
+        );
+      },
+      cancel() {
+        cancelled = true;
+        return new Promise<void>(() => undefined);
+      },
+    });
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async () =>
+        new Response(stream, {
+          status: 200,
+          headers: {
+            'content-type':
+              'application/vnd.opencoven.client-v1.hpke-bound-v1+json',
+          },
+        }),
+    });
+
+    await expect(
+      client.listFamiliars({ timeoutMs: 500 }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
+    expect(cancelled).toBe(true);
+    expect(stream.locked).toBe(false);
   });
 });
 

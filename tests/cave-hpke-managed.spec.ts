@@ -90,7 +90,99 @@ function authenticated<T>(value: T): {
   };
 }
 
+function credentialStatusClient(options: {
+  discoverySource: CaveManagedDiscoverySource;
+  operation?: { timeoutMs: number };
+  status: ReturnType<typeof vi.fn>;
+}) {
+  return createBrowserManagedClient({
+    transport: {
+      health: async () => envelope({
+        instanceId: 'managed-timeout',
+        pairingRequired: true,
+        releaseVersion: '0.3.10',
+      }),
+      managedPairingCreate: async () => ({
+        requestId: REQUEST_ID,
+        expiresAt: 1_755_731_112_617,
+      }),
+      managedPairingPoll: async () => ({
+        id: REQUEST_ID,
+        status: 'approved',
+        expiresAt: 1_755_731_112_617,
+      }),
+      managedPairingExchange: async () => ({ credential: {} }),
+      managedCredentialStatus: async () => ({ status: 'missing' }),
+      managedForgetCredential: async () => ({ status: 'missing' }),
+      managedHpkeCredentialStatus: options.status,
+    },
+    discovery: { source: options.discoverySource },
+    ...(options.operation === undefined
+      ? {}
+      : { operation: options.operation }),
+  } as never);
+}
+
 describe('managed hpke-bound-v1 handoff', () => {
+  test.each([
+    ['default', { operation: { timeoutMs: 1_000 }, call: {} }],
+    ['per-call', { call: { timeoutMs: 1_000 } }],
+  ])('lets %s managed deadlines reach discovery and transport', async (
+    _label,
+    configuration,
+  ) => {
+    const discoverySource = source();
+    const read = vi.spyOn(discoverySource, 'read');
+    const status = vi.fn(async () =>
+      authenticated({ status: 'missing' }),
+    );
+    const client = credentialStatusClient({
+      discoverySource,
+      status,
+      ...('operation' in configuration
+        ? { operation: configuration.operation }
+        : {}),
+    });
+
+    await expect(
+      client.credentialStatus(configuration.call),
+    ).resolves.toEqual({ status: 'missing' });
+    expect(read).toHaveBeenCalledOnce();
+    expect(status).toHaveBeenCalledOnce();
+  });
+
+  test('times out blocked managed discovery without invoking transport', async () => {
+    const read = vi.fn(async () => await new Promise<never>(() => undefined));
+    const status = vi.fn();
+    const client = credentialStatusClient({
+      discoverySource: { read },
+      status,
+    });
+
+    await expect(
+      client.credentialStatus({ timeoutMs: 10 }),
+    ).rejects.toMatchObject({ code: 'timeout' });
+    expect(read).toHaveBeenCalledOnce();
+    expect(status).not.toHaveBeenCalled();
+  });
+
+  test('rejects an already-aborted managed call before discovery or transport', async () => {
+    const controller = new AbortController();
+    controller.abort(new Error('stop'));
+    const read = vi.fn();
+    const status = vi.fn();
+    const client = credentialStatusClient({
+      discoverySource: { read },
+      status,
+    });
+
+    await expect(
+      client.credentialStatus({ signal: controller.signal }),
+    ).rejects.toMatchObject({ code: 'aborted' });
+    expect(read).not.toHaveBeenCalled();
+    expect(status).not.toHaveBeenCalled();
+  });
+
   test('rejects accessor-backed staged native configuration without invocation', () => {
     let reads = 0;
     const options = Object.defineProperty(
