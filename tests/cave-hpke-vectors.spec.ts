@@ -240,4 +240,47 @@ describe('Cave hpke-bound-v1 deterministic vectors', () => {
       ),
     ).rejects.toThrowError('Cave HPKE transport authentication failed.');
   });
+
+  test('rejects noncanonical encoded pathname segments', () => {
+    for (const pathname of [
+      '/api/client/v1/conversations/conversation%2fone',
+      '/api/client/v1/conversations/conversation%3fone',
+      '/api/client/v1/conversations/%e4%bc%9a%e8%a9%b1',
+      '/api/client/v1/conversations/conversation%2Done',
+      '/api/client/v1/conversations/%21',
+      '/api/client/v1/conversations/$value',
+      '/api/client/v1/conversations/conversation%252Fone',
+      '/api/client/v1/conversations/conversation%255Cone',
+      '/api/client/v1/conversations/conversation%5Cone',
+      '/api/client/v1/conversations/conversation%',
+      '/api/client/v1/conversations/conversation%GG',
+      '/api/client/v1/conversations/%E9',
+    ]) {
+      expect(() =>
+        canonicalCaveHpkeRoute(
+          new URL(`http://127.0.0.1:3020${pathname}`),
+        ),
+      ).toThrowError('Cave HPKE transport authentication failed.');
+    }
+  });
+
+  test('rejects dot, empty, and backslash pathname aliases', () => {
+    for (const pathname of [
+      'api/client/v1/projects',
+      '/api/client/v1/',
+      '/api//client/v1/projects',
+      '/api/client/v1/conversations/.',
+      '/api/client/v1/conversations/..',
+      '/api/client/v1/conversations/%2E',
+      '/api/client/v1/conversations/%2e%2E',
+      '/api/client/v1/conversations/conversation\\one',
+    ]) {
+      expect(() =>
+        canonicalCaveHpkeRoute({
+          pathname,
+          searchParams: new URLSearchParams(),
+        } as URL),
+      ).toThrowError('Cave HPKE transport authentication failed.');
+    }
+  });
 });

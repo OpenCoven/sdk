@@ -1,16 +1,9 @@
 import { createHash } from 'node:crypto';
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { afterEach, describe, expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import {
   parseCaveContractAuthorityArguments,
@@ -18,20 +11,33 @@ import {
 } from '../scripts/verify-cave-contract-authority.mjs';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const scratchRoots: string[] = [];
+const CAVE_MERGE = '1d16736e637de384ebf7423c05862d66860478c4';
+const CAVE_FEATURE_HEAD = 'ae131bfd370b832389204ee2b8c7ae8867581215';
 
 function sha256(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-afterEach(() => {
-  while (scratchRoots.length > 0) {
-    const scratchRoot = scratchRoots.pop();
-    if (scratchRoot !== undefined) {
-      rmSync(scratchRoot, { force: true, recursive: true });
-    }
-  }
-});
+function authorityFiles(): ReadonlyMap<string, Buffer> {
+  const fixture = readFileSync(
+    resolve(root, 'packages/cave/fixtures/contract-fixture.json'),
+  );
+  const vector = readFileSync(
+    resolve(root, 'packages/cave/fixtures/hpke-bound-v1-vectors.json'),
+  );
+  return new Map([
+    ['src/lib/server/client-v1/contract-fixture.json', fixture],
+    [
+      'src/lib/server/client-v1/contract-fixture.sha256',
+      Buffer.from(`${sha256(fixture)}\n`),
+    ],
+    ['src/lib/server/client-v1/hpke-bound-v1-vectors.json', vector],
+    [
+      'src/lib/server/client-v1/hpke-bound-v1-vectors.sha256',
+      Buffer.from(`${sha256(vector)}\n`),
+    ],
+  ]);
+}
 
 describe('Cave contract provenance', () => {
   test('accepts the pnpm argument separator for explicit parity checks', () => {
@@ -39,7 +45,7 @@ describe('Cave contract provenance', () => {
       parseCaveContractAuthorityArguments(['--', '--cave-root', '/tmp/coven-cave']),
     ).toEqual({
       caveRoot: '/tmp/coven-cave',
-      allowEquivalentHead: false,
+      sourceCommit: undefined,
     });
   });
 
@@ -53,7 +59,7 @@ describe('Cave contract provenance', () => {
 
     expect(provenance).toEqual({
       repository: 'https://github.com/OpenCoven/coven-cave',
-      commit: '2a0ff9237e94e652e477b22f60fd6d721b9e6451',
+      commit: CAVE_MERGE,
       fixturePath: 'src/lib/server/client-v1/contract-fixture.json',
       digestPath: 'src/lib/server/client-v1/contract-fixture.sha256',
       sha256: '1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d',
@@ -63,108 +69,78 @@ describe('Cave contract provenance', () => {
     });
   });
 
-  test('proves an explicit authority checkout has the reviewed fixture bytes', () => {
-    const caveRoot = mkdtempSync(resolve(tmpdir(), 'opencoven-cave-authority-'));
-    scratchRoots.push(caveRoot);
-    const fixture = readFileSync(
-      resolve(root, 'packages/cave/fixtures/contract-fixture.json'),
-    );
-    const fixturePath = resolve(
-      caveRoot,
-      'src/lib/server/client-v1/contract-fixture.json',
-    );
-    const digestPath = resolve(
-      caveRoot,
-      'src/lib/server/client-v1/contract-fixture.sha256',
-    );
-    const vector = readFileSync(
-      resolve(root, 'packages/cave/fixtures/hpke-bound-v1-vectors.json'),
-    );
-    const vectorPath = resolve(
-      caveRoot,
-      'src/lib/server/client-v1/hpke-bound-v1-vectors.json',
-    );
-    const vectorDigestPath = resolve(
-      caveRoot,
-      'src/lib/server/client-v1/hpke-bound-v1-vectors.sha256',
-    );
-    mkdirSync(dirname(fixturePath), { recursive: true });
-    writeFileSync(fixturePath, fixture);
-    writeFileSync(digestPath, `${sha256(fixture)}\n`);
-    writeFileSync(vectorPath, vector);
-    writeFileSync(vectorDigestPath, `${sha256(vector)}\n`);
+  test('proves an exact authority commit has the reviewed fixture bytes', () => {
+    const files = authorityFiles();
 
     expect(
       verifyCaveContractAuthority({
-        caveRoot,
-        expectedCommit: '2a0ff9237e94e652e477b22f60fd6d721b9e6451',
-        resolveCommit: () => '2a0ff9237e94e652e477b22f60fd6d721b9e6451',
+        caveRoot: '/not-read',
+        expectedCommit: CAVE_MERGE,
+        resolveCommit: () => CAVE_MERGE,
+        readCommitFile: (_caveRoot, commit, path) => {
+          expect(commit).toBe(CAVE_MERGE);
+          const bytes = files.get(path);
+          if (bytes === undefined) {
+            throw new Error(`Unexpected authority path ${path}.`);
+          }
+          return bytes;
+        },
       }),
     ).toEqual({
-      commit: '2a0ff9237e94e652e477b22f60fd6d721b9e6451',
-      checkoutCommit: '2a0ff9237e94e652e477b22f60fd6d721b9e6451',
+      commit: CAVE_MERGE,
+      checkoutCommit: CAVE_MERGE,
       sha256: '1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d',
       vectorSha256: 'f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797',
     });
   });
 
-  test('accepts an explicitly allowed content-equivalent feature head', () => {
-    const caveRoot = mkdtempSync(resolve(tmpdir(), 'opencoven-cave-equivalent-'));
-    scratchRoots.push(caveRoot);
-    const fixture = readFileSync(
-      resolve(root, 'packages/cave/fixtures/contract-fixture.json'),
-    );
-    const vector = readFileSync(
-      resolve(root, 'packages/cave/fixtures/hpke-bound-v1-vectors.json'),
-    );
-    for (const [name, bytes] of [
-      ['contract-fixture.json', fixture],
-      ['hpke-bound-v1-vectors.json', vector],
-    ] as const) {
-      const path = resolve(caveRoot, 'src/lib/server/client-v1', name);
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, bytes);
-      writeFileSync(
-        path.replace(/\.json$/u, '.sha256'),
-        `${sha256(bytes)}\n`,
-      );
-    }
+  test('reads the pinned merge tree from a repository at a different head', () => {
+    const files = authorityFiles();
 
     expect(
       verifyCaveContractAuthority({
-        caveRoot,
-        allowEquivalentHead: true,
-        resolveCommit: () => '0453bfa8d4cae1b7bca01a43ed08349fcdd39de9',
-        isEquivalentCommit: () => true,
+        caveRoot: '/not-read',
+        sourceCommit: CAVE_MERGE,
+        resolveCommit: () => CAVE_FEATURE_HEAD,
+        readCommitFile: (_caveRoot, commit, path) => {
+          expect(commit).toBe(CAVE_MERGE);
+          const bytes = files.get(path);
+          if (bytes === undefined) {
+            throw new Error(`Unexpected authority path ${path}.`);
+          }
+          return bytes;
+        },
       }),
     ).toEqual({
-      commit: '2a0ff9237e94e652e477b22f60fd6d721b9e6451',
-      checkoutCommit: '0453bfa8d4cae1b7bca01a43ed08349fcdd39de9',
+      commit: CAVE_MERGE,
+      checkoutCommit: CAVE_FEATURE_HEAD,
       sha256: '1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d',
       vectorSha256: 'f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797',
     });
   });
 
-  test('parses the explicit equivalent-head CLI gate', () => {
+  test('parses an explicit exact authority commit', () => {
     expect(
       parseCaveContractAuthorityArguments([
         '--',
         '--cave-root',
         '/tmp/coven-cave',
-        '--allow-equivalent-head',
+        '--commit',
+        CAVE_MERGE,
       ]),
     ).toEqual({
       caveRoot: '/tmp/coven-cave',
-      allowEquivalentHead: true,
+      sourceCommit: CAVE_MERGE,
     });
   });
 
-  test('rejects an authority checkout at any other commit', () => {
+  test('rejects an unpinned authority commit', () => {
     expect(() =>
       verifyCaveContractAuthority({
         caveRoot: '/tmp/not-read',
-        resolveCommit: () => '0000000000000000000000000000000000000000',
+        sourceCommit: '0000000000000000000000000000000000000000',
+        resolveCommit: () => CAVE_FEATURE_HEAD,
       }),
-    ).toThrowError(/expected 2a0ff9237e94e652e477b22f60fd6d721b9e6451/u);
+    ).toThrowError(new RegExp(`expected ${CAVE_MERGE}`, 'u'));
   });
 });

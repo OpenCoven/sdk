@@ -62,7 +62,7 @@ const caveProvenancePath = resolve(
 const caveProvenance = JSON.parse(readFileSync(caveProvenancePath, 'utf8'));
 const expectedCaveProvenance = {
   repository: 'https://github.com/OpenCoven/coven-cave',
-  commit: '2a0ff9237e94e652e477b22f60fd6d721b9e6451',
+  commit: '1d16736e637de384ebf7423c05862d66860478c4',
   fixturePath: 'src/lib/server/client-v1/contract-fixture.json',
   digestPath: 'src/lib/server/client-v1/contract-fixture.sha256',
   sha256: fixtureChecks[0].digest,

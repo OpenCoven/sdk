@@ -248,10 +248,45 @@ function asciiCompare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-export function canonicalCaveHpkeRoute(url: URL): string {
-  if (url.pathname.includes('%') || url.pathname.includes('\\')) {
-    throw new Error(RESPONSE_ERROR);
+function invalidPath(): Error {
+  return new Error(RESPONSE_ERROR);
+}
+
+function canonicalCaveHpkePathname(pathname: string): string {
+  if (!pathname.startsWith('/') || pathname.includes('\\')) {
+    throw invalidPath();
   }
+  if (pathname === '/') {
+    return pathname;
+  }
+
+  const segments = pathname.slice(1).split('/');
+  if (segments.some((segment) => segment.length === 0)) {
+    throw invalidPath();
+  }
+
+  for (const segment of segments) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      throw invalidPath();
+    }
+    if (
+      decoded === '.' ||
+      decoded === '..' ||
+      /%[0-9A-Fa-f]{2}/u.test(decoded) ||
+      decoded.includes('\\') ||
+      encodeURIComponent(decoded) !== segment
+    ) {
+      throw invalidPath();
+    }
+  }
+  return pathname;
+}
+
+export function canonicalCaveHpkeRoute(url: URL): string {
+  const pathname = canonicalCaveHpkePathname(url.pathname);
   const pairs = [...url.searchParams.entries()]
     .map(([name, value]) => [
       rfc3986Component(name),
@@ -263,7 +298,7 @@ export function canonicalCaveHpkeRoute(url: URL): string {
         : asciiCompare(leftName, rightName),
     );
   const query = pairs.map(([name, value]) => `${name}=${value}`).join('&');
-  const route = query ? `${url.pathname}?${query}` : url.pathname;
+    const route = query ? `${pathname}?${query}` : pathname;
   if (UTF8.encode(route).byteLength > CAVE_HPKE_LIMITS.canonicalRouteBytes) {
     throw new Error(RESPONSE_ERROR);
   }

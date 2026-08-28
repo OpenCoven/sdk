@@ -401,7 +401,7 @@ secure-store, and platform-security errors require repair before rerunning.
 Reviewed Cave and Coven fixture bytes are committed under their client
 packages and verified locally. The Cave fixture provenance manifest pins
 `OpenCoven/coven-cave` commit
-`2a0ff9237e94e652e477b22f60fd6d721b9e6451`, producer paths, contract SHA-256
+`1d16736e637de384ebf7423c05862d66860478c4`, producer paths, contract SHA-256
 `1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d`,
 and HPKE vector SHA-256
 `f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797`.
@@ -414,10 +414,10 @@ imported at runtime, and packed-package verification compares all five
 vendored Cave contract/vector artifacts byte for byte. Packed tests also install the
 generated tarballs and verify canonical-read methods, iterators, and types
 through package-root imports without source-checkout or deep-import fallback.
-For the reviewed pre-squash feature head whose four normative artifact files
-are byte-equivalent to the pinned merge, add `--allow-equivalent-head`; the
-verifier still requires the pinned merge object and a zero diff for all four
-producer artifact paths.
+When the repository checkout is at another revision, pass the exact reviewed
+tree with `--commit 1d16736e637de384ebf7423c05862d66860478c4`; the verifier
+reads every normative artifact directly from that merge rather than from the
+working tree.
 
 ## Validation
 

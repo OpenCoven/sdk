@@ -52,8 +52,10 @@
   packed fake-native consumer.
 - Freeze the packed declaration, runtime exports, and package export map in the
   repository API baseline.
-- Vendor Cave merge `2a0ff9237e94e652e477b22f60fd6d721b9e6451`
-  contract and `hpke-bound-v1` vector artifacts at SHA-256
+- Vendor Cave follow-up merge
+  `1d16736e637de384ebf7423c05862d66860478c4` and accept only its canonical
+  encoded HPKE pathname segments while leaving query behavior unchanged.
+  Contract and `hpke-bound-v1` vector artifacts remain at SHA-256
   `1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d`
   and
   `f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797`.

@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/OpenCoven/coven-cave",
-  "commit": "2a0ff9237e94e652e477b22f60fd6d721b9e6451",
+  "commit": "1d16736e637de384ebf7423c05862d66860478c4",
   "fixturePath": "src/lib/server/client-v1/contract-fixture.json",
   "digestPath": "src/lib/server/client-v1/contract-fixture.sha256",
   "sha256": "1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d",

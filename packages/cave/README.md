@@ -482,12 +482,20 @@ Contract fixture helpers are exported as
 `verifyCaveContractFixtureDigest`, and `digestCaveContractFixture`.
 The vendored contract fixture and HPKE vectors are byte-identical to
 `OpenCoven/coven-cave` merge
-`2a0ff9237e94e652e477b22f60fd6d721b9e6451`. Their SHA-256 values are
+`1d16736e637de384ebf7423c05862d66860478c4`, including the canonical
+encoded-path follow-up from
+[OpenCoven/coven-cave#5071](https://github.com/OpenCoven/coven-cave/pull/5071).
+Their SHA-256 values remain
 `1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d`
 and
 `f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797`;
 paths and provenance are recorded in
 `fixtures/contract-fixture.provenance.json`.
+
+Protected route AAD preserves exact canonical `encodeURIComponent` segment
+bytes. Conversation IDs containing `/`, `?`, `#`, spaces, Unicode, or literal
+`%` dispatch normally; lowercase, malformed, double-encoded, dot/dotdot,
+empty, and backslash segments fail closed. Query canonicalization is unchanged.
 
 Migration note: transports that returned `{ data: { status: "ok" } }` must now
 return the complete Client v1 health envelope shown above. Consumers may keep

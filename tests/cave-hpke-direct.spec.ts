@@ -23,6 +23,14 @@ const PAIRING_SECRET = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const BEARER = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
 const REQUEST_ID = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
 const CREDENTIAL_ID = '018f4f1a-77c2-7a31-8a15-55a25aaba002';
+const ENCODED_CONVERSATION_IDS = [
+  { label: 'slash', id: 'conversation/one' },
+  { label: 'question mark', id: 'conversation?one' },
+  { label: 'hash', id: 'conversation#one' },
+  { label: 'spaces', id: 'conversation with spaces' },
+  { label: 'Unicode', id: '会話-雪-☃️' },
+  { label: 'literal percent', id: '100% ready' },
+] as const;
 const CAPABILITIES = [
   'health',
   'pairing',
@@ -163,6 +171,105 @@ describe('direct Cave hpke-bound-v1 transport', () => {
       data: [{ id: 'cody' }],
     });
   });
+
+  test.each(ENCODED_CONVERSATION_IDS)(
+    'protects getConversation with a canonical $label id',
+    async ({ label, id }) => {
+      const authority = await createTestHpkeAuthority();
+      const store = createMemorySecretStore();
+      const reference = createSecretStoreReference(
+        `cave-hpke-get-conversation-${label.replaceAll(' ', '-')}`,
+      );
+      await seedBearer(
+        store,
+        reference,
+        authority.discovered,
+        authority.instanceId,
+      );
+      const pathname =
+        `/api/client/v1/conversations/${encodeURIComponent(id)}`;
+      const client = createDiscoveredCaveClient({
+        credentials: { store, reference },
+        discoverEndpoint: async () => authority.discovered,
+        fetch: async (input, init) => {
+          const request =
+            input instanceof Request ? input : new Request(input, init);
+          expect(new URL(request.url).pathname).toBe(pathname);
+          const opened = await authority.open(request);
+          expect(opened.binding.route).toBe(pathname);
+          return await authority.respond(
+            opened,
+            200,
+            envelope({
+              conversation: {
+                id,
+                familiarId: 'cody',
+                updatedAt: '2026-08-25T00:00:00.000Z',
+              },
+            }),
+          );
+        },
+      });
+
+      await expect(client.getConversation(id)).resolves.toMatchObject({ id });
+    },
+  );
+
+  test.each(ENCODED_CONVERSATION_IDS)(
+    'protects listConversationMessages with a canonical $label id',
+    async ({ label, id }) => {
+      const authority = await createTestHpkeAuthority();
+      const store = createMemorySecretStore();
+      const reference = createSecretStoreReference(
+        `cave-hpke-list-messages-${label.replaceAll(' ', '-')}`,
+      );
+      await seedBearer(
+        store,
+        reference,
+        authority.discovered,
+        authority.instanceId,
+      );
+      const pathname =
+        `/api/client/v1/conversations/${encodeURIComponent(id)}/messages`;
+      const route = `${pathname}?limit=50`;
+      const client = createDiscoveredCaveClient({
+        credentials: { store, reference },
+        discoverEndpoint: async () => authority.discovered,
+        fetch: async (input, init) => {
+          const request =
+            input instanceof Request ? input : new Request(input, init);
+          expect(new URL(request.url).pathname).toBe(pathname);
+          const opened = await authority.open(request);
+          expect(opened.binding.route).toBe(route);
+          return await authority.respond(
+            opened,
+            200,
+            envelope(
+              {
+                messages: [{
+                  id: 'message-1',
+                  conversationId: id,
+                  parentId: null,
+                  role: 'user',
+                  text: 'hello',
+                  createdAt: '2026-08-25T00:00:00.000Z',
+                  attachmentCount: 0,
+                  toolCount: 0,
+                }],
+              },
+              cursor(),
+            ),
+          );
+        },
+      });
+
+      await expect(
+        client.listConversationMessages(id),
+      ).resolves.toMatchObject({
+        data: [{ id: 'message-1', conversationId: id }],
+      });
+    },
+  );
 
   test('enforces maxResponseBytes on authenticated response bodies', async () => {
     const authority = await createTestHpkeAuthority();

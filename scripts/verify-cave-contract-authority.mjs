@@ -25,47 +25,27 @@ function resolveGitCommit(caveRoot) {
   }).trim();
 }
 
-function commitsHaveEquivalentArtifacts(
+function readGitCommitFile(
   caveRoot,
-  pinnedCommit,
-  actualCommit,
-  provenance,
+  commit,
+  path,
 ) {
-  try {
-    execFileSync(
-      'git',
-      ['-C', caveRoot, 'cat-file', '-e', `${pinnedCommit}^{commit}`],
-      { stdio: 'ignore' },
-    );
-    execFileSync(
-      'git',
-      [
-        '-C',
-        caveRoot,
-        'diff',
-        '--quiet',
-        pinnedCommit,
-        actualCommit,
-        '--',
-        provenance.fixturePath,
-        provenance.digestPath,
-        provenance.vectorPath,
-        provenance.vectorDigestPath,
-      ],
-      { stdio: 'ignore' },
-    );
-    return true;
-  } catch {
-    return false;
-  }
+  return execFileSync(
+    'git',
+    ['-C', caveRoot, 'show', `${commit}:${path}`],
+    {
+      maxBuffer: 16 * 1_024 * 1_024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
 }
 
 export function verifyCaveContractAuthority({
   caveRoot,
   expectedCommit,
-  allowEquivalentHead = false,
+  sourceCommit,
   resolveCommit = resolveGitCommit,
-  isEquivalentCommit = commitsHaveEquivalentArtifacts,
+  readCommitFile = readGitCommitFile,
 }) {
   const provenance = readProvenance();
   const pinnedCommit = expectedCommit ?? provenance.commit;
@@ -77,25 +57,23 @@ export function verifyCaveContractAuthority({
   }
 
   const actualCommit = resolveCommit(caveRoot);
-  if (
-    actualCommit !== pinnedCommit &&
-    (
-      !allowEquivalentHead ||
-      !isEquivalentCommit(
-        caveRoot,
-        pinnedCommit,
-        actualCommit,
-        provenance,
-      )
-    )
-  ) {
+  const authorityCommit = sourceCommit ?? actualCommit;
+  if (authorityCommit !== pinnedCommit) {
     throw new Error(
-      `Cave authority checkout is at ${actualCommit}; expected ${pinnedCommit}.`,
+      `Cave authority commit is ${authorityCommit}; expected ${pinnedCommit}.`,
     );
   }
 
-  const fixture = readFileSync(resolve(caveRoot, provenance.fixturePath));
-  const digest = readFileSync(resolve(caveRoot, provenance.digestPath), 'utf8');
+  const fixture = readCommitFile(
+    caveRoot,
+    authorityCommit,
+    provenance.fixturePath,
+  );
+  const digest = readCommitFile(
+    caveRoot,
+    authorityCommit,
+    provenance.digestPath,
+  ).toString('utf8');
   const actualDigest = sha256(fixture);
 
   if (digest !== `${actualDigest}\n`) {
@@ -112,13 +90,18 @@ export function verifyCaveContractAuthority({
     resolve(root, 'packages/cave/fixtures/contract-fixture.json'),
   );
   if (!fixture.equals(vendoredFixture)) {
-    throw new Error('Vendored Cave fixture bytes differ from the pinned authority checkout.');
+    throw new Error('Vendored Cave fixture bytes differ from the pinned authority commit.');
   }
-  const vector = readFileSync(resolve(caveRoot, provenance.vectorPath));
-  const vectorDigest = readFileSync(
-    resolve(caveRoot, provenance.vectorDigestPath),
-    'utf8',
+  const vector = readCommitFile(
+    caveRoot,
+    authorityCommit,
+    provenance.vectorPath,
   );
+  const vectorDigest = readCommitFile(
+    caveRoot,
+    authorityCommit,
+    provenance.vectorDigestPath,
+  ).toString('utf8');
   const actualVectorDigest = sha256(vector);
   if (vectorDigest !== `${actualVectorDigest}\n`) {
     throw new Error(
@@ -135,7 +118,7 @@ export function verifyCaveContractAuthority({
   );
   if (!vector.equals(vendoredVector)) {
     throw new Error(
-      'Vendored Cave HPKE vector bytes differ from the pinned authority checkout.',
+      'Vendored Cave HPKE vector bytes differ from the pinned authority commit.',
     );
   }
 
@@ -152,19 +135,24 @@ export function parseCaveContractAuthorityArguments(argv) {
     argv = argv.slice(1);
   }
 
-  const allowEquivalentHead = argv[2] === '--allow-equivalent-head';
+  const sourceCommit = argv[2] === '--commit' ? argv[3] : undefined;
   if (
-    (argv.length !== 2 && !(argv.length === 3 && allowEquivalentHead)) ||
-    argv[0] !== '--cave-root'
+    (argv.length !== 2 && argv.length !== 4) ||
+    argv[0] !== '--cave-root' ||
+    (argv.length === 4 && (
+      argv[2] !== '--commit' ||
+      typeof sourceCommit !== 'string' ||
+      !/^[0-9a-f]{40}$/u.test(sourceCommit)
+    ))
   ) {
     throw new Error(
-      'usage: verify-cave-contract-authority.mjs --cave-root <path> [--allow-equivalent-head]',
+      'usage: verify-cave-contract-authority.mjs --cave-root <path> [--commit <sha>]',
     );
   }
 
   return {
     caveRoot: resolve(argv[1]),
-    allowEquivalentHead,
+    sourceCommit,
   };
 }
 
@@ -176,6 +164,6 @@ if (
     parseCaveContractAuthorityArguments(process.argv.slice(2)),
   );
   console.log(
-    `Cave authority ${result.commit} verified from checkout ${result.checkoutCommit} (${result.sha256}; HPKE ${result.vectorSha256}).`,
+    `Cave authority exact commit ${result.commit} verified from repository checkout ${result.checkoutCommit} (${result.sha256}; HPKE ${result.vectorSha256}).`,
   );
 }

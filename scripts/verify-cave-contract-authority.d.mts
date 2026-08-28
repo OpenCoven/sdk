@@ -1,14 +1,13 @@
 export interface VerifyCaveContractAuthorityOptions {
   caveRoot: string;
   expectedCommit?: string;
-  allowEquivalentHead?: boolean;
+  sourceCommit?: string;
   resolveCommit?: (caveRoot: string) => string;
-  isEquivalentCommit?: (
+  readCommitFile?: (
     caveRoot: string,
-    pinnedCommit: string,
-    actualCommit: string,
-    provenance: Record<string, string>,
-  ) => boolean;
+    commit: string,
+    path: string,
+  ) => Buffer;
 }
 
 export interface VerifiedCaveContractAuthority {
@@ -20,7 +19,7 @@ export interface VerifiedCaveContractAuthority {
 
 export function parseCaveContractAuthorityArguments(argv: string[]): {
   caveRoot: string;
-  allowEquivalentHead: boolean;
+  sourceCommit: string | undefined;
 };
 
 export function verifyCaveContractAuthority(

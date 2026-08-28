@@ -2,7 +2,9 @@
 
 `@opencoven/cave-client` consumes the authority contract merged in
 OpenCoven/coven-cave at
-`2a0ff9237e94e652e477b22f60fd6d721b9e6451`.
+`1d16736e637de384ebf7423c05862d66860478c4`, including the canonical
+encoded-path follow-up from
+[OpenCoven/coven-cave#5071](https://github.com/OpenCoven/coven-cave/pull/5071).
 
 Normative vendored artifacts:
 
@@ -15,6 +17,11 @@ The direct Node transport uses Base-mode requests and Auth-mode responses with
 suite IDs `32/1/2`. It protects pairing poll/exchange plus familiar, project,
 conversation, conversation-detail, and message reads. Health and pairing
 create remain public.
+
+Protected route AAD preserves exact canonical `encodeURIComponent` segment
+bytes, so conversation IDs may contain `/`, `?`, `#`, spaces, Unicode, and
+literal `%`. Lowercase, malformed, double-encoded, dot/dotdot, empty, and
+backslash path segments are rejected. Query canonicalization is unchanged.
 
 Application semantics come only from the decrypted inner response. Plaintext,
 forged, replacement-listener, or malformed wrappers produce one fixed
