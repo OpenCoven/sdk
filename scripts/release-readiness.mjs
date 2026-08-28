@@ -12,10 +12,16 @@ const CONFIG_FIELDS = Object.freeze([
   'npmDistTag',
   'githubEnvironment',
   'supportedNode',
+  'nativeConformancePlatforms',
   'packages',
 ]);
 const NODE_ENGINE = '>=24.18.0 <25';
 const RELEASE_WORKFLOW_PATH = '.github/workflows/release.yml';
+const SUPPORTED_PLATFORMS = Object.freeze([
+  'darwin-arm64',
+  'linux-x64',
+  'win32-x64',
+]);
 const STRICT_SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
@@ -60,8 +66,8 @@ function readManifest(root, packageMetadata) {
 }
 
 function validateConfigValues(config) {
-  if (config.schemaVersion !== 1) {
-    throw new Error('release.config.json schemaVersion must be 1');
+  if (config.schemaVersion !== 2) {
+    throw new Error('release.config.json schemaVersion must be 2');
   }
   if (typeof config.publishingEnabled !== 'boolean') {
     throw new Error('release.config.json publishingEnabled must be a boolean');
@@ -90,6 +96,18 @@ function validateConfigValues(config) {
   ) {
     throw new Error(
       'release.config.json supportedNode must specify minimum 24.18.0 and major 24',
+    );
+  }
+
+  if (
+    !Array.isArray(config.nativeConformancePlatforms) ||
+    config.nativeConformancePlatforms.length !== SUPPORTED_PLATFORMS.length ||
+    config.nativeConformancePlatforms.some(
+      (platformId, index) => platformId !== SUPPORTED_PLATFORMS[index],
+    )
+  ) {
+    throw new Error(
+      'release.config.json nativeConformancePlatforms must match the canonical 0.1 native conformance matrix',
     );
   }
 

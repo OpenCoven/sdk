@@ -18,6 +18,12 @@ A normal publication requires both independent locks to be open:
    non-private;
 2. the protected GitHub environment `npm-release` approves the publish job.
 
+For 0.1, `release.config.json` also freezes the native Chat/real-authority
+conformance matrix to `darwin-arm64`, `linux-x64`, and `win32-x64`. That
+release-gate matrix is narrower than the published package Node runtime
+support and does not by itself authorize release; #38 still requires one
+passing evidence record for each target.
+
 Before unlocking, create and protect the `npm-release` environment, confirm
 branch protections and required checks, confirm npm organization ownership,
 and complete the first-publish/trusted-publisher prerequisites below.

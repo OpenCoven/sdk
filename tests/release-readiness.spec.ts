@@ -16,6 +16,10 @@ import {
   readReleaseConfig,
   validateReleaseReadiness,
 } from '../scripts/release-readiness.mjs';
+import type {
+  NativeConformancePlatforms,
+  ReleaseConfig,
+} from '../scripts/release-readiness.d.mts';
 import {
   createNpmPublishArgs,
   publishReleaseArtifacts,
@@ -34,12 +38,70 @@ interface MutablePackageManifest {
   version: string;
 }
 
-interface MutableReleaseConfig {
+type MutableReleaseConfig = Omit<
+  ReleaseConfig,
+  | 'githubEnvironment'
+  | 'nativeConformancePlatforms'
+  | 'npmAccess'
+  | 'npmDistTag'
+  | 'packages'
+  | 'schemaVersion'
+  | 'supportedNode'
+  | 'tagPrefix'
+> & {
+  githubEnvironment: string;
+  npmAccess: string;
+  npmDistTag: string;
   packages: string[];
   publishingEnabled: boolean;
-  tagPrefix?: string;
+  schemaVersion: number;
+  supportedNode: {
+    major: number;
+    minimum: string;
+  };
+  nativeConformancePlatforms?: string[];
+  tagPrefix: string;
   unexpected?: boolean;
-}
+};
+
+type MutableReleaseConfigMissingRequiredField = Omit<
+  MutableReleaseConfig,
+  'nativeConformancePlatforms' | 'tagPrefix'
+> & {
+  nativeConformancePlatforms?: string[];
+  tagPrefix?: string;
+};
+
+const SUPPORTED_PLATFORMS: NativeConformancePlatforms = [
+  'darwin-arm64',
+  'linux-x64',
+  'win32-x64',
+];
+const SUBSTITUTED_PLATFORM_MATRIX: MutableReleaseConfig['nativeConformancePlatforms'] = [
+  'darwin-arm64',
+  'linux-arm64',
+  'win32-x64',
+];
+const REORDERED_PLATFORM_MATRIX: MutableReleaseConfig['nativeConformancePlatforms'] = [
+  'win32-x64',
+  'linux-x64',
+  'darwin-arm64',
+];
+const MISSING_PLATFORM_MATRIX: MutableReleaseConfig['nativeConformancePlatforms'] = [
+  'darwin-arm64',
+  'linux-x64',
+];
+const DUPLICATE_PLATFORM_MATRIX: MutableReleaseConfig['nativeConformancePlatforms'] = [
+  'darwin-arm64',
+  'linux-x64',
+  'linux-x64',
+];
+const EXTRA_PLATFORM_MATRIX: MutableReleaseConfig['nativeConformancePlatforms'] = [
+  'darwin-arm64',
+  'linux-x64',
+  'win32-x64',
+  'linux-arm64',
+];
 
 function createReleaseFixture(): string {
   const fixture = mkdtempSync(resolve(tmpdir(), 'opencoven-release-readiness-'));
@@ -131,23 +193,98 @@ describe('release readiness contract', () => {
   });
 
   test('rejects unknown and missing release config fields', () => {
-    const fixture = createReleaseFixture();
-    const configPath = resolve(fixture, 'release.config.json');
-    updateJson<MutableReleaseConfig>(configPath, (config) => {
+    const unknownFieldFixture = createReleaseFixture();
+    const unknownFieldConfigPath = resolve(
+      unknownFieldFixture,
+      'release.config.json',
+    );
+    updateJson<MutableReleaseConfig>(unknownFieldConfigPath, (config) => {
       config.unexpected = true;
     });
 
-    expect(() => readReleaseConfig(fixture)).toThrow(
+    expect(() => readReleaseConfig(unknownFieldFixture)).toThrow(
       'release.config.json contains unknown field unexpected',
     );
 
+    const missingNativeConformancePlatformsFixture = createReleaseFixture();
+    const missingNativeConformancePlatformsConfigPath = resolve(
+      missingNativeConformancePlatformsFixture,
+      'release.config.json',
+    );
+    updateJson<MutableReleaseConfig>(
+      missingNativeConformancePlatformsConfigPath,
+      (config) => {
+        delete config.nativeConformancePlatforms;
+      },
+    );
+
+    expect(() => readReleaseConfig(missingNativeConformancePlatformsFixture)).toThrow(
+      'release.config.json is missing required field nativeConformancePlatforms',
+    );
+
+    const missingTagPrefixFixture = createReleaseFixture();
+    const missingTagPrefixConfigPath = resolve(
+      missingTagPrefixFixture,
+      'release.config.json',
+    );
+    updateJson<MutableReleaseConfigMissingRequiredField>(
+      missingTagPrefixConfigPath,
+      (config) => {
+        delete config.tagPrefix;
+      },
+    );
+
+    expect(() => readReleaseConfig(missingTagPrefixFixture)).toThrow(
+      'release.config.json is missing required field tagPrefix',
+    );
+  });
+
+  test('requires the canonical native conformance platform matrix', () => {
+    expect(readReleaseConfig(workspaceRoot).schemaVersion).toBe(2);
+    expect(readReleaseConfig(workspaceRoot).nativeConformancePlatforms).toEqual(
+      SUPPORTED_PLATFORMS,
+    );
+
+    const fixture = createReleaseFixture();
+    const configPath = resolve(fixture, 'release.config.json');
     updateJson<MutableReleaseConfig>(configPath, (config) => {
-      delete config.unexpected;
-      delete config.tagPrefix;
+      config.nativeConformancePlatforms = SUBSTITUTED_PLATFORM_MATRIX;
     });
 
-    expect(() => readReleaseConfig(fixture)).toThrow(
-      'release.config.json is missing required field tagPrefix',
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'release.config.json nativeConformancePlatforms must match the canonical 0.1 native conformance matrix',
+    );
+
+    updateJson<MutableReleaseConfig>(configPath, (config) => {
+      config.nativeConformancePlatforms = REORDERED_PLATFORM_MATRIX;
+    });
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'release.config.json nativeConformancePlatforms must match the canonical 0.1 native conformance matrix',
+    );
+
+    updateJson<MutableReleaseConfig>(configPath, (config) => {
+      config.nativeConformancePlatforms = MISSING_PLATFORM_MATRIX;
+    });
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'release.config.json nativeConformancePlatforms must match the canonical 0.1 native conformance matrix',
+    );
+
+    updateJson<MutableReleaseConfig>(configPath, (config) => {
+      config.nativeConformancePlatforms = DUPLICATE_PLATFORM_MATRIX;
+    });
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'release.config.json nativeConformancePlatforms must match the canonical 0.1 native conformance matrix',
+    );
+
+    updateJson<MutableReleaseConfig>(configPath, (config) => {
+      config.nativeConformancePlatforms = EXTRA_PLATFORM_MATRIX;
+    });
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'release.config.json nativeConformancePlatforms must match the canonical 0.1 native conformance matrix',
     );
   });
 
