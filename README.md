@@ -21,7 +21,10 @@ marked private, are not published, and have standard publishing blocked. The
 `@opencoven/dev-cli` remains private and is not packed, versioned with, or
 published beside that group. Standard publishing also requires
 `OPENCOVEN_RELEASE_AUTHORIZATION=publish`; remove or change these gates only as
-part of an intentional release process.
+part of an intentional release process. The 0.1 native Chat/real-authority
+conformance release matrix is separately frozen to `darwin-arm64`,
+`linux-x64`, and `win32-x64`; see [SUPPORT.md](SUPPORT.md) for the distinction
+between Node runtime support and this release gate.
 
 - [Roadmap](docs/ROADMAP.md)
 - [0.1 read-only release design](docs/superpowers/specs/2026-08-22-sdk-0.1-read-only-release-design.md)

@@ -49,9 +49,11 @@ and never prefetch, retry, or implicitly walk the whole corpus.
 
 SDK [#37](https://github.com/OpenCoven/sdk/issues/37) records that the private
 CLI is deferred from 0.1 and that Chat's Tauri layer owns the Phase 1 native
-trust adapters. Chat [#27](https://github.com/OpenCoven/chat/issues/27) remains
-blocked on durable implementation of those adapters, a frozen supported
-platform matrix, and complete cross-repository evidence. Its comments cite
+trust adapters. The 0.1 native Chat/real-authority conformance matrix is now
+frozen to `darwin-arm64`, `linux-x64`, and `win32-x64`. Chat
+[#27](https://github.com/OpenCoven/chat/issues/27) remains blocked on durable
+implementation of those adapters and complete cross-repository evidence across
+that matrix. Its comments cite
 commit `950feb5` and branch `feat/native-sdk-integration`, but neither is
 currently reachable on GitHub, so recovery or rebuild of that integration
 evidence may be required before [#38](https://github.com/OpenCoven/sdk/issues/38)
@@ -80,8 +82,9 @@ can close.
   integration; durable implementation and reachable GitHub evidence still
   required
 - [#38](https://github.com/OpenCoven/sdk/issues/38) — cross-repository
-  real-authority conformance blocked on Chat #27, a frozen platform matrix,
-  and complete cross-repository evidence
+  real-authority conformance blocked on Chat #27 and complete
+  cross-repository evidence across the frozen `darwin-arm64`, `linux-x64`, and
+  `win32-x64` matrix; one passing record is required for each target
 - [#39](https://github.com/OpenCoven/sdk/issues/39) — profiles, diagnostics, and public API governance
 
 ### Release
@@ -143,7 +146,8 @@ The first release does not ship until all of the following are true:
 - Coven IPC trust uses live connected-peer or pipe identity;
 - Chat completes the journey through native custody and trust adapters;
 - SDK and Chat are removed from conformance `notCovered`;
-- supported operating systems have real evidence;
+- the frozen native conformance matrix has one passing record each for
+  `darwin-arm64`, `linux-x64`, and `win32-x64`;
 - public API baselines and redacted diagnostics are complete;
 - the security review recommends ship;
 - registry bytes and provenance match the reviewed release manifest;
