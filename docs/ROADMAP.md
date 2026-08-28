@@ -131,6 +131,9 @@ Every privileged action remains constrained, idempotent, auditable, and revalida
 - packed examples and native-boundary guidance.
 
 Offline mode remains read-only and never becomes a second canonical database.
+The [implementation design](superpowers/specs/2026-08-28-sdk-offline-reads-and-tooling-design.md)
+requires real producer revisions and keeps the CLI private unless a separate
+distribution gate is approved.
 
 ## Parallel maintenance
 
