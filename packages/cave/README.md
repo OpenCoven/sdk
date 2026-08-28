@@ -291,8 +291,11 @@ a new pairing. For legacy discovery v1 records, these separate loopback health
 requests remain defense in depth. Discovery v2 instead binds pairing-secret and
 bearer requests to the discovered process and authority key with
 `hpke-bound-v1`. The 0.1 release still requires real-authority conformance
-against the producer implementation tracked in
+against the producer implementation merged in
+[OpenCoven/coven-cave#5044](https://github.com/OpenCoven/coven-cave/pull/5044),
+which closed
 [OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
+
 ### Managed native credential custody
 
 Webviews such as Tauri Chat must not receive pairing secrets or exchanged
@@ -367,7 +370,11 @@ operation-specific native transport must execute `hpke-bound-v1` inside the
 native boundary; the SDK remains responsible for discovery, orchestration, and
 non-secret protocol validation. Discovery v1 retains only the
 preflight/postflight defense in depth. Real-authority conformance remains
-tracked in
+tracked in SDK
+[#38](https://github.com/OpenCoven/sdk/issues/38) against the merged producer
+path from
+[OpenCoven/coven-cave#5044](https://github.com/OpenCoven/coven-cave/pull/5044),
+which closed
 [OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
 
 A successful `session.poll()` keeps the session ready for one later
