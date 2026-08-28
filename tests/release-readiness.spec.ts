@@ -194,6 +194,17 @@ describe('release readiness contract', () => {
       config.supportedPlatforms = [
         SUPPORTED_PLATFORMS[0],
         SUPPORTED_PLATFORMS[1],
+      ];
+    });
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'release.config.json supportedPlatforms must match the canonical 0.1 native conformance matrix',
+    );
+
+    updateJson<MutableReleaseConfig>(configPath, (config) => {
+      config.supportedPlatforms = [
+        SUPPORTED_PLATFORMS[0],
+        SUPPORTED_PLATFORMS[1],
         SUPPORTED_PLATFORMS[1],
       ];
     });
