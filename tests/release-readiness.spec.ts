@@ -16,6 +16,10 @@ import {
   readReleaseConfig,
   validateReleaseReadiness,
 } from '../scripts/release-readiness.mjs';
+import type {
+  NativeConformancePlatforms,
+  ReleaseConfig,
+} from '../scripts/release-readiness.d.mts';
 import {
   createNpmPublishArgs,
   publishReleaseArtifacts,
@@ -34,7 +38,17 @@ interface MutablePackageManifest {
   version: string;
 }
 
-interface MutableReleaseConfig {
+type MutableReleaseConfig = Omit<
+  ReleaseConfig,
+  | 'githubEnvironment'
+  | 'nativeConformancePlatforms'
+  | 'npmAccess'
+  | 'npmDistTag'
+  | 'packages'
+  | 'schemaVersion'
+  | 'supportedNode'
+  | 'tagPrefix'
+> & {
   githubEnvironment: string;
   npmAccess: string;
   npmDistTag: string;
@@ -48,9 +62,38 @@ interface MutableReleaseConfig {
   nativeConformancePlatforms?: string[];
   tagPrefix: string;
   unexpected?: boolean;
-}
+};
 
-const SUPPORTED_PLATFORMS = ['darwin-arm64', 'linux-x64', 'win32-x64'];
+const SUPPORTED_PLATFORMS: NativeConformancePlatforms = [
+  'darwin-arm64',
+  'linux-x64',
+  'win32-x64',
+];
+const SUBSTITUTED_PLATFORM_MATRIX: MutableReleaseConfig['nativeConformancePlatforms'] = [
+  'darwin-arm64',
+  'linux-arm64',
+  'win32-x64',
+];
+const REORDERED_PLATFORM_MATRIX: MutableReleaseConfig['nativeConformancePlatforms'] = [
+  'win32-x64',
+  'linux-x64',
+  'darwin-arm64',
+];
+const MISSING_PLATFORM_MATRIX: MutableReleaseConfig['nativeConformancePlatforms'] = [
+  'darwin-arm64',
+  'linux-x64',
+];
+const DUPLICATE_PLATFORM_MATRIX: MutableReleaseConfig['nativeConformancePlatforms'] = [
+  'darwin-arm64',
+  'linux-x64',
+  'linux-x64',
+];
+const EXTRA_PLATFORM_MATRIX: MutableReleaseConfig['nativeConformancePlatforms'] = [
+  'darwin-arm64',
+  'linux-x64',
+  'win32-x64',
+  'linux-arm64',
+];
 
 function createReleaseFixture(): string {
   const fixture = mkdtempSync(resolve(tmpdir(), 'opencoven-release-readiness-'));
@@ -171,11 +214,7 @@ describe('release readiness contract', () => {
     const fixture = createReleaseFixture();
     const configPath = resolve(fixture, 'release.config.json');
     updateJson<MutableReleaseConfig>(configPath, (config) => {
-      config.nativeConformancePlatforms = [
-        SUPPORTED_PLATFORMS[0],
-        'linux-arm64',
-        SUPPORTED_PLATFORMS[2],
-      ];
+      config.nativeConformancePlatforms = SUBSTITUTED_PLATFORM_MATRIX;
     });
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
@@ -183,7 +222,7 @@ describe('release readiness contract', () => {
     );
 
     updateJson<MutableReleaseConfig>(configPath, (config) => {
-      config.nativeConformancePlatforms = [...SUPPORTED_PLATFORMS].reverse();
+      config.nativeConformancePlatforms = REORDERED_PLATFORM_MATRIX;
     });
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
@@ -191,10 +230,7 @@ describe('release readiness contract', () => {
     );
 
     updateJson<MutableReleaseConfig>(configPath, (config) => {
-      config.nativeConformancePlatforms = [
-        SUPPORTED_PLATFORMS[0],
-        SUPPORTED_PLATFORMS[1],
-      ];
+      config.nativeConformancePlatforms = MISSING_PLATFORM_MATRIX;
     });
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
@@ -202,11 +238,7 @@ describe('release readiness contract', () => {
     );
 
     updateJson<MutableReleaseConfig>(configPath, (config) => {
-      config.nativeConformancePlatforms = [
-        SUPPORTED_PLATFORMS[0],
-        SUPPORTED_PLATFORMS[1],
-        SUPPORTED_PLATFORMS[1],
-      ];
+      config.nativeConformancePlatforms = DUPLICATE_PLATFORM_MATRIX;
     });
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
@@ -214,7 +246,7 @@ describe('release readiness contract', () => {
     );
 
     updateJson<MutableReleaseConfig>(configPath, (config) => {
-      config.nativeConformancePlatforms = [...SUPPORTED_PLATFORMS, 'linux-arm64'];
+      config.nativeConformancePlatforms = EXTRA_PLATFORM_MATRIX;
     });
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(

@@ -1,5 +1,16 @@
+export type NativeConformancePlatform =
+  | 'darwin-arm64'
+  | 'linux-x64'
+  | 'win32-x64';
+
+export type NativeConformancePlatforms = readonly [
+  'darwin-arm64',
+  'linux-x64',
+  'win32-x64',
+];
+
 export interface ReleaseConfig {
-  schemaVersion: 1;
+  schemaVersion: 2;
   publishingEnabled: boolean;
   tagPrefix: 'sdk-v';
   npmAccess: 'public';
@@ -9,6 +20,7 @@ export interface ReleaseConfig {
     minimum: '24.18.0';
     major: 24;
   };
+  nativeConformancePlatforms: NativeConformancePlatforms;
   packages: string[];
 }
 
