@@ -64,6 +64,14 @@ type MutableReleaseConfig = Omit<
   unexpected?: boolean;
 };
 
+type MutableReleaseConfigMissingRequiredField = Omit<
+  MutableReleaseConfig,
+  'nativeConformancePlatforms' | 'tagPrefix'
+> & {
+  nativeConformancePlatforms?: string[];
+  tagPrefix?: string;
+};
+
 const SUPPORTED_PLATFORMS: NativeConformancePlatforms = [
   'darwin-arm64',
   'linux-x64',
@@ -202,6 +210,14 @@ describe('release readiness contract', () => {
 
     expect(() => readReleaseConfig(fixture)).toThrow(
       'release.config.json is missing required field nativeConformancePlatforms',
+    );
+
+    updateJson<MutableReleaseConfigMissingRequiredField>(configPath, (config) => {
+      delete config.tagPrefix;
+    });
+
+    expect(() => readReleaseConfig(fixture)).toThrow(
+      'release.config.json is missing required field tagPrefix',
     );
   });
 
