@@ -34,8 +34,8 @@ SDK [#35](https://github.com/OpenCoven/sdk/issues/35) merged through PR #69 at
 [`OpenCoven/coven-cave#5044`](https://github.com/OpenCoven/coven-cave/pull/5044)
 at merge commit `2a0ff9237e94e652e477b22f60fd6d721b9e6451`, closing
 [`OpenCoven/coven-cave#4996`](https://github.com/OpenCoven/coven-cave/issues/4996).
-Issue #35 remains open only for release-mode pairing/custody acceptance
-evidence covering secure-store failure/retry, restart reuse, revocation,
+Issue #35 remains open only for real-authority pairing/custody evidence
+covering secure-store failure/retry, restart reuse, revocation,
 ambiguity handling, and no-secret retention.
 
 SDK [#36](https://github.com/OpenCoven/sdk/issues/36) merged through PR #55 at
@@ -70,7 +70,7 @@ can close.
 - [#34](https://github.com/OpenCoven/sdk/issues/34) — secure Cave discovery
 - [#35](https://github.com/OpenCoven/sdk/issues/35) — pairing and credential
   custody; strict discovery v2 + `hpke-bound-v1` merged through PR #69, but
-  release-mode acceptance evidence remains open
+  real-authority pairing/custody evidence remains open
 - [#36](https://github.com/OpenCoven/sdk/issues/36) — canonical reads merged through PR #55
 - [#37](https://github.com/OpenCoven/sdk/issues/37) — defer private CLI from 0.1; assign Phase 1 native trust adapters to Chat
 
