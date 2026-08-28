@@ -193,30 +193,48 @@ describe('release readiness contract', () => {
   });
 
   test('rejects unknown and missing release config fields', () => {
-    const fixture = createReleaseFixture();
-    const configPath = resolve(fixture, 'release.config.json');
-    updateJson<MutableReleaseConfig>(configPath, (config) => {
+    const unknownFieldFixture = createReleaseFixture();
+    const unknownFieldConfigPath = resolve(
+      unknownFieldFixture,
+      'release.config.json',
+    );
+    updateJson<MutableReleaseConfig>(unknownFieldConfigPath, (config) => {
       config.unexpected = true;
     });
 
-    expect(() => readReleaseConfig(fixture)).toThrow(
+    expect(() => readReleaseConfig(unknownFieldFixture)).toThrow(
       'release.config.json contains unknown field unexpected',
     );
 
-    updateJson<MutableReleaseConfig>(configPath, (config) => {
-      delete config.unexpected;
-      delete config.nativeConformancePlatforms;
-    });
+    const missingNativeConformancePlatformsFixture = createReleaseFixture();
+    const missingNativeConformancePlatformsConfigPath = resolve(
+      missingNativeConformancePlatformsFixture,
+      'release.config.json',
+    );
+    updateJson<MutableReleaseConfig>(
+      missingNativeConformancePlatformsConfigPath,
+      (config) => {
+        delete config.nativeConformancePlatforms;
+      },
+    );
 
-    expect(() => readReleaseConfig(fixture)).toThrow(
+    expect(() => readReleaseConfig(missingNativeConformancePlatformsFixture)).toThrow(
       'release.config.json is missing required field nativeConformancePlatforms',
     );
 
-    updateJson<MutableReleaseConfigMissingRequiredField>(configPath, (config) => {
-      delete config.tagPrefix;
-    });
+    const missingTagPrefixFixture = createReleaseFixture();
+    const missingTagPrefixConfigPath = resolve(
+      missingTagPrefixFixture,
+      'release.config.json',
+    );
+    updateJson<MutableReleaseConfigMissingRequiredField>(
+      missingTagPrefixConfigPath,
+      (config) => {
+        delete config.tagPrefix;
+      },
+    );
 
-    expect(() => readReleaseConfig(fixture)).toThrow(
+    expect(() => readReleaseConfig(missingTagPrefixFixture)).toThrow(
       'release.config.json is missing required field tagPrefix',
     );
   });
