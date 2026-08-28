@@ -116,15 +116,42 @@ function authorityError(
   });
 }
 
-function proofError(cause?: unknown): Error {
+function proofError(): Error {
   return authorityError(
     'reconcile_required',
     'The Cave HPKE authority response could not be authenticated.',
     {
-      ...(cause === undefined ? {} : { cause }),
       details: { reason: 'authority_proof_failed' },
       retryable: false,
     },
+  );
+}
+
+function errorCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  try {
+    const code: unknown = Reflect.get(error, 'code');
+    return typeof code === 'string' ? code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function preserveResponseError(error: unknown): boolean {
+  const code = errorCode(error);
+  return (
+    code === 'aborted' ||
+    code === 'body_limit' ||
+    code === 'reconcile_required' ||
+    code === 'timeout'
+  );
+}
+
+function responseBodyLimitError(statusCode: number): Error {
+  return authorityError(
+    'body_limit',
+    'Cave response exceeded its size limit.',
+    { retryable: false, statusCode },
   );
 }
 
@@ -312,6 +339,59 @@ function jcs(value: unknown): Uint8Array {
   return UTF8.encode(rendered);
 }
 
+function base64UrlEncodedLength(byteLength: number): number {
+  return Math.ceil((byteLength * 4) / 3);
+}
+
+function base64UrlEncodedUpperBound(byteLength: number): number {
+  return Math.ceil(byteLength / 3) * 4;
+}
+
+const RESPONSE_PLAINTEXT_FIXED_BYTES = jcs({
+  body: '',
+  headers: {
+    contentType: 'application/json',
+    retryAfter: '\u0000'.repeat(256),
+  },
+  requestNonce: 'A'.repeat(CAVE_HPKE_LIMITS.encodedKeyCharacters),
+  status: 599,
+  version: 1,
+}).byteLength;
+const RESPONSE_ENVELOPE_FIXED_BYTES = UTF8.encode(
+  JSON.stringify({
+    version: 1,
+    mechanism: CAVE_HPKE_MECHANISM,
+    keyId: 'A'.repeat(CAVE_HPKE_LIMITS.encodedKeyCharacters),
+    requestNonce: 'A'.repeat(CAVE_HPKE_LIMITS.encodedKeyCharacters),
+    enc: 'A'.repeat(CAVE_HPKE_LIMITS.encodedKeyCharacters),
+    ciphertext: '',
+  }),
+).byteLength;
+const RESPONSE_AEAD_OVERHEAD_BYTES =
+  CAVE_HPKE_LIMITS.responseCiphertextBytes -
+  CAVE_HPKE_LIMITS.responsePlaintextBytes;
+
+function responseEnvelopeLimit(maxBodyBytes: number): number {
+  const boundedBodyBytes = Math.min(
+    maxBodyBytes,
+    CAVE_HPKE_LIMITS.responsePlaintextBytes,
+  );
+  const plaintextBytes = Math.min(
+    CAVE_HPKE_LIMITS.responsePlaintextBytes,
+    RESPONSE_PLAINTEXT_FIXED_BYTES +
+      base64UrlEncodedLength(boundedBodyBytes),
+  );
+  const ciphertextBytes = Math.min(
+    CAVE_HPKE_LIMITS.responseCiphertextBytes,
+    plaintextBytes + RESPONSE_AEAD_OVERHEAD_BYTES,
+  );
+  return Math.min(
+    CAVE_HPKE_LIMITS.responseEnvelopeBytes,
+    RESPONSE_ENVELOPE_FIXED_BYTES +
+      base64UrlEncodedLength(ciphertextBytes),
+  );
+}
+
 function validateAuthorization(value: CaveHpkeAuthorization): void {
   if (value.kind === 'pairing-secret') {
     caveBase64UrlDecode(value.value, { minimum: 32, maximum: 32 });
@@ -355,14 +435,25 @@ async function readBounded(
   const onAbort = (): void => {
     void reader.cancel(signal?.reason).catch(() => undefined);
   };
+  const abortError = (): unknown => {
+    const reason: unknown = signal?.reason;
+    const code = errorCode(reason);
+    return code === 'aborted' || code === 'timeout'
+      ? reason
+      : authorityError('aborted', 'Cave HPKE response was aborted.');
+  };
+  const isAborted = (): boolean => signal?.aborted === true;
   signal?.addEventListener('abort', onAbort, { once: true });
-  if (signal?.aborted === true) onAbort();
+  if (isAborted()) onAbort();
   try {
     while (true) {
-      if (signal?.aborted === true) {
-        throw signal.reason ?? authorityError('aborted', 'Cave HPKE response was aborted.');
+      if (isAborted()) {
+        throw abortError();
       }
       const { done, value } = await reader.read();
+      if (isAborted()) {
+        throw abortError();
+      }
       if (done) break;
       length += value.byteLength;
       if (length > maximumBytes) {
@@ -499,7 +590,7 @@ export async function createCaveHpkeBoundRequest(input: {
           }
           const envelopeBytes = await readBounded(
             response,
-            CAVE_HPKE_LIMITS.responseEnvelopeBytes,
+            responseEnvelopeLimit(options.maxBodyBytes),
             options.signal,
           );
           const envelope: unknown = JSON.parse(UTF8_FATAL.decode(envelopeBytes));
@@ -569,10 +660,23 @@ export async function createCaveHpkeBoundRequest(input: {
           if (!equalBytes(responsePlaintext, canonical)) {
             throw proofError();
           }
+          const maximumBodyBytes = Math.min(
+            options.maxBodyBytes,
+            CAVE_HPKE_LIMITS.responsePlaintextBytes,
+          );
+          if (
+            parsed.body.length >
+            base64UrlEncodedUpperBound(maximumBodyBytes)
+          ) {
+            throw responseBodyLimitError(parsed.status as number);
+          }
           const responseBody = caveBase64UrlDecode(parsed.body, {
             minimum: 0,
-            maximum: Math.min(options.maxBodyBytes, CAVE_HPKE_LIMITS.responsePlaintextBytes),
+            maximum: CAVE_HPKE_LIMITS.responsePlaintextBytes,
           });
+          if (responseBody.byteLength > maximumBodyBytes) {
+            throw responseBodyLimitError(parsed.status as number);
+          }
           return {
             status: parsed.status as number,
             headers: {
@@ -584,14 +688,10 @@ export async function createCaveHpkeBoundRequest(input: {
             body: responseBody,
           };
         } catch (error) {
-          if (
-            typeof error === 'object' &&
-            error !== null &&
-            Reflect.get(error, 'code') === 'reconcile_required'
-          ) {
+          if (preserveResponseError(error)) {
             throw error;
           }
-          throw proofError(error);
+          throw proofError();
         }
       },
     };

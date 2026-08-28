@@ -8,12 +8,14 @@ import { describe, expect, test } from 'vitest';
 import {
   CAVE_HPKE_HEADERS,
   CAVE_HPKE_LIMITS,
+  CAVE_HPKE_RESPONSE_INFO,
   CAVE_HPKE_RESPONSE_MEDIA_TYPE,
   canonicalCaveHpkeRoute,
   caveBase64UrlDecode,
   caveBase64UrlEncode,
   caveHpkeKeyId,
   createCaveHpkeBoundRequest,
+  createCaveHpkeSuite,
 } from '../packages/cave/src/hpke-bound-v1.js';
 import { parseCaveDiscoveryRecord } from '../packages/cave/src/discovery-record-node.js';
 import type { CaveDiscoveredEndpointV2 } from '../packages/cave/src/discovery.js';
@@ -166,6 +168,56 @@ function vectorResponse(vector: HpkeVector): Response {
   );
 }
 
+async function authenticatedResponse(
+  vector: HpkeVector,
+  request: Awaited<ReturnType<typeof createVectorRequest>>,
+  body: Uint8Array,
+): Promise<Response> {
+  const suite = createCaveHpkeSuite();
+  const authority = await suite.kem.deriveKeyPair(
+    fromHex(vector.inputs.recipientIkm),
+  );
+  const responseRecipient = await suite.kem.deriveKeyPair(
+    fromHex(vector.inputs.responseRecipientIkm),
+  );
+  const sender = await suite.createSenderContext({
+    recipientPublicKey: responseRecipient.publicKey,
+    senderKey: authority.privateKey,
+    info: CAVE_HPKE_RESPONSE_INFO,
+    ekm: await suite.kem.deriveKeyPair(
+      fromHex(vector.inputs.responseEkmIkm),
+    ),
+  });
+  const plaintext = new TextEncoder().encode(
+    JSON.stringify({
+      body: caveBase64UrlEncode(body),
+      headers: { contentType: 'application/json' },
+      requestNonce: request.binding.requestNonce,
+      status: 200,
+      version: 1,
+    }),
+  );
+  const ciphertext = new Uint8Array(
+    await sender.seal(plaintext, request.responseAad),
+  );
+  return new Response(
+    JSON.stringify({
+      version: 1,
+      mechanism: 'hpke-bound-v1',
+      keyId: request.binding.keyId,
+      requestNonce: request.binding.requestNonce,
+      enc: caveBase64UrlEncode(sender.enc),
+      ciphertext: caveBase64UrlEncode(ciphertext),
+    }),
+    {
+      status: 200,
+      headers: {
+        'content-type': CAVE_HPKE_RESPONSE_MEDIA_TYPE,
+      },
+    },
+  );
+}
+
 describe('Cave hpke-bound-v1 producer interoperability', () => {
   test('vendors the exact producer vector bytes', async () => {
     const { bytes, digest } = await loadVector();
@@ -265,6 +317,95 @@ describe('Cave hpke-bound-v1 producer interoperability', () => {
         { maxBodyBytes: 64 * 1_024 },
       ),
     ).rejects.toMatchObject({ code: 'reconcile_required' });
+  });
+
+  test('bounds encrypted envelope reads by the caller body limit', async () => {
+    const { vector } = await loadVector();
+    const request = await createVectorRequest(vector);
+    const chunk = new Uint8Array(64 * 1_024);
+    let bytesRead = 0;
+    let cancelled = false;
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          bytesRead += chunk.byteLength;
+          controller.enqueue(chunk);
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+      {
+        status: 200,
+        headers: {
+          'content-type': CAVE_HPKE_RESPONSE_MEDIA_TYPE,
+        },
+      },
+    );
+
+    await expect(
+      request.open(response, { maxBodyBytes: 64 }),
+    ).rejects.toMatchObject({ code: 'reconcile_required' });
+    expect(bytesRead).toBeLessThanOrEqual(chunk.byteLength * 2);
+    expect(cancelled).toBe(true);
+  });
+
+  test.each([
+    ['decoded body one byte over the limit', 65],
+    ['encoded body beyond the pre-decode bound', 67],
+  ] as const)('classifies an oversized authenticated %s as body_limit', async (_case, bodyBytes) => {
+    const { vector } = await loadVector();
+    const request = await createVectorRequest(vector);
+    const response = await authenticatedResponse(
+      vector,
+      request,
+      new Uint8Array(bodyBytes),
+    );
+
+    const error = await request.open(response, {
+      maxBodyBytes: 64,
+    }).catch((cause: unknown) => cause);
+    expect(error).toMatchObject({
+      code: 'body_limit',
+      message: 'Cave response exceeded its size limit.',
+      retryable: false,
+      statusCode: 200,
+    });
+    expect(error).not.toHaveProperty('cause');
+  });
+
+  test('classifies response-stream cancellation as aborted', async () => {
+    const { vector } = await loadVector();
+    const request = await createVectorRequest(vector);
+    const controller = new AbortController();
+    let cancelled = false;
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        cancel() {
+          cancelled = true;
+        },
+      }),
+      {
+        status: 200,
+        headers: {
+          'content-type': CAVE_HPKE_RESPONSE_MEDIA_TYPE,
+        },
+      },
+    );
+
+    const result = request.open(response, {
+      maxBodyBytes: 64,
+      signal: controller.signal,
+    }).catch((error: unknown) => error);
+    controller.abort(new Error('caller cancellation detail'));
+
+    await expect(result).resolves.toMatchObject({
+      code: 'aborted',
+      message: 'Cave HPKE response was aborted.',
+      retryable: false,
+    });
+    await expect(result).resolves.not.toHaveProperty('cause');
+    expect(cancelled).toBe(true);
   });
 
   test('rejects malformed HPKE inputs before emitting a request', async () => {
