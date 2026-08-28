@@ -46,9 +46,11 @@ SDK [#36](https://github.com/OpenCoven/sdk/issues/36) merged through PR #55 at
 deferring the CLI from the 0.1 release group and assigning Phase 1 native trust
 adapters to Chat's Tauri layer. Chat
 [#27](https://github.com/OpenCoven/chat/issues/27) remains blocked on those
-native adapters and the producer's atomic instance-binding work in
-[OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996)
-where bearer-bearing real-authority conformance applies.
+native adapters and real-authority/packed-consumer conformance evidence on the
+merged producer path from
+[OpenCoven/coven-cave#5044](https://github.com/OpenCoven/coven-cave/pull/5044),
+which closed
+[OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
 
 Message sending, streaming, attachments, task handoffs, GitHub mutations, and
 offline mutation queues are explicitly deferred to separately reviewed
@@ -221,8 +223,11 @@ device/inode, and freshness, without exposing the canonical discovery-record
 path directly. Discovered authenticated calls prove the stored instance ID
 through an unauthenticated health request before attaching the bearer.
 That separate preflight detects observable restarts but cannot atomically bind
-the later HTTP request to the proven process. Final 0.1 security disposition
-and real-authority conformance remain blocked on
+the later HTTP request to the proven process in legacy discovery v1. Final 0.1
+security disposition and real-authority/packed-consumer conformance evidence
+remain gated on the merged producer path from
+[OpenCoven/coven-cave#5044](https://github.com/OpenCoven/coven-cave/pull/5044),
+which closed
 [OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
 
 ## Managed native Cave credentials
@@ -289,8 +294,10 @@ The discovered client uses deterministic `GET` routes:
 Query order is always `limit` then optional `cursor`, and each conversation ID
 is encoded as one path segment. Each discovered canonical request first proves
 the stored Cave `instanceId` through an unauthenticated health request and then
-sends the authenticated request. That is defense in depth, not atomic binding;
-producer blocker `OpenCoven/coven-cave#4996` remains.
+sends the authenticated request. That is defense in depth, not atomic binding,
+for legacy discovery v1. `OpenCoven/coven-cave#4996` closed through
+[OpenCoven/coven-cave#5044](https://github.com/OpenCoven/coven-cave/pull/5044);
+the remaining gate is real-authority/packed-consumer conformance evidence.
 
 Success and explicit error envelopes require `apiVersion: "1.0"`,
 `minimumClientVersion`, `capabilities`, and nonempty `operations`. Explicit Cave

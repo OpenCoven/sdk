@@ -448,7 +448,7 @@ Document:
 - explicit positive `maxPages` or caller-owned signal requirement, lazy one-page-at-a-time iteration, and no prefetch/retry/whole-corpus default;
 - required Client v1 success/error metadata, explicit error preservation, nullable `exitCode`, required-nullable message `parentId`, and strict nonnegative counts;
 - existing legacy Familiar Contract/analytics methods as a separate extension surface;
-- current instance preflight as defense in depth, with atomic producer binding still tracked by `OpenCoven/coven-cave#4996`.
+- current instance preflight as defense in depth; `OpenCoven/coven-cave#4996` closed through `OpenCoven/coven-cave#5044`, and the remaining gate is real-authority/packed-consumer conformance evidence.
 - packed root-import and tarball verification coverage.
 
 - [x] **Step 2: Run exact full verification**
