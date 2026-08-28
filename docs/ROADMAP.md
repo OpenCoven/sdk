@@ -97,7 +97,10 @@ can close.
 
 ## Next — conversational control
 
-[#42](https://github.com/OpenCoven/sdk/issues/42) adds the first bounded mutation tier:
+[#42](https://github.com/OpenCoven/sdk/issues/42) adds the first bounded mutation tier. Its
+[implementation-ready design](superpowers/specs/2026-08-28-sdk-conversational-control-design.md)
+is complete; implementation remains blocked by #41 and the unbuilt Cave Client
+v1 mutation authority.
 
 - canonical conversation creation;
 - persistent idempotency;
