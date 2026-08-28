@@ -12,7 +12,7 @@ const CONFIG_FIELDS = Object.freeze([
   'npmDistTag',
   'githubEnvironment',
   'supportedNode',
-  'supportedPlatforms',
+  'nativeConformancePlatforms',
   'packages',
 ]);
 const NODE_ENGINE = '>=24.18.0 <25';
@@ -100,14 +100,14 @@ function validateConfigValues(config) {
   }
 
   if (
-    !Array.isArray(config.supportedPlatforms) ||
-    config.supportedPlatforms.length !== SUPPORTED_PLATFORMS.length ||
-    config.supportedPlatforms.some(
+    !Array.isArray(config.nativeConformancePlatforms) ||
+    config.nativeConformancePlatforms.length !== SUPPORTED_PLATFORMS.length ||
+    config.nativeConformancePlatforms.some(
       (platformId, index) => platformId !== SUPPORTED_PLATFORMS[index],
     )
   ) {
     throw new Error(
-      'release.config.json supportedPlatforms must match the canonical 0.1 native conformance matrix',
+      'release.config.json nativeConformancePlatforms must match the canonical 0.1 native conformance matrix',
     );
   }
 

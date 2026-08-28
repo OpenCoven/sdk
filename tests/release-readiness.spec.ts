@@ -45,7 +45,7 @@ interface MutableReleaseConfig {
     major: number;
     minimum: string;
   };
-  supportedPlatforms?: string[];
+  nativeConformancePlatforms?: string[];
   tagPrefix: string;
   unexpected?: boolean;
 }
@@ -154,24 +154,24 @@ describe('release readiness contract', () => {
 
     updateJson<MutableReleaseConfig>(configPath, (config) => {
       delete config.unexpected;
-      delete config.supportedPlatforms;
+      delete config.nativeConformancePlatforms;
     });
 
     expect(() => readReleaseConfig(fixture)).toThrow(
-      'release.config.json is missing required field supportedPlatforms',
+      'release.config.json is missing required field nativeConformancePlatforms',
     );
   });
 
   test('requires the canonical native conformance platform matrix', () => {
     expect(readReleaseConfig(workspaceRoot).schemaVersion).toBe(2);
-    expect(readReleaseConfig(workspaceRoot).supportedPlatforms).toEqual(
+    expect(readReleaseConfig(workspaceRoot).nativeConformancePlatforms).toEqual(
       SUPPORTED_PLATFORMS,
     );
 
     const fixture = createReleaseFixture();
     const configPath = resolve(fixture, 'release.config.json');
     updateJson<MutableReleaseConfig>(configPath, (config) => {
-      config.supportedPlatforms = [
+      config.nativeConformancePlatforms = [
         SUPPORTED_PLATFORMS[0],
         'linux-arm64',
         SUPPORTED_PLATFORMS[2],
@@ -179,30 +179,30 @@ describe('release readiness contract', () => {
     });
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'release.config.json supportedPlatforms must match the canonical 0.1 native conformance matrix',
+      'release.config.json nativeConformancePlatforms must match the canonical 0.1 native conformance matrix',
     );
 
     updateJson<MutableReleaseConfig>(configPath, (config) => {
-      config.supportedPlatforms = [...SUPPORTED_PLATFORMS].reverse();
+      config.nativeConformancePlatforms = [...SUPPORTED_PLATFORMS].reverse();
     });
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'release.config.json supportedPlatforms must match the canonical 0.1 native conformance matrix',
+      'release.config.json nativeConformancePlatforms must match the canonical 0.1 native conformance matrix',
     );
 
     updateJson<MutableReleaseConfig>(configPath, (config) => {
-      config.supportedPlatforms = [
+      config.nativeConformancePlatforms = [
         SUPPORTED_PLATFORMS[0],
         SUPPORTED_PLATFORMS[1],
       ];
     });
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'release.config.json supportedPlatforms must match the canonical 0.1 native conformance matrix',
+      'release.config.json nativeConformancePlatforms must match the canonical 0.1 native conformance matrix',
     );
 
     updateJson<MutableReleaseConfig>(configPath, (config) => {
-      config.supportedPlatforms = [
+      config.nativeConformancePlatforms = [
         SUPPORTED_PLATFORMS[0],
         SUPPORTED_PLATFORMS[1],
         SUPPORTED_PLATFORMS[1],
@@ -210,15 +210,15 @@ describe('release readiness contract', () => {
     });
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'release.config.json supportedPlatforms must match the canonical 0.1 native conformance matrix',
+      'release.config.json nativeConformancePlatforms must match the canonical 0.1 native conformance matrix',
     );
 
     updateJson<MutableReleaseConfig>(configPath, (config) => {
-      config.supportedPlatforms = [...SUPPORTED_PLATFORMS, 'linux-arm64'];
+      config.nativeConformancePlatforms = [...SUPPORTED_PLATFORMS, 'linux-arm64'];
     });
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'release.config.json supportedPlatforms must match the canonical 0.1 native conformance matrix',
+      'release.config.json nativeConformancePlatforms must match the canonical 0.1 native conformance matrix',
     );
   });
 
