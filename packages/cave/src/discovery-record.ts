@@ -1,10 +1,22 @@
 import type { DiscoveryEndpoint } from '@opencoven/sdk-core';
 
 export const CAVE_DISCOVERY_RECORD_VERSION = 1 as const;
+export const CAVE_HPKE_DISCOVERY_RECORD_VERSION = 2 as const;
+export const CAVE_HPKE_MECHANISM = 'hpke-bound-v1' as const;
+export const CAVE_HPKE_SUITE = Object.freeze({
+  kemId: 32,
+  kdfId: 1,
+  aeadId: 2,
+} as const);
+export const CAVE_HPKE_KEY_ID_DOMAIN =
+  'OpenCoven/client-v1/hpke-bound-v1/key-id\0' as const;
+
 const DISCOVERY_TIMESTAMP_RE =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/u;
 const CAVE_HTTP_ENDPOINT_RE =
   /^http:\/\/(\[[^\]]+\]|[^/?#:@\\]+):([0-9]{1,5})\/?$/iu;
+const BASE64URL_ALPHABET =
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const CAVE_DISCOVERY_ERROR_BRAND = Symbol.for('@opencoven/cave-client/CaveDiscoveryError');
 
 export type CaveDiscoveryErrorCode =
@@ -17,14 +29,44 @@ export type CaveDiscoveryErrorCode =
   | 'timeout'
   | 'aborted';
 
-export interface CaveParsedDiscoveryRecord {
-  version: typeof CAVE_DISCOVERY_RECORD_VERSION;
+export interface CaveHpkeAuthority {
+  mechanism: typeof CAVE_HPKE_MECHANISM;
+  mode: 'advertise' | 'enforce';
+  keyId: string;
+  publicKey: string;
+  suite: typeof CAVE_HPKE_SUITE;
+}
+
+interface CaveParsedDiscoveryRecordBase {
   endpoint: Extract<DiscoveryEndpoint, { kind: 'http' }>;
   freshness: {
     pid: number;
     nonce: string;
     startedAt: string;
   };
+}
+
+export interface CaveParsedDiscoveryRecordV1 extends CaveParsedDiscoveryRecordBase {
+  version: typeof CAVE_DISCOVERY_RECORD_VERSION;
+}
+
+export interface CaveParsedDiscoveryRecordV2 extends CaveParsedDiscoveryRecordBase {
+  version: typeof CAVE_HPKE_DISCOVERY_RECORD_VERSION;
+  authority: CaveHpkeAuthority;
+}
+
+export type CaveParsedDiscoveryRecord =
+  | CaveParsedDiscoveryRecordV1
+  | CaveParsedDiscoveryRecordV2;
+
+export interface CaveDiscoveryRecordCandidate {
+  record: CaveParsedDiscoveryRecord;
+  authorityKey:
+    | {
+        publicKey: Uint8Array;
+        keyId: Uint8Array;
+      }
+    | undefined;
 }
 
 export class CaveDiscoveryError extends Error {
@@ -157,10 +199,114 @@ function validTimestamp(value: string): boolean {
   );
 }
 
-export function parseCaveDiscoveryRecord(
+function assertExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+  label: string,
+): void {
+  const actual = Reflect.ownKeys(value);
+  if (
+    actual.length !== expected.length ||
+    actual.some((key) => typeof key !== 'string' || !expected.includes(key))
+  ) {
+    return fail('invalid_response', `${label} contained an unsupported field.`);
+  }
+}
+
+function parseCanonical32ByteBase64Url(value: unknown, label: string): Uint8Array {
+  if (
+    typeof value !== 'string' ||
+    value.length !== 43 ||
+    value.includes('=')
+  ) {
+    return fail('invalid_response', `${label} was not canonical 32-byte base64url.`);
+  }
+
+  const bytes = new Uint8Array(32);
+  let accumulator = 0;
+  let bits = 0;
+  let offset = 0;
+
+  for (const character of value) {
+    const digit = BASE64URL_ALPHABET.indexOf(character);
+    if (digit < 0) {
+      return fail('invalid_response', `${label} was not canonical 32-byte base64url.`);
+    }
+    accumulator = (accumulator << 6) | digit;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes[offset] = (accumulator >>> bits) & 0xFF;
+      offset += 1;
+      accumulator &= (1 << bits) - 1;
+    }
+  }
+
+  if (accumulator !== 0) {
+    return fail('invalid_response', `${label} was not canonical 32-byte base64url.`);
+  }
+  return bytes;
+}
+
+function parseAuthority(value: unknown): {
+  authority: CaveHpkeAuthority;
+  publicKey: Uint8Array;
+  keyId: Uint8Array;
+} {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return fail('invalid_response', 'Cave discovery authority must be an object.');
+  }
+  const authority = value as Record<string, unknown>;
+  assertExactKeys(
+    authority,
+    ['mechanism', 'mode', 'keyId', 'publicKey', 'suite'],
+    'Cave discovery authority',
+  );
+  if (authority.mechanism !== CAVE_HPKE_MECHANISM) {
+    return fail('invalid_response', 'Cave discovery authority mechanism was not supported.');
+  }
+  if (authority.mode !== 'advertise' && authority.mode !== 'enforce') {
+    return fail('invalid_response', 'Cave discovery authority mode was not supported.');
+  }
+  if (typeof authority.suite !== 'object' || authority.suite === null || Array.isArray(authority.suite)) {
+    return fail('invalid_response', 'Cave discovery authority suite must be an object.');
+  }
+  const suite = authority.suite as Record<string, unknown>;
+  assertExactKeys(suite, ['kemId', 'kdfId', 'aeadId'], 'Cave discovery authority suite');
+  if (
+    suite.kemId !== CAVE_HPKE_SUITE.kemId ||
+    suite.kdfId !== CAVE_HPKE_SUITE.kdfId ||
+    suite.aeadId !== CAVE_HPKE_SUITE.aeadId
+  ) {
+    return fail('invalid_response', 'Cave discovery authority suite was not supported.');
+  }
+
+  const publicKeyBytes = parseCanonical32ByteBase64Url(
+    authority.publicKey,
+    'Cave discovery authority public key',
+  );
+  const keyIdBytes = parseCanonical32ByteBase64Url(
+    authority.keyId,
+    'Cave discovery authority key id',
+  );
+
+  return {
+    authority: {
+      mechanism: CAVE_HPKE_MECHANISM,
+      mode: authority.mode,
+      keyId: authority.keyId as string,
+      publicKey: authority.publicKey as string,
+      suite: CAVE_HPKE_SUITE,
+    },
+    publicKey: publicKeyBytes,
+    keyId: keyIdBytes,
+  };
+}
+
+export function parseCaveDiscoveryRecordCandidate(
   serialized: string,
   isProcessAlive: (pid: number) => boolean,
-): CaveParsedDiscoveryRecord {
+): CaveDiscoveryRecordCandidate {
   let parsed: unknown;
 
   try {
@@ -174,17 +320,22 @@ export function parseCaveDiscoveryRecord(
   }
 
   const record = parsed as Record<string, unknown>;
-  const fields = Reflect.ownKeys(record);
-  const allowed = new Set(['version', 'endpoint', 'pid', 'nonce', 'startedAt']);
-  for (const field of fields) {
-    if (typeof field !== 'string' || !allowed.has(field)) {
-      return fail('invalid_response', 'Cave discovery record contained an unsupported field.');
-    }
-  }
-
-  if (record.version !== CAVE_DISCOVERY_RECORD_VERSION) {
+  if (record.version === CAVE_DISCOVERY_RECORD_VERSION) {
+    assertExactKeys(
+      record,
+      ['version', 'endpoint', 'pid', 'nonce', 'startedAt'],
+      'Cave discovery record',
+    );
+  } else if (record.version === CAVE_HPKE_DISCOVERY_RECORD_VERSION) {
+    assertExactKeys(
+      record,
+      ['version', 'endpoint', 'pid', 'nonce', 'startedAt', 'authority'],
+      'Cave discovery record',
+    );
+  } else {
     return fail('invalid_response', 'Cave discovery record version was not supported.');
   }
+
   if (typeof record.endpoint !== 'string') {
     return fail('invalid_response', 'Cave discovery endpoint was invalid.');
   }
@@ -199,25 +350,81 @@ export function parseCaveDiscoveryRecord(
   if (!isProcessAlive(record.pid)) {
     return fail('stale_record', 'Cave discovery pid did not identify a live process.');
   }
-  if (
-    typeof record.nonce !== 'string' ||
-    record.nonce.trim().length === 0 ||
-    record.nonce.length > 256 ||
-    containsControlCharacter(record.nonce)
-  ) {
-    return fail('invalid_response', 'Cave discovery nonce was invalid.');
-  }
   if (typeof record.startedAt !== 'string' || !validTimestamp(record.startedAt)) {
     return fail('invalid_response', 'Cave discovery startedAt was invalid.');
   }
 
+  if (record.version === CAVE_DISCOVERY_RECORD_VERSION) {
+    if (
+      typeof record.nonce !== 'string' ||
+      record.nonce.trim().length === 0 ||
+      record.nonce.length > 256 ||
+      containsControlCharacter(record.nonce)
+    ) {
+      return fail('invalid_response', 'Cave discovery nonce was invalid.');
+    }
+
+    return {
+      record: {
+        version: CAVE_DISCOVERY_RECORD_VERSION,
+        endpoint,
+        freshness: {
+          pid: record.pid,
+          nonce: record.nonce,
+          startedAt: record.startedAt,
+        },
+      },
+      authorityKey: undefined,
+    };
+  }
+
+  parseCanonical32ByteBase64Url(record.nonce, 'Cave discovery runtime nonce');
+  const authority = parseAuthority(record.authority);
   return {
-    version: CAVE_DISCOVERY_RECORD_VERSION,
-    endpoint,
-    freshness: {
-      pid: record.pid,
-      nonce: record.nonce,
-      startedAt: record.startedAt,
+    record: {
+      version: CAVE_HPKE_DISCOVERY_RECORD_VERSION,
+      endpoint,
+      freshness: {
+        pid: record.pid,
+        nonce: record.nonce as string,
+        startedAt: record.startedAt,
+      },
+      authority: authority.authority,
+    },
+    authorityKey: {
+      publicKey: authority.publicKey,
+      keyId: authority.keyId,
     },
   };
+}
+
+export function verifyCaveDiscoveryRecordCandidate(
+  candidate: CaveDiscoveryRecordCandidate,
+  computedKeyId: Uint8Array | undefined,
+): CaveParsedDiscoveryRecord {
+  if (candidate.authorityKey === undefined) {
+    return candidate.record;
+  }
+  if (
+    computedKeyId?.byteLength !== candidate.authorityKey.keyId.byteLength
+  ) {
+    return fail(
+      'invalid_response',
+      'Cave discovery authority key id did not match its public key.',
+    );
+  }
+
+  let difference = 0;
+  for (let index = 0; index < computedKeyId.byteLength; index += 1) {
+    difference |=
+      computedKeyId[index]! ^
+      candidate.authorityKey.keyId[index]!;
+  }
+  if (difference !== 0) {
+    return fail(
+      'invalid_response',
+      'Cave discovery authority key id did not match its public key.',
+    );
+  }
+  return candidate.record;
 }

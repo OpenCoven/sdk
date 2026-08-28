@@ -9,7 +9,9 @@ import {
 
 import {
   CaveDiscoveryError,
-  parseCaveDiscoveryRecord,
+  CAVE_HPKE_KEY_ID_DOMAIN,
+  parseCaveDiscoveryRecordCandidate,
+  verifyCaveDiscoveryRecordCandidate,
   type CaveDiscoveryErrorCode,
 } from './discovery-record.js';
 import {
@@ -43,8 +45,7 @@ export interface CaveManagedDiscoveryOptions extends OperationOptions {
   operation?: OperationDefaults;
 }
 
-export interface CaveManagedDiscoveredEndpoint {
-  version: 1;
+interface CaveManagedDiscoveredEndpointBase {
   endpoint: {
     kind: 'http';
     url: string;
@@ -60,6 +61,27 @@ export interface CaveManagedDiscoveredEndpoint {
     inode: number;
   };
 }
+
+interface CaveManagedHpkeAuthority {
+  mechanism: 'hpke-bound-v1';
+  mode: 'advertise' | 'enforce';
+  keyId: string;
+  publicKey: string;
+  suite: {
+    kemId: 32;
+    kdfId: 1;
+    aeadId: 2;
+  };
+}
+
+export type CaveManagedDiscoveredEndpoint =
+  | CaveManagedDiscoveredEndpointBase & {
+      version: 1;
+    }
+  | CaveManagedDiscoveredEndpointBase & {
+      version: 2;
+      authority: CaveManagedHpkeAuthority;
+    };
 
 function isDataRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -238,10 +260,10 @@ function snapshotDiscoverySource(
   }
 }
 
-function parseSourceResult(
+async function parseSourceResult(
   value: unknown,
   maxRecordBytes: number,
-): CaveManagedDiscoveredEndpoint {
+): Promise<CaveManagedDiscoveredEndpoint> {
   const snapshot = snapshotDiscoverySource(value, maxRecordBytes);
   if (snapshot === undefined) {
     return invalidRecord();
@@ -307,11 +329,28 @@ function parseSourceResult(
     return invalidRecord();
   }
 
-  const parsed = parseCaveDiscoveryRecord(serialized, () => processAlive);
+  const candidate = parseCaveDiscoveryRecordCandidate(
+    serialized,
+    () => processAlive,
+  );
+  const computedKeyId =
+    candidate.authorityKey === undefined
+      ? undefined
+      : new Uint8Array(
+          await globalThis.crypto.subtle.digest(
+            'SHA-256',
+            concatenateBytes(
+              new TextEncoder().encode(CAVE_HPKE_KEY_ID_DOMAIN),
+              candidate.authorityKey.publicKey,
+            ),
+          ),
+        );
+  const parsed = verifyCaveDiscoveryRecordCandidate(
+    candidate,
+    computedKeyId,
+  );
   const endpoint = {
-    version: parsed.version,
-    endpoint: parsed.endpoint,
-    freshness: parsed.freshness,
+    ...parsed,
     record: { identity, device, inode },
   };
   const result = snapshotManagedResult(endpoint);
@@ -319,6 +358,16 @@ function parseSourceResult(
     return invalidRecord();
   }
   return result as CaveManagedDiscoveredEndpoint;
+}
+
+function concatenateBytes(
+  left: Uint8Array,
+  right: Uint8Array,
+): Uint8Array<ArrayBuffer> {
+  const result = new Uint8Array(left.byteLength + right.byteLength);
+  result.set(left);
+  result.set(right, left.byteLength);
+  return result;
 }
 
 function isUtf8WithinLimit(value: string, maximumBytes: number): boolean {
@@ -395,7 +444,7 @@ export async function discoverManagedCaveEndpoint(
           );
         }
         try {
-          return parseSourceResult(value, maxRecordBytes);
+          return await parseSourceResult(value, maxRecordBytes);
         } catch (error) {
           throw sanitizedDiscoveryError(error);
         }

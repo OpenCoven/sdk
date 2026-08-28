@@ -15,6 +15,9 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const REQUEST_ID = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
 const NATIVE_BEARER = 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC';
+const HPKE_KEY_ID = 'Tq04GMSX5BPPPijzO9pHfQ1lAnna_RQKzL1ncDGl-4g';
+const HPKE_PUBLIC_KEY = 'sfG4QN56MkGwJ0jPmwW3TcjF6EUSmHOIF712qo6-jCs';
+const HPKE_RUNTIME_NONCE = 'gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8';
 
 const HEALTH = {
   apiVersion: '1.0',
@@ -50,6 +53,42 @@ const managedTransport = {
   managedCredentialStatus: () => Promise.resolve({ status: 'missing' }),
   managedForgetCredential: () => Promise.resolve({ status: 'missing' }),
 } satisfies CaveManagedCredentialTransport;
+
+function managedHpkeDiscoveryRecord(keyId = HPKE_KEY_ID) {
+  return {
+    version: 2,
+    endpoint: 'http://127.0.0.1:3020',
+    pid: 4321,
+    nonce: HPKE_RUNTIME_NONCE,
+    startedAt: '2026-08-25T15:42:58.109Z',
+    authority: {
+      mechanism: 'hpke-bound-v1',
+      mode: 'enforce',
+      keyId,
+      publicKey: HPKE_PUBLIC_KEY,
+      suite: {
+        kemId: 32,
+        kdfId: 1,
+        aeadId: 2,
+      },
+    },
+  };
+}
+
+function managedHpkeDiscoverySource(record: unknown): CaveManagedDiscoverySource {
+  return {
+    read: () =>
+      Promise.resolve({
+        bytes: JSON.stringify(record),
+        record: {
+          identity: 'tauri:owner-checked:client-v2-discovery',
+          device: 0,
+          inode: 0,
+          processAlive: true,
+        },
+      }),
+  };
+}
 
 afterEach(() => {
   vi.useRealTimers();
@@ -119,6 +158,109 @@ describe('managed browser entry point', () => {
 
     const client = createManagedCaveClient({ transport: managedTransport });
     await expect(client.health()).resolves.toMatchObject({ status: 'ok' });
+  });
+
+  test('validates and exposes HPKE discovery metadata without native protocol shaping', async () => {
+    const endpoint = await discoverManagedCaveEndpoint(
+      managedHpkeDiscoverySource(managedHpkeDiscoveryRecord()),
+    );
+
+    expect(endpoint.version).toBe(2);
+    if (endpoint.version !== 2) {
+      throw new Error('Expected managed HPKE discovery metadata.');
+    }
+    expect(endpoint.authority).toEqual({
+      mechanism: 'hpke-bound-v1',
+      mode: 'enforce',
+      keyId: HPKE_KEY_ID,
+      publicKey: HPKE_PUBLIC_KEY,
+      suite: {
+        kemId: 32,
+        kdfId: 1,
+        aeadId: 2,
+      },
+    });
+  });
+
+  test('rejects HPKE discovery keys whose SDK-computed key ID does not match', async () => {
+    await expect(
+      discoverManagedCaveEndpoint(
+        managedHpkeDiscoverySource(
+          managedHpkeDiscoveryRecord(
+            'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          ),
+        ),
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_response',
+    });
+  });
+
+  test('rejects malformed HPKE discovery fields in the SDK', async () => {
+    const valid = managedHpkeDiscoveryRecord();
+    const invalidRecords: readonly [string, unknown][] = [
+      ['version', { ...valid, version: 3 }],
+      ['endpoint', { ...valid, endpoint: 12 }],
+      ['pid', { ...valid, pid: 0 }],
+      ['authority object', { ...valid, authority: null }],
+      [
+        'mechanism',
+        {
+          ...valid,
+          authority: { ...valid.authority, mechanism: 'unsupported' },
+        },
+      ],
+      [
+        'mode',
+        {
+          ...valid,
+          authority: { ...valid.authority, mode: 'unsupported' },
+        },
+      ],
+      [
+        'suite object',
+        {
+          ...valid,
+          authority: { ...valid.authority, suite: null },
+        },
+      ],
+      [
+        'suite identifiers',
+        {
+          ...valid,
+          authority: {
+            ...valid.authority,
+            suite: { ...valid.authority.suite, aeadId: 1 },
+          },
+        },
+      ],
+      [
+        'public key length',
+        {
+          ...valid,
+          authority: { ...valid.authority, publicKey: 'short' },
+        },
+      ],
+      [
+        'public key spelling',
+        {
+          ...valid,
+          authority: {
+            ...valid.authority,
+            publicKey: `${HPKE_PUBLIC_KEY.slice(0, -1)}t`,
+          },
+        },
+      ],
+    ];
+
+    for (const [label, record] of invalidRecords) {
+      await expect(
+        discoverManagedCaveEndpoint(managedHpkeDiscoverySource(record)),
+        label,
+      ).rejects.toMatchObject({
+        code: 'invalid_response',
+      });
+    }
   });
 
   test('captures managed factory configuration only through own data descriptors', () => {

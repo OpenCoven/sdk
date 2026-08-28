@@ -12,12 +12,13 @@ import {
   isCaveDiscoveryError,
   parseCaveDiscoveryRecord,
   type CaveDiscoveryErrorCode,
-} from './discovery-record.js';
+  type CaveHpkeAuthority,
+} from './discovery-record-node.js';
 export {
   CaveDiscoveryError,
   isCaveDiscoveryError,
 } from './discovery-record.js';
-export type { CaveDiscoveryErrorCode } from './discovery-record.js';
+export type { CaveDiscoveryErrorCode, CaveHpkeAuthority } from './discovery-record.js';
 
 const DISCOVERY_FILE_NAME = 'client-v1-discovery.json';
 const DEFAULT_DISCOVERY_TIMEOUT_MS = 2_000;
@@ -98,8 +99,7 @@ export interface CaveDiscoveryRecordIdentity {
   inode: number;
 }
 
-export interface CaveDiscoveredEndpoint {
-  version: 1;
+interface CaveDiscoveredEndpointBase {
   endpoint: {
     kind: 'http';
     url: string;
@@ -107,6 +107,19 @@ export interface CaveDiscoveredEndpoint {
   freshness: CaveEndpointFreshness;
   record: CaveDiscoveryRecordIdentity;
 }
+
+export interface CaveDiscoveredEndpointV1 extends CaveDiscoveredEndpointBase {
+  version: 1;
+}
+
+export interface CaveDiscoveredEndpointV2 extends CaveDiscoveredEndpointBase {
+  version: 2;
+  authority: CaveHpkeAuthority;
+}
+
+export type CaveDiscoveredEndpoint =
+  | CaveDiscoveredEndpointV1
+  | CaveDiscoveredEndpointV2;
 
 interface DiscoveryDeadline {
   expiresAt: number | undefined;

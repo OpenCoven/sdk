@@ -50,5 +50,7 @@
 - Reject secret-bearing, accessor-backed, cyclic, non-finite, oversized, or
   overly complex native payloads, and verify the package-root API through a
   packed fake-native consumer.
+- Keep the managed browser entry free of Node built-ins while validating and
+  exposing strict HPKE discovery v2 authority metadata with browser Web Crypto.
 - Freeze the packed declaration, runtime exports, and package export map in the
   repository API baseline.

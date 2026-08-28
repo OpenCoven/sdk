@@ -287,12 +287,12 @@ opaque identity instead of exposing the raw filesystem path in the public
 contract. It brackets the single-use exchange with unauthenticated health
 proofs and persists the bearer only if the instance ID remains stable. A
 failed post-exchange proof is non-retryable for that spent session and requires
-a new pairing. These separate loopback health requests are defense in depth:
-the current Client v1 contract cannot atomically bind the subsequent
-pairing-secret or bearer request to the process that answered health. The 0.1
-release remains blocked on the producer protocol work in
-[OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996)
-and real-authority conformance.
+a new pairing. For legacy discovery v1 records, these separate loopback health
+requests remain defense in depth. Discovery v2 instead binds pairing-secret and
+bearer requests to the discovered process and authority key with
+`hpke-bound-v1`. The 0.1 release still requires real-authority conformance
+against the producer implementation tracked in
+[OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
 ### Managed native credential custody
 
 Webviews such as Tauri Chat must not receive pairing secrets or exchanged
@@ -355,13 +355,20 @@ alive. Unsupported fields, invalid loopback URLs, stale PIDs, malformed UTF-8,
 and oversized records fail SDK validation. Discovery snapshots reject repeated
 object identities and cap record bytes at 64 KiB before cloning or encoding
 them; owner identity metadata has its own 1,024-character limit. Rust does not
-shape an endpoint DTO or compatibility result for JavaScript.
+shape an endpoint DTO or compatibility result for JavaScript. Discovery v2
+authority metadata is also parsed in the SDK, including canonical key encoding,
+the exact HPKE suite, and the domain-separated SHA-256 key ID. The managed
+entry uses browser Web Crypto for that digest and does not bundle Node crypto
+or the direct-loopback HPKE implementation.
 
-Managed custody removes credential material from JavaScript; it does **not**
-solve authority endpoint takeover. Client v1 still lacks atomic request binding,
-so the release remains blocked on
-[OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996)
-and real-authority conformance.
+Managed custody removes credential material from JavaScript, but custody alone
+does not solve authority endpoint takeover. For discovery v2, the
+operation-specific native transport must execute `hpke-bound-v1` inside the
+native boundary; the SDK remains responsible for discovery, orchestration, and
+non-secret protocol validation. Discovery v1 retains only the
+preflight/postflight defense in depth. Real-authority conformance remains
+tracked in
+[OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
 
 A successful `session.poll()` keeps the session ready for one later
 `session.exchange()`. While a poll is in flight, later `poll()`/`exchange()`
