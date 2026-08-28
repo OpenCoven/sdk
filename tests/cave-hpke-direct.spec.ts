@@ -364,6 +364,249 @@ describe('direct Cave hpke-bound-v1 transport', () => {
     ]);
   });
 
+  test('defers v2 pairing health until poll and retries without exposing the secret', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('cave-hpke-poll-health-retry');
+    let healthAttempts = 0;
+    let pollAttempts = 0;
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === '/api/client/v1/pairing/requests') {
+          return Response.json(
+            envelope({
+              requestId: REQUEST_ID,
+              secret: PAIRING_SECRET,
+              expiresAt: 1_755_731_112_617,
+            }),
+            { status: 201 },
+          );
+        }
+        if (path === '/api/client/v1/health') {
+          expect(request.headers.get('x-coven-pairing-secret')).toBeNull();
+          healthAttempts += 1;
+          return healthAttempts === 1
+            ? Response.json(
+                errorEnvelope(
+                  'service_unavailable',
+                  'authority_unavailable',
+                  true,
+                ),
+                { status: 503 },
+              )
+            : Response.json(healthEnvelope(authority.instanceId));
+        }
+
+        const opened = await authority.open(request);
+        pollAttempts += 1;
+        return await authority.respond(
+          opened,
+          200,
+          envelope({
+            id: REQUEST_ID,
+            status: 'approved',
+            expiresAt: 1_755_731_112_617,
+          }),
+        );
+      },
+    });
+
+    const pairing = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'hpke-poll-health-retry',
+      scopes: ['chat:read'],
+    });
+    expect(healthAttempts).toBe(0);
+    expect(inspect(pairing)).not.toContain(PAIRING_SECRET);
+
+    const firstError = await pairing.poll().catch((error: unknown) => error);
+    expect(firstError).toMatchObject({
+      code: 'service_unavailable',
+      retryable: true,
+    });
+    expect(inspect(firstError)).not.toContain(PAIRING_SECRET);
+    expect(pollAttempts).toBe(0);
+
+    await expect(pairing.poll()).resolves.toMatchObject({
+      id: REQUEST_ID,
+      status: 'approved',
+    });
+    await expect(pairing.poll()).resolves.toMatchObject({
+      id: REQUEST_ID,
+      status: 'approved',
+    });
+    expect(healthAttempts).toBe(2);
+    expect(pollAttempts).toBe(2);
+  });
+
+  test('restores v2 pairing exchange after a pre-dispatch health failure', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference(
+      'cave-hpke-exchange-health-retry',
+    );
+    let healthAttempts = 0;
+    let exchangeAttempts = 0;
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === '/api/client/v1/pairing/requests') {
+          return Response.json(
+            envelope({
+              requestId: REQUEST_ID,
+              secret: PAIRING_SECRET,
+              expiresAt: 1_755_731_112_617,
+            }),
+            { status: 201 },
+          );
+        }
+        if (path === '/api/client/v1/health') {
+          expect(request.headers.get('x-coven-pairing-secret')).toBeNull();
+          healthAttempts += 1;
+          return healthAttempts === 1
+            ? Response.json(
+                errorEnvelope(
+                  'service_unavailable',
+                  'authority_unavailable',
+                  true,
+                ),
+                { status: 503 },
+              )
+            : Response.json(healthEnvelope(authority.instanceId));
+        }
+
+        const opened = await authority.open(request);
+        exchangeAttempts += 1;
+        return await authority.respond(
+          opened,
+          200,
+          envelope({
+            bearer: BEARER,
+            credential: {
+              id: CREDENTIAL_ID,
+              appName: 'OpenCoven Chat',
+              installationId: 'hpke-exchange-health-retry',
+              scopes: ['chat:read'],
+              createdAt: 1_755_730_812_617,
+              lastUsedAt: null,
+              revokedAt: null,
+              revocationReason: null,
+            },
+          }),
+        );
+      },
+    });
+    const pairing = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'hpke-exchange-health-retry',
+      scopes: ['chat:read'],
+    });
+
+    const firstError = await pairing.exchange().catch((error: unknown) => error);
+    expect(firstError).toMatchObject({
+      code: 'service_unavailable',
+      retryable: true,
+    });
+    expect(inspect(firstError)).not.toContain(PAIRING_SECRET);
+    expect(exchangeAttempts).toBe(0);
+
+    await expect(pairing.exchange()).resolves.toMatchObject({
+      id: CREDENTIAL_ID,
+    });
+    expect(healthAttempts).toBe(2);
+    expect(exchangeAttempts).toBe(1);
+    expect(await store.get(reference.key)).toContain(BEARER);
+  });
+
+  test('shares one deterministic v2 health resolution across poll and exchange', async () => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference(
+      'cave-hpke-shared-pairing-health',
+    );
+    let healthAttempts = 0;
+    const protectedBindings: string[] = [];
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference },
+      discoverEndpoint: async () => authority.discovered,
+      fetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === '/api/client/v1/pairing/requests') {
+          return Response.json(
+            envelope({
+              requestId: REQUEST_ID,
+              secret: PAIRING_SECRET,
+              expiresAt: 1_755_731_112_617,
+            }),
+            { status: 201 },
+          );
+        }
+        if (path === '/api/client/v1/health') {
+          healthAttempts += 1;
+          return Response.json(healthEnvelope(authority.instanceId));
+        }
+
+        const opened = await authority.open(request);
+        protectedBindings.push(opened.binding.instanceId);
+        return path.endsWith('/exchange')
+          ? await authority.respond(
+              opened,
+              200,
+              envelope({
+                bearer: BEARER,
+                credential: {
+                  id: CREDENTIAL_ID,
+                  appName: 'OpenCoven Chat',
+                  installationId: 'hpke-shared-pairing-health',
+                  scopes: ['chat:read'],
+                  createdAt: 1_755_730_812_617,
+                  lastUsedAt: null,
+                  revokedAt: null,
+                  revocationReason: null,
+                },
+              }),
+            )
+          : await authority.respond(
+              opened,
+              200,
+              envelope({
+                id: REQUEST_ID,
+                status: 'approved',
+                expiresAt: 1_755_731_112_617,
+              }),
+            );
+      },
+    });
+    const request: Parameters<typeof client.createPairing>[0] = {
+      appName: 'OpenCoven Chat',
+      installationId: 'hpke-shared-pairing-health',
+      scopes: ['chat:read'],
+    };
+    const pollPairing = await client.createPairing(request);
+    const exchangePairing = await client.createPairing(request);
+
+    const [status, credential] = await Promise.all([
+      pollPairing.poll(),
+      exchangePairing.exchange(),
+    ]);
+
+    expect(status).toMatchObject({ id: REQUEST_ID, status: 'approved' });
+    expect(credential).toMatchObject({ id: CREDENTIAL_ID });
+    expect(healthAttempts).toBe(1);
+    expect(protectedBindings).toEqual([
+      authority.instanceId,
+      authority.instanceId,
+    ]);
+  });
+
   test.each([
     {
       label: 'plaintext unauthorized response',

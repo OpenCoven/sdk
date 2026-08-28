@@ -123,6 +123,25 @@ function credentialStatusClient(options: {
   } as never);
 }
 
+function browserManagedTransport(overrides: Record<string, unknown> = {}) {
+  return {
+    health: async () => healthEnvelope(),
+    managedPairingCreate: async () => ({
+      requestId: REQUEST_ID,
+      expiresAt: 1_755_731_112_617,
+    }),
+    managedPairingPoll: async () => ({
+      id: REQUEST_ID,
+      status: 'approved',
+      expiresAt: 1_755_731_112_617,
+    }),
+    managedPairingExchange: async () => ({ credential: {} }),
+    managedCredentialStatus: async () => ({ status: 'missing' }),
+    managedForgetCredential: async () => ({ status: 'missing' }),
+    ...overrides,
+  };
+}
+
 describe('managed hpke-bound-v1 handoff', () => {
   test.each([
     ['default', { operation: { timeoutMs: 1_000 }, call: {} }],
@@ -211,6 +230,262 @@ describe('managed hpke-bound-v1 handoff', () => {
     expect(error).toBeInstanceOf(TypeError);
     expect(reads).toBe(0);
     expect(inspect(error)).not.toContain(NATIVE_SECRET);
+  });
+
+  test('defers a throwing familiar contract proxy until redacted invocation', async () => {
+    let reads = 0;
+    const transport = new Proxy(browserManagedTransport(), {
+      get(target, property, receiver) {
+        if (property === 'familiarContract') {
+          reads += 1;
+          throw new Error(`hostile proxy ${NATIVE_SECRET}`);
+        }
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+
+    const client = createBrowserManagedClient({
+      transport,
+      discovery: { source: source() },
+    } as never);
+    expect(reads).toBe(0);
+
+    const error = await client
+      .familiarContract('cody')
+      .catch((caught: unknown) => caught);
+
+    expect(reads).toBe(1);
+    expect(String(error)).toBe(
+      'CaveClientError: cave.familiarContract: invalid_response',
+    );
+    expect(inspect(error)).not.toContain(NATIVE_SECRET);
+    expect(inspect(error)).not.toContain('hostile proxy');
+  });
+
+  test('defers a throwing familiar analytics getter until redacted invocation', async () => {
+    let reads = 0;
+    const transport = Object.defineProperty(
+      browserManagedTransport(),
+      'familiarAnalytics',
+      {
+        enumerable: true,
+        get() {
+          reads += 1;
+          throw new Error(`hostile accessor ${NATIVE_SECRET}`);
+        },
+      },
+    );
+
+    const client = createBrowserManagedClient({
+      transport,
+      discovery: { source: source() },
+    } as never);
+    expect(reads).toBe(0);
+
+    const error = await client
+      .familiarAnalytics('cody')
+      .catch((caught: unknown) => caught);
+
+    expect(reads).toBe(1);
+    expect(String(error)).toBe(
+      'CaveClientError: cave.familiarAnalytics: invalid_response',
+    );
+    expect(inspect(error)).not.toContain(NATIVE_SECRET);
+    expect(inspect(error)).not.toContain('hostile accessor');
+  });
+
+  test('invokes normal own familiar functions through discovery wrapping', async () => {
+    const familiarContract = vi.fn(async () => ({
+      ok: true,
+      id: 'cody',
+      present: true,
+      report: {
+        specVersion: '1',
+        pass: true,
+        properties: [],
+        violations: [],
+        warnings: [],
+      },
+    }));
+    const familiarAnalytics = vi.fn(async () => ({
+      ok: true,
+      analytics: {
+        generatedAt: '2026-08-24T02:03:51.419Z',
+        windows: {},
+        recentAttempts: [],
+        backfill: {
+          state: 'complete',
+          imported: 0,
+        },
+      },
+    }));
+    const client = createBrowserManagedClient({
+      transport: browserManagedTransport({
+        familiarContract,
+        familiarAnalytics,
+      }),
+      discovery: { source: source() },
+    } as never);
+
+    await expect(client.familiarContract('cody')).resolves.toMatchObject({
+      id: 'cody',
+      present: true,
+    });
+    await expect(client.familiarAnalytics('cody')).resolves.toMatchObject({
+      generatedAt: '2026-08-24T02:03:51.419Z',
+    });
+    expect(familiarContract).toHaveBeenCalledOnce();
+    expect(familiarAnalytics).toHaveBeenCalledOnce();
+  });
+
+  test('preserves unsupported optional familiar operations under discovery wrapping', async () => {
+    const client = createBrowserManagedClient({
+      transport: browserManagedTransport(),
+      discovery: { source: source() },
+    } as never);
+
+    await expect(client.familiarContract('cody')).rejects.toMatchObject({
+      code: 'unsupported_operation',
+    });
+    await expect(client.familiarAnalytics('cody')).rejects.toMatchObject({
+      code: 'unsupported_operation',
+    });
+  });
+
+  test('routes browser-managed operation families through their v2 boundaries', async () => {
+    const cursor = {
+      current:
+        'eyJ2IjoxLCJzIjoiMjAyNi0wOC0xNVQwMDowMDowMS4wMDBaIiwiaSI6ImNvbnZlcnNhdGlvbi1leGFtcGxlIn0',
+      hasMore: false,
+    };
+    const health = vi.fn(async () => healthEnvelope());
+    const managedForgetCredential = vi.fn(async () => ({ status: 'deleted' }));
+    const managedHpkePairingExchange = vi.fn(async () =>
+      authenticated({
+        credential: {
+          id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+          appName: 'OpenCoven Chat',
+          installationId: 'managed-boundaries',
+          scopes: ['chat:read'],
+          createdAt: 1_755_730_812_617,
+          lastUsedAt: null,
+          revokedAt: null,
+          revocationReason: null,
+        },
+      }),
+    );
+    const managedHpkeFamiliars = vi.fn(async () =>
+      authenticated({
+        ok: true,
+        familiars: [{
+          id: 'cody',
+          display_name: 'Cody',
+          role: 'Implementation',
+        }],
+      }),
+    );
+    const managedHpkeListFamiliars = vi.fn(async () =>
+      authenticated(
+        {
+          apiVersion: '1.0',
+          minimumClientVersion: '0.1.0',
+          capabilities: ['familiars', 'cursors'],
+          operations: ['familiars.list'],
+          data: {
+            familiars: [{
+              id: 'cody',
+              displayName: 'Cody',
+              role: 'Implementation',
+            }],
+          },
+          cursor,
+        },
+      ),
+    );
+    const managedHpkeListProjects = vi.fn(async () =>
+      authenticated(
+        {
+          apiVersion: '1.0',
+          minimumClientVersion: '0.1.0',
+          capabilities: ['projects', 'cursors'],
+          operations: ['projects.list'],
+          data: {
+            projects: [{
+              id: 'project-1',
+              name: 'OpenCoven',
+              root: '/workspace',
+              createdAt: '2026-08-24T00:00:00.000Z',
+              updatedAt: '2026-08-24T01:00:00.000Z',
+            }],
+          },
+          cursor,
+        },
+      ),
+    );
+    const managedHpkeListConversations = vi.fn(async () =>
+      authenticated(
+        {
+          apiVersion: '1.0',
+          minimumClientVersion: '0.1.0',
+          capabilities: ['conversations', 'cursors'],
+          operations: ['conversations.list'],
+          data: {
+            conversations: [{
+              id: 'conversation-1',
+              familiarId: 'cody',
+              updatedAt: '2026-08-24T01:00:00.000Z',
+            }],
+          },
+          cursor,
+        },
+      ),
+    );
+    const client = createBrowserManagedClient({
+      transport: browserManagedTransport({
+        health,
+        managedForgetCredential,
+        managedHpkePairingExchange,
+        managedHpkeFamiliars,
+        managedHpkeListFamiliars,
+        managedHpkeListProjects,
+        managedHpkeListConversations,
+      }),
+      discovery: { source: source() },
+    } as never);
+    const pairing = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'managed-boundaries',
+      scopes: ['chat:read'],
+    });
+
+    await expect(client.health()).resolves.toMatchObject({ status: 'ok' });
+    await expect(pairing.exchange()).resolves.toMatchObject({
+      id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+    });
+    await expect(client.familiars()).resolves.toEqual([
+      {
+        id: 'cody',
+        displayName: 'Cody',
+        role: 'Implementation',
+      },
+    ]);
+    await expect(client.listFamiliars()).resolves.toMatchObject({
+      data: [{ id: 'cody' }],
+    });
+    await expect(client.listProjects()).resolves.toMatchObject({
+      data: [{ id: 'project-1' }],
+    });
+    await expect(client.listConversations()).resolves.toMatchObject({
+      data: [{ id: 'conversation-1' }],
+    });
+    await expect(client.forgetCredential()).resolves.toBe(true);
+    expect(health).toHaveBeenCalledOnce();
+    expect(managedHpkePairingExchange).toHaveBeenCalledOnce();
+    expect(managedHpkeFamiliars).toHaveBeenCalledOnce();
+    expect(managedHpkeListFamiliars).toHaveBeenCalledOnce();
+    expect(managedHpkeListProjects).toHaveBeenCalledOnce();
+    expect(managedHpkeListConversations).toHaveBeenCalledOnce();
+    expect(managedForgetCredential).toHaveBeenCalledOnce();
   });
 
   test('passes strict immutable v2 authority metadata to the staged native adapter', async () => {

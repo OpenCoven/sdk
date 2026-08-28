@@ -47,4 +47,30 @@ describe('queued Coven operation steps', () => {
     expect(operation).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  test('rejects when the deadline expires while arming operation controls', async () => {
+    vi.useFakeTimers();
+    let reads = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => {
+      reads += 1;
+      return reads === 1 ? 0 : 1;
+    });
+    const operation = vi.fn(() => Promise.resolve('complete'));
+
+    const result = awaitOperationStep(
+      operation,
+      {
+        signal: new AbortController().signal,
+        deadline: 1,
+      },
+      'validate_endpoint',
+    );
+
+    await expect(result).rejects.toMatchObject({
+      code: 'timeout',
+      diagnostics: { phase: 'validate_endpoint' },
+    });
+    expect(operation).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

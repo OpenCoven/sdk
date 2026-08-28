@@ -329,22 +329,18 @@ function wrapManagedHpkeTransport(
         authority,
       );
     },
-    ...(transport.familiarContract === undefined
-      ? {}
-      : {
-          familiarContract: (familiarId, context) =>
-            transport.familiarContract?.(familiarId, context) as never,
-        }),
-    ...(transport.familiarAnalytics === undefined
-      ? {}
-      : {
-          familiarAnalytics: (familiarId, options, context) =>
-            transport.familiarAnalytics?.(
-              familiarId,
-              options,
-              context,
-            ) as never,
-        }),
+    familiarContract: (familiarId, context) =>
+      invokeManaged(
+        'familiarContract',
+        [familiarId, context],
+        'familiarContract',
+      ) as never,
+    familiarAnalytics: (familiarId, options, context) =>
+      invokeManaged(
+        'familiarAnalytics',
+        [familiarId, options, context],
+        'familiarAnalytics',
+      ) as never,
   };
   return wrapped;
 }

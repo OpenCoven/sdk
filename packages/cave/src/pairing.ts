@@ -1268,13 +1268,12 @@ async function requestJson(
 function createDiscoveredTransport(
   options: DiscoveredTransportOptions,
 ): CaveCredentialPersistingTransport {
-  const pairingAuthorities = new Map<
-    string,
-    {
-      discovered: CaveDiscoveredEndpoint;
-      instanceId?: string;
-    }
-  >();
+  type PairingAuthorityState = {
+    discovered: CaveDiscoveredEndpoint;
+    instanceId?: string;
+    instanceIdResolution?: Promise<string>;
+  };
+  const pairingAuthorities = new Map<string, PairingAuthorityState>();
   const canonicalRead = async (
     route: string,
     context: OperationContext | undefined,
@@ -1298,16 +1297,57 @@ function createDiscoveredTransport(
 
   const requirePinnedAuthority = (
     requestId: string,
-  ): {
-    discovered: CaveDiscoveredEndpoint;
-    instanceId?: string;
-  } => {
+  ): PairingAuthorityState => {
     const pinnedAuthority = pairingAuthorities.get(requestId);
     if (pinnedAuthority === undefined) {
       throw pinnedPairingAuthorityError('authority_mismatch');
     }
 
     return pinnedAuthority;
+  };
+
+  const resolveV2PairingInstanceId = async (
+    requestId: string,
+    pinned: PairingAuthorityState,
+    context: OperationContext | undefined,
+  ): Promise<string> => {
+    if (pinned.instanceId !== undefined) {
+      return pinned.instanceId;
+    }
+
+    let resolution = pinned.instanceIdResolution;
+    if (resolution === undefined) {
+      resolution = (async () => {
+        const health = await requestJson('GET', '/api/client/v1/health', {
+          ...(context === undefined ? {} : { context }),
+          discoverEndpoint: options.discoverEndpoint,
+          discovery: options.discovery,
+          fetchImplementation: options.fetchImplementation,
+          hpkeState: options.hpkeState,
+          maxResponseBytes: options.maxResponseBytes,
+          pinnedAuthority: pinned.discovered,
+        });
+        return parseHealthResponse(health.payload).data.instanceId;
+      })();
+      pinned.instanceIdResolution = resolution;
+    }
+
+    try {
+      const instanceId = await resolution;
+      if (pairingAuthorities.get(requestId) !== pinned) {
+        throw pinnedPairingAuthorityError('authority_mismatch');
+      }
+      pinned.instanceId = instanceId;
+      if (pinned.instanceIdResolution === resolution) {
+        delete pinned.instanceIdResolution;
+      }
+      return instanceId;
+    } catch (error) {
+      if (pinned.instanceIdResolution === resolution) {
+        delete pinned.instanceIdResolution;
+      }
+      throw error;
+    }
   };
 
   return {
@@ -1336,27 +1376,21 @@ function createDiscoveredTransport(
         maxResponseBytes: options.maxResponseBytes,
       });
       const created = parsePairingCreated(payload);
-      let instanceId: string | undefined;
-      if (discovered.version === 2) {
-        const health = await requestJson('GET', '/api/client/v1/health', {
-          ...(context === undefined ? {} : { context }),
-          discoverEndpoint: options.discoverEndpoint,
-          discovery: options.discovery,
-          fetchImplementation: options.fetchImplementation,
-          hpkeState: options.hpkeState,
-          maxResponseBytes: options.maxResponseBytes,
-          pinnedAuthority: discovered,
-        });
-        instanceId = parseHealthResponse(health.payload).data.instanceId;
-      }
       pairingAuthorities.set(created.requestId, {
         discovered,
-        ...(instanceId === undefined ? {} : { instanceId }),
       });
       return created;
     },
     async pairingPoll(requestId, pairingSecret, context) {
       const pinned = requirePinnedAuthority(requestId);
+      const instanceId =
+        pinned.discovered.version === 2
+          ? await resolveV2PairingInstanceId(
+              requestId,
+              pinned,
+              context,
+            )
+          : undefined;
       const { payload } = await requestJson(
         'GET',
         `/api/client/v1/pairing/requests/${requestId}`,
@@ -1370,9 +1404,7 @@ function createDiscoveredTransport(
           discovery: options.discovery,
           fetchImplementation: options.fetchImplementation,
           hpkeState: options.hpkeState,
-          ...(pinned.instanceId === undefined
-            ? {}
-            : { instanceId: pinned.instanceId }),
+          ...(instanceId === undefined ? {} : { instanceId }),
           maxResponseBytes: options.maxResponseBytes,
           pairingSecretDispatch: 'reusable',
           pinnedAuthority: pinned.discovered,
@@ -1388,8 +1420,16 @@ function createDiscoveredTransport(
     async pairingExchange(requestId, pairingSecret, context) {
       const pinned = requirePinnedAuthority(requestId);
       let expectedInstanceId: string;
-      if (pinned.discovered.version === 2 && pinned.instanceId !== undefined) {
-        expectedInstanceId = pinned.instanceId;
+      if (pinned.discovered.version === 2) {
+        try {
+          expectedInstanceId = await resolveV2PairingInstanceId(
+            requestId,
+            pinned,
+            context,
+          );
+        } catch (error) {
+          throw markPairingExchangeUnsentError(error, context);
+        }
       } else {
         try {
           const expectedHealth = await requestJson('GET', '/api/client/v1/health', {
