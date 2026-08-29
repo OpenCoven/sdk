@@ -102,6 +102,94 @@ function runGitHubApi(execute, endpoint, env) {
   );
 }
 
+function verifyCandidateAttestation(
+  execute,
+  path,
+  expectedSha256,
+  authorization,
+  env,
+) {
+  const output = execute(
+    'gh',
+    [
+      'attestation',
+      'verify',
+      path,
+      '--repo',
+      'OpenCoven/sdk',
+      '--signer-workflow',
+      'OpenCoven/sdk/.github/workflows/release.yml',
+      '--signer-digest',
+      authorization.source.commit,
+      '--source-digest',
+      authorization.source.commit,
+      '--source-ref',
+      'refs/heads/main',
+      '--predicate-type',
+      'https://slsa.dev/provenance/v1',
+      '--deny-self-hosted-runners',
+      '--format',
+      'json',
+      '--hostname',
+      'github.com',
+    ],
+    {
+      encoding: 'utf8',
+      env,
+      maxBuffer: MAX_GITHUB_RESPONSE_BYTES,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 30_000,
+      killSignal: 'SIGKILL',
+    },
+  );
+  const results = parseGitHubJson(output, `${path} GitHub attestation`);
+  const invocation =
+    'https://github.com/OpenCoven/sdk/actions/runs/'
+    + `${authorization.provenance.runId}/attempts/`
+    + authorization.provenance.runAttempt;
+  if (
+    !Array.isArray(results)
+    || !results.some((entry) => {
+      const verification = isRecord(entry)
+        ? entry.verificationResult
+        : null;
+      const signature = isRecord(verification)
+        ? verification.signature
+        : null;
+      const certificate = isRecord(signature)
+        ? signature.certificate
+        : null;
+      const statement = isRecord(verification)
+        ? verification.statement
+        : null;
+      const subjects = isRecord(statement) && Array.isArray(statement.subject)
+        ? statement.subject
+        : [];
+      return (
+        isRecord(certificate)
+        && certificate.runInvocationURI === invocation
+        && certificate.runnerEnvironment === 'github-hosted'
+        && certificate.sourceRepositoryURI
+          === 'https://github.com/OpenCoven/sdk'
+        && certificate.sourceRepositoryDigest === authorization.source.commit
+        && certificate.sourceRepositoryRef === 'refs/heads/main'
+        && certificate.buildSignerDigest === authorization.source.commit
+        && statement.predicateType === 'https://slsa.dev/provenance/v1'
+        && subjects.some(
+          (subject) =>
+            isRecord(subject)
+            && isRecord(subject.digest)
+            && subject.digest.sha256 === expectedSha256,
+        )
+      );
+    })
+  ) {
+    throw new Error(
+      'GitHub security review does not cryptographically bind the downloaded candidate bytes to the exact run attempt',
+    );
+  }
+}
+
 function canonicalPackageEntries(packages) {
   if (!Array.isArray(packages) || packages.length !== 4) {
     throw new Error('Publication authorization must bind exactly four packages');
@@ -137,6 +225,8 @@ function canonicalPackageEntries(packages) {
 
 export function createPublicationAuthorizationRecord({
   artifactId,
+  deploymentId,
+  environmentId,
   jobId,
   manifest,
   manifestText,
@@ -144,10 +234,14 @@ export function createPublicationAuthorizationRecord({
   if (
     typeof artifactId !== 'string'
     || !POSITIVE_ID_PATTERN.test(artifactId)
+    || typeof deploymentId !== 'string'
+    || !POSITIVE_ID_PATTERN.test(deploymentId)
+    || typeof environmentId !== 'string'
+    || !POSITIVE_ID_PATTERN.test(environmentId)
     || typeof jobId !== 'string'
     || !POSITIVE_ID_PATTERN.test(jobId)
     || !isRecord(manifest)
-    || manifest.schemaVersion !== 3
+    || manifest.schemaVersion !== 5
     || manifest.artifactSet !== 'publication-candidate'
     || typeof manifestText !== 'string'
   ) {
@@ -164,6 +258,11 @@ export function createPublicationAuthorizationRecord({
     'Publication candidate toolchain',
   );
   assertExactFields(
+    manifest.publisher,
+    ['path', 'size', 'sha256'],
+    'Publication candidate publisher',
+  );
+  assertExactFields(
     manifest.provenance,
     [
       'repository',
@@ -173,12 +272,13 @@ export function createPublicationAuthorizationRecord({
       'runId',
       'runAttempt',
       'job',
+      'environment',
       'artifactName',
     ],
     'Publication candidate provenance',
   );
   return {
-    schemaVersion: 2,
+    schemaVersion: 4,
     kind: 'opencoven-sdk-publication-security-review',
     issue: 'OpenCoven/sdk#40',
     disposition: 'ship',
@@ -200,6 +300,11 @@ export function createPublicationAuthorizationRecord({
       npmVersion: manifest.toolchain.npmVersion,
       packCommand: manifest.toolchain.packCommand,
     },
+    publisher: {
+      path: manifest.publisher.path,
+      size: manifest.publisher.size,
+      sha256: manifest.publisher.sha256,
+    },
     provenance: {
       repository: manifest.provenance.repository,
       workflow: manifest.provenance.workflow,
@@ -209,6 +314,9 @@ export function createPublicationAuthorizationRecord({
       runAttempt: manifest.provenance.runAttempt,
       job: manifest.provenance.job,
       jobId,
+      environment: manifest.provenance.environment,
+      environmentId,
+      deploymentId,
     },
     artifact: {
       id: artifactId,
@@ -243,6 +351,7 @@ function parseAuthorizationBody(text) {
       'manifest',
       'packages',
       'toolchain',
+      'publisher',
       'provenance',
       'artifact',
     ],
@@ -264,6 +373,11 @@ function parseAuthorizationBody(text) {
     'Publication authorization toolchain',
   );
   assertExactFields(
+    value.publisher,
+    ['path', 'size', 'sha256'],
+    'Publication authorization publisher',
+  );
+  assertExactFields(
     value.provenance,
     [
       'repository',
@@ -274,6 +388,9 @@ function parseAuthorizationBody(text) {
       'runAttempt',
       'job',
       'jobId',
+      'environment',
+      'environmentId',
+      'deploymentId',
     ],
     'Publication authorization provenance',
   );
@@ -284,7 +401,7 @@ function parseAuthorizationBody(text) {
   );
   const packages = canonicalPackageEntries(value.packages);
   if (
-    value.schemaVersion !== 2
+    value.schemaVersion !== 4
     || value.kind !== 'opencoven-sdk-publication-security-review'
     || value.issue !== 'OpenCoven/sdk#40'
     || value.disposition !== 'ship'
@@ -304,6 +421,11 @@ function parseAuthorizationBody(text) {
     || value.toolchain.npmVersion !== '11.5.1'
     || value.toolchain.packCommand
       !== 'corepack pnpm@10.34.0 pack --ignore-scripts'
+    || value.publisher.path !== 'scripts/publish-release-artifacts.mjs'
+    || !Number.isSafeInteger(value.publisher.size)
+    || value.publisher.size <= 0
+    || typeof value.publisher.sha256 !== 'string'
+    || !SHA256_PATTERN.test(value.publisher.sha256)
     || value.provenance.repository !== 'OpenCoven/sdk'
     || value.provenance.workflow !== '.github/workflows/release.yml'
     || value.provenance.workflowCommit !== value.source.commit
@@ -316,6 +438,11 @@ function parseAuthorizationBody(text) {
     || value.provenance.job !== 'publication-candidate'
     || typeof value.provenance.jobId !== 'string'
     || !POSITIVE_ID_PATTERN.test(value.provenance.jobId)
+    || value.provenance.environment !== 'publication-candidate'
+    || typeof value.provenance.environmentId !== 'string'
+    || !POSITIVE_ID_PATTERN.test(value.provenance.environmentId)
+    || typeof value.provenance.deploymentId !== 'string'
+    || !POSITIVE_ID_PATTERN.test(value.provenance.deploymentId)
     || typeof value.artifact.id !== 'string'
     || !POSITIVE_ID_PATTERN.test(value.artifact.id)
     || typeof value.artifact.name !== 'string'
@@ -376,6 +503,68 @@ function expectAuthorizedJob(value, authorization) {
   ) {
     throw new Error(
       'GitHub security review does not bind the successful candidate-producing job',
+    );
+  }
+}
+
+function expectAuthorizedEnvironment(value, authorization) {
+  if (
+    !isRecord(value)
+    || value.id !== Number(authorization.provenance.environmentId)
+    || value.name !== authorization.provenance.environment
+  ) {
+    throw new Error(
+      'GitHub security review does not bind the exact publication candidate environment',
+    );
+  }
+}
+
+function expectAuthorizedDeployment(value, authorization) {
+  const deploymentId = Number(authorization.provenance.deploymentId);
+  if (
+    !isRecord(value)
+    || value.id !== deploymentId
+    || value.sha !== authorization.source.commit
+    || value.ref !== 'main'
+    || value.task !== 'deploy'
+    || value.environment !== authorization.provenance.environment
+    || value.transient_environment !== false
+    || value.statuses_url
+      !== (
+        'https://api.github.com/repos/OpenCoven/sdk/deployments/'
+        + `${deploymentId}/statuses`
+      )
+    || value.repository_url
+      !== 'https://api.github.com/repos/OpenCoven/sdk'
+    || !isRecord(value.performed_via_github_app)
+    || value.performed_via_github_app.slug !== 'github-actions'
+  ) {
+    throw new Error(
+      'GitHub security review does not bind the exact publication candidate deployment',
+    );
+  }
+}
+
+function expectAuthorizedDeploymentStatuses(value, authorization) {
+  const jobUrl =
+    'https://github.com/OpenCoven/sdk/actions/runs/'
+    + `${authorization.provenance.runId}/job/`
+    + authorization.provenance.jobId;
+  if (
+    !Array.isArray(value)
+    || value.length === 0
+    || value.some(
+      (status) =>
+        !isRecord(status)
+        || status.environment !== authorization.provenance.environment
+        || status.log_url !== jobUrl
+        || status.target_url !== jobUrl
+        || typeof status.state !== 'string',
+    )
+    || !value.some((status) => status.state === 'success')
+  ) {
+    throw new Error(
+      'GitHub security review deployment does not belong to the exact candidate job',
     );
   }
 }
@@ -515,6 +704,8 @@ export function resolvePublicationSecurityReview({
     authorization.provenance.workflow
       !== config.publicationCandidate.workflow
     || authorization.provenance.job !== config.publicationCandidate.job
+    || authorization.provenance.environment
+      !== config.publicationCandidate.environment
     || authorization.toolchain.npmVersion !== config.npmCliVersion
   ) {
     throw new Error(
@@ -553,6 +744,24 @@ export function resolvePublicationSecurityReview({
     ),
     authorization,
   );
+  const environment = runGitHubApi(
+    execute,
+    `repos/OpenCoven/sdk/environments/${encodeURIComponent(authorization.provenance.environment)}`,
+    env,
+  );
+  expectAuthorizedEnvironment(environment, authorization);
+  const deployment = runGitHubApi(
+    execute,
+    `repos/OpenCoven/sdk/deployments/${authorization.provenance.deploymentId}`,
+    env,
+  );
+  expectAuthorizedDeployment(deployment, authorization);
+  const deploymentStatuses = runGitHubApi(
+    execute,
+    `repos/OpenCoven/sdk/deployments/${authorization.provenance.deploymentId}/statuses?per_page=100`,
+    env,
+  );
+  expectAuthorizedDeploymentStatuses(deploymentStatuses, authorization);
   const artifact = runGitHubApi(
     execute,
     `repos/OpenCoven/sdk/actions/artifacts/${authorization.artifact.id}`,
@@ -608,6 +817,7 @@ export function verifyPublicationSecurityReview({
       runId: authorization.provenance.runId,
       runAttempt: authorization.provenance.runAttempt,
       job: authorization.provenance.job,
+      environment: authorization.provenance.environment,
       artifactName: authorization.artifact.name,
     },
   });
@@ -623,8 +833,28 @@ export function verifyPublicationSecurityReview({
       'GitHub security review raw publication manifest digest does not match the downloaded bytes',
     );
   }
+  for (const subject of [
+    {
+      path: resolve(artifactRoot, 'release-manifest.json'),
+      sha256: authorization.manifest.sha256,
+    },
+    ...authorization.packages.map((entry) => ({
+      path: resolve(artifactRoot, entry.file),
+      sha256: entry.sha256,
+    })),
+  ]) {
+    verifyCandidateAttestation(
+      execute,
+      subject.path,
+      subject.sha256,
+      authorization,
+      env,
+    );
+  }
   const expected = createPublicationAuthorizationRecord({
     artifactId: authorization.artifact.id,
+    deploymentId: authorization.provenance.deploymentId,
+    environmentId: authorization.provenance.environmentId,
     jobId: authorization.provenance.jobId,
     manifest,
     manifestText,
@@ -639,6 +869,7 @@ export function verifyPublicationSecurityReview({
     manifest: authorization.manifest,
     packages: authorization.packages,
     toolchain: authorization.toolchain,
+    publisher: authorization.publisher,
     provenance: authorization.provenance,
     artifact: authorization.artifact,
   };

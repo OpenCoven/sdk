@@ -39,6 +39,7 @@ const RELEASE_MANIFEST_SCHEMA_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../conformance/release-artifact-manifest.schema.json',
 );
+const PUBLISHER_PATH = 'scripts/publish-release-artifacts.mjs';
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const PUBLICATION_TOOLCHAIN = Object.freeze({
   nodeVersion: 'v24.18.1',
@@ -211,9 +212,9 @@ export function serializeReleaseManifest(manifest) {
             sha256: entry.sha256,
           })),
         }
-      : manifest.schemaVersion === 3
+      : manifest.schemaVersion === 5
         ? {
-            schemaVersion: 3,
+            schemaVersion: 5,
             artifactSet: manifest.artifactSet,
             version: manifest.version,
             source: {
@@ -232,6 +233,11 @@ export function serializeReleaseManifest(manifest) {
               npmVersion: manifest.toolchain.npmVersion,
               packCommand: manifest.toolchain.packCommand,
             },
+            publisher: {
+              path: manifest.publisher.path,
+              size: manifest.publisher.size,
+              sha256: manifest.publisher.sha256,
+            },
             provenance: {
               repository: manifest.provenance.repository,
               workflow: manifest.provenance.workflow,
@@ -240,6 +246,7 @@ export function serializeReleaseManifest(manifest) {
               runId: manifest.provenance.runId,
               runAttempt: manifest.provenance.runAttempt,
               job: manifest.provenance.job,
+              environment: manifest.provenance.environment,
               artifactName: manifest.provenance.artifactName,
             },
             packages: manifest.packages.map((entry) => ({
@@ -253,7 +260,7 @@ export function serializeReleaseManifest(manifest) {
         : null;
   if (canonicalManifest === null) {
     throw new Error(
-      `${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 3`,
+      `${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 5`,
     );
   }
   return `${JSON.stringify(
@@ -341,7 +348,7 @@ function readReleaseManifest(artifactRoot) {
       ['schemaVersion', 'version', 'packages'],
       RELEASE_MANIFEST_NAME,
     );
-  } else if (manifest.schemaVersion === 3) {
+  } else if (manifest.schemaVersion === 5) {
     assertExactFields(
       manifest,
       [
@@ -350,13 +357,14 @@ function readReleaseManifest(artifactRoot) {
         'version',
         'source',
         'toolchain',
+        'publisher',
         'provenance',
         'packages',
       ],
       RELEASE_MANIFEST_NAME,
     );
   } else {
-    throw new Error(`${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 3`);
+    throw new Error(`${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 5`);
   }
   if (!Array.isArray(manifest.packages)) {
     throw new Error(`${RELEASE_MANIFEST_NAME} packages must be an array`);
@@ -814,6 +822,45 @@ function inspectPublicationSource(root, config) {
     sourceCommit: checkout.commit,
     sourceTree: checkout.tree,
     npmConfigFiles: inspectRepositoryNpmConfiguration(checkout.root),
+    publisher: inspectCommittedPublisher(checkout.root, checkout.commit),
+  };
+}
+
+function inspectCommittedPublisher(root, commit) {
+  const path = resolve(root, PUBLISHER_PATH);
+  const stats = lstatSync(path);
+  const entry = runReleaseProcess(
+    'git',
+    ['ls-tree', commit, '--', PUBLISHER_PATH],
+    root,
+  ).trim();
+  const match = /^100(?:644|755) blob ([0-9a-f]{40})\t(.+)$/u.exec(entry);
+  if (
+    match === null
+    || match[2] !== PUBLISHER_PATH
+    || stats.isSymbolicLink()
+    || !stats.isFile()
+  ) {
+    throw new Error(
+      'Sterile publisher runtime must be the exact committed regular file',
+    );
+  }
+  const bytes = readFileSync(path);
+  const committedBytes = runReleaseProcess(
+    'git',
+    ['cat-file', 'blob', match[1]],
+    root,
+    { encoding: 'buffer' },
+  );
+  if (!bytes.equals(committedBytes)) {
+    throw new Error(
+      'Sterile publisher runtime must be the exact committed regular file',
+    );
+  }
+  return {
+    path: PUBLISHER_PATH,
+    size: bytes.byteLength,
+    sha256: digest(bytes),
   };
 }
 
@@ -833,6 +880,8 @@ function readPublicationProvenance(env, source, config, version) {
     || !workflowRef.startsWith(workflowRefPrefix)
     || workflowRef.slice(workflowRefPrefix.length) !== 'refs/heads/main'
     || env.GITHUB_JOB !== config.publicationCandidate.job
+    || env.OPENCOVEN_PUBLICATION_ENVIRONMENT
+      !== config.publicationCandidate.environment
     || typeof env.GITHUB_RUN_ID !== 'string'
     || !/^[1-9]\d*$/u.test(env.GITHUB_RUN_ID)
     || !Number.isSafeInteger(runAttempt)
@@ -852,6 +901,7 @@ function readPublicationProvenance(env, source, config, version) {
     runId: env.GITHUB_RUN_ID,
     runAttempt,
     job: config.publicationCandidate.job,
+    environment: config.publicationCandidate.environment,
     artifactName: expectedArtifactName,
   };
 }
@@ -886,7 +936,7 @@ function verifyPublicationArtifactSet({
   const source = inspectPublicationSource(root, config);
   const { manifest } = readReleaseManifest(artifactRoot);
   if (
-    manifest.schemaVersion !== 3
+    manifest.schemaVersion !== 5
     || manifest.artifactSet !== 'publication-candidate'
   ) {
     throw new Error(
@@ -904,6 +954,11 @@ function verifyPublicationArtifactSet({
     `${RELEASE_MANIFEST_NAME} toolchain`,
   );
   assertExactFields(
+    manifest.publisher,
+    ['path', 'size', 'sha256'],
+    `${RELEASE_MANIFEST_NAME} publisher`,
+  );
+  assertExactFields(
     manifest.provenance,
     [
       'repository',
@@ -913,6 +968,7 @@ function verifyPublicationArtifactSet({
       'runId',
       'runAttempt',
       'job',
+      'environment',
       'artifactName',
     ],
     `${RELEASE_MANIFEST_NAME} provenance`,
@@ -927,6 +983,8 @@ function verifyPublicationArtifactSet({
       !== JSON.stringify(source.npmConfigFiles)
     || JSON.stringify(manifest.toolchain)
       !== JSON.stringify(PUBLICATION_TOOLCHAIN)
+    || JSON.stringify(manifest.publisher)
+      !== JSON.stringify(source.publisher)
     || manifest.toolchain.npmVersion !== config.npmCliVersion
     || manifest.provenance.repository !== 'OpenCoven/sdk'
     || manifest.provenance.workflow
@@ -934,6 +992,8 @@ function verifyPublicationArtifactSet({
     || manifest.provenance.workflowCommit !== source.sourceCommit
     || manifest.provenance.sourceRef !== 'refs/heads/main'
     || manifest.provenance.job !== config.publicationCandidate.job
+    || manifest.provenance.environment
+      !== config.publicationCandidate.environment
     || manifest.provenance.artifactName !== expectedArtifactName
     || typeof manifest.provenance.runId !== 'string'
     || !/^[1-9]\d*$/u.test(manifest.provenance.runId)
@@ -1048,7 +1108,7 @@ export function createPublicationArtifacts({
       env: createReleaseProcessEnvironment(),
     });
     const manifest = {
-      schemaVersion: 3,
+      schemaVersion: 5,
       artifactSet: 'publication-candidate',
       version: readiness.version,
       source: {
@@ -1058,6 +1118,7 @@ export function createPublicationArtifacts({
         npmConfigFiles: source.npmConfigFiles,
       },
       toolchain: { ...PUBLICATION_TOOLCHAIN },
+      publisher: source.publisher,
       provenance,
       packages,
     };

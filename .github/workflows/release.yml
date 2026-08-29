@@ -191,15 +191,18 @@ jobs:
     name: publication-candidate
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    environment: publication-candidate
     permissions:
       actions: read
-      attestations: read
+      attestations: write
       contents: read
       deployments: read
+      id-token: write
       issues: read
     env:
       RELEASE_VERSION: ${{ inputs.version }}
       OPENCOVEN_CAVE_AUTHORITY_ROOT: ${{ github.workspace }}/.artifacts/cave-authority
+      OPENCOVEN_PUBLICATION_ENVIRONMENT: publication-candidate
       OPENCOVEN_PUBLICATION_ARTIFACT_NAME: opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -240,6 +243,11 @@ jobs:
           path: .artifacts/publication
           if-no-files-found: error
           retention-days: 30
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            .artifacts/publication/release-manifest.json
+            .artifacts/publication/tarballs/**/*.tgz
 
   publish:
     if: inputs.mode == 'publish'
@@ -252,8 +260,9 @@ jobs:
       OPENCOVEN_SECURITY_REVIEW_COMMENT_ID: ${{ inputs.security-review-comment-id }}
     permissions:
       actions: read
-      attestations: write
+      attestations: read
       contents: read
+      deployments: read
       id-token: write
       issues: read
     steps:
@@ -295,11 +304,6 @@ jobs:
         run: >-
           node ./scripts/github-release-authorization.mjs
           --artifact-root .artifacts/publication
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: |
-            .artifacts/publication/release-manifest.json
-            .artifacts/publication/tarballs/**/*.tgz
       - name: Publish exact reviewed release artifacts
         env:
           GH_TOKEN: ${{ github.token }}

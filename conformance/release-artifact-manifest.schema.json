@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:opencoven:schema:release-artifact-manifest:3",
+  "$id": "urn:opencoven:schema:release-artifact-manifest:5",
   "title": "OpenCoven release artifact manifest",
   "description": "Separates the frozen private-source conformance artifact set from an immutable publication candidate produced before and later bound by the external security review.",
   "oneOf": [
@@ -128,12 +128,13 @@
         "version",
         "source",
         "toolchain",
+        "publisher",
         "provenance",
         "packages"
       ],
       "properties": {
         "schemaVersion": {
-          "const": 3
+          "const": 5
         },
         "artifactSet": {
           "const": "publication-candidate"
@@ -209,6 +210,20 @@
             }
           }
         },
+        "publisher": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/fileMetadata"
+            },
+            {
+              "properties": {
+                "path": {
+                  "const": "scripts/publish-release-artifacts.mjs"
+                }
+              }
+            }
+          ]
+        },
         "provenance": {
           "type": "object",
           "additionalProperties": false,
@@ -220,6 +235,7 @@
             "runId",
             "runAttempt",
             "job",
+            "environment",
             "artifactName"
           ],
           "properties": {
@@ -244,6 +260,9 @@
               "maximum": 1000
             },
             "job": {
+              "const": "publication-candidate"
+            },
+            "environment": {
               "const": "publication-candidate"
             },
             "artifactName": {

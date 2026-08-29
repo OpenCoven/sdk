@@ -10,7 +10,7 @@ export type NativeConformancePlatforms = readonly [
 ];
 
 export interface ReleaseConfig {
-  schemaVersion: 4;
+  schemaVersion: 5;
   publishingEnabled: boolean;
   tagPrefix: 'sdk-v';
   npmAccess: 'public';
@@ -31,6 +31,7 @@ export interface ReleaseConfig {
   };
   publicationCandidate: {
     artifactSet: 'publication-candidate';
+    environment: 'publication-candidate';
     securityReviewIssue: 'OpenCoven/sdk#40';
     workflow: '.github/workflows/release.yml';
     job: 'publication-candidate';

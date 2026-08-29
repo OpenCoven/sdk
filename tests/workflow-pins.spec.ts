@@ -193,7 +193,7 @@ describe('workflow action pins', () => {
       expect(actionPins(releaseWorkflow).map((pin) => pin.action)).toContain(action);
     }
     expect(releaseWorkflow).toMatch(/^permissions:\n\s{2}contents: read\n/m);
-    expect(releaseWorkflow.match(/id-token: write/g)).toHaveLength(1);
+    expect(releaseWorkflow.match(/id-token: write/g)).toHaveLength(2);
     expect(releaseWorkflow.match(/attestations: write/g)).toHaveLength(1);
     expect(releaseWorkflow).toContain(
       "if [ -n \"$(git status --porcelain --untracked-files=all)\" ]; then",

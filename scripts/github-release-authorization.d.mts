@@ -3,7 +3,7 @@ import type {
 } from './create-release-artifacts.mjs';
 
 export interface PublicationSecurityReview {
-  schemaVersion: 2;
+  schemaVersion: 4;
   kind: 'opencoven-sdk-publication-security-review';
   issue: 'OpenCoven/sdk#40';
   disposition: 'ship';
@@ -20,11 +20,14 @@ export interface PublicationSecurityReview {
   };
   packages: PublicationArtifactManifest['packages'];
   toolchain: PublicationArtifactManifest['toolchain'];
+  publisher: PublicationArtifactManifest['publisher'];
   provenance: Omit<
     PublicationArtifactManifest['provenance'],
     'artifactName'
   > & {
     jobId: string;
+    environmentId: string;
+    deploymentId: string;
   };
   artifact: {
     id: string;
@@ -36,6 +39,8 @@ export interface PublicationSecurityReview {
 
 export function createPublicationAuthorizationRecord(options: {
   artifactId: string;
+  deploymentId: string;
+  environmentId: string;
   jobId: string;
   manifest: PublicationArtifactManifest;
   manifestText: string;

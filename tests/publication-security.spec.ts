@@ -19,7 +19,8 @@ import {
   serializeReleaseManifest,
 } from '../scripts/create-release-artifacts.mjs';
 import {
-  createPublicationAuthorizationRecord,
+  createPublicationAuthorizationRecord as createRawPublicationAuthorizationRecord,
+  resolvePublicationSecurityReview,
 } from '../scripts/github-release-authorization.mjs';
 import {
   publishReleaseArtifacts,
@@ -34,8 +35,30 @@ const VERSION = '0.1.0';
 const NPM_REGISTRY = 'https://registry.npmjs.org/';
 const NPM_VERSION = '11.5.1';
 
+type PublicationAuthorizationOptions = Parameters<
+  typeof createRawPublicationAuthorizationRecord
+>[0];
+
+function createPublicationAuthorizationRecord(
+  options: Omit<
+    PublicationAuthorizationOptions,
+    'deploymentId' | 'environmentId'
+  > & Partial<
+    Pick<
+      PublicationAuthorizationOptions,
+      'deploymentId' | 'environmentId'
+    >
+  >,
+) {
+  return createRawPublicationAuthorizationRecord({
+    deploymentId: '40000',
+    environmentId: '50000',
+    ...options,
+  });
+}
+
 interface PublicationManifest {
-  schemaVersion: 3;
+  schemaVersion: 5;
   artifactSet: 'publication-candidate';
   version: string;
   source: {
@@ -54,6 +77,11 @@ interface PublicationManifest {
     npmVersion: '11.5.1';
     packCommand: 'corepack pnpm@10.34.0 pack --ignore-scripts';
   };
+  publisher: {
+    path: 'scripts/publish-release-artifacts.mjs';
+    size: number;
+    sha256: string;
+  };
   provenance: {
     repository: 'OpenCoven/sdk';
     workflow: '.github/workflows/release.yml';
@@ -62,6 +90,7 @@ interface PublicationManifest {
     runId: string;
     runAttempt: number;
     job: 'publication-candidate';
+    environment: 'publication-candidate';
     artifactName: string;
   };
   packages: Array<{
@@ -125,12 +154,13 @@ function createReleaseFixture({
   const config = JSON.parse(
     readFileSync(resolve(workspaceRoot, 'release.config.json'), 'utf8'),
   ) as Record<string, unknown>;
-  config.schemaVersion = 4;
+  config.schemaVersion = 5;
   config.publishingEnabled = true;
   config.npmCliVersion = NPM_VERSION;
   config.npmRegistry = NPM_REGISTRY;
   config.publicationCandidate = {
     artifactSet: 'publication-candidate',
+    environment: 'publication-candidate',
     securityReviewIssue: 'OpenCoven/sdk#40',
     workflow: '.github/workflows/release.yml',
     job: 'publication-candidate',
@@ -234,9 +264,11 @@ function writePublicationArtifacts(
   const commit = git(sourceRoot, ['rev-parse', 'HEAD']);
   const tree = git(sourceRoot, ['rev-parse', 'HEAD^{tree}']);
   const npmrcBytes = readFileSync(resolve(sourceRoot, '.npmrc'));
+  const publisherPath = 'scripts/publish-release-artifacts.mjs';
+  const publisherBytes = readFileSync(resolve(sourceRoot, publisherPath));
   const artifactName = `opencoven-sdk-publication-${commit}-${VERSION}`;
   const manifest: PublicationManifest = {
-    schemaVersion: 3,
+    schemaVersion: 5,
     artifactSet: 'publication-candidate',
     version: VERSION,
     source: {
@@ -257,6 +289,11 @@ function writePublicationArtifacts(
       npmVersion: NPM_VERSION,
       packCommand: 'corepack pnpm@10.34.0 pack --ignore-scripts',
     },
+    publisher: {
+      path: publisherPath,
+      size: publisherBytes.byteLength,
+      sha256: sha256(publisherBytes),
+    },
     provenance: {
       repository: 'OpenCoven/sdk',
       workflow: '.github/workflows/release.yml',
@@ -265,6 +302,7 @@ function writePublicationArtifacts(
       runId: '10000',
       runAttempt: 1,
       job: 'publication-candidate',
+      environment: 'publication-candidate',
       artifactName,
     },
     packages,
@@ -279,6 +317,42 @@ function createGitHubExecute(
 ) {
   return (command: string, arguments_: string[]): string => {
     expect(command).toBe('gh');
+    if (
+      arguments_[0] === 'attestation'
+      && arguments_[1] === 'verify'
+    ) {
+      const path = arguments_[2];
+      if (path === undefined) {
+        throw new Error('Missing mocked attestation verification path');
+      }
+      return JSON.stringify([
+        {
+          verificationResult: {
+            signature: {
+              certificate: {
+                runInvocationURI:
+                  'https://github.com/OpenCoven/sdk/actions/runs/10000/attempts/1',
+                runnerEnvironment: 'github-hosted',
+                sourceRepositoryURI: 'https://github.com/OpenCoven/sdk',
+                sourceRepositoryDigest: authorization.source.commit,
+                sourceRepositoryRef: 'refs/heads/main',
+                buildSignerDigest: authorization.source.commit,
+              },
+            },
+            statement: {
+              predicateType: 'https://slsa.dev/provenance/v1',
+              subject: [
+                {
+                  digest: {
+                    sha256: sha256(readFileSync(path)),
+                  },
+                },
+              ],
+            },
+          },
+        },
+      ]);
+    }
     const endpoint = arguments_.at(-1) ?? '';
     if (endpoint === 'repos/OpenCoven/sdk/issues/40') {
       return JSON.stringify({
@@ -336,6 +410,51 @@ function createGitHubExecute(
           },
         ],
       });
+    }
+    if (
+      endpoint === 'repos/OpenCoven/sdk/environments/publication-candidate'
+    ) {
+      return JSON.stringify({
+        id: 50000,
+        name: 'publication-candidate',
+      });
+    }
+    if (endpoint === 'repos/OpenCoven/sdk/deployments/40000') {
+      return JSON.stringify({
+        id: 40000,
+        sha: authorization.source.commit,
+        ref: 'main',
+        task: 'deploy',
+        environment: 'publication-candidate',
+        transient_environment: false,
+        statuses_url:
+          'https://api.github.com/repos/OpenCoven/sdk/deployments/40000/statuses',
+        repository_url: 'https://api.github.com/repos/OpenCoven/sdk',
+        performed_via_github_app: {
+          slug: 'github-actions',
+        },
+      });
+    }
+    if (
+      endpoint
+        === 'repos/OpenCoven/sdk/deployments/40000/statuses?per_page=100'
+    ) {
+      const jobUrl =
+        'https://github.com/OpenCoven/sdk/actions/runs/10000/job/20000';
+      return JSON.stringify([
+        {
+          state: 'in_progress',
+          environment: 'publication-candidate',
+          log_url: jobUrl,
+          target_url: jobUrl,
+        },
+        {
+          state: 'success',
+          environment: 'publication-candidate',
+          log_url: jobUrl,
+          target_url: jobUrl,
+        },
+      ]);
     }
     if (endpoint === 'repos/OpenCoven/sdk/actions/artifacts/30000') {
       return JSON.stringify({
@@ -452,7 +571,288 @@ afterEach(() => {
   }
 });
 
-describe('publication security', () => {
+describe('publication security', { timeout: 30_000 }, () => {
+  test('binds the authorization to the exact candidate environment and deployment', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-candidate-deployment-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const manifest = structuredClone(candidate.manifest);
+    const manifestText = serializeReleaseManifest(manifest as never);
+
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      deploymentId: '40000',
+      environmentId: '50000',
+      jobId: '20000',
+      manifest: manifest as never,
+      manifestText,
+    });
+
+    expect(authorization.provenance).toMatchObject({
+      runId: '10000',
+      runAttempt: 1,
+      job: 'publication-candidate',
+      jobId: '20000',
+      environment: 'publication-candidate',
+      environmentId: '50000',
+      deploymentId: '40000',
+    });
+  });
+
+  test('binds the reviewed sterile publisher runtime path and digest', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-publisher-runtime-binding-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const publisherPath = 'scripts/publish-release-artifacts.mjs';
+    const publisherBytes = readFileSync(resolve(sourceRoot, publisherPath));
+    const manifest = {
+      ...candidate.manifest,
+      publisher: {
+        path: publisherPath,
+        size: publisherBytes.byteLength,
+        sha256: sha256(publisherBytes),
+      },
+    };
+    const manifestText = serializeReleaseManifest(manifest as never);
+
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: manifest as never,
+      manifestText,
+    });
+
+    expect(authorization).toMatchObject({
+      publisher: {
+        path: publisherPath,
+        size: publisherBytes.byteLength,
+        sha256: sha256(publisherBytes),
+      },
+    });
+  });
+
+  test('verifies the candidate environment and deployment against the exact job attempt', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-candidate-job-binding-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const endpoints: string[] = [];
+    const execute = createGitHubExecute(authorization);
+
+    expect(
+      resolvePublicationSecurityReview({
+        root: sourceRoot,
+        commentId: '4001',
+        execute: (command: string, arguments_: string[]) => {
+          endpoints.push(arguments_.at(-1) ?? '');
+          return execute(command, arguments_);
+        },
+        env: { GH_TOKEN: 'github-token' },
+      } as never),
+    ).toMatchObject({
+      provenance: {
+        runId: '10000',
+        runAttempt: 1,
+        jobId: '20000',
+        environment: 'publication-candidate',
+        environmentId: '50000',
+        deploymentId: '40000',
+      },
+    });
+    expect(endpoints).toContain(
+      'repos/OpenCoven/sdk/environments/publication-candidate',
+    );
+    expect(endpoints).toContain('repos/OpenCoven/sdk/deployments/40000');
+    expect(endpoints).toContain(
+      'repos/OpenCoven/sdk/deployments/40000/statuses?per_page=100',
+    );
+  });
+
+  test('rejects a candidate deployment bound to a sibling job', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-sibling-candidate-job-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const execute = createGitHubExecute(authorization);
+
+    expect(() =>
+      resolvePublicationSecurityReview({
+        root: sourceRoot,
+        commentId: '4001',
+        execute: (command: string, arguments_: string[]) => {
+          const endpoint = arguments_.at(-1) ?? '';
+          if (
+            endpoint
+              === 'repos/OpenCoven/sdk/deployments/40000/statuses?per_page=100'
+          ) {
+            return JSON.stringify([
+              {
+                state: 'success',
+                environment: 'publication-candidate',
+                log_url:
+                  'https://github.com/OpenCoven/sdk/actions/runs/10000/job/29999',
+                target_url:
+                  'https://github.com/OpenCoven/sdk/actions/runs/10000/job/29999',
+              },
+            ]);
+          }
+          return execute(command, arguments_);
+        },
+        env: { GH_TOKEN: 'github-token' },
+      } as never),
+    ).toThrow(
+      'GitHub security review deployment does not belong to the exact candidate job',
+    );
+  });
+
+  test('rejects a substituted publication candidate environment identity', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-substituted-candidate-environment-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const execute = createGitHubExecute(authorization);
+
+    expect(() =>
+      resolvePublicationSecurityReview({
+        root: sourceRoot,
+        commentId: '4001',
+        execute: (command: string, arguments_: string[]) => {
+          const endpoint = arguments_.at(-1) ?? '';
+          if (
+            endpoint
+              === 'repos/OpenCoven/sdk/environments/publication-candidate'
+          ) {
+            return JSON.stringify({
+              id: 59999,
+              name: 'publication-candidate',
+            });
+          }
+          return execute(command, arguments_);
+        },
+        env: { GH_TOKEN: 'github-token' },
+      } as never),
+    ).toThrow(
+      'GitHub security review does not bind the exact publication candidate environment',
+    );
+  });
+
+  test('verifies attestations for every downloaded candidate file from the exact run attempt', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-candidate-attestations-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const apiExecute = createGitHubExecute(authorization);
+    const attestationCalls: string[][] = [];
+    const publishCalls: Array<{
+      arguments_: string[];
+      cwd: string;
+      env: Record<string, string | undefined>;
+    }> = [];
+
+    publishReleaseArtifacts({
+      root: sourceRoot,
+      artifactRoot,
+      version: VERSION,
+      env: publicationEnvironment(sourceRoot),
+      execute: createNpmExecute(publishCalls),
+      githubExecute: (command: string, arguments_: string[]) => {
+        if (
+          arguments_[0] === 'attestation'
+          && arguments_[1] === 'verify'
+        ) {
+          attestationCalls.push([...arguments_]);
+          const path = arguments_[2];
+          if (path === undefined) {
+            throw new Error('Missing attestation verification path');
+          }
+          return JSON.stringify([
+            {
+              verificationResult: {
+                signature: {
+                  certificate: {
+                    runInvocationURI:
+                      'https://github.com/OpenCoven/sdk/actions/runs/10000/attempts/1',
+                    runnerEnvironment: 'github-hosted',
+                    sourceRepositoryURI: 'https://github.com/OpenCoven/sdk',
+                    sourceRepositoryDigest: authorization.source.commit,
+                    sourceRepositoryRef: 'refs/heads/main',
+                    buildSignerDigest: authorization.source.commit,
+                  },
+                },
+                statement: {
+                  predicateType: 'https://slsa.dev/provenance/v1',
+                  subject: [
+                    {
+                      digest: {
+                        sha256: sha256(readFileSync(path)),
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          ]);
+        }
+        return apiExecute(command, arguments_);
+      },
+    } as never);
+
+    expect(attestationCalls).toHaveLength(5);
+    expect(
+      attestationCalls.every(
+        (arguments_) =>
+          arguments_.includes('--signer-workflow')
+          && arguments_.includes(
+            'OpenCoven/sdk/.github/workflows/release.yml',
+          )
+          && arguments_.includes('--signer-digest')
+          && arguments_.includes(authorization.source.commit)
+          && arguments_.includes('--source-ref')
+          && arguments_.includes('refs/heads/main')
+          && arguments_.includes('--deny-self-hosted-runners'),
+      ),
+    ).toBe(true);
+    expect(publishCalls).toHaveLength(4);
+  });
+
   test('publishes only the exact gzip bytes authorized by #40', () => {
     const sourceRoot = createReleaseFixture();
     const authorizedRoot = mkdtempSync(

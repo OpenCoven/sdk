@@ -35,6 +35,245 @@ const NODE_ENGINE = '>=24.18.0 <25';
 const FROZEN_NODE_VERSION = 'v24.18.1';
 const NODE_VERSION_PATH = '.node-version';
 const RELEASE_WORKFLOW_PATH = '.github/workflows/release.yml';
+const ATTEST_BUILD_PROVENANCE_ACTION =
+  'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8';
+const CHECKOUT_ACTION =
+  'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1';
+const DOWNLOAD_ARTIFACT_ACTION =
+  'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c';
+const PNPM_SETUP_ACTION =
+  'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86';
+const PUBLICATION_ARTIFACT_NAME =
+  'opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}';
+const SETUP_NODE_ACTION =
+  'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020';
+const UPLOAD_ARTIFACT_ACTION =
+  'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
+const PREFLIGHT_JOB_SHA256 =
+  'cde772cd2f6ca89c57641e5235e92cdb3e0841e0fd5a2684db5221b331590f98';
+const REPOSITORY_VERIFICATION_JOB_SHA256 =
+  '5c1514f846d97b73ef3e32aa82717e587010a8111942c3971c8a5f9930dd963c';
+const EXPECTED_RELEASE_CONTROLS = Object.freeze({
+  name: 'release',
+  on: {
+    workflow_dispatch: {
+      inputs: {
+        mode: {
+          description:
+            'Create reviewable candidate bytes or publish reviewed bytes',
+          required: true,
+          type: 'choice',
+          options: ['verify', 'publish'],
+        },
+        version: {
+          description: 'Exact fixed SDK version',
+          required: true,
+          type: 'string',
+        },
+        'security-review-comment-id': {
+          description: 'Immutable',
+          required: false,
+          type: 'string',
+        },
+      },
+    },
+  },
+  permissions: {
+    contents: 'read',
+  },
+  concurrency: {
+    group: 'release-${{ inputs.version }}',
+    'cancel-in-progress': false,
+  },
+});
+const EXPECTED_CANDIDATE_JOB = Object.freeze({
+  if: "inputs.mode == 'verify'",
+  needs: ['preflight', 'repository-verification'],
+  name: 'publication-candidate',
+  'runs-on': 'ubuntu-latest',
+  'timeout-minutes': 20,
+  environment: 'publication-candidate',
+  permissions: {
+    actions: 'read',
+    attestations: 'write',
+    contents: 'read',
+    deployments: 'read',
+    'id-token': 'write',
+    issues: 'read',
+  },
+  env: {
+    RELEASE_VERSION: '${{ inputs.version }}',
+    OPENCOVEN_CAVE_AUTHORITY_ROOT:
+      '${{ github.workspace }}/.artifacts/cave-authority',
+    OPENCOVEN_PUBLICATION_ENVIRONMENT: 'publication-candidate',
+    OPENCOVEN_PUBLICATION_ARTIFACT_NAME: PUBLICATION_ARTIFACT_NAME,
+  },
+  steps: [
+    {
+      uses: CHECKOUT_ACTION,
+      with: {
+        'fetch-depth': 0,
+        'persist-credentials': false,
+        ref: '${{ github.sha }}',
+      },
+    },
+    {
+      uses: SETUP_NODE_ACTION,
+      with: {
+        'node-version-file': '.node-version',
+      },
+    },
+    {
+      uses: PNPM_SETUP_ACTION,
+      with: {
+        version: '10.34.0',
+      },
+    },
+    {
+      name: 'Require frozen Node runtime',
+      run: [
+        'expected="v$(cat .node-version)"',
+        'if [ "$expected" != "v24.18.1" ] || [ "$(node --version)" != "$expected" ]; then',
+        '  echo "Publication candidates require exact Node $expected." >&2',
+        '  exit 1',
+        'fi',
+        '',
+      ].join('\n'),
+    },
+    {
+      uses: CHECKOUT_ACTION,
+      with: {
+        repository: 'OpenCoven/coven-cave',
+        ref: '2a0ff9237e94e652e477b22f60fd6d721b9e6451',
+        path: '.artifacts/cave-authority',
+        'fetch-depth': 1,
+        'persist-credentials': false,
+      },
+    },
+    {
+      name: 'Create immutable publication candidate',
+      env: {
+        GH_TOKEN: '${{ github.token }}',
+      },
+      run:
+        'node ./scripts/create-release-artifacts.mjs '
+        + '--output .artifacts/publication '
+        + '--version "$RELEASE_VERSION"',
+    },
+    {
+      uses: UPLOAD_ARTIFACT_ACTION,
+      with: {
+        name: PUBLICATION_ARTIFACT_NAME,
+        path: '.artifacts/publication',
+        'if-no-files-found': 'error',
+        'retention-days': 30,
+      },
+    },
+    {
+      uses: ATTEST_BUILD_PROVENANCE_ACTION,
+      with: {
+        'subject-path': [
+          '.artifacts/publication/release-manifest.json',
+          '.artifacts/publication/tarballs/**/*.tgz',
+          '',
+        ].join('\n'),
+      },
+    },
+  ],
+});
+const EXPECTED_PUBLISH_JOB = Object.freeze({
+  if: "inputs.mode == 'publish'",
+  needs: ['preflight', 'repository-verification'],
+  'runs-on': 'ubuntu-latest',
+  'timeout-minutes': 10,
+  environment: 'npm-release',
+  env: {
+    RELEASE_VERSION: '${{ inputs.version }}',
+    OPENCOVEN_SECURITY_REVIEW_COMMENT_ID:
+      '${{ inputs.security-review-comment-id }}',
+  },
+  permissions: {
+    actions: 'read',
+    attestations: 'read',
+    contents: 'read',
+    deployments: 'read',
+    'id-token': 'write',
+    issues: 'read',
+  },
+  steps: [
+    {
+      uses: CHECKOUT_ACTION,
+      with: {
+        'fetch-depth': 0,
+        'persist-credentials': false,
+        ref: '${{ github.sha }}',
+      },
+    },
+    {
+      uses: SETUP_NODE_ACTION,
+      with: {
+        'node-version-file': '.node-version',
+      },
+    },
+    {
+      uses: PNPM_SETUP_ACTION,
+      with: {
+        version: '10.34.0',
+      },
+    },
+    {
+      name: 'Require frozen Node runtime',
+      run: [
+        'expected="v$(cat .node-version)"',
+        'if [ "$expected" != "v24.18.1" ] || [ "$(node --version)" != "$expected" ]; then',
+        '  echo "Publication requires exact Node $expected." >&2',
+        '  exit 1',
+        'fi',
+        '',
+      ].join('\n'),
+    },
+    {
+      name: 'Resolve exact publication authorization',
+      id: 'authorization',
+      env: {
+        GH_TOKEN: '${{ github.token }}',
+      },
+      run:
+        'node ./scripts/github-release-authorization.mjs '
+        + '--github-output "$GITHUB_OUTPUT"',
+    },
+    {
+      uses: DOWNLOAD_ARTIFACT_ACTION,
+      with: {
+        name: '${{ steps.authorization.outputs.artifact-name }}',
+        path: '.artifacts/publication',
+        'github-token': '${{ github.token }}',
+        repository: 'OpenCoven/sdk',
+        'run-id': '${{ steps.authorization.outputs.run-id }}',
+      },
+    },
+    {
+      name: 'Verify exact reviewed publication bytes',
+      env: {
+        GH_TOKEN: '${{ github.token }}',
+      },
+      run:
+        'node ./scripts/github-release-authorization.mjs '
+        + '--artifact-root .artifacts/publication',
+    },
+    {
+      name: 'Publish exact reviewed release artifacts',
+      env: {
+        GH_TOKEN: '${{ github.token }}',
+        OPENCOVEN_RELEASE_AUTHORIZATION: 'publish',
+      },
+      run:
+        'node ./scripts/publish-release-artifacts.mjs '
+        + '--artifact-root .artifacts/publication '
+        + '--version "$RELEASE_VERSION"',
+    },
+  ],
+});
 const SUPPORTED_PLATFORMS = Object.freeze([
   'darwin-arm64',
   'linux-x64',
@@ -456,8 +695,8 @@ function readManifest(root, packageMetadata) {
 }
 
 function validateConfigValues(config) {
-  if (config.schemaVersion !== 4) {
-    throw new Error('release.config.json schemaVersion must be 4');
+  if (config.schemaVersion !== 5) {
+    throw new Error('release.config.json schemaVersion must be 5');
   }
   if (typeof config.publishingEnabled !== 'boolean') {
     throw new Error('release.config.json publishingEnabled must be a boolean');
@@ -521,6 +760,7 @@ function validateConfigValues(config) {
     config.publicationCandidate,
     [
       'artifactSet',
+      'environment',
       'securityReviewIssue',
       'workflow',
       'job',
@@ -529,6 +769,7 @@ function validateConfigValues(config) {
   );
   if (
     config.publicationCandidate.artifactSet !== 'publication-candidate'
+    || config.publicationCandidate.environment !== 'publication-candidate'
     || config.publicationCandidate.securityReviewIssue !== 'OpenCoven/sdk#40'
     || config.publicationCandidate.workflow !== RELEASE_WORKFLOW_PATH
     || config.publicationCandidate.job !== 'publication-candidate'
@@ -666,6 +907,455 @@ function readWorkflowStepMapping(stepLines, key) {
   return mapping;
 }
 
+function workflowYamlError(message, lineIndex) {
+  return new Error(
+    `Release workflow must be valid unambiguous YAML: ${message} on line ${lineIndex + 1}`,
+  );
+}
+
+function workflowYamlIndirectionError() {
+  return new Error(
+    'Release workflow must not use YAML anchors, aliases, or merge keys',
+  );
+}
+
+function workflowIndent(line, lineIndex) {
+  const indentation = /^ */u.exec(line)?.[0].length ?? 0;
+  if (line.slice(0, indentation + 1).includes('\t')) {
+    throw workflowYamlError('tab indentation is forbidden', lineIndex);
+  }
+  return indentation;
+}
+
+function stripWorkflowYamlComment(value) {
+  let singleQuoted = false;
+  let doubleQuoted = false;
+  let escaped = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (doubleQuoted) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === '"') {
+        doubleQuoted = false;
+      }
+      continue;
+    }
+    if (singleQuoted) {
+      if (character === "'" && value[index + 1] === "'") {
+        index += 1;
+      } else if (character === "'") {
+        singleQuoted = false;
+      }
+      continue;
+    }
+    if (character === '"') {
+      doubleQuoted = true;
+      continue;
+    }
+    if (character === "'") {
+      singleQuoted = true;
+      continue;
+    }
+    if (
+      character === '#'
+      && (index === 0 || /\s/u.test(value[index - 1]))
+    ) {
+      return value.slice(0, index).trimEnd();
+    }
+  }
+  return value.trimEnd();
+}
+
+function workflowLine(lines, index) {
+  const raw = lines[index];
+  const indent = workflowIndent(raw, index);
+  return {
+    indent,
+    content: stripWorkflowYamlComment(raw.slice(indent)),
+  };
+}
+
+function nextWorkflowYamlContent(lines, startIndex) {
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const line = workflowLine(lines, index);
+    if (line.content.trim().length > 0) {
+      return { ...line, index };
+    }
+  }
+  return null;
+}
+
+function assertNoWorkflowYamlIndirection(value) {
+  if (
+    /(?:^|\s)[&*][A-Za-z0-9_-]+(?=\s|$|[\],])/u.test(value)
+    || /^<<\s*:/u.test(value)
+  ) {
+    throw workflowYamlIndirectionError();
+  }
+}
+
+function splitWorkflowFlowSequence(value, lineIndex) {
+  const inner = value.slice(1, -1).trim();
+  if (inner.length === 0) return [];
+  const entries = [];
+  let start = 0;
+  let singleQuoted = false;
+  let doubleQuoted = false;
+  let escaped = false;
+  for (let index = 0; index < inner.length; index += 1) {
+    const character = inner[index];
+    if (doubleQuoted) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === '"') {
+        doubleQuoted = false;
+      }
+      continue;
+    }
+    if (singleQuoted) {
+      if (character === "'" && inner[index + 1] === "'") {
+        index += 1;
+      } else if (character === "'") {
+        singleQuoted = false;
+      }
+      continue;
+    }
+    if (character === '"') {
+      doubleQuoted = true;
+    } else if (character === "'") {
+      singleQuoted = true;
+    } else if (character === ',') {
+      entries.push(inner.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  if (singleQuoted || doubleQuoted) {
+    throw workflowYamlError('unterminated flow sequence string', lineIndex);
+  }
+  entries.push(inner.slice(start).trim());
+  if (entries.some((entry) => entry.length === 0)) {
+    throw workflowYamlError('empty flow sequence entry', lineIndex);
+  }
+  return entries;
+}
+
+function parseWorkflowYamlScalar(value, lineIndex) {
+  const scalar = value.trim();
+  if (scalar.length === 0) {
+    throw workflowYamlError('empty scalar', lineIndex);
+  }
+  if (scalar.startsWith('"')) {
+    if (!scalar.endsWith('"')) {
+      throw workflowYamlError('unterminated double-quoted scalar', lineIndex);
+    }
+    try {
+      return JSON.parse(scalar);
+    } catch (error) {
+      throw workflowYamlError(
+        `invalid double-quoted scalar: ${String(error)}`,
+        lineIndex,
+      );
+    }
+  }
+  if (scalar.startsWith("'")) {
+    if (!scalar.endsWith("'")) {
+      throw workflowYamlError('unterminated single-quoted scalar', lineIndex);
+    }
+    return scalar.slice(1, -1).replaceAll("''", "'");
+  }
+  assertNoWorkflowYamlIndirection(scalar);
+  if (scalar.startsWith('!') || scalar.startsWith('{')) {
+    throw workflowYamlError('unsupported YAML scalar syntax', lineIndex);
+  }
+  if (scalar.startsWith('[')) {
+    if (!scalar.endsWith(']')) {
+      throw workflowYamlError('unterminated flow sequence', lineIndex);
+    }
+    return splitWorkflowFlowSequence(scalar, lineIndex).map((entry) =>
+      parseWorkflowYamlScalar(entry, lineIndex),
+    );
+  }
+  if (scalar === 'true') return true;
+  if (scalar === 'false') return false;
+  if (scalar === 'null' || scalar === '~') return null;
+  if (/^-?(?:0|[1-9]\d*)$/u.test(scalar)) {
+    const number = Number(scalar);
+    if (!Number.isSafeInteger(number)) {
+      throw workflowYamlError('integer is outside the safe range', lineIndex);
+    }
+    return number;
+  }
+  return scalar;
+}
+
+function foldWorkflowYamlLines(lines) {
+  let value = '';
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    value += line;
+    if (index === lines.length - 1) continue;
+    const next = lines[index + 1];
+    value += (
+      line.length === 0
+      || next.length === 0
+      || line.startsWith(' ')
+      || next.startsWith(' ')
+    )
+      ? '\n'
+      : ' ';
+  }
+  return value;
+}
+
+function parseWorkflowYamlBlock(lines, startIndex, parentIndent, indicator) {
+  const contentLines = [];
+  let contentIndent;
+  let index = startIndex;
+  for (; index < lines.length; index += 1) {
+    const raw = lines[index];
+    if (raw.trim().length === 0) {
+      contentLines.push('');
+      continue;
+    }
+    const indent = workflowIndent(raw, index);
+    if (indent <= parentIndent) break;
+    contentIndent ??= indent;
+    if (indent < contentIndent) {
+      throw workflowYamlError('invalid block scalar indentation', index);
+    }
+    contentLines.push(raw.slice(contentIndent));
+  }
+  let value = indicator.startsWith('>')
+    ? foldWorkflowYamlLines(contentLines)
+    : contentLines.join('\n');
+  if (indicator.endsWith('-')) {
+    value = value.replace(/\n+$/u, '');
+  } else if (!indicator.endsWith('+')) {
+    value = `${value.replace(/\n+$/u, '')}\n`;
+  }
+  return { value, nextIndex: index };
+}
+
+function parseWorkflowYamlPair(lines, lineIndex, keyIndent, pairText) {
+  if (/^<<\s*:/u.test(pairText)) {
+    throw workflowYamlIndirectionError();
+  }
+  const match = /^([A-Za-z0-9_-]+):(.*)$/u.exec(pairText);
+  if (match === null) {
+    throw workflowYamlError('expected a simple mapping entry', lineIndex);
+  }
+  const [, key, rawValue] = match;
+  const value = rawValue.trim();
+  if (/^[|>][+-]?$/u.test(value)) {
+    const block = parseWorkflowYamlBlock(
+      lines,
+      lineIndex + 1,
+      keyIndent,
+      value,
+    );
+    return { key, value: block.value, nextIndex: block.nextIndex };
+  }
+  if (value.length > 0) {
+    return {
+      key,
+      value: parseWorkflowYamlScalar(value, lineIndex),
+      nextIndex: lineIndex + 1,
+    };
+  }
+  const child = nextWorkflowYamlContent(lines, lineIndex + 1);
+  if (child === null || child.indent <= keyIndent) {
+    return { key, value: null, nextIndex: lineIndex + 1 };
+  }
+  if (child.indent !== keyIndent + 2) {
+    throw workflowYamlError('invalid nested indentation', child.index);
+  }
+  const parsed = child.content.startsWith('- ')
+    ? parseWorkflowYamlSequence(lines, lineIndex + 1, child.indent)
+    : parseWorkflowYamlMapping(lines, lineIndex + 1, child.indent);
+  return { key, value: parsed.value, nextIndex: parsed.nextIndex };
+}
+
+function parseWorkflowYamlMapping(lines, startIndex, indent) {
+  const value = {};
+  let index = startIndex;
+  for (; index < lines.length;) {
+    const line = workflowLine(lines, index);
+    if (line.content.trim().length === 0) {
+      index += 1;
+      continue;
+    }
+    if (line.indent < indent) break;
+    if (line.indent !== indent || line.content.startsWith('- ')) {
+      throw workflowYamlError('invalid mapping indentation', index);
+    }
+    const pair = parseWorkflowYamlPair(
+      lines,
+      index,
+      indent,
+      line.content,
+    );
+    if (Object.hasOwn(value, pair.key)) {
+      throw workflowYamlError(`duplicate key ${pair.key}`, index);
+    }
+    value[pair.key] = pair.value;
+    index = pair.nextIndex;
+  }
+  return { value, nextIndex: index };
+}
+
+function parseWorkflowYamlSequence(lines, startIndex, indent) {
+  const value = [];
+  let index = startIndex;
+  for (; index < lines.length;) {
+    const line = workflowLine(lines, index);
+    if (line.content.trim().length === 0) {
+      index += 1;
+      continue;
+    }
+    if (line.indent < indent) break;
+    if (line.indent !== indent || !line.content.startsWith('- ')) {
+      throw workflowYamlError('invalid sequence indentation', index);
+    }
+    const itemText = line.content.slice(2).trimStart();
+    if (itemText.length === 0) {
+      const child = nextWorkflowYamlContent(lines, index + 1);
+      if (child === null || child.indent !== indent + 2) {
+        throw workflowYamlError('sequence item requires a value', index);
+      }
+      const parsed = child.content.startsWith('- ')
+        ? parseWorkflowYamlSequence(lines, index + 1, child.indent)
+        : parseWorkflowYamlMapping(lines, index + 1, child.indent);
+      value.push(parsed.value);
+      index = parsed.nextIndex;
+      continue;
+    }
+    if (/^[A-Za-z0-9_-]+:/u.test(itemText) || /^<<\s*:/u.test(itemText)) {
+      const firstPair = parseWorkflowYamlPair(
+        lines,
+        index,
+        indent + 2,
+        itemText,
+      );
+      const item = { [firstPair.key]: firstPair.value };
+      const continuation = parseWorkflowYamlMapping(
+        lines,
+        firstPair.nextIndex,
+        indent + 2,
+      );
+      for (const [key, entry] of Object.entries(continuation.value)) {
+        if (Object.hasOwn(item, key)) {
+          throw workflowYamlError(`duplicate key ${key}`, index);
+        }
+        item[key] = entry;
+      }
+      value.push(item);
+      index = continuation.nextIndex;
+      continue;
+    }
+    value.push(parseWorkflowYamlScalar(itemText, index));
+    index += 1;
+  }
+  return { value, nextIndex: index };
+}
+
+function parseReleaseWorkflowDocument(workflow) {
+  const lines = workflow.split('\n');
+  const parsed = parseWorkflowYamlMapping(lines, 0, 0);
+  const remaining = nextWorkflowYamlContent(lines, parsed.nextIndex);
+  if (remaining !== null) {
+    throw workflowYamlError('unexpected trailing content', remaining.index);
+  }
+  if (!isRecord(parsed.value) || !isRecord(parsed.value.jobs)) {
+    throw new Error('Release workflow must define a jobs mapping');
+  }
+  return parsed.value;
+}
+
+function readStructuredWorkflowJob(workflow, jobName) {
+  const job = workflow.jobs[jobName];
+  if (!isRecord(job)) {
+    throw new Error(`Release workflow must define a ${jobName} job`);
+  }
+  return job;
+}
+
+function readStructuredWorkflowSteps(job, jobName) {
+  if (
+    !Array.isArray(job.steps)
+    || job.steps.some((step) => !isRecord(step))
+  ) {
+    throw new Error(`Release workflow ${jobName} job must define explicit steps`);
+  }
+  return job.steps;
+}
+
+function countStringOccurrences(value, expected) {
+  if (typeof value === 'string') {
+    return value.split(expected).length - 1;
+  }
+  if (Array.isArray(value)) {
+    return value.reduce(
+      (count, entry) => count + countStringOccurrences(entry, expected),
+      0,
+    );
+  }
+  if (isRecord(value)) {
+    return Object.values(value).reduce(
+      (count, entry) => count + countStringOccurrences(entry, expected),
+      0,
+    );
+  }
+  return 0;
+}
+
+function structuredWorkflowDigest(value) {
+  return createHash('sha256')
+    .update(JSON.stringify(value))
+    .digest('hex');
+}
+
+function validateWorkflowActionIndirection(workflow) {
+  for (const job of Object.values(workflow.jobs)) {
+    if (!isRecord(job)) continue;
+    if (Object.hasOwn(job, 'uses')) {
+      throw new Error(
+        'Release workflow must use the exact frozen release job and step graph',
+      );
+    }
+    if (!Array.isArray(job.steps)) continue;
+    for (const step of job.steps) {
+      if (!isRecord(step)) continue;
+      if (
+        Object.hasOwn(step, 'uses')
+        && (
+          typeof step.uses !== 'string'
+          || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@[0-9a-f]{40}$/u.test(
+            step.uses,
+          )
+        )
+      ) {
+        throw new Error(
+          'Release workflow must use the exact frozen release job and step graph',
+        );
+      }
+      if (
+        typeof step.run === 'string'
+        && /\b(?:curl|gh)\b[\s\S]*\bactions\/(?:artifacts|runs\/[^\s"'`]+\/artifacts)\b/iu
+          .test(step.run)
+      ) {
+        throw new Error(
+          'Release workflow must use the exact frozen release job and step graph',
+        );
+      }
+    }
+  }
+}
+
 export function validateReleaseWorkflow(root, config) {
   const workflowPath = resolve(root, RELEASE_WORKFLOW_PATH);
   if (!existsSync(workflowPath)) {
@@ -676,7 +1366,30 @@ export function validateReleaseWorkflow(root, config) {
   // with CRLF endings would never match `publish:\n` -- the validator would
   // report a missing publish job on a workflow that has one.
   const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n/g, '\n');
+  if (/[\r\u0085\u2028\u2029]/u.test(workflow)) {
+    throw new Error(
+      'Release workflow must use LF or CRLF line endings only',
+    );
+  }
+  if (/[^\n\x20-\x7e]/u.test(workflow)) {
+    throw new Error('Release workflow must contain ASCII text only');
+  }
+  const structuredWorkflow = parseReleaseWorkflowDocument(workflow);
+  const workflowControls = { ...structuredWorkflow };
+  delete workflowControls.jobs;
+  if (
+    JSON.stringify(workflowControls)
+      !== JSON.stringify(EXPECTED_RELEASE_CONTROLS)
+  ) {
+    throw new Error(
+      'Release workflow must use only the exact reviewed dispatch controls',
+    );
+  }
   const preflightJob = readWorkflowJob(workflow, 'preflight');
+  const structuredPreflightJob = readStructuredWorkflowJob(
+    structuredWorkflow,
+    'preflight',
+  );
   const preflightPermissions = readWorkflowJobMapping(
     preflightJob,
     'permissions',
@@ -717,6 +1430,10 @@ export function validateReleaseWorkflow(root, config) {
     workflow,
     'repository-verification',
   );
+  const structuredRepositoryVerificationJob = readStructuredWorkflowJob(
+    structuredWorkflow,
+    'repository-verification',
+  );
   const repositoryPermissions = readWorkflowJobMapping(
     repositoryVerificationJob,
     'permissions',
@@ -748,10 +1465,70 @@ export function validateReleaseWorkflow(root, config) {
     );
   }
   const candidateJob = readWorkflowJob(workflow, 'publication-candidate');
+  const structuredCandidateJob = readStructuredWorkflowJob(
+    structuredWorkflow,
+    'publication-candidate',
+  );
+  const structuredCandidateSteps = readStructuredWorkflowSteps(
+    structuredCandidateJob,
+    'publication-candidate',
+  );
+  const candidateCreationSteps = structuredCandidateSteps.filter(
+    (step) => step.name === 'Create immutable publication candidate',
+  );
+  if (
+    candidateCreationSteps.length !== 1
+    || Object.hasOwn(candidateCreationSteps[0], 'if')
+  ) {
+    throw new Error(
+      'Release workflow candidate creation must be active and unconditional',
+    );
+  }
+  const candidateUploadSteps = structuredCandidateSteps.filter(
+    (step) => step.uses === UPLOAD_ARTIFACT_ACTION,
+  );
+  if (
+    candidateUploadSteps.length !== 1
+    || Object.hasOwn(candidateUploadSteps[0], 'if')
+  ) {
+    throw new Error(
+      'Release workflow candidate upload must be active and unconditional',
+    );
+  }
+  const candidateAttestationSteps = structuredCandidateSteps.filter(
+    (step) => step.uses === ATTEST_BUILD_PROVENANCE_ACTION,
+  );
+  if (
+    candidateAttestationSteps.length !== 1
+    || Object.hasOwn(candidateAttestationSteps[0], 'if')
+  ) {
+    throw new Error(
+      'Release workflow candidate attestation must be active and unconditional',
+    );
+  }
+  const candidateCreationIndex = structuredCandidateSteps.indexOf(
+    candidateCreationSteps[0],
+  );
+  const candidateUploadIndex = structuredCandidateSteps.indexOf(
+    candidateUploadSteps[0],
+  );
+  const candidateAttestationIndex = structuredCandidateSteps.indexOf(
+    candidateAttestationSteps[0],
+  );
+  if (
+    candidateCreationIndex >= candidateUploadIndex
+    || candidateUploadIndex >= candidateAttestationIndex
+  ) {
+    throw new Error(
+      'Release workflow candidate steps must use the exact reviewed order',
+    );
+  }
   if (
     readWorkflowJobScalar(candidateJob, 'if') !== "inputs.mode == 'verify'"
     || readWorkflowJobScalar(candidateJob, 'needs')
       !== '[preflight, repository-verification]'
+    || readWorkflowJobScalar(candidateJob, 'environment')
+      !== config.publicationCandidate.environment
     || readWorkflowJobScalar(candidateJob, 'name')
       !== config.publicationCandidate.job
   ) {
@@ -765,9 +1542,10 @@ export function validateReleaseWorkflow(root, config) {
   );
   for (const [permission, value] of [
     ['actions', 'read'],
-    ['attestations', 'read'],
+    ['attestations', 'write'],
     ['contents', 'read'],
     ['deployments', 'read'],
+    ['id-token', 'write'],
     ['issues', 'read'],
   ]) {
     if (candidatePermissions?.[permission] !== value) {
@@ -776,7 +1554,7 @@ export function validateReleaseWorkflow(root, config) {
       );
     }
   }
-  if (Object.keys(candidatePermissions ?? {}).length !== 5) {
+  if (Object.keys(candidatePermissions ?? {}).length !== 6) {
     throw new Error(
       'Release workflow publication-candidate job must not receive unreviewed permissions',
     );
@@ -794,19 +1572,39 @@ export function validateReleaseWorkflow(root, config) {
     !candidateJob.some(
       (line) =>
         line.trim()
-          === 'OPENCOVEN_PUBLICATION_ARTIFACT_NAME: opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}',
+          === `OPENCOVEN_PUBLICATION_ARTIFACT_NAME: ${PUBLICATION_ARTIFACT_NAME}`,
     )
     || !candidateJob.some(
       (line) =>
         line.trim()
-          === 'name: opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}',
+          === `name: ${PUBLICATION_ARTIFACT_NAME}`,
     )
   ) {
     throw new Error(
       'Release workflow publication candidate artifact name must derive from the exact commit and version',
     );
   }
+  if (
+    countStringOccurrences(structuredWorkflow.jobs, PUBLICATION_ARTIFACT_NAME)
+      !== 2
+  ) {
+    throw new Error(
+      'Release workflow must contain only the reviewed publication candidate artifact-name bindings',
+    );
+  }
+  if (
+    JSON.stringify(structuredCandidateJob)
+      !== JSON.stringify(EXPECTED_CANDIDATE_JOB)
+  ) {
+    throw new Error(
+      'Release workflow publication-candidate job must use only the exact reviewed ordered steps',
+    );
+  }
   const publishJob = readWorkflowJob(workflow, 'publish');
+  const structuredPublishJob = readStructuredWorkflowJob(
+    structuredWorkflow,
+    'publish',
+  );
   const jobsSource = workflow.slice(workflow.indexOf('\njobs:\n') + 7);
   const workflowJobIds = [
     ...jobsSource.matchAll(/^ {2}([A-Za-z0-9_-]+):\s*(?:#.*)?$/gmu),
@@ -821,6 +1619,33 @@ export function validateReleaseWorkflow(root, config) {
       ])
   ) {
     throw new Error('Release workflow must use the exact frozen release job graph');
+  }
+  const expectedStepCounts = {
+    preflight: 9,
+    'repository-verification': 8,
+    'publication-candidate': 8,
+  };
+  if (
+    Object.entries(expectedStepCounts).some(([jobName, stepCount]) =>
+      readStructuredWorkflowSteps(
+        readStructuredWorkflowJob(structuredWorkflow, jobName),
+        jobName,
+      ).length !== stepCount,
+    )
+  ) {
+    throw new Error(
+      'Release workflow must use the exact frozen release job and step graph',
+    );
+  }
+  if (
+    structuredWorkflowDigest(structuredPreflightJob)
+      !== PREFLIGHT_JOB_SHA256
+    || structuredWorkflowDigest(structuredRepositoryVerificationJob)
+      !== REPOSITORY_VERIFICATION_JOB_SHA256
+  ) {
+    throw new Error(
+      'Release workflow must use the exact frozen release job and step graph',
+    );
   }
   const candidateUploadCount = candidateJob.filter((line) =>
     line.includes('actions/upload-artifact@'),
@@ -867,8 +1692,9 @@ export function validateReleaseWorkflow(root, config) {
   for (const [permission, value] of [
     ['actions', 'read'],
     ['contents', 'read'],
+    ['deployments', 'read'],
     ['id-token', 'write'],
-    ['attestations', 'write'],
+    ['attestations', 'read'],
     ['issues', 'read'],
   ]) {
     if (permissions?.[permission] !== value) {
@@ -877,7 +1703,7 @@ export function validateReleaseWorkflow(root, config) {
       );
     }
   }
-  if (Object.keys(permissions ?? {}).length !== 5) {
+  if (Object.keys(permissions ?? {}).length !== 6) {
     throw new Error(
       'Release workflow publish job must use only reviewed publication permissions',
     );
@@ -893,12 +1719,12 @@ export function validateReleaseWorkflow(root, config) {
       /actions\/attest-build-provenance@[0-9a-f]{40}/gu,
     )?.length ?? 0;
   if (
-    candidateAttestationCount !== 0
-    || publishAttestationCount !== 1
+    candidateAttestationCount !== 1
+    || publishAttestationCount !== 0
     || totalAttestationCount !== 1
   ) {
     throw new Error(
-      'Release workflow must attest only the protected publish bytes',
+      'Release workflow must attest only the protected candidate bytes',
     );
   }
   for (const stepName of [
@@ -933,6 +1759,15 @@ export function validateReleaseWorkflow(root, config) {
       'Release workflow publish job must download and consume only the exact #40-reviewed candidate artifact',
     );
   }
+  if (
+    JSON.stringify(structuredPublishJob)
+      !== JSON.stringify(EXPECTED_PUBLISH_JOB)
+  ) {
+    throw new Error(
+      'Release workflow publish job must use only the exact reviewed ordered steps',
+    );
+  }
+  validateWorkflowActionIndirection(structuredWorkflow);
 }
 
 export function readReleaseConfig(root = process.cwd()) {

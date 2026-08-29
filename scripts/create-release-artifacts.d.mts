@@ -15,7 +15,7 @@ export interface ConformanceArtifactManifest {
 }
 
 export interface PublicationArtifactManifest {
-  schemaVersion: 3;
+  schemaVersion: 5;
   artifactSet: 'publication-candidate';
   version: string;
   source: {
@@ -34,6 +34,11 @@ export interface PublicationArtifactManifest {
     npmVersion: '11.5.1';
     packCommand: 'corepack pnpm@10.34.0 pack --ignore-scripts';
   };
+  publisher: {
+    path: 'scripts/publish-release-artifacts.mjs';
+    size: number;
+    sha256: string;
+  };
   provenance: {
     repository: 'OpenCoven/sdk';
     workflow: '.github/workflows/release.yml';
@@ -42,6 +47,7 @@ export interface PublicationArtifactManifest {
     runId: string;
     runAttempt: number;
     job: 'publication-candidate';
+    environment: 'publication-candidate';
     artifactName: string;
   };
   packages: ReleaseArtifactEntry[];
