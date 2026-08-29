@@ -122,18 +122,20 @@ mutation record.
 
 The following gates are mandatory and ordered:
 
-1. **First-release gate:** SDK #41 closes, or maintainers explicitly record a
-   reviewed re-sequencing decision. Documentation may merge before this gate;
-   #44 implementation PRs may not silently overtake it.
+1. **First-release gate:** SDK #41 closes successfully with all acceptance
+   criteria satisfied. Documentation may merge before this gate, but no #44
+   implementation work may begin and no implementation branch or PR may open or merge
+   before #41 validates the first public release.
 2. **Producer revision gate:** Cave emits and documents revisions for every
    canonical read, advertises the cross-cutting `revisions` capability, updates
    its fixture, and passes real-socket revision conformance.
 3. **SDK contract gate:** the SDK imports the exact producer fixture and
    validates revision semantics before any persistent cache implementation
    merges.
-4. **Native custody gate:** the Node reference adapter and Chat native adapter
-   pass key-custody, interruption, permissions/ACL, and tamper tests on their
-   approved targets.
+4. **Native custody gate:** the Node reference adapter passes key-custody,
+   interruption, permissions, and tamper tests on macOS/Linux; the Chat native
+   adapter passes the corresponding reviewed native tests on all three frozen
+   targets, including Windows ACL/reparse/durability cases.
 5. **Security review gate:** exact final cache implementations receive a
    dedicated native-storage security review.
 6. **CLI distribution gate:** a separate maintainer decision keeps the CLI
@@ -156,7 +158,11 @@ export interface CaveReadRevision {
 Rules:
 
 - `token` is opaque, non-empty UTF-8, and at most the existing contract limit
-  of 128 characters.
+  of 128 UTF-8 bytes. Producer, SDK, Node, and native-host validators measure
+  the encoded byte length, never JavaScript code units or Unicode scalar
+  values.
+- Boundary vectors are explicit: 128 ASCII bytes are accepted, 129 ASCII bytes are rejected,
+  64 copies of U+00E9 are accepted, and 65 copies of U+00E9 are rejected.
 - `updatedAt` is canonical UTC ISO 8601 with millisecond precision, exactly the
   form produced by `Date.prototype.toISOString()`.
 - A token is scoped by `(instanceId, resourceKey)`. It is not globally
@@ -252,7 +258,6 @@ export interface CaveNodeOfflineCacheOptions {
   readonly keyStore: CaveNativeCacheKeyStore;
   readonly keyReference: CaveOfflineCacheKeyReference;
   readonly maxAgeMs?: number;
-  readonly windowsPathTrust?: CaveWindowsCachePathTrustValidator;
 }
 
 export function createNodeCaveOfflineCache(
@@ -266,6 +271,25 @@ Add `createCaveOfflineCacheKeyReference(key)` for custom slots and
 `createOpenCovenProfileCacheKeyReference(name)` to derive
 `opencoven.profile.<name>.cache`, separate from the existing
 `opencoven.profile.<name>.cave` credential reference.
+
+The Node reference adapter supports `darwin` and `linux` only. On `win32`,
+`createNodeCaveOfflineCache()` synchronously throws `CaveOfflineCacheError`
+with `code: 'cache_identity_unavailable'` before opening the key store, path,
+or any other cache resource. There is no disabled-object or result-union
+alternative and no JavaScript metadata, subprocess, shell-command, or
+user-supplied native-hook fallback.
+
+On `win32`, the factory performs zero key-store and filesystem I/O before throwing.
+No Windows factory path returns a cache object or result union.
+
+Windows support belongs exclusively to the managed native-host boundary in
+section 6.3. The separate Chat Windows native-cache design PR must merge and
+receive dedicated native-storage security review before implementation begins.
+It must freeze the supported filesystems and exact native mutex,
+handle-based SID/ACL/reparse, temporary-file, atomic replacement/deletion,
+flush/durability, and identity-revalidation operations. That implementation is
+reviewed and conformed independently; it is not exposed through
+`@opencoven/cave-client/node-cache`.
 
 ### 6.2 `@opencoven/sdk-core`
 
@@ -442,7 +466,7 @@ The committed cache is one binary file:
 | 8 | 1 | envelope version `1` |
 | 9 | 1 | algorithm ID `1` for AES-256-GCM |
 | 10 | 2 | flags, must be zero |
-| 12 | 16 | UUID key ID as raw bytes |
+| 12 | 16 | UUID key ID in RFC 4122 network octet order |
 | 28 | 12 | GCM nonce |
 | 40 | 4 | big-endian ciphertext byte length |
 | 44 | variable | ciphertext |
@@ -452,6 +476,17 @@ The complete 44-byte header is authenticated additional data together with
 the fixed context bytes `OpenCoven offline cache v1\0`. Unknown flags,
 versions, algorithms, trailing bytes, lengths, or tag sizes fail closed before
 plaintext allocation.
+
+`ciphertextLength` excludes the 16-byte authentication tag, and the parser
+requires `fileLength === 44 + ciphertextLength + 16`. Windows GUID mixed-endian
+field layout is forbidden; Node and Rust vectors use the RFC 4122 UUID bytes
+in the same order as the canonical UUID hex pairs.
+
+The shared vector maps UUID `00112233-4455-6677-8899-aabbccddeeff` to bytes
+`00 11 22 33 44 55 66 77 88 99 aa bb cc dd ee ff`. A 61-byte archive with
+`ciphertextLength = 1` is accepted; the same 61-byte archive with
+`ciphertextLength = 17` is rejected because that value incorrectly includes
+the 16-byte tag.
 
 There is no compression. This avoids decompression bombs, format ambiguity,
 and compression side channels.
@@ -549,6 +584,10 @@ All steps run under one exclusive cache-slot lock:
 
 The old key is retained until after rename and directory synchronization.
 The new key is retained before any new encrypted bytes can become committed.
+This reference transaction applies to the Node adapter on macOS and Linux.
+The Windows managed-native implementation must preserve the same logical
+interruption outcomes through its separately frozen and reviewed native
+transaction; the Node adapter never attempts these steps on Windows.
 
 ### 9.1 Interruption outcomes
 
@@ -605,7 +644,7 @@ values, never higher ones.
 | total decoded nodes | 131,072 |
 | nesting depth | 64 |
 | one resource ID | 1,024 UTF-8 bytes |
-| one revision token | 128 characters |
+| one revision token | 128 UTF-8 bytes |
 | default retention | 7 days |
 | configurable retention maximum | 30 days |
 
@@ -659,9 +698,11 @@ decoded entries.
   effective user with no group/other permissions.
 - Unix files must be regular, non-symlink, single-link files owned by that user
   with mode `0600`.
-- Windows requires a reviewed native ownership/ACL/reparse validator and
-  process-wide named mutex. Metadata-only trust and shell commands are
-  forbidden.
+- The Node adapter fails closed before I/O on Windows. The Windows
+  managed-native implementation requires a separately reviewed
+  handle-based ownership/ACL/reparse boundary, process-wide named mutex, and
+  filesystem-specific durable replacement/deletion contract. Metadata-only
+  trust and shell commands are forbidden.
 - Any path/identity change between validation, open, sync, rename, and
   revalidation fails closed.
 
@@ -897,7 +938,10 @@ interpolated into source, JSON, package names, commands, or README content.
   uses Credential Manager or the already-approved equivalent native custody.
 - Missing, locked, unavailable, or unsupported secure storage fails
   `cache_key_unavailable`; there is no plaintext fallback.
-- Windows file trust requires SID/ACL/reparse validation and a named mutex.
+- On Windows, Node cache construction synchronously throws `CaveOfflineCacheError` with code
+  `cache_identity_unavailable` before I/O. Windows cache conformance applies
+  exclusively to Chat's reviewed Rust host implementation, which remains
+  inaccessible to the webview.
 - Unix requires effective-user ownership, owner-private directories, `0600`
   files, no symlink traversal, and single-link committed files.
 - Cross-platform implementations consume shared deterministic format vectors.
@@ -921,7 +965,17 @@ export type CaveOfflineCacheErrorCode =
   | 'cache_update_in_progress'
   | 'cache_write_failed'
   | 'unsafe_cache_path';
+
+export class CaveOfflineCacheError extends Error {
+  readonly code: CaveOfflineCacheErrorCode;
+  readonly retryable: boolean;
+}
 ```
+
+Factories that reject runtime configuration, including the Node adapter's
+Windows rejection, throw `CaveOfflineCacheError` synchronously. Async cache
+methods reject with the same class. Messages are fixed by code and contain no
+path, key-store, native-cause, or cached-content detail.
 
 | Code | Retryable | Reset required | Meaning |
 | --- | --- | --- | --- |
@@ -990,6 +1044,10 @@ observers, diagnostics, CLI details, or retained evidence.
 No PR should combine producer contract authorization, native cryptography,
 CLI distribution, and scaffold UX into one review.
 
+**Hard prerequisite:** do not begin implementation, create an implementation
+branch, open an implementation PR, or merge implementation until SDK #41
+closes successfully with its acceptance evidence linked.
+
 1. **Cave producer revision PR**
    - emit revisions on all five reads;
    - add truthful `revisions` capability;
@@ -1017,19 +1075,23 @@ CLI distribution, and scaffold UX into one review.
 7. **Private CLI scaffolds/packed-examples PR**
    - add fixed catalog and safe destination transaction;
    - compile/run all three projects from exact public tarballs.
-8. **Chat native cache/conformance PR**
+8. **Chat Windows native-cache design PR**
+   - freeze supported filesystems and exact mutex/path/temporary-file/
+     replacement/deletion/durability operations;
+   - receive dedicated native-storage review before implementation begins.
+9. **Chat native cache/conformance PR**
    - implement Rust keychain/AES/filesystem boundary;
    - consume exact SDK tarballs;
    - pass the three-target interruption/tamper matrix.
-9. **Security disposition PR/evidence**
+10. **Security disposition PR/evidence**
    - review exact Node and Chat implementations;
    - close findings before #44 completion.
-10. **Separate CLI public/defer decision**
+11. **Separate CLI public/defer decision**
     - either retain private status, or explicitly approve package inventory,
       native adapters, signing, updates, supported targets, packed binary, and
       completion/scaffold distribution.
 
-PR 10 is not implied by PRs 6 or 7.
+PR 11 is not implied by PRs 6 or 7.
 
 ## 20. Full validation matrix
 
@@ -1039,7 +1101,9 @@ PR 10 is not implied by PRs 6 or 7.
 | --- | --- |
 | all five envelopes contain valid revision | parsed and exposed |
 | missing revision or `revisions` capability | live method works; cache disposition `cache_not_supported` |
-| token empty/over 128/non-data accessor | `invalid_response` |
+| token empty/non-data accessor | `invalid_response` |
+| token is 128 ASCII bytes or 64 copies of U+00E9 | parsed and exposed |
+| token is 129 ASCII bytes or 65 copies of U+00E9 | `invalid_response` |
 | non-canonical or invalid timestamp | `invalid_response` |
 | same token/same timestamp | exact page merge |
 | same token/different timestamp | `invalid_response` |
@@ -1068,6 +1132,9 @@ PR 10 is not implied by PRs 6 or 7.
 | retry after failed encryption/write | another new key and nonce |
 | magic/version/algorithm/flags tamper | schema/undecryptable failure |
 | key ID, nonce, or ciphertext length tamper | authentication/format failure |
+| UUID `00112233-4455-6677-8899-aabbccddeeff` | exact bytes `00 11 22 33 44 55 66 77 88 99 aa bb cc dd ee ff` |
+| 61-byte archive with `ciphertextLength = 1` | accepted before authenticated-content validation |
+| 61-byte archive with `ciphertextLength = 17` | format failure; tag must not be counted as ciphertext |
 | ciphertext bit flip | `cache_undecryptable` |
 | tag bit flip | `cache_undecryptable` |
 | wrong matching key bytes | `cache_undecryptable` |
@@ -1110,7 +1177,12 @@ failure, and no deletion of a newer owner's lock.
 - symlink/reparse parent or committed file;
 - directory where file expected, FIFO/device/socket, hard link count above one;
 - wrong Unix owner/mode, group/other writable parent;
-- Windows wrong SID, inherited broad ACL, reparse change, validator absent;
+- Node cache construction on Windows performs zero key-store or filesystem I/O
+  and synchronously throws `CaveOfflineCacheError` with code
+  `cache_identity_unavailable`;
+- Chat Windows native cache wrong SID, inherited broad ACL, reparse change,
+  mutex timeout, unsupported filesystem/durability, replacement failure, or
+  final identity mismatch;
 - file identity swap before/after open, write, sync, rename, and final stat;
 - oversize file rejected before full allocation;
 - pre-existing temporary name and hostile temporary symlink;
