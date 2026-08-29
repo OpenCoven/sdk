@@ -75,9 +75,11 @@ filesystem paths, Windows pipe handles, and oversized strings or structures.
 
 Use a clean Cave checkout at the exact commit named by every platform record.
 `--cave-root` must be that repository's Git top-level, and the engine must be a
-tracked regular file equal to its `HEAD` Git blob. The aggregator executes an
-owned, digest-checked copy materialized from the committed blob bytes, never
-the mutable working-tree path:
+tracked regular file equal to the blob selected by the already-captured Cave
+commit. Registry tree lookup is likewise bound to the already-captured SDK
+commit rather than resolving mutable `HEAD` a second time. The aggregator
+executes an owned, digest-checked copy materialized from the committed Cave
+blob bytes, never the mutable working-tree path:
 
 ```bash
 corepack pnpm@10.34.0 conformance:aggregate -- \
@@ -90,9 +92,13 @@ corepack pnpm@10.34.0 conformance:aggregate -- \
 
 The output path must not already exist. Publication writes and `fsync`s a
 complete sibling file, then atomically hard-links it into place, so exactly one
-concurrent creator wins without being overwritten. Input order does not affect
-output: records are emitted in canonical platform order, and the aggregate
-contains no checkout or input path. Run the focused contract tests with:
+concurrent creator wins without being overwritten. It then `fsync`s the parent
+directory after the link and temporary-file unlink. Directory synchronization
+is mandatory on `darwin`, `linux`, and `win32`; an unsupported platform or
+directory-sync failure fails publication rather than reporting success. Input
+order does not affect output: records are emitted in canonical platform order,
+and the aggregate contains no checkout or input path. Run the focused contract
+tests with:
 
 ```bash
 corepack pnpm@10.34.0 test:conformance-contract

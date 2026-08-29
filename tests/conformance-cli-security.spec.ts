@@ -18,6 +18,8 @@ import {
   inspectCaveAssertionEngine,
   loadCommittedCaveAssertionEngine,
   publishEvidenceAtomically,
+  publishPreparedEvidence,
+  readTrackedHeadFileAtCommit,
 } from '../scripts/aggregate-client-v1-conformance.mjs';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -86,13 +88,30 @@ describe('conformance aggregation filesystem trust', () => {
 
     appendFileSync(fixture.enginePath, '// changed after commit\n', 'utf8');
     expect(() => inspectCaveAssertionEngine(fixture.root)).toThrow(
-      'Cave assertion engine bytes do not match the HEAD Git blob',
+      'Cave assertion engine bytes do not match the captured Git blob',
     );
 
     const untracked = createCaveRepository({ trackEngine: false });
     expect(() => inspectCaveAssertionEngine(untracked.root)).toThrow(
       'Cave assertion engine is not tracked at HEAD',
     );
+  });
+
+  test('binds tree and blob lookup to the captured commit when HEAD changes', () => {
+    const fixture = createCaveRepository();
+    const capturedCommit = git(fixture.root, ['rev-parse', 'HEAD']);
+    writeFileSync(fixture.enginePath, "export const marker = 'new-head';\n", 'utf8');
+    git(fixture.root, ['add', 'scripts/client-v1-conformance.mjs']);
+    git(fixture.root, ['commit', '--quiet', '-m', 'move head']);
+
+    expect(() =>
+      readTrackedHeadFileAtCommit(
+        fixture.root,
+        'scripts/client-v1-conformance.mjs',
+        'Cave assertion engine',
+        capturedCommit,
+      ),
+    ).toThrow('Cave assertion engine bytes do not match the captured Git blob');
   });
 
   test('executes the committed Git blob even if the working file changes', async () => {
@@ -115,6 +134,30 @@ describe('conformance aggregation filesystem trust', () => {
       publishEvidenceAtomically(outputPath, '{"candidate":"second"}\n'),
     ).toThrow('Refusing to overwrite existing evidence');
     expect(readFileSync(outputPath, 'utf8')).toBe('{"candidate":"first"}\n');
+  });
+
+  test('fsyncs the parent directory after link and temporary unlink', () => {
+    const root = mkdtempSync(resolve(artifactRoot, 'conformance-fsync-order-'));
+    temporaryRoots.push(root);
+    const temporaryPath = resolve(root, '.evidence.tmp');
+    const outputPath = resolve(root, 'evidence.json');
+    writeFileSync(temporaryPath, '{"candidate":"durable"}\n', 'utf8');
+    const observations: Array<{
+      outputExists: boolean;
+      temporaryExists: boolean;
+    }> = [];
+
+    publishPreparedEvidence(temporaryPath, outputPath, () => {
+      observations.push({
+        outputExists: existsSync(outputPath),
+        temporaryExists: existsSync(temporaryPath),
+      });
+    });
+
+    expect(observations).toEqual([
+      { outputExists: false, temporaryExists: true },
+      { outputExists: true, temporaryExists: false },
+    ]);
   });
 
   test('allows exactly one concurrent publisher without overwrite', async () => {

@@ -30,12 +30,18 @@ import { readReleaseConfig } from './release-readiness.mjs';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const assertionRegistryPath =
   'conformance/client-v1-cross-repository-assertions.json';
+const durablePublicationPlatforms = new Set(['darwin', 'linux', 'win32']);
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-function readTrackedHeadFile(root, relativePath, label) {
+export function readTrackedHeadFileAtCommit(
+  root,
+  relativePath,
+  label,
+  capturedCommit,
+) {
   const filePath = resolve(root, relativePath);
   const metadata = lstatSync(filePath);
   if (!metadata.isFile() || metadata.isSymbolicLink()) {
@@ -43,7 +49,7 @@ function readTrackedHeadFile(root, relativePath, label) {
   }
   const treeEntry = execFileSync(
     'git',
-    ['ls-tree', 'HEAD', '--', relativePath],
+    ['ls-tree', capturedCommit, '--', relativePath],
     { cwd: root, encoding: 'utf8' },
   ).trim();
   const match = /^100(?:644|755) blob ([0-9a-f]{40,64})\t(.+)$/u.exec(treeEntry);
@@ -57,12 +63,12 @@ function readTrackedHeadFile(root, relativePath, label) {
   });
   const bytes = readFileSync(filePath);
   if (!bytes.equals(committedBytes)) {
-    throw new Error(`${label} bytes do not match the HEAD Git blob`);
+    throw new Error(`${label} bytes do not match the captured Git blob`);
   }
   return {
     blob,
     bytes: committedBytes,
-    digest: sha256(bytes),
+    digest: sha256(committedBytes),
   };
 }
 
@@ -81,10 +87,11 @@ export function inspectCaveAssertionEngine(caveRoot) {
     cwd: resolvedRoot,
     encoding: 'utf8',
   }).trim();
-  const inspected = readTrackedHeadFile(
+  const inspected = readTrackedHeadFileAtCommit(
     resolvedRoot,
     'scripts/client-v1-conformance.mjs',
     'Cave assertion engine',
+    commit,
   );
   const dirty = execFileSync(
     'git',
@@ -128,6 +135,55 @@ export async function loadCommittedCaveAssertionEngine(inspected) {
   }
 }
 
+export function fsyncPublicationDirectory(
+  directoryPath,
+  platform = process.platform,
+) {
+  if (!durablePublicationPlatforms.has(platform)) {
+    throw new Error(
+      `Durable evidence publication is unsupported on platform ${JSON.stringify(platform)}`,
+    );
+  }
+  let descriptor;
+  try {
+    descriptor = openSync(directoryPath, 'r');
+    fsyncSync(descriptor);
+  } catch (error) {
+    throw new Error(
+      `Cannot fsync evidence parent directory on ${platform}`,
+      { cause: error },
+    );
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+export function publishPreparedEvidence(
+  temporaryPath,
+  outputPath,
+  syncDirectory = fsyncPublicationDirectory,
+) {
+  const parentPath = dirname(outputPath);
+  syncDirectory(parentPath);
+  linkSync(temporaryPath, outputPath);
+  try {
+    unlinkSync(temporaryPath);
+    syncDirectory(parentPath);
+  } catch (error) {
+    try {
+      unlinkSync(outputPath);
+      syncDirectory(parentPath);
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [error, rollbackError],
+        'Evidence publication failed and rollback was incomplete',
+        { cause: rollbackError },
+      );
+    }
+    throw error;
+  }
+}
+
 export function publishEvidenceAtomically(outputPath, bytes) {
   const resolvedOutput = resolve(outputPath);
   mkdirSync(dirname(resolvedOutput), { recursive: true, mode: 0o700 });
@@ -143,8 +199,7 @@ export function publishEvidenceAtomically(outputPath, bytes) {
     } finally {
       closeSync(descriptor);
     }
-    linkSync(temporaryPath, resolvedOutput);
-    unlinkSync(temporaryPath);
+    publishPreparedEvidence(temporaryPath, resolvedOutput);
   } catch (error) {
     try {
       unlinkSync(temporaryPath);
@@ -194,10 +249,11 @@ export async function runConformanceAggregation(argv = process.argv.slice(2)) {
   if (sdkDirty.length > 0) {
     throw new Error('SDK aggregator checkout has tracked changes');
   }
-  const registryFile = readTrackedHeadFile(
+  const registryFile = readTrackedHeadFileAtCommit(
     resolvedSdkRoot,
     assertionRegistryPath,
     'Assertion registry',
+    sdkCommit,
   );
   const registry = parseAssertionRegistry(
     registryFile.bytes.toString('utf8'),
