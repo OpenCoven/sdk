@@ -1,9 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import {
+  closeSync,
+  fsyncSync,
   linkSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
   realpathSync,
   unlinkSync,
@@ -18,6 +21,10 @@ import {
   parseAssertionRegistry,
   parsePlatformEvidence,
 } from './conformance-contract.mjs';
+import {
+  cleanupOwnedTempRoot,
+  createOwnedTempDirectory,
+} from './owned-temp-directory.mjs';
 import { readReleaseConfig } from './release-readiness.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -54,7 +61,7 @@ function readTrackedHeadFile(root, relativePath, label) {
   }
   return {
     blob,
-    bytes,
+    bytes: committedBytes,
     digest: sha256(bytes),
   };
 }
@@ -70,7 +77,6 @@ export function inspectCaveAssertionEngine(caveRoot) {
   if (resolvedRoot !== gitRoot) {
     throw new Error('cave-root must equal the Git top-level');
   }
-  const enginePath = resolve(resolvedRoot, 'scripts/client-v1-conformance.mjs');
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], {
     cwd: resolvedRoot,
     encoding: 'utf8',
@@ -92,8 +98,34 @@ export function inspectCaveAssertionEngine(caveRoot) {
     commit,
     blob: inspected.blob,
     digest: inspected.digest,
-    moduleUrl: `${pathToFileURL(enginePath).href}?sha256=${inspected.digest}`,
+    sourceBytes: inspected.bytes,
   };
+}
+
+export async function loadCommittedCaveAssertionEngine(inspected) {
+  const owned = createOwnedTempDirectory({
+    prefix: 'opencoven-cave-assertion-engine',
+    childSegments: ['scripts'],
+  });
+  const enginePath = resolve(owned.path, 'client-v1-conformance.mjs');
+  try {
+    writeFileSync(enginePath, inspected.sourceBytes, {
+      flag: 'wx',
+      mode: 0o600,
+    });
+    const materializedBytes = readFileSync(enginePath);
+    if (
+      !materializedBytes.equals(inspected.sourceBytes)
+      || sha256(materializedBytes) !== inspected.digest
+    ) {
+      throw new Error('Materialized Cave assertion engine does not match the HEAD Git blob');
+    }
+    return await import(
+      `${pathToFileURL(enginePath).href}?sha256=${inspected.digest}`
+    );
+  } finally {
+    cleanupOwnedTempRoot(owned);
+  }
 }
 
 export function publishEvidenceAtomically(outputPath, bytes) {
@@ -104,7 +136,13 @@ export function publishEvidenceAtomically(outputPath, bytes) {
     `.${basename(resolvedOutput)}.${process.pid}.${randomUUID()}.tmp`,
   );
   try {
-    writeFileSync(temporaryPath, bytes, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    const descriptor = openSync(temporaryPath, 'wx', 0o600);
+    try {
+      writeFileSync(descriptor, bytes, { encoding: 'utf8' });
+      fsyncSync(descriptor);
+    } finally {
+      closeSync(descriptor);
+    }
     linkSync(temporaryPath, resolvedOutput);
     unlinkSync(temporaryPath);
   } catch (error) {
@@ -182,15 +220,7 @@ export async function runConformanceAggregation(argv = process.argv.slice(2)) {
       'Committed assertion registry checkout does not match the platform evidence SDK commit',
     );
   }
-  const caveEngine = await import(cave.moduleUrl);
-  const caveAfterImport = inspectCaveAssertionEngine(resolve(options.caveRoot));
-  if (
-    caveAfterImport.commit !== cave.commit
-    || caveAfterImport.blob !== cave.blob
-    || caveAfterImport.digest !== cave.digest
-  ) {
-    throw new Error('Cave assertion engine changed while it was being loaded');
-  }
+  const caveEngine = await loadCommittedCaveAssertionEngine(cave);
   const aggregate = aggregateConformanceEvidence({
     caveEngine,
     caveEngineSha256: cave.digest,

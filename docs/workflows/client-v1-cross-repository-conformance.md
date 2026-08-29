@@ -75,7 +75,9 @@ filesystem paths, Windows pipe handles, and oversized strings or structures.
 
 Use a clean Cave checkout at the exact commit named by every platform record.
 `--cave-root` must be that repository's Git top-level, and the engine must be a
-tracked regular file whose executed bytes equal its `HEAD` Git blob:
+tracked regular file equal to its `HEAD` Git blob. The aggregator executes an
+owned, digest-checked copy materialized from the committed blob bytes, never
+the mutable working-tree path:
 
 ```bash
 corepack pnpm@10.34.0 conformance:aggregate -- \
@@ -86,11 +88,11 @@ corepack pnpm@10.34.0 conformance:aggregate -- \
   --out docs/client-v1-cross-repository-results/<candidate>.json
 ```
 
-The output path must not already exist. Publication writes a complete sibling
-file and atomically hard-links it into place, so a concurrent creator wins
-without being overwritten. Input order does not affect output: records are
-emitted in canonical platform order, and the aggregate contains no checkout or
-input path. Run the focused contract tests with:
+The output path must not already exist. Publication writes and `fsync`s a
+complete sibling file, then atomically hard-links it into place, so exactly one
+concurrent creator wins without being overwritten. Input order does not affect
+output: records are emitted in canonical platform order, and the aggregate
+contains no checkout or input path. Run the focused contract tests with:
 
 ```bash
 corepack pnpm@10.34.0 test:conformance-contract

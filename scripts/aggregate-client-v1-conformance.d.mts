@@ -4,12 +4,16 @@ export interface InspectedCaveAssertionEngine {
   commit: string;
   blob: string;
   digest: string;
-  moduleUrl: string;
+  sourceBytes: Buffer;
 }
 
 export function inspectCaveAssertionEngine(
   caveRoot: string,
 ): InspectedCaveAssertionEngine;
+
+export function loadCommittedCaveAssertionEngine(
+  inspected: InspectedCaveAssertionEngine,
+): Promise<Record<string, unknown>>;
 
 export function publishEvidenceAtomically(
   outputPath: string,

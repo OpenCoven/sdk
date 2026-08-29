@@ -1,19 +1,22 @@
 import {
   appendFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { afterEach, beforeAll, describe, expect, test } from 'vitest';
 
 import {
   inspectCaveAssertionEngine,
+  loadCommittedCaveAssertionEngine,
   publishEvidenceAtomically,
 } from '../scripts/aggregate-client-v1-conformance.mjs';
 
@@ -92,6 +95,16 @@ describe('conformance aggregation filesystem trust', () => {
     );
   });
 
+  test('executes the committed Git blob even if the working file changes', async () => {
+    const fixture = createCaveRepository();
+    const inspected = inspectCaveAssertionEngine(fixture.root);
+    writeFileSync(fixture.enginePath, "export const marker = 'mutated';\n", 'utf8');
+
+    const engine = await loadCommittedCaveAssertionEngine(inspected);
+
+    expect(engine.marker).toBe('tracked');
+  });
+
   test('publishes a complete file without overwriting an existing destination', () => {
     const root = mkdtempSync(resolve(artifactRoot, 'conformance-publish-'));
     temporaryRoots.push(root);
@@ -103,4 +116,62 @@ describe('conformance aggregation filesystem trust', () => {
     ).toThrow('Refusing to overwrite existing evidence');
     expect(readFileSync(outputPath, 'utf8')).toBe('{"candidate":"first"}\n');
   });
+
+  test('allows exactly one concurrent publisher without overwrite', async () => {
+    const root = mkdtempSync(resolve(artifactRoot, 'conformance-race-'));
+    temporaryRoots.push(root);
+    const outputPath = resolve(root, 'evidence.json');
+    const startPath = resolve(root, 'start');
+    const moduleUrl = pathToFileURL(
+      resolve(workspaceRoot, 'scripts/aggregate-client-v1-conformance.mjs'),
+    ).href;
+    const publishers = ['a', 'b'].map((marker) => {
+      const readyPath = resolve(root, `ready-${marker}`);
+      const script = `
+        import { existsSync, writeFileSync } from 'node:fs';
+        import { setTimeout as delay } from 'node:timers/promises';
+        import { publishEvidenceAtomically } from ${JSON.stringify(moduleUrl)};
+        writeFileSync(${JSON.stringify(readyPath)}, '');
+        while (!existsSync(${JSON.stringify(startPath)})) await delay(2);
+        try {
+          publishEvidenceAtomically(
+            ${JSON.stringify(outputPath)},
+            ${JSON.stringify(marker)}.repeat(16 * 1024 * 1024),
+          );
+          process.exit(0);
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('Refusing to overwrite')) {
+            process.exit(2);
+          }
+          throw error;
+        }
+      `;
+      return {
+        marker,
+        readyPath,
+        child: spawn(process.execPath, ['--input-type=module', '--eval', script], {
+          stdio: 'ignore',
+        }),
+      };
+    });
+    while (publishers.some(({ readyPath }) => !existsSync(readyPath))) {
+      await delay(5);
+    }
+    writeFileSync(startPath, '');
+    const exitCodes = await Promise.all(
+      publishers.map(
+        ({ child }) =>
+          new Promise<number | null>((resolveCode, reject) => {
+            child.once('error', reject);
+            child.once('exit', resolveCode);
+          }),
+      ),
+    );
+
+    expect(exitCodes.toSorted()).toEqual([0, 2]);
+    const output = readFileSync(outputPath, 'utf8');
+    expect(output.length).toBe(16 * 1024 * 1024);
+    expect(output === 'a'.repeat(output.length) || output === 'b'.repeat(output.length))
+      .toBe(true);
+  }, 15_000);
 });
