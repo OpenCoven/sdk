@@ -5,8 +5,10 @@ import { validateReleaseReadiness } from './release-readiness.mjs';
 function parseArguments(arguments_) {
   const options = {
     requireConformanceEvidence: true,
+    requireLiveEnvironmentPolicy: true,
   };
   let conformanceEvidenceFlagSeen = false;
+  let liveEnvironmentPolicyFlagSeen = false;
 
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
@@ -17,6 +19,16 @@ function parseArguments(arguments_) {
         );
       }
       conformanceEvidenceFlagSeen = true;
+      continue;
+    }
+    if (argument === '--require-live-environment-policy') {
+      if (liveEnvironmentPolicyFlagSeen) {
+        throw new Error(
+          'Option --require-live-environment-policy may only be provided once',
+        );
+      }
+      liveEnvironmentPolicyFlagSeen = true;
+      options.requireLiveEnvironmentPolicy = true;
       continue;
     }
     if (argument === '--require-tag') {

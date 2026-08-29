@@ -49,7 +49,7 @@ jobs:
         if: matrix.node == '24.18.1'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node ./scripts/verify-release-readiness.mjs --require-conformance-evidence
+        run: node ./scripts/verify-release-readiness.mjs --require-conformance-evidence --require-live-environment-policy
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # The minimum-version verifier runs the clean-install Phase 0 matrix first,

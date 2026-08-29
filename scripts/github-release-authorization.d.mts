@@ -1,12 +1,16 @@
 import type {
   PublicationArtifactManifest,
 } from './create-release-artifacts.mjs';
+import type {
+  ReleaseEnvironmentPolicyReceipt,
+} from './github-environment-policy.mjs';
 
 export interface PublicationSecurityReview {
-  schemaVersion: 6;
+  schemaVersion: 7;
   kind: 'opencoven-sdk-publication-security-review';
   issue: 'OpenCoven/sdk#40';
   disposition: 'ship';
+  environmentPolicy: ReleaseEnvironmentPolicyReceipt;
   reviewer: {
     id: 68980965;
     authorAssociation: 'MEMBER';
@@ -69,6 +73,7 @@ export function createPublicationAuthorizationRecord(options: {
     sha256: string;
   };
   deploymentId: string;
+  environmentPolicy: ReleaseEnvironmentPolicyReceipt;
   environmentId: string;
   jobId: string;
   manifest: PublicationArtifactManifest;

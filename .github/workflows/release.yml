@@ -108,6 +108,7 @@ jobs:
             scripts/conformance-contract.mjs
             scripts/create-release-artifacts.mjs
             scripts/github-conformance-evidence.mjs
+            scripts/github-environment-policy.mjs
             scripts/github-environment-approval-evidence.mjs
             scripts/github-environment-approval.mjs
             scripts/github-release-authorization.mjs
@@ -119,6 +120,7 @@ jobs:
             scripts/release-runtime-integrity.mjs
             scripts/repository-metadata.mjs
             scripts/verify-committed-conformance-evidence.mjs
+            scripts/verify-github-environment-policies.mjs
             scripts/verify-release-readiness.mjs
           )
           /usr/bin/git diff --quiet "$validator_commit" HEAD -- "${runtime_paths[@]}"
@@ -150,6 +152,7 @@ jobs:
             "$node_path" ./scripts/verify-release-readiness.mjs \
               --mode verify \
               --version "$RELEASE_VERSION" \
+              --require-live-environment-policy \
               --require-conformance-evidence
       - name: Verify publish gates and release tag
         if: inputs.mode == 'publish'
@@ -173,6 +176,7 @@ jobs:
               --version "$RELEASE_VERSION" \
               --tag "sdk-v$RELEASE_VERSION" \
               --require-tag \
+              --require-live-environment-policy \
               --require-conformance-evidence
       - name: Require clean reviewed tree
         run: |

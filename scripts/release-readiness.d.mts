@@ -75,7 +75,11 @@ export interface ReleaseReadinessOptions {
   tag?: string;
   requireTag?: boolean;
   requireConformanceEvidence?: boolean;
+  requireLiveEnvironmentPolicy?: boolean;
   caveAuthorityRoot?: string;
+  githubExecute?: typeof import('node:child_process').execFileSync;
+  env?: NodeJS.ProcessEnv;
+  environmentPolicyNow?: () => Date;
 }
 
 export interface ReleaseReadinessSummary {

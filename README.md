@@ -425,13 +425,15 @@ through package-root imports without source-checkout or deep-import fallback.
 ## Validation
 
 ```bash
+export GH_TOKEN=...
+export OPENCOVEN_GH_PATH="$(command -v gh)"
 pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm test
 pnpm build
 node scripts/verify-contracts.mjs
 node scripts/verify-package.mjs
-node scripts/verify-release-readiness.mjs
+pnpm verify:release
 pnpm test:coverage
 pnpm test:stress
 pnpm lint

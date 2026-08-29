@@ -21,6 +21,9 @@ import {
   AUTHENTICATED_NPM_TARBALL_INTEGRITY,
   AUTHENTICATED_NPM_TARBALL_URL,
 } from './release-runtime-integrity.mjs';
+import {
+  verifyLiveReleaseEnvironmentPolicies,
+} from './github-environment-policy.mjs';
 
 const CONFIG_FIELDS = Object.freeze([
   'schemaVersion',
@@ -55,7 +58,7 @@ const PUBLICATION_ATTESTATION_ARTIFACT_NAME =
 const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
 const PREFLIGHT_JOB_SHA256 =
-  '21d32a601686c82a6171df0f6284ed98a705435479c82c08cd75d63c24a1618d';
+  '07281236fd24c6ff0c4a1755798798f37ccd38e2e72712e121a1199de6f2a9b4';
 const REPOSITORY_VERIFICATION_JOB_SHA256 =
   '271cda1603d40f9b2a7c4baf5c910e5fdd030a4a5d9218cd5c957246aecc2697';
 const PUBLICATION_CANDIDATE_JOB_SHA256 =
@@ -131,6 +134,7 @@ const VALIDATOR_RUNTIME_PATHS = Object.freeze([
   'scripts/conformance-contract.mjs',
   'scripts/create-release-artifacts.mjs',
   'scripts/github-conformance-evidence.mjs',
+  'scripts/github-environment-policy.mjs',
   'scripts/github-environment-approval-evidence.mjs',
   'scripts/github-environment-approval.mjs',
   'scripts/github-release-authorization.mjs',
@@ -142,6 +146,7 @@ const VALIDATOR_RUNTIME_PATHS = Object.freeze([
   'scripts/release-runtime-integrity.mjs',
   'scripts/repository-metadata.mjs',
   CONFORMANCE_VERIFIER_PATH,
+  'scripts/verify-github-environment-policies.mjs',
   'scripts/verify-release-readiness.mjs',
 ]);
 const STRICT_SEMVER =
@@ -1939,7 +1944,11 @@ export function validateReleaseReadiness({
   tag,
   requireTag = false,
   requireConformanceEvidence = false,
+  requireLiveEnvironmentPolicy = false,
   caveAuthorityRoot = process.env.OPENCOVEN_CAVE_AUTHORITY_ROOT,
+  githubExecute = execFileSync,
+  env = process.env,
+  environmentPolicyNow = () => new Date(),
 } = {}) {
   if (mode !== 'verify' && mode !== 'publish') {
     throw new Error(`Release mode must be verify or publish, received ${String(mode)}`);
@@ -1950,12 +1959,23 @@ export function validateReleaseReadiness({
   if (typeof requireConformanceEvidence !== 'boolean') {
     throw new Error('requireConformanceEvidence must be a boolean');
   }
+  if (typeof requireLiveEnvironmentPolicy !== 'boolean') {
+    throw new Error('requireLiveEnvironmentPolicy must be a boolean');
+  }
   if (version !== undefined) {
     assertStrictSemVer(version);
   }
 
   const config = readReleaseConfig(root);
   validateReleaseWorkflow(root, config);
+  if (requireLiveEnvironmentPolicy) {
+    verifyLiveReleaseEnvironmentPolicies({
+      config,
+      execute: githubExecute,
+      env,
+      now: environmentPolicyNow,
+    });
+  }
   if (tag !== undefined) {
     if (typeof tag !== 'string' || tag.length === 0) {
       throw new Error('Release tag must be a non-empty string');

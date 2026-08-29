@@ -129,6 +129,7 @@ export function createPublicationArtifacts(options?: {
   build?: boolean;
   version?: string;
   env?: NodeJS.ProcessEnv;
+  githubExecute?: typeof import('node:child_process').execFileSync;
 }): CreatePublicationArtifactsResult;
 
 export function verifyPublicationArtifacts(options?: {

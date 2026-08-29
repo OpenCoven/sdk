@@ -18,10 +18,14 @@ A normal publication requires every independent lock to be open:
    non-private, and leave the exact release workflow, candidate job, npm
    registry, npm CLI version, isolated attestation jobs, and final
    `npm-publish` trusted-publisher environment pinned;
-2. #40 authorizes the exact publication candidate bytes through an immutable
+2. authoritative GitHub API verification confirms the immutable
+   `OpenCoven/sdk` repository identity and the exact live policies for
+   `publication-candidate`, `npm-release`, and `npm-publish`;
+3. #40 authorizes the exact publication candidate bytes and the verified
+   environment policy receipt through an immutable
    comment by GitHub user ID `68980965`, whose current repository association
    and role must remain `MEMBER` and `admin`;
-3. the pending `npm-release` deployment is captured by an attested witness,
+4. the pending `npm-release` deployment is captured by an attested witness,
    then the protected `approval-evidence` job produces an approval receipt
    that its isolated successor attests as described below.
 
@@ -73,6 +77,11 @@ workflow/run attempt/job ID, environment ID, deployment ID, and GitHub
 artifact ID/name/archive digest. It separately binds the successful
 `publication-candidate-attestation` job and the exact attestation-bundle
 artifact ID/name/archive digest plus raw `attestation.json` size/SHA-256.
+It also embeds the complete canonical environment policy receipt, including
+the immutable repository and owner IDs, all three environment IDs, policy
+timestamps, reviewer IDs, self-review settings, administrator-bypass settings,
+wait timers, deployment branch policy, protection-rule set, and per-environment
+and aggregate policy digests.
 Matching source content, a descendant commit, a different attestation bundle,
 or a freshly repacked equivalent archive cannot authorize different bytes.
 
@@ -99,6 +108,28 @@ trailing newline. Its shape is:
     "jobId": "<attestation-job-id>"
   },
   "disposition": "ship",
+  "environmentPolicy": {
+    "environments": [
+      "<exact ordered publication-candidate, npm-release, and npm-publish policy snapshots>"
+    ],
+    "kind": "opencoven-sdk-release-environment-policy",
+    "policyDigest": "<aggregate-environment-policy-sha256>",
+    "repository": {
+      "defaultBranch": "main",
+      "fullName": "OpenCoven/sdk",
+      "id": "1337664127",
+      "name": "sdk",
+      "nodeId": "R_kgDOT7sifw",
+      "owner": {
+        "id": "270919577",
+        "login": "OpenCoven",
+        "type": "Organization"
+      },
+      "private": false
+    },
+    "schemaVersion": 1,
+    "verifiedAt": "<verification-timestamp>"
+  },
   "issue": "OpenCoven/sdk#40",
   "kind": "opencoven-sdk-publication-security-review",
   "manifest": {
@@ -133,7 +164,7 @@ trailing newline. Its shape is:
     "workflow": ".github/workflows/release.yml",
     "workflowCommit": "<release-commit>"
   },
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "source": {
     "commit": "<release-commit>",
     "repository": "OpenCoven/sdk",
@@ -237,13 +268,46 @@ a tag, or authorize npm.
 
 Before unlocking, create the dedicated `publication-candidate` environment,
 the protected `npm-release` approval environment, and the final
-`npm-publish` trusted-publisher environment. Configure the existing
-`npm-release` environment ID `20778492972` with exactly one required user
-reviewer, GitHub user ID `68980965`; enable `prevent_self_review`; disable
-administrator bypass; and allow protected branches only, with no custom branch
-policy. Configure `npm-publish` with protected branches only, no secrets, and
-no required reviewer so it does not create a second manual approval after the
-attested `npm-release` gate. The verifier compares the `npm-release`
+`npm-publish` trusted-publisher environment. A referenced but missing
+environment is not acceptable: GitHub would auto-create it without protection.
+All three environments must use this exact protected-branch-only deployment
+policy:
+
+```json
+{
+  "deployment_branch_policy": {
+    "custom_branch_policies": false,
+    "protected_branches": true
+  }
+}
+```
+
+All three environments must report `can_admins_bypass: false`, a zero-minute
+wait timer, exactly one `branch_policy` protection rule, and no custom
+deployment-protection rule. `publication-candidate` and `npm-publish` have no
+required reviewers and therefore no self-review gate. `npm-release` must keep
+environment ID `20778492972`, contain exactly one `required_reviewers` rule
+for immutable GitHub user ID `68980965`, and set `prevent_self_review: true`.
+No custom branch or tag pattern, including `evil`, is permitted. The release
+workflow itself remains dispatch-only and main-only, but those workflow checks
+do not replace the live environment policy.
+
+Run the authoritative read-only check with a token that can read the
+repository and environments:
+
+```bash
+GH_TOKEN=... \
+OPENCOVEN_GH_PATH="$(command -v gh)" \
+corepack pnpm@10.34.0 verify:release-environments
+```
+
+The command fails if the repository identity, any environment, or any policy
+field is missing or differs. Its canonical JSON output is the environment
+policy receipt. Preserve that exact receipt in the #40 publication
+authorization; release-time authorization re-fetches the live API state and
+requires the IDs, timestamps, rules, and digest to match.
+
+The verifier also compares the `npm-release`
 environment rules' `updated_at` value observed while the deployment is
 pending with the protected job's deployment `created_at`. A current
 environment configuration or later deployment status cannot replace the
@@ -402,6 +466,14 @@ exact values:
 - repository: `sdk`;
 - workflow filename: `release.yml`;
 - environment: `npm-publish`.
+
+Do not register any trusted publisher until
+`corepack pnpm@10.34.0 verify:release-environments` succeeds and its exact
+environment policy receipt is embedded in the immutable #40 authorization.
+The setup process fails closed when an environment is missing, auto-created
+without protection, allows custom branches, permits administrator bypass, has
+the wrong reviewer or self-review setting, has a nonzero wait timer, or exposes
+an unexpected protection rule.
 
 npm does not expose a trusted-publisher job-name field. The frozen workflow
 validator therefore requires `publish` to be the only `npm-publish` job and

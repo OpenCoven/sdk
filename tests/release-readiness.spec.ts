@@ -166,6 +166,7 @@ const VALIDATOR_RUNTIME_PATHS = [
   'scripts/conformance-contract.mjs',
   'scripts/create-release-artifacts.mjs',
   'scripts/github-conformance-evidence.mjs',
+  'scripts/github-environment-policy.mjs',
   'scripts/github-environment-approval-evidence.mjs',
   'scripts/github-environment-approval.mjs',
   'scripts/github-release-authorization.mjs',
@@ -177,6 +178,7 @@ const VALIDATOR_RUNTIME_PATHS = [
   'scripts/release-runtime-integrity.mjs',
   'scripts/repository-metadata.mjs',
   'scripts/verify-committed-conformance-evidence.mjs',
+  'scripts/verify-github-environment-policies.mjs',
   'scripts/verify-release-readiness.mjs',
 ] as const;
 
@@ -311,20 +313,28 @@ afterEach(() => {
 });
 
 describe('release readiness contract', () => {
-  test('requires conformance evidence even when the CLI flag is omitted', () => {
+  test('requires live environment policy even when the CLI flag is omitted', () => {
     const result = spawnSync(
       process.execPath,
       ['./scripts/verify-release-readiness.mjs'],
       {
         cwd: workspaceRoot,
         encoding: 'utf8',
+        env: Object.fromEntries(
+          Object.entries(process.env).filter(
+            ([key]) =>
+              key !== 'GH_TOKEN'
+              && key !== 'GITHUB_TOKEN'
+              && key !== 'OPENCOVEN_GH_PATH',
+          ),
+        ),
       },
     );
 
     expect(result.status).toBe(1);
     expect(result.stdout).toBe('');
     expect(result.stderr).toContain(
-      'release.config.json must name a passing SDK #38 aggregate record',
+      'GH_TOKEN is required for authoritative GitHub environment verification',
     );
   });
 
@@ -338,7 +348,7 @@ describe('release readiness contract', () => {
     );
 
     expect(manifest.scripts['verify:release']).toBe(
-      'node ./scripts/verify-release-readiness.mjs --require-conformance-evidence',
+      'node ./scripts/verify-release-readiness.mjs --require-conformance-evidence --require-live-environment-policy',
     );
     expect(manifest.scripts.verify).toContain('verify:release');
     expect(workflow).toContain('assertNoReleaseRuntimeShadows');
@@ -369,13 +379,16 @@ describe('release readiness contract', () => {
     expect(ciWorkflow).toContain('  deployments: read');
     expect(ciWorkflow).toContain('  issues: read');
     expect(ciWorkflow).toMatch(
-      /name: Verify authoritative release gates\s+if: matrix\.node == '24\.18\.1'\s+env:\s+GH_TOKEN: \$\{\{ github\.token \}\}\s+run: node \.\/scripts\/verify-release-readiness\.mjs --require-conformance-evidence/u,
+      /name: Verify authoritative release gates\s+if: matrix\.node == '24\.18\.1'\s+env:\s+GH_TOKEN: \$\{\{ github\.token \}\}\s+run: node \.\/scripts\/verify-release-readiness\.mjs --require-conformance-evidence --require-live-environment-policy/u,
     );
     expect(ciWorkflow).toMatch(
       /name: Verify minimum supported Node\s+if: matrix\.node == '24\.18\.1'\s+run: corepack pnpm@10\.34\.0 verify:repository/u,
     );
     expect(
       workflow.match(/--require-conformance-evidence/gu),
+    ).toHaveLength(2);
+    expect(
+      workflow.match(/--require-live-environment-policy/gu),
     ).toHaveLength(2);
     const publishJobIndex = workflow.indexOf('\n  publish:\n');
     expect(publishJobIndex).toBeGreaterThan(0);

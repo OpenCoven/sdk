@@ -1238,6 +1238,7 @@ export function createPublicationArtifacts({
   build = true,
   version,
   env = process.env,
+  githubExecute = execFileSync,
 } = {}) {
   if (typeof build !== 'boolean') {
     throw new Error('build must be a boolean');
@@ -1254,6 +1255,9 @@ export function createPublicationArtifacts({
     mode: 'verify',
     version,
     requireConformanceEvidence: true,
+    requireLiveEnvironmentPolicy: true,
+    githubExecute,
+    env,
   });
   const provenance = readPublicationProvenance(
     env,

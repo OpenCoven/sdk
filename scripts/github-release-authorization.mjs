@@ -16,6 +16,12 @@ import {
   serializeCanonicalJson,
 } from './conformance-contract.mjs';
 import {
+  assertReleaseEnvironmentPolicyReceiptCurrent,
+  normalizeReleaseEnvironmentPolicyReceipt,
+  serializeReleaseEnvironmentPolicyReceipt,
+  verifyLiveReleaseEnvironmentPolicies,
+} from './github-environment-policy.mjs';
+import {
   verifyPublicationArtifacts,
 } from './create-release-artifacts.mjs';
 import {
@@ -248,6 +254,7 @@ export function createPublicationAuthorizationRecord({
   attestationJobId,
   attestationBundle,
   deploymentId,
+  environmentPolicy,
   environmentId,
   jobId,
   manifest,
@@ -283,6 +290,21 @@ export function createPublicationAuthorizationRecord({
     || typeof manifestText !== 'string'
   ) {
     throw new Error('Publication authorization input is invalid');
+  }
+  const normalizedEnvironmentPolicy =
+    normalizeReleaseEnvironmentPolicyReceipt(
+      environmentPolicy,
+      'Publication authorization environmentPolicy',
+    );
+  const candidateEnvironment =
+    normalizedEnvironmentPolicy.environments[0];
+  if (
+    candidateEnvironment.name !== manifest.provenance.environment
+    || candidateEnvironment.id !== environmentId
+  ) {
+    throw new Error(
+      'Publication authorization environment policy must bind the exact candidate environment',
+    );
   }
   assertExactFields(
     attestationBundle,
@@ -337,11 +359,12 @@ export function createPublicationAuthorizationRecord({
     `opencoven-sdk-publication-attestation-${manifest.source.commit}`
     + `-${manifest.version}`;
   return {
-    schemaVersion: 6,
+    schemaVersion: 7,
     kind: 'opencoven-sdk-publication-security-review',
     issue: 'OpenCoven/sdk#40',
     disposition: 'ship',
     reviewer: { ...REVIEWER_AUTHORIZATION },
+    environmentPolicy: normalizedEnvironmentPolicy,
     version: manifest.version,
     source: {
       repository: manifest.source.repository,
@@ -431,6 +454,7 @@ function parseAuthorizationBody(text) {
       'kind',
       'issue',
       'disposition',
+      'environmentPolicy',
       'reviewer',
       'version',
       'source',
@@ -449,6 +473,18 @@ function parseAuthorizationBody(text) {
     ['id', 'authorAssociation', 'permission', 'roleName'],
     'Publication authorization reviewer',
   );
+  const environmentPolicy = normalizeReleaseEnvironmentPolicyReceipt(
+    value.environmentPolicy,
+    'Publication authorization environmentPolicy',
+  );
+  if (
+    serializeCanonicalJson(value.environmentPolicy)
+      !== serializeReleaseEnvironmentPolicyReceipt(environmentPolicy)
+  ) {
+    throw new Error(
+      'Publication authorization environmentPolicy must be the exact canonical receipt',
+    );
+  }
   assertExactFields(
     value.source,
     ['repository', 'commit', 'tree', 'runtimeManifest'],
@@ -536,7 +572,7 @@ function parseAuthorizationBody(text) {
   );
   const packages = canonicalPackageEntries(value.packages);
   if (
-    value.schemaVersion !== 6
+    value.schemaVersion !== 7
     || value.kind !== 'opencoven-sdk-publication-security-review'
     || value.issue !== 'OpenCoven/sdk#40'
     || value.disposition !== 'ship'
@@ -644,8 +680,17 @@ function parseAuthorizationBody(text) {
   ) {
     throw new Error('GitHub security review authorization record is invalid');
   }
+  if (
+    environmentPolicy.environments[0].id
+      !== value.provenance.environmentId
+  ) {
+    throw new Error(
+      'GitHub security review authorization environment policy does not bind the candidate environment id',
+    );
+  }
   return {
     ...value,
+    environmentPolicy,
     packages,
   };
 }
@@ -965,6 +1010,15 @@ export function resolvePublicationSecurityReview({
       'Release checkout must equal the exact #40-authorized release commit and tree',
     );
   }
+  const liveEnvironmentPolicy = verifyLiveReleaseEnvironmentPolicies({
+    config,
+    execute,
+    env,
+  });
+  assertReleaseEnvironmentPolicyReceiptCurrent(
+    authorization.environmentPolicy,
+    liveEnvironmentPolicy,
+  );
   if (
     authorization.provenance.workflow
       !== config.publicationCandidate.workflow
@@ -1243,6 +1297,7 @@ export function verifyPublicationSecurityReview({
     },
     deploymentId: authorization.provenance.deploymentId,
     environmentId: authorization.provenance.environmentId,
+    environmentPolicy: authorization.environmentPolicy,
     jobId: authorization.provenance.jobId,
     manifest,
     manifestText,
@@ -1252,6 +1307,7 @@ export function verifyPublicationSecurityReview({
     kind: authorization.kind,
     issue: authorization.issue,
     disposition: authorization.disposition,
+    environmentPolicy: authorization.environmentPolicy,
     reviewer: {
       id: authorization.reviewer.id,
       authorAssociation: authorization.reviewer.authorAssociation,

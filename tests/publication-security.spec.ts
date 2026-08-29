@@ -23,6 +23,9 @@ import {
   verifyPublicationSecurityReview,
 } from '../scripts/github-release-authorization.mjs';
 import {
+  createReleaseEnvironmentPolicyReceipt,
+} from '../scripts/github-environment-policy.mjs';
+import {
   publishReleaseArtifacts,
 } from '../scripts/publish-release-artifacts.mjs';
 import {
@@ -87,6 +90,7 @@ function createPublicationAuthorizationRecord(
     | 'attestationBundle'
     | 'attestationJobId'
     | 'deploymentId'
+    | 'environmentPolicy'
     | 'environmentId'
   > & Partial<
     CandidateAttestationOptions & Pick<
@@ -108,6 +112,7 @@ function createPublicationAuthorizationRecord(
     deploymentId: '40000',
     environmentId: '50000',
     ...options,
+    environmentPolicy: createEnvironmentPolicyReceipt(),
   } as never);
 }
 
@@ -175,6 +180,75 @@ interface PublicationManifest {
 
 function sha256(bytes: string | Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+function releaseEnvironment(
+  name: 'publication-candidate' | 'npm-release' | 'npm-publish',
+  id: number,
+): Record<string, unknown> {
+  return {
+    id,
+    node_id: `environment-${name}`,
+    name,
+    can_admins_bypass: false,
+    protection_rules: [
+      ...(name === 'npm-release'
+        ? [
+            {
+              id: id + 1,
+              node_id: `reviewer-rule-${name}`,
+              type: 'required_reviewers',
+              prevent_self_review: true,
+              reviewers: [
+                {
+                  type: 'User',
+                  reviewer: {
+                    id: REVIEWER_ID,
+                    login: 'BunsDev',
+                    type: 'User',
+                  },
+                },
+              ],
+            },
+          ]
+        : []),
+      {
+        id: id + 2,
+        node_id: `branch-rule-${name}`,
+        type: 'branch_policy',
+      },
+    ],
+    deployment_branch_policy: {
+      protected_branches: true,
+      custom_branch_policies: false,
+    },
+    created_at: '2026-08-28T10:00:00Z',
+    updated_at: '2026-08-28T10:00:00Z',
+  };
+}
+
+function createEnvironmentPolicyReceipt() {
+  return createReleaseEnvironmentPolicyReceipt({
+    repository: {
+      id: 1337664127,
+      node_id: 'R_kgDOT7sifw',
+      name: 'sdk',
+      full_name: 'OpenCoven/sdk',
+      private: false,
+      default_branch: 'main',
+      owner: {
+        id: 270919577,
+        login: 'OpenCoven',
+        type: 'Organization',
+      },
+    },
+    environments: [
+      releaseEnvironment('publication-candidate', 50_000),
+      releaseEnvironment('npm-release', Number(APPROVAL_ENVIRONMENT_ID)),
+      releaseEnvironment('npm-publish', 50_002),
+    ],
+    verifiedAt: '2026-08-29T14:00:00Z',
+  });
 }
 
 function git(root: string, arguments_: string[]): string {
@@ -472,6 +546,21 @@ function createGitHubExecute(
       ]);
     }
     const endpoint = arguments_.at(-1) ?? '';
+    if (endpoint === 'repos/OpenCoven/sdk') {
+      return JSON.stringify({
+        id: 1337664127,
+        node_id: 'R_kgDOT7sifw',
+        name: 'sdk',
+        full_name: 'OpenCoven/sdk',
+        private: false,
+        default_branch: 'main',
+        owner: {
+          id: 270919577,
+          login: 'OpenCoven',
+          type: 'Organization',
+        },
+      });
+    }
     if (endpoint === 'repos/OpenCoven/sdk/issues/40') {
       return JSON.stringify({
         number: 40,
@@ -647,42 +736,17 @@ function createGitHubExecute(
     if (
       endpoint === 'repos/OpenCoven/sdk/environments/publication-candidate'
     ) {
-      return JSON.stringify({
-        id: 50000,
-        name: 'publication-candidate',
-      });
+      return JSON.stringify(
+        releaseEnvironment('publication-candidate', 50_000),
+      );
     }
     if (endpoint === 'repos/OpenCoven/sdk/environments/npm-release') {
-      return JSON.stringify({
-        id: Number(APPROVAL_ENVIRONMENT_ID),
-        name: 'npm-release',
-        can_admins_bypass: false,
-        protection_rules: [
-          {
-            type: 'required_reviewers',
-            prevent_self_review: true,
-            reviewers: [
-              {
-                type: 'User',
-                reviewer: {
-                  id: REVIEWER_ID,
-                  login: 'BunsDev',
-                  type: 'User',
-                },
-              },
-            ],
-          },
-          {
-            type: 'branch_policy',
-          },
-        ],
-        deployment_branch_policy: {
-          protected_branches: true,
-          custom_branch_policies: false,
-        },
-        created_at: '2026-08-28T10:00:00Z',
-        updated_at: '2026-08-28T10:00:00Z',
-      });
+      return JSON.stringify(
+        releaseEnvironment('npm-release', Number(APPROVAL_ENVIRONMENT_ID)),
+      );
+    }
+    if (endpoint === 'repos/OpenCoven/sdk/environments/npm-publish') {
+      return JSON.stringify(releaseEnvironment('npm-publish', 50_002));
     }
     if (endpoint === 'repos/OpenCoven/sdk/deployments/40000') {
       return JSON.stringify({
@@ -919,6 +983,7 @@ function publicationEnvironment(
 ): Record<string, string | undefined> {
   return {
     PATH: process.env.PATH,
+    GH_TOKEN: 'github-token',
     OPENCOVEN_RELEASE_AUTHORIZATION: 'publish',
     OPENCOVEN_SECURITY_REVIEW_COMMENT_ID: '4001',
     ACTIONS_ID_TOKEN_REQUEST_URL:
@@ -1195,7 +1260,11 @@ describe('publication security', { timeout: 30_000 }, () => {
     });
 
     expect(authorization).toMatchObject({
-      schemaVersion: 6,
+      schemaVersion: 7,
+      environmentPolicy: {
+        kind: 'opencoven-sdk-release-environment-policy',
+        policyDigest: createEnvironmentPolicyReceipt().policyDigest,
+      },
       provenance: {
         job: 'publication-candidate',
         jobId: '20000',
@@ -1225,6 +1294,85 @@ describe('publication security', { timeout: 30_000 }, () => {
         },
       },
     });
+  });
+
+  test('rejects a live npm-publish policy that differs from the authorized receipt', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-publish-policy-change-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const execute = createGitHubExecute(authorization);
+
+    expect(() =>
+      resolvePublicationSecurityReview({
+        root: sourceRoot,
+        commentId: '4001',
+        execute: (command: string, arguments_: string[]) => {
+          const endpoint = arguments_.at(-1) ?? '';
+          if (endpoint === 'repos/OpenCoven/sdk/environments/npm-publish') {
+            return JSON.stringify({
+              ...releaseEnvironment('npm-publish', 50_002),
+              can_admins_bypass: true,
+            });
+          }
+          return execute(command, arguments_);
+        },
+        env: { GH_TOKEN: 'github-token' },
+      } as never),
+    ).toThrow(/npm-publish.*administrator bypass/u);
+  });
+
+  test('rejects a normalized but noncanonical environment policy receipt in #40', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-noncanonical-policy-receipt-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const noncanonical = structuredClone(authorization) as unknown as {
+      environmentPolicy: {
+        repository: {
+          id: string | number;
+        };
+        verifiedAt: string;
+      };
+    };
+    noncanonical.environmentPolicy.repository.id = 1337664127;
+    noncanonical.environmentPolicy.verifiedAt = '2026-08-29T14:00:00Z';
+    const execute = createGitHubExecute(authorization);
+
+    expect(() =>
+      resolvePublicationSecurityReview({
+        root: sourceRoot,
+        commentId: '4001',
+        execute: (command: string, arguments_: string[]) => {
+          const endpoint = arguments_.at(-1) ?? '';
+          if (endpoint === 'repos/OpenCoven/sdk/issues/comments/4001') {
+            const comment = JSON.parse(
+              execute(command, arguments_),
+            ) as Record<string, unknown>;
+            comment.body = serializeCanonicalJson(noncanonical);
+            return JSON.stringify(comment);
+          }
+          return execute(command, arguments_);
+        },
+        env: { GH_TOKEN: 'github-token' },
+      } as never),
+    ).toThrow(/environmentPolicy must be the exact canonical receipt/u);
   });
 
   test('rejects a recycled reviewer login with the wrong immutable user id', () => {
@@ -1725,17 +1873,15 @@ describe('publication security', { timeout: 30_000 }, () => {
               === 'repos/OpenCoven/sdk/environments/publication-candidate'
           ) {
             return JSON.stringify({
-              id: 59999,
-              name: 'publication-candidate',
+              ...releaseEnvironment('publication-candidate', 50_000),
+              id: 59_999,
             });
           }
           return execute(command, arguments_);
         },
         env: { GH_TOKEN: 'github-token' },
       } as never),
-    ).toThrow(
-      'GitHub security review does not bind the exact publication candidate environment',
-    );
+    ).toThrow(/live GitHub release environment policy does not match/iu);
   });
 
   test('verifies attestations for every downloaded candidate file from the exact run attempt', () => {

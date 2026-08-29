@@ -43,6 +43,9 @@ describe('release and support policies', () => {
     expect(releasing).toContain('GitHub artifact attestation');
     expect(releasing).toContain('publication-candidate-attestation');
     expect(releasing).toContain('environment: `npm-publish`');
+    expect(releasing).toContain('verify:release-environments');
+    expect(releasing).toContain('protected-branch-only');
+    expect(releasing).toContain('environment policy receipt');
     expect(releasing).toContain(
       'the only OIDC-bearing job that may check out or execute repository-controlled',
     );
