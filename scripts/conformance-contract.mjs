@@ -160,6 +160,12 @@ const PRIVATE_VALUE_PATTERNS = Object.freeze([
   /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu,
   /\b(?:user(?:name)?|operator|hostname|computername|machineid)\s*[:=]\s*\S+/iu,
 ]);
+const CAVE_ROUTE_TEXT_PATH =
+  /^evidence(?:\.platforms\[\d+\])?\.caveRecord\.(?:notCovered\[\d+\]|findings\[\d+\]\.(?:where|says|measured|why))$/u;
+const CAVE_ROUTE_LITERALS = Object.freeze([
+  '/api/client/v1',
+  '/familiars',
+]);
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -279,7 +285,11 @@ function assertNoDuplicateJsonKeys(text, source) {
   parseValue();
 }
 
-function parseJsonText(text, source, maxBytes = MAX_EVIDENCE_BYTES) {
+export function parseJsonText(
+  text,
+  source,
+  maxBytes = MAX_EVIDENCE_BYTES,
+) {
   if (Buffer.byteLength(text, 'utf8') > maxBytes) {
     throw new Error(`${source} exceeds the ${maxBytes}-byte limit`);
   }
@@ -564,6 +574,27 @@ function expectEvidenceSchemaMetadata(value, label) {
   return metadata;
 }
 
+function expectRunnerLabels(value, label) {
+  const object = expectExactObject(value, CANONICAL_PLATFORMS, label);
+  return Object.fromEntries(
+    CANONICAL_PLATFORMS.map((platform) => {
+      const labels = object[platform];
+      if (!Array.isArray(labels) || labels.length === 0 || labels.length > 8) {
+        throw new Error(`${label}.${platform} must be a non-empty bounded array`);
+      }
+      return [
+        platform,
+        labels.map((entry, index) =>
+          expectString(entry, `${label}.${platform}[${index}]`, {
+            pattern: IDENTIFIER_PATTERN,
+            maxBytes: 64,
+          }),
+        ),
+      ];
+    }),
+  );
+}
+
 function expectEvidenceProducer(value, label) {
   if (!isPlainObject(value)) {
     throw new Error(`${label} must be a JSON object`);
@@ -649,7 +680,10 @@ function expectEvidenceProducer(value, label) {
       [
         'path',
         'job',
+        'jobNameTemplate',
         'environment',
+        'sourceRef',
+        'runnerLabels',
         'signerWorkflow',
         'signerDigest',
         'sourceDigest',
@@ -714,10 +748,28 @@ function expectEvidenceProducer(value, label) {
           pattern: IDENTIFIER_PATTERN,
           maxBytes: 64,
         }),
+        jobNameTemplate: expectString(
+          workflow.jobNameTemplate,
+          `${label}.workflow.jobNameTemplate`,
+          { maxBytes: 192 },
+        ),
         environment: expectString(
           workflow.environment,
           `${label}.workflow.environment`,
           { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+        ),
+        sourceRef: expectString(
+          workflow.sourceRef,
+          `${label}.workflow.sourceRef`,
+          {
+            pattern:
+              /^refs\/heads\/[A-Za-z0-9](?:[A-Za-z0-9._/-]*[A-Za-z0-9])?$/u,
+            maxBytes: 256,
+          },
+        ),
+        runnerLabels: expectRunnerLabels(
+          workflow.runnerLabels,
+          `${label}.workflow.runnerLabels`,
         ),
         signerWorkflow: expectString(
           workflow.signerWorkflow,
@@ -748,6 +800,7 @@ function expectEvidenceProducer(value, label) {
       || producer.command !== 'test:phase1-conformance'
       || producer.recordSchemaVersion !== 2
       || producer.harness.path !== 'scripts/phase1-conformance.mjs'
+      || producer.workflow.jobNameTemplate.split('{platform}').length !== 2
       || producer.workflow.signerWorkflow
         !== `${producer.repository}/${producer.workflow.path}`
       || producer.workflow.signerDigest !== producer.commit
@@ -2139,6 +2192,16 @@ function isExplicitlySafeEvidenceValue(path, value) {
   return false;
 }
 
+function privateScanValue(path, value) {
+  if (!CAVE_ROUTE_TEXT_PATH.test(path)) return value;
+
+  let scanValue = value;
+  for (const route of CAVE_ROUTE_LITERALS) {
+    scanValue = scanValue.replaceAll(route, '<reviewed-api-route>');
+  }
+  return scanValue.replace(/(["'])\/\1/gu, '$1<reviewed-api-root>$1');
+}
+
 export function scanConformanceEvidence(value) {
   let nodes = 0;
   const visit = (entry, path, depth) => {
@@ -2156,11 +2219,12 @@ export function scanConformanceEvidence(value) {
       if (SECRET_PATTERNS.some((pattern) => pattern.test(entry))) {
         throw new Error(`${path} contains a possible secret`);
       }
+      const scannedEntry = privateScanValue(path, entry);
       if (
         !isExplicitlySafeEvidenceValue(path, entry)
         && (
-          entry.includes('\0')
-          || PRIVATE_VALUE_PATTERNS.some((pattern) => pattern.test(entry))
+          scannedEntry.includes('\0')
+          || PRIVATE_VALUE_PATTERNS.some((pattern) => pattern.test(scannedEntry))
         )
       ) {
         throw new Error(`${path} contains a private path, handle, URL, or operator identifier`);
@@ -3066,7 +3130,6 @@ export function parseReviewedEvidenceIndex(
   source = 'reviewed evidence index',
   {
     frozenLock,
-    aggregate,
     aggregatePath,
     aggregateText,
   } = {},
@@ -3082,9 +3145,6 @@ export function parseReviewedEvidenceIndex(
     `${source} frozen conformance lock`,
   );
   const producer = assertEvidenceProducerCompatibility(lock);
-  if (!isPlainObject(aggregate)) {
-    throw new Error(`${source} aggregate must be a parsed canonical aggregate`);
-  }
   if (typeof aggregatePath !== 'string') {
     throw new Error(`${source} aggregate path must be supplied`);
   }
@@ -3118,8 +3178,7 @@ export function parseReviewedEvidenceIndex(
     'OpenCoven/sdk',
   );
   if (
-    !equalJson(candidate, aggregate.candidate?.provenance)
-    || !equalJson(candidate, {
+    !equalJson(candidate, {
       repository: lock.candidate.repository,
       commit: lock.candidate.commit,
       tree: lock.candidate.tree,
@@ -3132,15 +3191,6 @@ export function parseReviewedEvidenceIndex(
     `${source}.validator`,
     'OpenCoven/sdk',
   );
-  if (
-    !equalJson(validator, {
-      repository: aggregate.validator?.repository,
-      commit: aggregate.validator?.commit,
-      tree: aggregate.validator?.tree,
-    })
-  ) {
-    throw new Error(`${source}.validator does not match the aggregate validator`);
-  }
   const aggregateMetadata = expectFileMetadata(
     object.aggregate,
     `${source}.aggregate`,
@@ -3167,7 +3217,10 @@ export function parseReviewedEvidenceIndex(
     [
       'path',
       'job',
+      'jobNameTemplate',
       'environment',
+      'sourceRef',
+      'runnerLabels',
       'signerWorkflow',
       'signerDigest',
       'sourceDigest',
@@ -3216,10 +3269,28 @@ export function parseReviewedEvidenceIndex(
         `${source}.producer.workflow.job`,
         { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
       ),
+      jobNameTemplate: expectString(
+        producerWorkflow.jobNameTemplate,
+        `${source}.producer.workflow.jobNameTemplate`,
+        { maxBytes: 192 },
+      ),
       environment: expectString(
         producerWorkflow.environment,
         `${source}.producer.workflow.environment`,
         { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+      ),
+      sourceRef: expectString(
+        producerWorkflow.sourceRef,
+        `${source}.producer.workflow.sourceRef`,
+        {
+          pattern:
+            /^refs\/heads\/[A-Za-z0-9](?:[A-Za-z0-9._/-]*[A-Za-z0-9])?$/u,
+          maxBytes: 256,
+        },
+      ),
+      runnerLabels: expectRunnerLabels(
+        producerWorkflow.runnerLabels,
+        `${source}.producer.workflow.runnerLabels`,
       ),
       signerWorkflow: expectString(
         producerWorkflow.signerWorkflow,
@@ -3262,9 +3333,6 @@ export function parseReviewedEvidenceIndex(
   ) {
     throw new Error(`${source}.platforms must match the frozen platform matrix`);
   }
-  const aggregatePlatforms = Array.isArray(aggregate.platforms)
-    ? aggregate.platforms
-    : [];
   const platforms = object.platforms.map((entry, index) => {
     const label = `${source}.platforms[${index}]`;
     const platformObject = expectExactObject(
@@ -3279,13 +3347,6 @@ export function parseReviewedEvidenceIndex(
     );
     if (platform !== lock.platformMatrix[index]) {
       throw new Error(`${source}.platforms must use the frozen platform order`);
-    }
-    const primaryRecord = aggregatePlatforms[index];
-    if (
-      !isPlainObject(primaryRecord)
-      || primaryRecord.platform !== platform
-    ) {
-      throw new Error(`${source} ${platform} primary record is missing`);
     }
     const recordObject = expectExactObject(
       platformObject.record,
@@ -3302,15 +3363,6 @@ export function parseReviewedEvidenceIndex(
         `${label}.record.sha256`,
       ),
     };
-    const primaryRecordText = serializeCanonicalJson(primaryRecord);
-    if (
-      record.size !== Buffer.byteLength(primaryRecordText, 'utf8')
-      || record.sha256 !== sha256(primaryRecordText)
-    ) {
-      throw new Error(
-        `${source} ${platform} record digest does not match the primary record`,
-      );
-    }
     const jobObject = expectExactObject(
       platformObject.protectedJob,
       [
@@ -3358,6 +3410,14 @@ export function parseReviewedEvidenceIndex(
         `${label}.protectedJob.attestationBundleSha256`,
       ),
     };
+    if (
+      protectedJob.artifactSha256 !== record.sha256
+      || protectedJob.attestationSubjectSha256 !== record.sha256
+    ) {
+      throw new Error(
+        `${source} ${platform} artifact and attestation digests must match the indexed record bytes`,
+      );
+    }
     if (
       protectedJob.attestationSubjectSha256
         !== protectedJob.artifactSha256

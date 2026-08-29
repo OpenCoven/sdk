@@ -5,9 +5,11 @@ does not run the native journey, launch Cave or Coven, touch a credential
 store, publish packages, or claim that conformance has passed.
 
 The contract validates record contents and committed source identities; it is
-not a signature service for arbitrary local JSON. Release operators must admit
-records only from the named protected platform jobs and review those
-job/artifact identities before retaining the aggregate and its evidence index.
+not a signature service for arbitrary local JSON. A committed aggregate or
+evidence index is never authentication. Release readiness independently
+queries GitHub for the frozen protected workflow, run, job, and artifact,
+downloads each primary record, verifies its real GitHub build-provenance
+attestation, and aggregates only those downloaded bytes.
 
 Chat's separate native harness must later produce one observed record for each
 platform, in this exact matrix and order:
@@ -35,8 +37,8 @@ is the single machine-readable artifact and source lock. It freezes:
 
 - SDK package candidate
   `acc38488f00860d246c3c553375634d64806eabb` and its committed tree;
-- `release-manifest.json`, including its exact 1,031-byte canonical JSON
-  representation and SHA-256;
+- the private-source **conformance artifact** `release-manifest.json`,
+  including its exact 1,031-byte canonical JSON representation and SHA-256;
 - the four package names, versions, release filenames, Chat vendor paths,
   sizes, SHA-256 values, and order;
 - the SDK candidate's Cave contract fixture, fixture digest file, provenance
@@ -57,6 +59,13 @@ The schema identity is
 mutable branch URL. The schema embeds the exact assertion-registry metadata.
 Runtime validation checks lock bytes to schema bytes, then the schema binding
 to the exact registry bytes and ordered matrix.
+
+The immutable schema-v2 field names `releaseManifest` and `sdkPackages` refer
+only to the frozen conformance artifact set consumed by Chat. They are not npm
+publication candidates. Publication uses a separate schema-v2 artifact
+manifest, source commit, and #40 review identity defined by
+[`conformance/release-artifact-manifest.schema.json`](../../conformance/release-artifact-manifest.schema.json)
+and `release.config.json` `publicationCandidate`.
 
 The validator commit is deliberately **not** the package candidate commit. Each
 platform record identifies the later SDK validator commit and tree separately.
@@ -150,7 +159,10 @@ boundaries, including inside Cave detail and finding text.
 
 Approved UUID invocation IDs, 32-hex opaque root IDs, SHA-256 values, versions,
 diagnostic IDs, repository slugs, relative locked artifact paths, and public
-Client v1 API routes remain allowed.
+Client v1 API routes remain allowed. Route allowance is field-aware: the exact
+Cave `findings` and `notCovered` grammar may contain reviewed literals such as
+`/api/client/v1` and `/familiars`, but unrestricted content and arbitrary
+absolute filesystem paths remain rejected.
 
 ## Aggregate three completed records
 
@@ -180,7 +192,8 @@ line endings and exactly one trailing newline. Arrays retain their contractual
 order. Platform input order and object key order therefore cannot change the
 published bytes.
 
-After protected-job and human review, copy the exact aggregate bytes into:
+After the protected jobs complete, the SDK verifier downloads and authenticates
+the records before producing the exact aggregate bytes. Copy those bytes into:
 
 ```text
 docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json
@@ -192,14 +205,27 @@ Create the sibling reviewed evidence index:
 docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.index.json
 ```
 
-The index binds the committed aggregate digest, each canonical primary
-platform-record digest, the exact producer commit/harness/workflow identity,
-protected run/job IDs, artifact digest, attestation subject digest, and
-attestation-bundle digest. It also freezes the SLSA predicate, signer workflow,
-signer digest, source digest, and the prohibition on self-hosted runners.
+The index records the expected aggregate and primary-record digests, exact
+producer commit/harness/workflow/source-ref identity, hosted-runner labels,
+protected run attempt and job IDs, artifact digest, attestation subject digest,
+and attestation-bundle digest. It also freezes the SLSA predicate, signer
+workflow, signer digest, source digest, and the prohibition on self-hosted
+runners. These values are locators and review expectations, not self-authenticating
+claims.
 
-For each platform, reviewers must download the named protected-job artifact
-and bundle and run the equivalent of:
+For each platform, release readiness uses `gh api` to fetch the workflow bytes
+at the frozen Chat commit and verify the exact job is bound to the protected
+environment. It fetches the run, job, and artifact records, requires successful
+conclusions and the locked job name/runner labels, and downloads the named
+artifact with:
+
+```bash
+gh run download <run-id> \
+  --repo OpenCoven/chat \
+  --name client-v1-conformance-<platform>
+```
+
+It then downloads the bundle and runs the equivalent of:
 
 ```bash
 gh attestation verify <artifact> \
@@ -213,23 +239,30 @@ gh attestation verify <artifact> \
   --format json
 ```
 
-Reviewers then verify the downloaded artifact digest and attestation-bundle
-digest, extract the canonical record, and verify its digest against the index.
-The local validator deliberately does not turn self-asserted run IDs into a
-network trust oracle; the cryptographic GitHub verification and review are the
-admission step required by the committed index. Only then may the aggregate,
-index, and
+The verifier checks the attestation certificate's source repository, source
+ref, source digest, signer digest, GitHub-hosted runner identity, and exact
+run-invocation URI. The attestation subject must equal the downloaded canonical
+record digest, and the bundle digest must equal the reviewed index. Only the
+three downloaded records are aggregated. That generated aggregate must
+byte-match the committed aggregate.
+
+There is intentionally no offline acceptance mode. Supplying only committed
+JSON claims, even with plausible GitHub IDs and matching copied hashes, fails
+closed because the verifier cannot authenticate the primary platform bytes or
+job identities. Only after live verification may the aggregate, index, and
 `release.config.json` `conformanceEvidence.aggregateRecord` change be reviewed
 together.
 
 Release readiness reads only committed regular files at `HEAD`, rejects any
 working-tree drift, requires the exact sibling evidence index, revalidates the
 lock-schema-registry chain, and checks validator/candidate ancestry and bytes
-from Git history. The release workflow checks out the exact frozen Cave source
-and supplies it through `OPENCOVEN_CAVE_AUTHORITY_ROOT`; the verifier executes
-the exact committed Cave engine bytes and re-renders every Cave record rather
-than trusting aggregate-copied summaries, findings, scan labels, isolation
-labels, or harness claims.
+from Git history. `.node-version` is part of the exact validator runtime and
+the process must be Node `v24.18.1`. The release workflow checks out the exact
+frozen Cave source and supplies it through
+`OPENCOVEN_CAVE_AUTHORITY_ROOT`; the verifier executes the exact committed Cave
+engine bytes and re-renders every Cave record rather than trusting
+aggregate-copied summaries, findings, scan labels, isolation labels, or
+harness claims.
 
 Run the focused validator suite with:
 

@@ -1,4 +1,4 @@
-import type { ReleaseArtifactManifest } from './create-release-artifacts.mjs';
+import type { PublicationArtifactManifest } from './create-release-artifacts.mjs';
 
 export function createNpmPublishArgs(options: {
   tarball: string;
@@ -20,6 +20,6 @@ export function publishReleaseArtifacts(options?: {
       stdio: 'inherit';
     },
   ) => unknown;
-}): ReleaseArtifactManifest;
+}): PublicationArtifactManifest;
 
-export function main(arguments_?: string[]): ReleaseArtifactManifest;
+export function main(arguments_?: string[]): PublicationArtifactManifest;

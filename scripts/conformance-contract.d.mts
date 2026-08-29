@@ -107,7 +107,10 @@ export interface FrozenConformanceLock {
         workflow: {
           path: string;
           job: string;
+          jobNameTemplate: string;
           environment: string;
+          sourceRef: string;
+          runnerLabels: Record<CanonicalPlatform, string[]>;
           signerWorkflow: string;
           signerDigest: string;
           sourceDigest: string;
@@ -421,7 +424,10 @@ export interface ReviewedEvidenceIndex {
     workflow: {
       path: string;
       job: string;
+      jobNameTemplate: string;
       environment: string;
+      sourceRef: string;
+      runnerLabels: Record<CanonicalPlatform, string[]>;
       signerWorkflow: string;
       signerDigest: string;
       sourceDigest: string;
@@ -486,6 +492,11 @@ export function validateJsonSchemaValue<T>(
 ): T;
 export function scanConformanceEvidence(value: unknown): void;
 export function serializeCanonicalJson(value: unknown): string;
+export function parseJsonText(
+  text: string,
+  source: string,
+  maxBytes?: number,
+): unknown;
 export function parseAggregatedConformanceEvidence(
   text: string,
   source?: string,
@@ -501,7 +512,6 @@ export function parseReviewedEvidenceIndex(
   source: string | undefined,
   options: {
     frozenLock: FrozenConformanceLock;
-    aggregate: AggregatedConformanceEvidence;
     aggregatePath: string;
     aggregateText: string;
   },

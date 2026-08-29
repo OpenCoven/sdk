@@ -36,7 +36,10 @@ import {
   cleanupOwnedTempRoot,
   createOwnedTempDirectory,
 } from './owned-temp-directory.mjs';
-import { readReleaseConfig } from './release-readiness.mjs';
+import {
+  assertFrozenNodeRuntime,
+  readReleaseConfig,
+} from './release-readiness.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const frozenLockPath =
@@ -1092,6 +1095,14 @@ export async function runConformanceAggregation(argv = process.argv.slice(2)) {
     validatorLockFile.bytes.toString('utf8'),
     'committed frozen conformance lock',
   );
+  if (
+    assertFrozenNodeRuntime(repositoryRoot)
+      !== frozenLock.toolchain.nodeVersion
+  ) {
+    throw new Error(
+      'Frozen conformance lock Node version does not match .node-version',
+    );
+  }
   const bindings = validateFrozenConformanceBindings(
     frozenLock,
     validatorSchemaFile.bytes.toString('utf8'),

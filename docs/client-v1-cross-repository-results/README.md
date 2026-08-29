@@ -12,10 +12,18 @@ The frozen Chat commit currently has no schema-v2 platform evidence producer,
 so aggregation and release readiness remain fail-closed.
 
 After a compatible producer is frozen and real protected jobs pass, the
-aggregator first writes canonical bytes beneath the fixed owner-private
-`.artifacts/client-v1-cross-repository-results/` root. A reviewed change copies
-those exact bytes here under the frozen candidate commit filename, adds the
-sibling `.index.json` file containing the exact protected-job artifact and
-GitHub attestation digests, and sets `release.config.json`
-`conformanceEvidence.aggregateRecord` to the aggregate path. Synthetic test
-fixtures never enter this directory.
+authoritative verifier queries the frozen Chat workflow/run/job/artifact
+records, downloads each primary platform record, verifies its GitHub
+build-provenance attestation and bundle, and passes only those downloaded bytes
+to the aggregator. The aggregator writes canonical bytes beneath the fixed
+owner-private `.artifacts/client-v1-cross-repository-results/` root.
+
+A reviewed change copies those exact bytes here under the frozen conformance
+candidate commit filename, adds the sibling `.index.json` locator containing
+the exact protected-job and attestation expectations, and sets
+`release.config.json` `conformanceEvidence.aggregateRecord` to the aggregate
+path. Release readiness repeats the live GitHub verification and requires the
+freshly generated aggregate to byte-match the committed aggregate. A committed
+JSON aggregate/index claim alone never passes, and these private-source
+conformance bytes are not publication candidates. Synthetic test fixtures
+never enter this directory.

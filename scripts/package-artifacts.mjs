@@ -13,6 +13,7 @@ export function run(command, args, cwd, options = {}) {
     cwd,
     stdio: options.stdio ?? 'inherit',
     encoding: options.encoding,
+    env: options.env,
   });
 }
 
@@ -58,6 +59,7 @@ function runPnpmAsync(args, cwd, options = {}) {
     const child = spawn('corepack', ['pnpm@10.34.0', ...args], {
       cwd,
       stdio: options.stdio ?? 'inherit',
+      env: options.env,
     });
 
     child.once('error', reject);
@@ -190,7 +192,7 @@ export function assertPackedPackagesExcludeSources(installRoot) {
   }
 }
 
-export function buildPublicPackages(root) {
+export function buildPublicPackages(root, options = {}) {
   runPnpm(
     [
       '--recursive',
@@ -198,12 +200,18 @@ export function buildPublicPackages(root) {
       'build',
     ],
     root,
+    options,
   );
 }
 
-export function packPublicPackages({ root, destinationRoot, build = true }) {
+export function packPublicPackages({
+  root,
+  destinationRoot,
+  build = true,
+  env,
+}) {
   if (build) {
-    buildPublicPackages(root);
+    buildPublicPackages(root, { env });
   }
 
   const tarballs = {};
@@ -211,10 +219,14 @@ export function packPublicPackages({ root, destinationRoot, build = true }) {
   for (const { packageName, repositoryDirectory, workspaceDirectory } of PUBLIC_PACKAGES) {
     const destination = resolve(destinationRoot, workspaceDirectory);
     mkdirSync(destination, { recursive: true });
-    runPnpm(['pack', '--pack-destination', destination], resolve(root, 'packages', workspaceDirectory));
+    runPnpm(
+      ['pack', '--pack-destination', destination],
+      resolve(root, 'packages', workspaceDirectory),
+      { env },
+    );
     tarballs[workspaceDirectory] = findTarball(destination);
     assertCanonicalRepository(
-      readPackedPackageManifest(tarballs[workspaceDirectory]),
+      readPackedPackageManifest(tarballs[workspaceDirectory], { env }),
       repositoryDirectory,
       `${packageName} packed manifest`,
     );

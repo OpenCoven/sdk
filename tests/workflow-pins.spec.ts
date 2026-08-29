@@ -86,7 +86,9 @@ describe('workflow action pins', () => {
   });
 
   test('uses an explicit read-only GitHub token scope', () => {
-    expect(workflow).toMatch(/^permissions:\n\s{2}contents: read\n/m);
+    expect(workflow).toMatch(
+      /^permissions:\n\s{2}actions: read\n\s{2}attestations: read\n\s{2}contents: read\n\s{2}issues: read\n/m,
+    );
   });
 
   test('configures staged secret detection', () => {
@@ -126,24 +128,51 @@ describe('workflow action pins', () => {
     }
   });
 
+  test('does not persist checkout credentials beyond action steps', () => {
+    for (const [name, source] of [
+      ['ci.yml', workflow],
+      ['release.yml', releaseWorkflow],
+    ] as const) {
+      const checkoutCount = actionPins(source).filter(
+        ({ action }) => action === 'actions/checkout',
+      ).length;
+      const disabledPersistenceCount =
+        source.match(/persist-credentials: false/gu)?.length ?? 0;
+
+      expect(
+        disabledPersistenceCount,
+        `${name} must disable persisted credentials for every checkout`,
+      ).toBe(checkoutCount);
+    }
+  });
+
   test('runs the canonical verifier with bounded, cancellable execution', () => {
     const installStep = workflow.indexOf('- name: Install dependencies');
-    const verifyStep = workflow.indexOf('- name: Verify');
+    const verifyStep = workflow.indexOf(
+      '- name: Verify minimum supported Node',
+    );
 
     expect(workflow).toContain('cancel-in-progress: true');
     expect(workflow).toContain('timeout-minutes: 15');
-    expect(workflow).toContain('run: corepack pnpm@10.34.0 verify');
+    expect(workflow).toContain(
+      'run: corepack pnpm@10.34.0 verify:repository',
+    );
     expect(installStep).toBeGreaterThanOrEqual(0);
     expect(verifyStep).toBeGreaterThan(installStep);
     expect(
-      workflow.match(/run: corepack pnpm@10\.34\.0 verify$/gm),
+      workflow.match(/run: corepack pnpm@10\.34\.0 verify:repository$/gm),
     ).toHaveLength(1);
   });
 
   test('verifies the minimum and moving Node 24 targets', () => {
     expect(workflow).toContain("node: ['24.18.1', '24.x']");
     expect(workflow).toContain('run: corepack pnpm@10.34.0 verify:compat');
-    expect(workflow).toContain('run: corepack pnpm@10.34.0 verify');
+    expect(workflow).toContain(
+      'run: node ./scripts/verify-release-readiness.mjs --require-conformance-evidence',
+    );
+    expect(workflow).toContain(
+      'run: corepack pnpm@10.34.0 verify:repository',
+    );
   });
 
   test('protects publishing with OIDC, attestations, and exact artifact actions', () => {
@@ -175,7 +204,9 @@ describe('workflow action pins', () => {
     // could not fail, guarding the step that keeps an unreviewed tree from
     // being released.
     const cleanTreeIndex = releaseWorkflow.indexOf('Require clean reviewed tree');
-    const artifactsIndex = releaseWorkflow.indexOf('Create release artifacts');
+    const artifactsIndex = releaseWorkflow.indexOf(
+      'Create publication candidate artifacts',
+    );
 
     expect(cleanTreeIndex).toBeGreaterThan(-1);
     expect(artifactsIndex).toBeGreaterThan(-1);

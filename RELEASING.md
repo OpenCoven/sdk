@@ -14,9 +14,47 @@ not pack, publish, attest, or configure a trusted publisher for it.
 A normal publication requires both independent locks to be open:
 
 1. reviewed repository changes set `publishingEnabled` to `true` in
-   `release.config.json` and set the four release package manifests to
-   non-private;
+   `release.config.json`, set the four release package manifests to
+   non-private, and name one exact unlock commit in
+   `publicationCandidate.unlockCommit`;
 2. the protected GitHub environment `npm-release` approves the publish job.
+
+`release.config.json` deliberately identifies two different artifact sets:
+
+- `conformanceEvidence.artifactSet` is `conformance-candidate`. Its frozen
+  schema-v1 `release-manifest.json` and tarball digests were produced from the
+  exact private SDK candidate consumed by Chat. Those bytes are conformance
+  inputs only and must never be submitted to npm.
+- `publicationCandidate.artifactSet` is `publication-candidate`. Its
+  `unlockCommit`, `securityReviewedCommit`, and `securityReviewCommentId`
+  remain `null` while publication is disabled. A later authorization change
+  may set the commits to the same exact non-private version/unlock commit and
+  name the immutable #40 ship-disposition comment only after #40 has reviewed
+  that commit.
+
+Publication artifacts use schema version 2 from
+[`conformance/release-artifact-manifest.schema.json`](conformance/release-artifact-manifest.schema.json).
+They carry the exact source commit/tree and #40-reviewed commit. Any source
+drift requires a new unlock commit, new artifact bytes, and a new #40 review;
+the frozen conformance digests are never reused as publication digests.
+Readiness fetches #40 and the configured comment through `gh api`, requires the
+issue to be closed, completed, and locked, and accepts only an unedited
+canonical ship record from CODEOWNER `BunsDev` naming the exact commit and
+tree. Matching config hashes alone cannot authorize publication.
+
+The configured comment body is recursively key-sorted, two-space-indented JSON
+with one trailing newline:
+
+```json
+{
+  "commit": "<unlock-commit>",
+  "disposition": "ship",
+  "issue": "OpenCoven/sdk#40",
+  "kind": "opencoven-sdk-publication-security-review",
+  "schemaVersion": 1,
+  "tree": "<unlock-tree>"
+}
+```
 
 For 0.1, `release.config.json` also freezes the native Chat/real-authority
 conformance matrix to `darwin-arm64`, `linux-x64`, and `win32-x64`. That
@@ -33,18 +71,16 @@ fail closed until a reviewed lock update names an existing exact compatible
 producer commit and protected workflow, as documented in
 [`docs/workflows/client-v1-cross-repository-conformance.md`](docs/workflows/client-v1-cross-repository-conformance.md).
 
-Before advancing this candidate after that blocker is resolved, review the
-canonical aggregate, copy its exact bytes to
+Before advancing this candidate after that blocker is resolved, copy the
+canonical aggregate to
 `docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json`,
 and add the sibling reviewed evidence index
 `docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.index.json`.
-The reviewed evidence index must bind the aggregate and three primary record
-digests to exact protected run/job IDs, artifact digests, GitHub artifact
-attestation subject digests, and attestation-bundle digests. Reviewers must
-download each named protected artifact, run GitHub artifact attestation
-verification against `OpenCoven/chat`, and confirm all indexed digests before
-setting `release.config.json` `conformanceEvidence.aggregateRecord` in the same
-reviewed change, using:
+The index is a reviewed locator and expected-value record, not an
+authentication oracle. Release readiness uses the standard GitHub workflow
+token to fetch the exact Chat workflow bytes, run, job, and artifact records
+through `gh api`; downloads each named artifact with `gh run download`;
+downloads its attestation bundle; and invokes:
 
 ```bash
 gh attestation verify <artifact> \
@@ -58,9 +94,20 @@ gh attestation verify <artifact> \
   --format json
 ```
 
-The reviewed index records the exact artifact, subject, and bundle digests
-accepted by that command. The local validator checks those committed bindings;
-the cryptographic GitHub verification is the required human review step.
+The verifier requires the exact frozen repository, workflow path, source ref,
+commit, run attempt, job ID/name, protected environment, hosted-runner labels,
+artifact name, and successful conclusions. It also checks the certificate's
+GitHub-hosted runner and run-invocation URI, the downloaded record digest, the
+attestation subject digest, and the downloaded bundle digest. Only those
+downloaded canonical record bytes are passed to the SDK aggregator. The
+resulting canonical aggregate must byte-match the committed aggregate.
+
+A committed aggregate/index pair, including plausible run, job, artifact, or
+attestation IDs, can never satisfy release readiness by itself. This
+implementation has no offline acceptance mode: without live authoritative
+GitHub verification, readiness remains blocked. Set
+`release.config.json` `conformanceEvidence.aggregateRecord` only in the same
+reviewed change that adds the aggregate and sibling index.
 
 Then run:
 
@@ -72,8 +119,9 @@ The CLI requires named evidence even when no flag is supplied. The current
 value remains `null`, so candidate advancement fails specifically for missing
 evidence. A configured record must be a committed, clean regular file at the
 exact candidate path with its committed sibling index. Release readiness
-revalidates exact lock, schema, registry, validator, candidate, and primary
-record bytes, then uses the exact clean frozen Cave checkout to re-render Cave
+requires exact Node `v24.18.1` from `.node-version`, revalidates the lock,
+schema, registry, validator, candidate, and authoritative primary-record
+bytes, then uses the exact clean frozen Cave checkout to re-render Cave
 records. This does not open `publishingEnabled`, change package privacy, create
 a tag, or authorize npm.
 
@@ -120,20 +168,30 @@ the exact checked-out `HEAD`.
 ## 5. Verify-mode workflow
 
 Run `.github/workflows/release.yml` from `main` with mode `verify` and the
-exact fixed version. Both verify and publish preflight require named evidence;
-before any repository-controlled dependency installation, the workflow checks
-that the aggregate/index are tracked and clean and that the workflow, verifier,
-builder, publisher, package lock, and their runtime dependencies are byte-equal
-to the recorded validator commit. It then checks out the exact frozen Cave
-authority, performs canonical verification, validates the tag, clones the
-frozen SDK candidate commit into an owned detached source root, installs with
-the frozen lock, and builds and packs from that committed clone. It creates four tarballs
-plus `release-manifest.json` and requires them to match the frozen
-sizes and digests. The publish job performs the same runtime pin without running
-`pnpm install` and rechecks downloaded artifacts against the frozen candidate
-before npm. Direct canonical artifact creation also requires named evidence;
-unit/package verification opts out explicitly without becoming a release
-path. Verify mode never publishes.
+exact fixed version. Both verify and publish preflight require named evidence.
+Before any repository-controlled dependency installation, the workflow checks
+that `.node-version`, the aggregate/index, workflow, authoritative GitHub
+verifier, artifact schema, builder, publisher, package lock, and their runtime
+dependencies are byte-equal to the recorded validator commit. It checks out
+the exact frozen Cave authority and performs the live GitHub artifact download
+and GitHub artifact attestation verification described above. That
+token-bearing check runs before
+dependency installation. Repository builds, tests, coverage, package
+verification, stress checks, and lint then run through `verify:repository`
+in a separate contents-only job without `GH_TOKEN`; checkout credentials are
+never persisted. The publish job requires both the authoritative/artifact
+preflight and repository-verification jobs.
+
+Only after the publication lock is opened may `release:artifacts` run. It
+clones the exact `publicationCandidate.unlockCommit`, installs its frozen
+dependency lock, builds and packs that reviewed source, creates four tarballs,
+rejects every tarball whose packed `package.json` contains `private: true`, and
+writes the schema-v2 publication manifest. The preflight uploads only
+`opencoven-sdk-publication-<version>`. The publish job does not rebuild; it
+downloads that exact artifact set, repeats manifest/digest/private checks,
+attests the tarballs, and invokes npm on those exact files. The current
+`publicationCandidate` values are `null`, so no publication candidate can be
+created yet. Verify mode never publishes.
 
 ## 6. First-publish bootstrap
 

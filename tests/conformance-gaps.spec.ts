@@ -1,12 +1,22 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, test } from 'vitest';
 
+import {
+  loadCommittedCaveAssertionEngine,
+} from '../scripts/aggregate-client-v1-conformance.mjs';
 import * as contract from '../scripts/conformance-contract.mjs';
+import {
+  verifyGitHubConformanceEvidence,
+} from '../scripts/github-conformance-evidence.mjs';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const lockPath = resolve(
@@ -43,7 +53,14 @@ const TEST_COMPATIBLE_PRODUCER = {
   workflow: {
     path: '.github/workflows/client-v1-conformance.yml',
     job: 'platform-conformance',
+    jobNameTemplate: 'platform-conformance ({platform})',
     environment: 'client-v1-conformance',
+    sourceRef: 'refs/heads/main',
+    runnerLabels: {
+      'darwin-arm64': ['macos-14'],
+      'linux-x64': ['ubuntu-24.04'],
+      'win32-x64': ['windows-2025'],
+    },
     signerWorkflow:
       'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
     signerDigest: 'f'.repeat(40),
@@ -1215,7 +1232,14 @@ describe('unresolved SDK #38 conformance gaps', () => {
         workflow: {
           path: '.github/workflows/client-v1-conformance.yml',
           job: 'platform-conformance',
+          jobNameTemplate: 'platform-conformance ({platform})',
           environment: 'client-v1-conformance',
+          sourceRef: 'refs/heads/main',
+          runnerLabels: {
+            'darwin-arm64': ['macos-14'],
+            'linux-x64': ['ubuntu-24.04'],
+            'win32-x64': ['windows-2025'],
+          },
           signerWorkflow:
             'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
           signerDigest: 'f'.repeat(40),
@@ -1226,7 +1250,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       },
       platforms: aggregateRecord.platforms.map((record, index_) => {
         const recordText = contract.serializeCanonicalJson(record);
-        const artifactSha256 = `${index_ + 7}`.repeat(64);
+        const artifactSha256 = sha256(recordText);
         return {
           platform: record.platform,
           record: {
@@ -1276,7 +1300,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         } as never,
       ),
     ).toThrow(
-      'fabricated evidence index darwin-arm64 record digest does not match the primary record',
+      'fabricated evidence index darwin-arm64 artifact and attestation digests must match the indexed record bytes',
     );
 
     const substitutedArtifact = structuredClone(index);
@@ -1303,6 +1327,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
     );
     duplicateJob.platforms[1]!.protectedJob.artifactName =
       'client-v1-conformance-linux-x64';
+    duplicateJob.platforms[1]!.record.sha256 = '8'.repeat(64);
     duplicateJob.platforms[1]!.protectedJob.artifactSha256 = '8'.repeat(64);
     duplicateJob.platforms[1]!.protectedJob.attestationSubjectSha256 =
       '8'.repeat(64);
@@ -1322,6 +1347,377 @@ describe('unresolved SDK #38 conformance gaps', () => {
     ).toThrow(
       'duplicate protected job index protected job provenance must be unique per platform',
     );
+  });
+
+  test('authenticates downloaded GitHub records instead of committed aggregate claims', () => {
+    const lock = createCompatibleLock();
+    const registry = readRegistry();
+    const records = PLATFORMS.map((platform) =>
+      createPlatformEvidence(platform, lock, registry),
+    );
+    const aggregateRecord = aggregate(records) as unknown as {
+      candidate: { provenance: Record<string, unknown> };
+      platforms: Array<Record<string, unknown> & { platform: string }>;
+      validator: {
+        repository: string;
+        commit: string;
+        tree: string;
+      };
+    };
+    const aggregateText = contract.serializeCanonicalJson(aggregateRecord);
+    const aggregatePath =
+      'docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json';
+    const producer = TEST_COMPATIBLE_PRODUCER;
+    const recordTexts = new Map(
+      aggregateRecord.platforms.map((record) => [
+        record.platform,
+        contract.serializeCanonicalJson(record),
+      ]),
+    );
+    const bundleTexts = new Map(
+      PLATFORMS.map((platform) => [
+        platform,
+        `${JSON.stringify({ platform, bundle: 'verified-test-bundle' })}\n`,
+      ]),
+    );
+    const ghCalls: string[][] = [];
+    const index = {
+      schemaVersion: 1,
+      issue: 'OpenCoven/sdk#38',
+      kind: 'client-v1-cross-repository-evidence-index',
+      candidate: aggregateRecord.candidate.provenance,
+      validator: {
+        repository: aggregateRecord.validator.repository,
+        commit: aggregateRecord.validator.commit,
+        tree: aggregateRecord.validator.tree,
+      },
+      aggregate: {
+        path: aggregatePath,
+        size: Buffer.byteLength(aggregateText, 'utf8'),
+        sha256: sha256(aggregateText),
+      },
+      producer: {
+        repository: producer.repository,
+        commit: producer.commit,
+        tree: producer.tree,
+        harness: producer.harness,
+        workflow: producer.workflow,
+      },
+      platforms: PLATFORMS.map((platform, index_) => {
+        const recordText = recordTexts.get(platform);
+        const bundleText = bundleTexts.get(platform);
+        if (recordText === undefined || bundleText === undefined) {
+          throw new Error(`Missing test evidence for ${platform}`);
+        }
+        const recordSha256 = sha256(recordText);
+        return {
+          platform,
+          record: {
+            size: Buffer.byteLength(recordText, 'utf8'),
+            sha256: recordSha256,
+          },
+          protectedJob: {
+            runId: String(10_000 + index_),
+            runAttempt: 1,
+            jobId: String(20_000 + index_),
+            artifactName: `client-v1-conformance-${platform}`,
+            artifactSha256: recordSha256,
+            attestationSubjectSha256: recordSha256,
+            attestationBundleSha256: sha256(bundleText),
+          },
+        };
+      }),
+    };
+
+    const execute = (
+      command: string,
+      arguments_: string[],
+      options: {
+        cwd?: string;
+      },
+    ): string => {
+      expect(command).toBe('gh');
+      ghCalls.push([...arguments_]);
+      if (arguments_[0] === 'api') {
+        const endpoint = arguments_.at(-1) ?? '';
+        if (endpoint.includes('/contents/.github/workflows/')) {
+          return [
+            'name: client-v1 conformance',
+            'jobs:',
+            '  platform-conformance:',
+            '    environment: client-v1-conformance',
+            '    runs-on: ${{ matrix.runner }}',
+            '',
+          ].join('\n');
+        }
+        const runMatch = /\/actions\/runs\/(\d+)$/u.exec(endpoint);
+        if (runMatch !== null) {
+          const runId = runMatch[1];
+          return JSON.stringify({
+            id: Number(runId),
+            run_attempt: 1,
+            head_sha: producer.commit,
+            head_branch: 'main',
+            path: producer.workflow.path,
+            status: 'completed',
+            conclusion: 'success',
+            repository: { full_name: producer.repository },
+            head_repository: { full_name: producer.repository },
+          });
+        }
+        const jobMatch = /\/actions\/jobs\/(\d+)$/u.exec(endpoint);
+        if (jobMatch !== null) {
+          const jobId = Number(jobMatch[1]);
+          const index_ = jobId - 20_000;
+          const platform = PLATFORMS[index_] ?? 'darwin-arm64';
+          const actualIndex = PLATFORMS.indexOf(platform);
+          return JSON.stringify({
+            id: 20_000 + actualIndex,
+            run_id: 10_000 + actualIndex,
+            head_sha: producer.commit,
+            name: producer.workflow.jobNameTemplate.replace(
+              '{platform}',
+              platform,
+            ),
+            labels: producer.workflow.runnerLabels[platform],
+            status: 'completed',
+            conclusion: 'success',
+          });
+        }
+        const artifactsMatch =
+          /\/actions\/runs\/(\d+)\/artifacts\?/u.exec(endpoint);
+        if (artifactsMatch !== null) {
+          const runId = Number(artifactsMatch[1]);
+          const index_ = runId - 10_000;
+          const platform = PLATFORMS[index_];
+          if (platform === undefined) {
+            throw new Error(`Unexpected test run ${runId}`);
+          }
+          return JSON.stringify({
+            total_count: 1,
+            artifacts: [
+              {
+                id: 30_000 + index_,
+                name: `client-v1-conformance-${platform}`,
+                expired: false,
+                workflow_run: {
+                  id: runId,
+                  head_sha: producer.commit,
+                },
+              },
+            ],
+          });
+        }
+        throw new Error(`Unexpected gh api endpoint ${endpoint}`);
+      }
+      if (arguments_[0] === 'run' && arguments_[1] === 'download') {
+        const artifactName = arguments_[arguments_.indexOf('--name') + 1];
+        const destination = arguments_[arguments_.indexOf('--dir') + 1];
+        if (artifactName === undefined || destination === undefined) {
+          throw new Error('Missing mocked artifact download arguments');
+        }
+        const platform = artifactName.replace('client-v1-conformance-', '') as
+          | (typeof PLATFORMS)[number]
+          | undefined;
+        const recordText = platform === undefined
+          ? undefined
+          : recordTexts.get(platform);
+        if (recordText === undefined) {
+          throw new Error(`Unexpected artifact ${artifactName}`);
+        }
+        mkdirSync(destination, { recursive: true });
+        writeFileSync(resolve(destination, 'record.json'), recordText);
+        return '';
+      }
+      if (
+        arguments_[0] === 'attestation'
+        && arguments_[1] === 'download'
+      ) {
+        const artifactPath = arguments_[2];
+        if (artifactPath === undefined) {
+          throw new Error('Missing mocked attestation artifact path');
+        }
+        const platform = dirname(artifactPath).split('/').at(-1) as
+          | (typeof PLATFORMS)[number]
+          | undefined;
+        const bundleText = platform === undefined
+          ? undefined
+          : bundleTexts.get(platform);
+        if (bundleText === undefined || options.cwd === undefined) {
+          throw new Error(`Unexpected attestation download ${artifactPath}`);
+        }
+        writeFileSync(
+          resolve(options.cwd, `sha256-${sha256(readFileSync(artifactPath))}.jsonl`),
+          bundleText,
+        );
+        return '';
+      }
+      if (
+        arguments_[0] === 'attestation'
+        && arguments_[1] === 'verify'
+      ) {
+        const artifactPath = arguments_[2];
+        if (artifactPath === undefined) {
+          throw new Error('Missing mocked attestation verification path');
+        }
+        const platform = dirname(artifactPath).split('/').at(-1) as
+          | (typeof PLATFORMS)[number]
+          | undefined;
+        const platformIndex = platform === undefined
+          ? -1
+          : PLATFORMS.indexOf(platform);
+        if (platform === undefined || platformIndex < 0) {
+          throw new Error(`Unexpected attestation verify ${artifactPath}`);
+        }
+        return JSON.stringify([
+          {
+            verificationResult: {
+              signature: {
+                certificate: {
+                  runInvocationURI:
+                    `https://github.com/OpenCoven/chat/actions/runs/${10_000 + platformIndex}/attempts/1`,
+                  runnerEnvironment: 'github-hosted',
+                  sourceRepositoryURI: 'https://github.com/OpenCoven/chat',
+                  sourceRepositoryDigest: producer.commit,
+                  sourceRepositoryRef: producer.workflow.sourceRef,
+                  buildSignerDigest: producer.commit,
+                },
+              },
+              statement: {
+                predicateType: producer.workflow.predicateType,
+                subject: [
+                  {
+                    name: 'record.json',
+                    digest: {
+                      sha256: sha256(readFileSync(artifactPath)),
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        ]);
+      }
+      throw new Error(`Unexpected gh command ${arguments_.join(' ')}`);
+    };
+    const verificationInput = {
+      frozenLockText: contract.serializeCanonicalJson(lock),
+      assertionRegistryText: readFileSync(registryPath, 'utf8'),
+      schemaText: readFileSync(schemaPath, 'utf8'),
+      aggregatePath,
+      aggregateText,
+      indexText: contract.serializeCanonicalJson(index),
+      caveEngine: createCaveEngine(registry),
+      execute,
+    };
+
+    expect(
+      verifyGitHubConformanceEvidence(verificationInput as never).aggregate,
+    ).toEqual(aggregateRecord);
+    expect(
+      ghCalls.filter(
+        (arguments_) => arguments_[0] === 'api',
+      ),
+    ).toHaveLength(10);
+    expect(
+      ghCalls.filter(
+        (arguments_) =>
+          arguments_[0] === 'run' && arguments_[1] === 'download',
+      ),
+    ).toHaveLength(3);
+    const attestationVerifications = ghCalls.filter(
+      (arguments_) =>
+        arguments_[0] === 'attestation' && arguments_[1] === 'verify',
+    );
+    expect(attestationVerifications).toHaveLength(3);
+    expect(
+      attestationVerifications.every(
+        (arguments_) =>
+          arguments_.includes('--source-ref')
+          && arguments_.includes('--signer-workflow')
+          && arguments_.includes('--deny-self-hosted-runners')
+          && arguments_.includes('--bundle'),
+      ),
+    ).toBe(true);
+    expect(
+      ghCalls.every((arguments_) => {
+        if (arguments_[0] === 'run') {
+          return arguments_.includes('github.com/OpenCoven/chat');
+        }
+        return (
+          arguments_.includes('--hostname')
+          && arguments_.includes('github.com')
+        );
+      }),
+    ).toBe(true);
+
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInput,
+        execute: (
+          command: string,
+          arguments_: string[],
+          options: { cwd?: string },
+        ) => {
+          if (
+            arguments_[0] === 'api'
+            && (arguments_.at(-1) ?? '').includes(
+              '/contents/.github/workflows/',
+            )
+          ) {
+            return [
+              'name: client-v1 conformance',
+              'jobs:',
+              '  platform-conformance:',
+              '    environment: unprotected',
+              '',
+            ].join('\n');
+          }
+          return execute(command, arguments_, options);
+        },
+      } as never),
+    ).toThrow(/protected environment/u);
+
+    const fabricatedAggregate = structuredClone(aggregateRecord);
+    fabricatedAggregate.platforms[0]!.timing = {
+      startedAt: '2026-08-29T04:00:00.000Z',
+      completedAt: '2026-08-29T04:00:02.000Z',
+      durationMs: 2_000,
+    };
+    const fabricatedAggregateText =
+      contract.serializeCanonicalJson(fabricatedAggregate);
+    const fabricatedIndex = structuredClone(index);
+    fabricatedIndex.aggregate.size =
+      Buffer.byteLength(fabricatedAggregateText, 'utf8');
+    fabricatedIndex.aggregate.sha256 = sha256(fabricatedAggregateText);
+    const fabricatedRecordText = contract.serializeCanonicalJson(
+      fabricatedAggregate.platforms[0],
+    );
+    fabricatedIndex.platforms[0]!.record = {
+      size: Buffer.byteLength(fabricatedRecordText, 'utf8'),
+      sha256: sha256(fabricatedRecordText),
+    };
+    fabricatedIndex.platforms[0]!.protectedJob.artifactSha256 =
+      sha256(fabricatedRecordText);
+    fabricatedIndex.platforms[0]!.protectedJob.attestationSubjectSha256 =
+      sha256(fabricatedRecordText);
+
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInput,
+        aggregateText: fabricatedAggregateText,
+        indexText: contract.serializeCanonicalJson(fabricatedIndex),
+      } as never),
+    ).toThrow(/downloaded artifact digest/u);
+
+    const selfAssertedJob = structuredClone(index);
+    selfAssertedJob.platforms[0]!.protectedJob.jobId = '29999';
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInput,
+        indexText: contract.serializeCanonicalJson(selfAssertedJob),
+      } as never),
+    ).toThrow(/GitHub job id/u);
   });
 
   test.each([
@@ -1400,6 +1796,113 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
       }),
     ).toThrow();
+  });
+
+  test.runIf(process.env.OPENCOVEN_CAVE_AUTHORITY_ROOT !== undefined)(
+    'accepts the exact frozen Cave renderConformanceRecord output',
+    async () => {
+      const lock = readLock() as {
+        sources: {
+          cave: {
+            repository: string;
+            commit: string;
+            tree: string;
+          };
+        };
+      };
+      const registry = readRegistry() as {
+        assertions: {
+          cave: string[];
+        };
+      };
+      const engineBytes = readFileSync(
+        resolve(
+          process.env.OPENCOVEN_CAVE_AUTHORITY_ROOT as string,
+          'scripts/client-v1-conformance.mjs',
+        ),
+      );
+      const engineDigest = sha256(engineBytes);
+      expect(engineDigest).toBe(
+        (
+          readLock() as {
+            sources: {
+              cave: {
+                files: Array<{ path: string; sha256: string }>;
+              };
+            };
+          }
+        ).sources.cave.files.find(
+          ({ path }) => path === 'scripts/client-v1-conformance.mjs',
+        )?.sha256,
+      );
+      const engine = await loadCommittedCaveAssertionEngine({
+        sourceBytes: engineBytes,
+        digest: engineDigest,
+      });
+      const evidence = createPlatformEvidence(
+        'darwin-arm64',
+        lock,
+        registry,
+      ) as {
+        caveRecord: unknown;
+      };
+      const assertions = registry.assertions.cave.map((id) => ({
+        id,
+        result: 'pass' as const,
+        detail: id === engine.COVERAGE_ASSERTION_ID ? 'complete' : '',
+      }));
+      evidence.caveRecord = engine.renderConformanceRecord(assertions, {
+        ranAt: '2026-08-29T04:00:00.000Z',
+        caveVersion: '0.3.11',
+        commit: lock.sources.cave.commit,
+        platform: 'darwin-arm64',
+        includeTtl: true,
+        authorityTakeover: {
+          authorityMode: 'enforce',
+          discoveryVersion: 2,
+          mechanism: 'hpke-bound-v1',
+        },
+        notCovered: engine.NOT_COVERED,
+        findings: engine.FINDINGS,
+      });
+
+      expect(() =>
+        contract.parsePlatformEvidence(
+          contract.serializeCanonicalJson(evidence),
+          'exact frozen Cave record',
+        ),
+      ).not.toThrow();
+    },
+  );
+
+  test('runs the exact frozen Cave engine regression in CI', () => {
+    const workflow = readFileSync(
+      resolve(workspaceRoot, '.github/workflows/ci.yml'),
+      'utf8',
+    );
+
+    expect(workflow).toContain(
+      'OPENCOVEN_CAVE_AUTHORITY_ROOT: ${{ github.workspace }}/.artifacts/cave-authority',
+    );
+    expect(workflow).toContain(
+      'ref: 2a0ff9237e94e652e477b22f60fd6d721b9e6451',
+    );
+    expect(workflow).toContain('path: .artifacts/cave-authority');
+  });
+
+  test('still rejects arbitrary absolute paths in Cave findings and exclusions', () => {
+    expect(() =>
+      contract.scanConformanceEvidence({
+        caveRecord: {
+          notCovered: ['Operator state came from /Users/operator/private.json'],
+          findings: [
+            {
+              says: 'The fixture was loaded from /var/tmp/private.json',
+            },
+          ],
+        },
+      }),
+    ).toThrow(/private path/u);
   });
 
   test('allows schema-approved opaque identifiers, digests, versions, and API routes', () => {

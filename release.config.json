@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "publishingEnabled": false,
   "tagPrefix": "sdk-v",
   "npmAccess": "public",
@@ -16,8 +16,16 @@
   ],
   "conformanceEvidence": {
     "issue": "OpenCoven/sdk#38",
+    "artifactSet": "conformance-candidate",
     "candidateCommit": "acc38488f00860d246c3c553375634d64806eabb",
     "aggregateRecord": null
+  },
+  "publicationCandidate": {
+    "artifactSet": "publication-candidate",
+    "securityReviewIssue": "OpenCoven/sdk#40",
+    "securityReviewCommentId": null,
+    "unlockCommit": null,
+    "securityReviewedCommit": null
   },
   "packages": [
     "@opencoven/sdk-core",

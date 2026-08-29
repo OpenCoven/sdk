@@ -5,12 +5,9 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 
-import { verifyReleaseArtifacts } from './create-release-artifacts.mjs';
+import { verifyPublicationArtifacts } from './create-release-artifacts.mjs';
 import { PUBLIC_PACKAGES } from './repository-metadata.mjs';
-import {
-  readReleaseConfig,
-  validateReleaseReadiness,
-} from './release-readiness.mjs';
+import { readReleaseConfig } from './release-readiness.mjs';
 
 export function createNpmPublishArgs({ tarball, access, distTag }) {
   if (typeof tarball !== 'string' || tarball.length === 0) {
@@ -41,15 +38,10 @@ export function publishReleaseArtifacts({
   env = process.env,
   execute = execFileSync,
 } = {}) {
-  const readiness = validateReleaseReadiness({
-    root,
-    mode: 'publish',
-    version,
-  });
-  const manifest = verifyReleaseArtifacts({
+  const manifest = verifyPublicationArtifacts({
     root,
     artifactRoot,
-    version: readiness.version,
+    version,
   });
 
   if (env.OPENCOVEN_RELEASE_AUTHORIZATION !== 'publish') {
@@ -62,6 +54,9 @@ export function publishReleaseArtifacts({
   }
 
   const config = readReleaseConfig(root);
+  const publishEnvironment = { ...env };
+  delete publishEnvironment.GH_TOKEN;
+  delete publishEnvironment.GITHUB_TOKEN;
   for (const packageMetadata of PUBLIC_PACKAGES) {
     const entry = manifest.packages.find(
       ({ name }) => name === packageMetadata.packageName,
@@ -79,7 +74,7 @@ export function publishReleaseArtifacts({
       }),
       {
         cwd: root,
-        env,
+        env: publishEnvironment,
         stdio: 'inherit',
       },
     );

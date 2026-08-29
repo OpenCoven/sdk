@@ -6,8 +6,8 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { cleanupOwnedTempRoot, createOwnedTempDirectory } from './owned-temp-directory.mjs';
 import {
-  createReleaseArtifacts,
-  verifyReleaseArtifacts,
+  createConformanceArtifacts,
+  verifyConformanceArtifacts,
 } from './create-release-artifacts.mjs';
 import {
   assertApiBaseline,
@@ -881,19 +881,22 @@ try {
   );
   process.stdout.write('Packed API baselines verified.\n');
 
-  const releaseArtifactRoot = resolve(artifactRoot, 'release');
-  createReleaseArtifacts({
+  const conformanceArtifactRoot = resolve(
+    artifactRoot,
+    'conformance-artifacts',
+  );
+  createConformanceArtifacts({
     root,
-    outputRoot: releaseArtifactRoot,
+    outputRoot: conformanceArtifactRoot,
     build: false,
     requireConformanceEvidence: false,
   });
-  verifyReleaseArtifacts({
+  verifyConformanceArtifacts({
     root,
-    artifactRoot: releaseArtifactRoot,
+    artifactRoot: conformanceArtifactRoot,
     requireConformanceEvidence: false,
   });
-  process.stdout.write('Release artifact manifest verified.\n');
+  process.stdout.write('Conformance artifact manifest verified.\n');
 
   createFixture(fixtureRoot, tarballs);
   createManagedBrowserFixture(managedBrowserFixtureRoot, tarballs);

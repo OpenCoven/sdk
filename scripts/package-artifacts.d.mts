@@ -16,3 +16,10 @@ export function installIsolatedConsumersOfflineAfterWarming(
     workspace?: boolean;
   },
 ): Promise<void>;
+
+export function packPublicPackages(options: {
+  root: string;
+  destinationRoot: string;
+  build?: boolean;
+  env?: NodeJS.ProcessEnv;
+}): Record<string, string>;

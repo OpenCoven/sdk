@@ -13,15 +13,24 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, test } from 'vitest';
 
 import {
-  assertFrozenReleaseArtifacts,
-  createReleaseArtifacts,
+  assertPublishablePackedManifest,
+  assertFrozenConformanceArtifacts,
+  createConformanceArtifacts,
+  createPublicationArtifacts,
   parseReleaseArtifactArguments,
-  verifyReleaseArtifacts,
+  verifyConformanceArtifacts,
 } from '../scripts/create-release-artifacts.mjs';
 import { readFrozenConformanceLock } from '../scripts/conformance-contract.mjs';
-import { PUBLIC_PACKAGES } from '../scripts/repository-metadata.mjs';
+import {
+  PUBLIC_PACKAGES,
+  readPackedPackageManifest,
+} from '../scripts/repository-metadata.mjs';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const artifactManifestSchemaPath = resolve(
+  workspaceRoot,
+  'conformance/release-artifact-manifest.schema.json',
+);
 const temporaryRoots: string[] = [];
 
 function createOutputRoot(): string {
@@ -37,7 +46,43 @@ afterEach(() => {
 });
 
 describe('release artifacts', () => {
-  test('binds publication artifacts to the frozen candidate metadata', () => {
+  test('defines distinct conformance and publication artifact schemas', () => {
+    const schema = JSON.parse(
+      readFileSync(artifactManifestSchemaPath, 'utf8'),
+    ) as {
+      oneOf: Array<{ $ref: string }>;
+      $defs: Record<string, { required: string[] }>;
+    };
+
+    expect(schema.oneOf).toEqual([
+      { $ref: '#/$defs/conformanceArtifactSet' },
+      { $ref: '#/$defs/publicationArtifactSet' },
+    ]);
+    expect(schema.$defs.conformanceArtifactSet?.required).not.toContain(
+      'securityReview',
+    );
+    expect(schema.$defs.publicationArtifactSet?.required).toEqual([
+      'schemaVersion',
+      'artifactSet',
+      'version',
+      'source',
+      'securityReview',
+      'packages',
+    ]);
+    expect(
+      (
+        schema.$defs.publicationArtifactSet as unknown as {
+          properties: {
+            securityReview: {
+              required: string[];
+            };
+          };
+        }
+      ).properties.securityReview.required,
+    ).toEqual(['issue', 'commentId', 'reviewer', 'reviewedCommit']);
+  });
+
+  test('binds conformance artifacts to the frozen candidate metadata', () => {
     const lock = readFrozenConformanceLock();
     const manifest = {
       schemaVersion: 1 as const,
@@ -51,23 +96,23 @@ describe('release artifacts', () => {
       })),
     };
     expect(() =>
-      assertFrozenReleaseArtifacts(manifest, lock),
+      assertFrozenConformanceArtifacts(manifest, lock),
     ).not.toThrow();
 
     const substituted = structuredClone(manifest);
     substituted.packages[0]!.sha256 = 'f'.repeat(64);
     expect(() =>
-      assertFrozenReleaseArtifacts(substituted, lock),
+      assertFrozenConformanceArtifacts(substituted, lock),
     ).toThrow(
-      'Release artifact @opencoven/sdk-core does not match the frozen SDK candidate',
+      'Conformance artifact @opencoven/sdk-core does not match the frozen SDK candidate',
     );
   });
 
-  test('does not create canonical release artifacts without named evidence', () => {
+  test('does not create canonical conformance artifacts without named evidence', () => {
     const outputRoot = createOutputRoot();
 
     expect(() =>
-      createReleaseArtifacts({
+      createConformanceArtifacts({
         root: workspaceRoot,
         outputRoot,
         build: false,
@@ -77,6 +122,44 @@ describe('release artifacts', () => {
     );
     expect(existsSync(resolve(outputRoot, 'release-manifest.json'))).toBe(false);
   });
+
+  test('keeps private non-publication artifacts distinct from publication candidates', () => {
+    const outputRoot = createOutputRoot();
+    const result = createConformanceArtifacts({
+      root: workspaceRoot,
+      outputRoot,
+      build: false,
+      requireConformanceEvidence: false,
+    });
+    const first = result.manifest.packages[0];
+    if (first === undefined) {
+      throw new Error('Expected a conformance artifact.');
+    }
+
+    expect(result.artifactSet).toBe('local-verification');
+    expect(
+      verifyConformanceArtifacts({
+        root: workspaceRoot,
+        artifactRoot: outputRoot,
+        requireConformanceEvidence: false,
+      }),
+    ).toEqual(result.manifest);
+    expect(() =>
+      assertPublishablePackedManifest(
+        readPackedPackageManifest(resolve(outputRoot, first.file)),
+        first.name,
+      ),
+    ).toThrow(`${first.name} publication artifact must not contain private: true`);
+    expect(() =>
+      createPublicationArtifacts({
+        root: workspaceRoot,
+        outputRoot: resolve(outputRoot, 'publication'),
+        build: false,
+      }),
+    ).toThrow(
+      'release.config.json publicationCandidate must be unlocked and security-reviewed before publication artifacts are created',
+    );
+  }, 30_000);
 
   test('accepts pnpm argument separators without weakening option validation', () => {
     expect(
@@ -100,7 +183,7 @@ describe('release artifacts', () => {
 
   test('creates checksummed tarballs in canonical package order', () => {
     const outputRoot = createOutputRoot();
-    const result = createReleaseArtifacts({
+    const result = createConformanceArtifacts({
       root: workspaceRoot,
       outputRoot,
       build: false,
@@ -121,7 +204,7 @@ describe('release artifacts', () => {
 
   test('writes a deterministic relative release manifest', () => {
     const outputRoot = createOutputRoot();
-    const result = createReleaseArtifacts({
+    const result = createConformanceArtifacts({
       root: workspaceRoot,
       outputRoot,
       build: false,
@@ -139,14 +222,14 @@ describe('release artifacts', () => {
         ({ file }) => !isAbsolute(file) && !file.includes('..'),
       ),
     ).toBe(true);
-    expect(verifyReleaseArtifacts({
+    expect(verifyConformanceArtifacts({
       root: workspaceRoot,
       artifactRoot: outputRoot,
       requireConformanceEvidence: false,
     })).toEqual(
       result.manifest,
     );
-    expect(verifyReleaseArtifacts({
+    expect(verifyConformanceArtifacts({
       root: workspaceRoot,
       artifactRoot: outputRoot,
       requireConformanceEvidence: false,
@@ -157,7 +240,7 @@ describe('release artifacts', () => {
 
   test('rejects modified tarballs', () => {
     const outputRoot = createOutputRoot();
-    const result = createReleaseArtifacts({
+    const result = createConformanceArtifacts({
       root: workspaceRoot,
       outputRoot,
       build: false,
@@ -178,7 +261,7 @@ describe('release artifacts', () => {
     writeFileSync(firstTarball, bytes);
 
     expect(() =>
-      verifyReleaseArtifacts({
+      verifyConformanceArtifacts({
         root: workspaceRoot,
         artifactRoot: outputRoot,
         requireConformanceEvidence: false,
@@ -186,8 +269,86 @@ describe('release artifacts', () => {
     ).toThrow('digest does not match release-manifest.json');
   }, 30_000);
 
+  test.each([
+    {
+      name: 'appended whitespace',
+      mutate: (text: string): string => `${text} `,
+      message:
+        'release-manifest.json must use canonical UTF-8 JSON with LF and one trailing newline',
+    },
+    {
+      name: 'alternate key order',
+      mutate: (text: string): string => {
+        const manifest = JSON.parse(text) as Record<string, unknown>;
+        return `${JSON.stringify({
+          packages: manifest.packages,
+          version: manifest.version,
+          schemaVersion: manifest.schemaVersion,
+        }, null, 2)}\n`;
+      },
+      message:
+        'release-manifest.json must use canonical UTF-8 JSON with LF and one trailing newline',
+    },
+    {
+      name: 'alternate nested key order',
+      mutate: (text: string): string => {
+        const manifest = JSON.parse(text) as {
+          schemaVersion: number;
+          version: string;
+          packages: Array<{
+            name: string;
+            version: string;
+            file: string;
+            size: number;
+            sha256: string;
+          }>;
+        };
+        return `${JSON.stringify({
+          schemaVersion: manifest.schemaVersion,
+          version: manifest.version,
+          packages: manifest.packages.map((entry) => ({
+            sha256: entry.sha256,
+            size: entry.size,
+            file: entry.file,
+            version: entry.version,
+            name: entry.name,
+          })),
+        }, null, 2)}\n`;
+      },
+      message:
+        'release-manifest.json must use canonical UTF-8 JSON with LF and one trailing newline',
+    },
+    {
+      name: 'duplicate keys',
+      mutate: (text: string): string =>
+        text.replace(
+          '  "schemaVersion": 1,',
+          '  "schemaVersion": 1,\n  "schemaVersion": 1,',
+        ),
+      message: 'release-manifest.json contains duplicate JSON object key "schemaVersion"',
+    },
+  ])('rejects non-canonical manifest bytes with $name', ({ mutate, message }) => {
+    const outputRoot = createOutputRoot();
+    const result = createConformanceArtifacts({
+      root: workspaceRoot,
+      outputRoot,
+      build: false,
+      requireConformanceEvidence: false,
+    });
+    const manifestText = readFileSync(result.manifestPath, 'utf8');
+    writeFileSync(result.manifestPath, mutate(manifestText));
+
+    expect(() =>
+      verifyConformanceArtifacts({
+        root: workspaceRoot,
+        artifactRoot: outputRoot,
+        requireConformanceEvidence: false,
+      }),
+    ).toThrow(message);
+  }, 30_000);
+
   test('creates an owned temporary artifact root when output is omitted', () => {
-    const result = createReleaseArtifacts({
+    const result = createConformanceArtifacts({
       root: workspaceRoot,
       build: false,
       requireConformanceEvidence: false,

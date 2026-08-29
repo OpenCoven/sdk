@@ -1,5 +1,6 @@
 import type {
   AggregatedConformanceEvidence,
+  CaveAssertionEngine,
   CheckoutIdentity,
 } from './conformance-contract.d.mts';
 
@@ -52,7 +53,7 @@ export function loadCommittedCaveAssertionEngine(
     InspectedCaveAssertionEngine,
     'digest' | 'sourceBytes'
   >,
-): Promise<Record<string, unknown>>;
+): Promise<CaveAssertionEngine & Record<string, unknown>>;
 
 export function assertAggregationHostPlatform(
   platform?: NodeJS.Platform,

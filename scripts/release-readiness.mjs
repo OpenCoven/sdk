@@ -11,6 +11,9 @@ import { resolve } from 'node:path';
 
 import { PUBLIC_PACKAGES } from './repository-metadata.mjs';
 import {
+  verifyPublicationSecurityReview,
+} from './github-release-authorization.mjs';
+import {
   assertEvidenceProducerCompatibility,
   parseFrozenConformanceLock,
   validateFrozenConformanceBindings,
@@ -26,9 +29,12 @@ const CONFIG_FIELDS = Object.freeze([
   'supportedNode',
   'nativeConformancePlatforms',
   'conformanceEvidence',
+  'publicationCandidate',
   'packages',
 ]);
 const NODE_ENGINE = '>=24.18.0 <25';
+const FROZEN_NODE_VERSION = 'v24.18.1';
+const NODE_VERSION_PATH = '.node-version';
 const RELEASE_WORKFLOW_PATH = '.github/workflows/release.yml';
 const SUPPORTED_PLATFORMS = Object.freeze([
   'darwin-arm64',
@@ -46,12 +52,16 @@ const CONFORMANCE_SCHEMA_PATH =
 const CONFORMANCE_VERIFIER_PATH =
   'scripts/verify-committed-conformance-evidence.mjs';
 const VALIDATOR_RUNTIME_PATHS = Object.freeze([
+  NODE_VERSION_PATH,
   '.github/workflows/release.yml',
+  'conformance/release-artifact-manifest.schema.json',
   'package.json',
   'pnpm-lock.yaml',
   'scripts/aggregate-client-v1-conformance.mjs',
   'scripts/conformance-contract.mjs',
   'scripts/create-release-artifacts.mjs',
+  'scripts/github-conformance-evidence.mjs',
+  'scripts/github-release-authorization.mjs',
   'scripts/owned-temp-directory.mjs',
   'scripts/package-artifacts.mjs',
   'scripts/publish-release-artifacts.mjs',
@@ -63,10 +73,21 @@ const VALIDATOR_RUNTIME_PATHS = Object.freeze([
 const STRICT_SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
-function createReadinessGitEnvironment() {
+function createReadinessGitEnvironment({ includeGitHubToken = false } = {}) {
   const environment = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (!key.toUpperCase().startsWith('GIT_') && value !== undefined) {
+    const normalizedKey = key.toUpperCase();
+    if (
+      !normalizedKey.startsWith('GIT_')
+      && (
+        includeGitHubToken
+        || (
+          normalizedKey !== 'GH_TOKEN'
+          && normalizedKey !== 'GITHUB_TOKEN'
+        )
+      )
+      && value !== undefined
+    ) {
       environment[key] = value;
     }
   }
@@ -104,6 +125,24 @@ function readCommittedRegularBlob(root, commit, path, label) {
     ['cat-file', 'blob', match[1]],
     { encoding: 'buffer' },
   );
+}
+
+export function assertFrozenNodeRuntime(
+  root = process.cwd(),
+  actualVersion = process.version,
+) {
+  const versionBytes = readFileSync(resolve(root, NODE_VERSION_PATH), 'utf8');
+  if (versionBytes !== `${FROZEN_NODE_VERSION.slice(1)}\n`) {
+    throw new Error(
+      `${NODE_VERSION_PATH} must contain ${FROZEN_NODE_VERSION.slice(1)} with one trailing newline`,
+    );
+  }
+  if (actualVersion !== FROZEN_NODE_VERSION) {
+    throw new Error(
+      `Release and conformance verification require Node ${FROZEN_NODE_VERSION}, received ${actualVersion}`,
+    );
+  }
+  return FROZEN_NODE_VERSION;
 }
 
 export function validateValidatorRuntimeFiles(
@@ -358,10 +397,10 @@ function verifyCommittedConformanceEvidence({
     ],
     {
       encoding: 'utf8',
-      env: createReadinessGitEnvironment(),
+      env: createReadinessGitEnvironment({ includeGitHubToken: true }),
       maxBuffer: 4 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 30_000,
+      timeout: 180_000,
       killSignal: 'SIGKILL',
     },
   );
@@ -417,8 +456,8 @@ function readManifest(root, packageMetadata) {
 }
 
 function validateConfigValues(config) {
-  if (config.schemaVersion !== 2) {
-    throw new Error('release.config.json schemaVersion must be 2');
+  if (config.schemaVersion !== 3) {
+    throw new Error('release.config.json schemaVersion must be 3');
   }
   if (typeof config.publishingEnabled !== 'boolean') {
     throw new Error('release.config.json publishingEnabled must be a boolean');
@@ -452,11 +491,12 @@ function validateConfigValues(config) {
 
   assertExactFields(
     config.conformanceEvidence,
-    ['issue', 'candidateCommit', 'aggregateRecord'],
+    ['issue', 'artifactSet', 'candidateCommit', 'aggregateRecord'],
     'release.config.json conformanceEvidence',
   );
   if (
     config.conformanceEvidence.issue !== 'OpenCoven/sdk#38'
+    || config.conformanceEvidence.artifactSet !== 'conformance-candidate'
     || config.conformanceEvidence.candidateCommit
       !== 'acc38488f00860d246c3c553375634d64806eabb'
     || (
@@ -466,6 +506,47 @@ function validateConfigValues(config) {
   ) {
     throw new Error(
       'release.config.json conformanceEvidence must bind SDK #38 to the frozen candidate',
+    );
+  }
+
+  assertExactFields(
+    config.publicationCandidate,
+    [
+      'artifactSet',
+      'securityReviewIssue',
+      'securityReviewCommentId',
+      'unlockCommit',
+      'securityReviewedCommit',
+    ],
+    'release.config.json publicationCandidate',
+  );
+  const publicationCommitPattern = /^[0-9a-f]{40}$/u;
+  const publicationCandidateIsLocked =
+    config.publicationCandidate.unlockCommit === null
+    && config.publicationCandidate.securityReviewedCommit === null
+    && config.publicationCandidate.securityReviewCommentId === null;
+  const publicationCandidateIsReviewed =
+    typeof config.publicationCandidate.unlockCommit === 'string'
+    && publicationCommitPattern.test(config.publicationCandidate.unlockCommit)
+    && config.publicationCandidate.securityReviewedCommit
+      === config.publicationCandidate.unlockCommit
+    && typeof config.publicationCandidate.securityReviewCommentId === 'string'
+    && /^[1-9]\d*$/u.test(
+      config.publicationCandidate.securityReviewCommentId,
+    )
+    && config.publicationCandidate.unlockCommit
+      !== config.conformanceEvidence.candidateCommit;
+  if (
+    config.publicationCandidate.artifactSet !== 'publication-candidate'
+    || config.publicationCandidate.securityReviewIssue !== 'OpenCoven/sdk#40'
+    || (
+      config.publishingEnabled
+        ? !publicationCandidateIsReviewed
+        : !publicationCandidateIsLocked
+    )
+  ) {
+    throw new Error(
+      'release.config.json publicationCandidate must bind one exact unlock commit reviewed under OpenCoven/sdk#40',
     );
   }
 
@@ -555,6 +636,48 @@ function readWorkflowJobMapping(jobLines, key) {
   return mapping;
 }
 
+function readWorkflowStep(jobLines, stepName) {
+  const marker = `      - name: ${stepName}`;
+  const stepIndex = jobLines.findIndex(
+    (line) => line.replace(/\s+#.*$/u, '') === marker,
+  );
+  if (stepIndex < 0) {
+    throw new Error(`Release workflow must define step ${stepName}`);
+  }
+  let endIndex = jobLines.length;
+  for (let index = stepIndex + 1; index < jobLines.length; index += 1) {
+    if (/^ {6}-\s/u.test(jobLines[index])) {
+      endIndex = index;
+      break;
+    }
+  }
+  return jobLines.slice(stepIndex + 1, endIndex);
+}
+
+function readWorkflowStepMapping(stepLines, key) {
+  const marker = `        ${key}:`;
+  const mappingIndex = stepLines.findIndex(
+    (line) => line.replace(/\s+#.*$/u, '') === marker,
+  );
+  if (mappingIndex < 0) return null;
+  const mapping = {};
+  for (let index = mappingIndex + 1; index < stepLines.length; index += 1) {
+    const line = stepLines[index];
+    if (line.trim().length === 0 || line.trimStart().startsWith('#')) {
+      continue;
+    }
+    if (/^ {0,8}\S/u.test(line)) break;
+    const match =
+      /^ {10}([A-Za-z0-9_-]+):\s*([^#\s][^#]*?)\s*(?:#.*)?$/u.exec(
+        line,
+      );
+    if (match !== null) {
+      mapping[match[1]] = match[2].trim();
+    }
+  }
+  return mapping;
+}
+
 function validateReleaseWorkflow(root, config) {
   const workflowPath = resolve(root, RELEASE_WORKFLOW_PATH);
   if (!existsSync(workflowPath)) {
@@ -565,6 +688,71 @@ function validateReleaseWorkflow(root, config) {
   // with CRLF endings would never match `publish:\n` -- the validator would
   // report a missing publish job on a workflow that has one.
   const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n/g, '\n');
+  const preflightJob = readWorkflowJob(workflow, 'preflight');
+  const preflightPermissions = readWorkflowJobMapping(
+    preflightJob,
+    'permissions',
+  );
+  for (const [permission, value] of [
+    ['actions', 'read'],
+    ['attestations', 'read'],
+    ['contents', 'read'],
+    ['issues', 'read'],
+  ]) {
+    if (preflightPermissions?.[permission] !== value) {
+      throw new Error(
+        `Release workflow preflight job must contain ${permission}: ${value}`,
+      );
+    }
+  }
+  for (const stepName of [
+    'Verify authoritative conformance evidence and release tag',
+    'Create publication candidate artifacts',
+  ]) {
+    const environment = readWorkflowStepMapping(
+      readWorkflowStep(preflightJob, stepName),
+      'env',
+    );
+    if (environment?.GH_TOKEN !== '${{ github.token }}') {
+      throw new Error(
+        `Release workflow step ${stepName} must use the standard GitHub workflow token`,
+      );
+    }
+  }
+  const repositoryVerificationJob = readWorkflowJob(
+    workflow,
+    'repository-verification',
+  );
+  const repositoryPermissions = readWorkflowJobMapping(
+    repositoryVerificationJob,
+    'permissions',
+  );
+  if (
+    Object.keys(repositoryPermissions ?? {}).length !== 1
+    || repositoryPermissions?.contents !== 'read'
+  ) {
+    throw new Error(
+      'Release workflow repository-verification job must use only contents: read',
+    );
+  }
+  const installEnvironment = readWorkflowStepMapping(
+    readWorkflowStep(repositoryVerificationJob, 'Install dependencies'),
+    'env',
+  );
+  if (installEnvironment?.GH_TOKEN !== undefined) {
+    throw new Error(
+      'Release workflow dependency installation must not receive GH_TOKEN',
+    );
+  }
+  const verificationEnvironment = readWorkflowStepMapping(
+    readWorkflowStep(repositoryVerificationJob, 'Verify repository'),
+    'env',
+  );
+  if (verificationEnvironment?.GH_TOKEN !== undefined) {
+    throw new Error(
+      'Release workflow repository verification must not receive GH_TOKEN',
+    );
+  }
   const publishJob = readWorkflowJob(workflow, 'publish');
   if (
     readWorkflowJobScalar(publishJob, 'environment')
@@ -574,20 +762,39 @@ function validateReleaseWorkflow(root, config) {
       `Release workflow publish job must use environment ${config.githubEnvironment}`,
     );
   }
-  if (readWorkflowJobScalar(publishJob, 'needs') !== 'preflight') {
+  if (
+    readWorkflowJobScalar(publishJob, 'needs')
+      !== '[preflight, repository-verification]'
+  ) {
     throw new Error(
-      'Release workflow publish job must contain needs: preflight',
+      'Release workflow publish job must require preflight and repository-verification',
     );
   }
   const permissions = readWorkflowJobMapping(publishJob, 'permissions');
   for (const [permission, value] of [
+    ['actions', 'read'],
     ['contents', 'read'],
     ['id-token', 'write'],
     ['attestations', 'write'],
+    ['issues', 'read'],
   ]) {
     if (permissions?.[permission] !== value) {
       throw new Error(
         `Release workflow publish job must contain ${permission}: ${value}`,
+      );
+    }
+  }
+  for (const stepName of [
+    'Validate publication gates',
+    'Publish exact release artifacts',
+  ]) {
+    const environment = readWorkflowStepMapping(
+      readWorkflowStep(publishJob, stepName),
+      'env',
+    );
+    if (environment?.GH_TOKEN !== '${{ github.token }}') {
+      throw new Error(
+        `Release workflow step ${stepName} must use the standard GitHub workflow token`,
       );
     }
   }
@@ -644,6 +851,7 @@ export function validateReleaseReadiness({
         ['-C', root, 'rev-parse', `refs/tags/${tag}^{commit}`],
         {
           encoding: 'utf8',
+          env: createReadinessGitEnvironment(),
           stdio: ['ignore', 'pipe', 'ignore'],
         },
       ).trim();
@@ -652,6 +860,7 @@ export function validateReleaseReadiness({
     }
     const headCommit = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], {
       encoding: 'utf8',
+      env: createReadinessGitEnvironment(),
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
     if (tagCommit !== headCommit) {
@@ -736,6 +945,7 @@ export function validateReleaseReadiness({
       );
     }
   } else if (requireConformanceEvidence || mode === 'publish') {
+    assertFrozenNodeRuntime(root);
     const expectedRecord =
       `${CONFORMANCE_RESULTS_DIRECTORY}/${config.conformanceEvidence.candidateCommit}.json`;
     if (aggregateRecord !== expectedRecord) {
@@ -906,6 +1116,38 @@ export function validateReleaseReadiness({
       );
     }
     conformanceEvidenceRecord = aggregateRecord;
+  }
+
+  if (config.publishingEnabled) {
+    const checkout = inspectReleaseRepository(root);
+    const sourceCommit = config.publicationCandidate.unlockCommit;
+    runReadinessGit(
+      checkout.root,
+      ['cat-file', '-e', `${sourceCommit}^{commit}`],
+      { stdio: 'ignore' },
+    );
+    runReadinessGit(
+      checkout.root,
+      [
+        'merge-base',
+        '--is-ancestor',
+        config.conformanceEvidence.candidateCommit,
+        sourceCommit,
+      ],
+      { stdio: 'ignore' },
+    );
+    runReadinessGit(
+      checkout.root,
+      ['merge-base', '--is-ancestor', sourceCommit, checkout.commit],
+      { stdio: 'ignore' },
+    );
+    verifyPublicationSecurityReview({
+      publicationCandidate: config.publicationCandidate,
+      sourceTree: runReadinessGit(
+        checkout.root,
+        ['rev-parse', `${sourceCommit}^{tree}`],
+      ).trim(),
+    });
   }
 
   if (mode === 'publish' && !config.publishingEnabled) {

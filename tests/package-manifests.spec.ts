@@ -205,13 +205,16 @@ describe('workspace package manifests', () => {
     }
   }, 15_000);
 
-  test('verifies the release contract and artifacts on the compatibility path', () => {
+  test('keeps exact release identity out of the moving Node compatibility path', () => {
     expect(rootManifest.scripts?.['verify:compat']).toBe(
-      'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 verify:package',
+      'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:package',
     );
-    expect(rootManifest.scripts?.['verify:compat']).toContain('verify:release');
-    expect(rootManifest.scripts?.['verify:compat']).toMatch(
-      /verify:release.*verify:package/,
+    expect(rootManifest.scripts?.['verify:compat']).not.toContain(
+      'verify:release',
+    );
+    expect(rootManifest.scripts?.verify).toContain('verify:release');
+    expect(rootManifest.scripts?.['verify:repository']).toBe(
+      'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 clean:public-dist && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint',
     );
   });
 

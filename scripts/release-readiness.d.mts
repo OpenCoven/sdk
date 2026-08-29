@@ -10,7 +10,7 @@ export type NativeConformancePlatforms = readonly [
 ];
 
 export interface ReleaseConfig {
-  schemaVersion: 2;
+  schemaVersion: 3;
   publishingEnabled: boolean;
   tagPrefix: 'sdk-v';
   npmAccess: 'public';
@@ -23,8 +23,16 @@ export interface ReleaseConfig {
   nativeConformancePlatforms: NativeConformancePlatforms;
   conformanceEvidence: {
     issue: 'OpenCoven/sdk#38';
+    artifactSet: 'conformance-candidate';
     candidateCommit: 'acc38488f00860d246c3c553375634d64806eabb';
     aggregateRecord: string | null;
+  };
+  publicationCandidate: {
+    artifactSet: 'publication-candidate';
+    securityReviewIssue: 'OpenCoven/sdk#40';
+    securityReviewCommentId: string | null;
+    unlockCommit: string | null;
+    securityReviewedCommit: string | null;
   };
   packages: string[];
 }
@@ -47,6 +55,11 @@ export interface ReleaseReadinessSummary {
 }
 
 export function readReleaseConfig(root?: string): ReleaseConfig;
+
+export function assertFrozenNodeRuntime(
+  root?: string,
+  actualVersion?: string,
+): 'v24.18.1';
 
 export function validateValidatorRuntimeFiles(
   root: string,

@@ -11,11 +11,13 @@ import {
 } from './aggregate-client-v1-conformance.mjs';
 import {
   assertEvidenceProducerCompatibility,
-  parseAggregatedConformanceEvidence,
   parseFrozenConformanceLock,
-  parseReviewedEvidenceIndex,
   validateFrozenConformanceBindings,
 } from './conformance-contract.mjs';
+import {
+  verifyGitHubConformanceEvidence,
+} from './github-conformance-evidence.mjs';
+import { assertFrozenNodeRuntime } from './release-readiness.mjs';
 
 const LOCK_PATH = 'conformance/client-v1-cross-repository-lock.json';
 const REGISTRY_PATH =
@@ -138,7 +140,10 @@ function parseArguments(argv) {
   return values;
 }
 
-export async function verifyCommittedConformanceEvidence(options) {
+export async function verifyCommittedConformanceEvidence(
+  options,
+  { execute } = {},
+) {
   const lockText = readCommittedRegularBlob(
     options.root,
     options.commit,
@@ -173,6 +178,11 @@ export async function verifyCommittedConformanceEvidence(options) {
     lockText,
     'committed frozen conformance lock',
   );
+  if (assertFrozenNodeRuntime(options.root) !== lock.toolchain.nodeVersion) {
+    throw new Error(
+      'Frozen conformance lock Node version does not match .node-version',
+    );
+  }
   validateFrozenConformanceBindings(lock, schemaText, registryText);
   assertEvidenceProducerCompatibility(lock);
   const inspectedCaveEngine = inspectCaveAssertionEngine(
@@ -196,27 +206,16 @@ export async function verifyCommittedConformanceEvidence(options) {
   const caveEngine = await loadCommittedCaveAssertionEngine(
     inspectedCaveEngine,
   );
-  const aggregate = parseAggregatedConformanceEvidence(
+  return verifyGitHubConformanceEvidence({
+    frozenLockText: lockText,
+    assertionRegistryText: registryText,
+    schemaText,
+    aggregatePath: options.aggregate,
     aggregateText,
-    'release conformance aggregate',
-    {
-      frozenLockText: lockText,
-      assertionRegistryText: registryText,
-      schemaText,
-      caveEngine,
-    },
-  );
-  const index = parseReviewedEvidenceIndex(
     indexText,
-    'release conformance evidence index',
-    {
-      frozenLock: lock,
-      aggregate,
-      aggregatePath: options.aggregate,
-      aggregateText,
-    },
-  );
-  return { aggregate, index };
+    caveEngine,
+    ...(execute === undefined ? {} : { execute }),
+  });
 }
 
 export async function main(argv = process.argv.slice(2)) {

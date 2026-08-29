@@ -18,6 +18,9 @@ import {
   validateReleaseReadiness,
 } from '../scripts/release-readiness.mjs';
 import * as releaseReadinessModule from '../scripts/release-readiness.mjs';
+import {
+  verifyPublicationSecurityReview,
+} from '../scripts/github-release-authorization.mjs';
 import type {
   NativeConformancePlatforms,
   ReleaseConfig,
@@ -48,12 +51,14 @@ type MutableReleaseConfig = Omit<
   | 'npmAccess'
   | 'npmDistTag'
   | 'packages'
+  | 'publicationCandidate'
   | 'schemaVersion'
   | 'supportedNode'
   | 'tagPrefix'
 > & {
   conformanceEvidence: {
     aggregateRecord: string | null;
+    artifactSet: string;
     candidateCommit: string;
     issue: string;
   };
@@ -61,6 +66,13 @@ type MutableReleaseConfig = Omit<
   npmAccess: string;
   npmDistTag: string;
   packages: string[];
+  publicationCandidate: {
+    artifactSet: string;
+    securityReviewCommentId: string | null;
+    securityReviewIssue: string;
+    securityReviewedCommit: string | null;
+    unlockCommit: string | null;
+  };
   publishingEnabled: boolean;
   schemaVersion: number;
   supportedNode: {
@@ -111,12 +123,16 @@ const EXTRA_PLATFORM_MATRIX: MutableReleaseConfig['nativeConformancePlatforms'] 
   'linux-arm64',
 ];
 const VALIDATOR_RUNTIME_PATHS = [
+  '.node-version',
   '.github/workflows/release.yml',
+  'conformance/release-artifact-manifest.schema.json',
   'package.json',
   'pnpm-lock.yaml',
   'scripts/aggregate-client-v1-conformance.mjs',
   'scripts/conformance-contract.mjs',
   'scripts/create-release-artifacts.mjs',
+  'scripts/github-conformance-evidence.mjs',
+  'scripts/github-release-authorization.mjs',
   'scripts/owned-temp-directory.mjs',
   'scripts/package-artifacts.mjs',
   'scripts/publish-release-artifacts.mjs',
@@ -133,6 +149,10 @@ function createReleaseFixture(): string {
   cpSync(
     resolve(workspaceRoot, 'release.config.json'),
     resolve(fixture, 'release.config.json'),
+  );
+  cpSync(
+    resolve(workspaceRoot, '.node-version'),
+    resolve(fixture, '.node-version'),
   );
   cpSync(
     resolve(workspaceRoot, 'conformance'),
@@ -241,7 +261,33 @@ describe('release readiness contract', () => {
       'node ./scripts/verify-release-readiness.mjs --require-conformance-evidence',
     );
     expect(manifest.scripts.verify).toContain('verify:release');
-    expect(workflow).toContain('run: corepack pnpm@10.34.0 verify');
+    expect(workflow).toContain(
+      'run: corepack pnpm@10.34.0 verify:repository',
+    );
+    expect(workflow).toContain(
+      'name: Verify authoritative conformance evidence and release tag',
+    );
+    expect(workflow).toContain('      actions: read');
+    expect(workflow).toContain('      issues: read');
+    expect(workflow).toContain('GH_TOKEN: ${{ github.token }}');
+    expect(workflow).toContain(
+      'name: opencoven-sdk-publication-${{ inputs.version }}',
+    );
+    expect(workflow).toContain('path: .artifacts/publication');
+    expect(workflow).toContain('expected="v$(cat .node-version)"');
+    const ciWorkflow = readFileSync(
+      resolve(workspaceRoot, '.github/workflows/ci.yml'),
+      'utf8',
+    );
+    expect(ciWorkflow).toContain('  actions: read');
+    expect(ciWorkflow).toContain('  attestations: read');
+    expect(ciWorkflow).toContain('  issues: read');
+    expect(ciWorkflow).toMatch(
+      /name: Verify authoritative release gates\s+if: matrix\.node == '24\.18\.1'\s+env:\s+GH_TOKEN: \$\{\{ github\.token \}\}\s+run: node \.\/scripts\/verify-release-readiness\.mjs --require-conformance-evidence/u,
+    );
+    expect(ciWorkflow).toMatch(
+      /name: Verify minimum supported Node\s+if: matrix\.node == '24\.18\.1'\s+run: corepack pnpm@10\.34\.0 verify:repository/u,
+    );
     expect(
       workflow.match(/--require-conformance-evidence/gu),
     ).toHaveLength(2);
@@ -252,6 +298,14 @@ describe('release readiness contract', () => {
     expect(
       preflightJob.indexOf('name: Pin reviewed release runtime'),
     ).toBeLessThan(preflightJob.indexOf('name: Install dependencies'));
+    expect(
+      preflightJob.indexOf('name: Create publication candidate artifacts'),
+    ).toBeLessThan(
+      preflightJob.indexOf('\n  repository-verification:\n'),
+    );
+    expect(workflow).toContain(
+      'needs: [preflight, repository-verification]',
+    );
     expect(publishJob).toContain('name: Pin reviewed release runtime');
     expect(publishJob).not.toContain('name: Install dependencies');
   });
@@ -260,8 +314,16 @@ describe('release readiness contract', () => {
     const config = readReleaseConfig(workspaceRoot);
     expect(config.conformanceEvidence).toEqual({
       issue: 'OpenCoven/sdk#38',
+      artifactSet: 'conformance-candidate',
       candidateCommit: 'acc38488f00860d246c3c553375634d64806eabb',
       aggregateRecord: null,
+    });
+    expect(config.publicationCandidate).toEqual({
+      artifactSet: 'publication-candidate',
+      securityReviewIssue: 'OpenCoven/sdk#40',
+      securityReviewCommentId: null,
+      unlockCommit: null,
+      securityReviewedCommit: null,
     });
     expect(() =>
       validateReleaseReadiness({
@@ -383,6 +445,48 @@ describe('release readiness contract', () => {
       )(fixture, validatorCommit, releaseCommit),
     ).toThrow(
       'Validator runtime file scripts/conformance-contract.mjs differs from the recorded validator commit',
+    );
+  });
+
+  test('requires the exact frozen Node runtime from .node-version', () => {
+    const assertFrozenNodeRuntime = (
+      releaseReadinessModule as unknown as Record<string, unknown>
+    ).assertFrozenNodeRuntime;
+
+    expect(
+      assertFrozenNodeRuntime,
+      'assertFrozenNodeRuntime must be exported',
+    ).toBeTypeOf('function');
+    expect(() =>
+      (
+        assertFrozenNodeRuntime as (
+          root: string,
+          actualVersion?: string,
+        ) => string
+      )(workspaceRoot, 'v24.18.1'),
+    ).not.toThrow();
+    expect(() =>
+      (
+        assertFrozenNodeRuntime as (
+          root: string,
+          actualVersion?: string,
+        ) => string
+      )(workspaceRoot, 'v24.18.2'),
+    ).toThrow(
+      'Release and conformance verification require Node v24.18.1, received v24.18.2',
+    );
+
+    const fixture = createReleaseFixture();
+    writeFileSync(resolve(fixture, '.node-version'), '24.18.2\n');
+    expect(() =>
+      (
+        assertFrozenNodeRuntime as (
+          root: string,
+          actualVersion?: string,
+        ) => string
+      )(fixture, 'v24.18.1'),
+    ).toThrow(
+      '.node-version must contain 24.18.1 with one trailing newline',
     );
   });
 
@@ -521,7 +625,7 @@ describe('release readiness contract', () => {
   });
 
   test('requires the canonical native conformance platform matrix', () => {
-    expect(readReleaseConfig(workspaceRoot).schemaVersion).toBe(2);
+    expect(readReleaseConfig(workspaceRoot).schemaVersion).toBe(3);
     expect(readReleaseConfig(workspaceRoot).nativeConformancePlatforms).toEqual(
       SUPPORTED_PLATFORMS,
     );
@@ -641,11 +745,140 @@ describe('release readiness contract', () => {
       resolve(fixture, 'release.config.json'),
       (config) => {
         config.publishingEnabled = true;
+        config.publicationCandidate.unlockCommit = 'a'.repeat(40);
+        config.publicationCandidate.securityReviewedCommit = 'a'.repeat(40);
+        config.publicationCandidate.securityReviewCommentId = '4001';
       },
     );
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
       '@opencoven/cave-client must be non-private while publishing is enabled',
     );
+  });
+
+  test('requires publication bytes to come from the exact #40-reviewed unlock commit', () => {
+    const fixture = createReleaseFixture();
+    updateJson<MutableReleaseConfig>(
+      resolve(fixture, 'release.config.json'),
+      (config) => {
+        config.publicationCandidate.unlockCommit = 'a'.repeat(40);
+        config.publicationCandidate.securityReviewedCommit = 'b'.repeat(40);
+      },
+    );
+
+    expect(() => readReleaseConfig(fixture)).toThrow(
+      'release.config.json publicationCandidate must bind one exact unlock commit reviewed under OpenCoven/sdk#40',
+    );
+  });
+
+  test('authenticates the #40 ship disposition through GitHub', () => {
+    const selfAssertedFixture = createReleaseFixture();
+    updateJson<MutableReleaseConfig>(
+      resolve(selfAssertedFixture, 'release.config.json'),
+      (config) => {
+        config.publishingEnabled = true;
+        config.publicationCandidate.unlockCommit = 'a'.repeat(40);
+        config.publicationCandidate.securityReviewedCommit = 'a'.repeat(40);
+      },
+    );
+    expect(() => readReleaseConfig(selfAssertedFixture)).toThrow(
+      'release.config.json publicationCandidate must bind one exact unlock commit reviewed under OpenCoven/sdk#40',
+    );
+
+    const publicationCandidate = {
+      artifactSet: 'publication-candidate' as const,
+      securityReviewIssue: 'OpenCoven/sdk#40' as const,
+      securityReviewCommentId: '4001',
+      unlockCommit: 'a'.repeat(40),
+      securityReviewedCommit: 'a'.repeat(40),
+    };
+    const sourceTree = 'b'.repeat(40);
+    const reviewBody = `${JSON.stringify({
+      commit: publicationCandidate.unlockCommit,
+      disposition: 'ship',
+      issue: publicationCandidate.securityReviewIssue,
+      kind: 'opencoven-sdk-publication-security-review',
+      schemaVersion: 1,
+      tree: sourceTree,
+    }, null, 2)}\n`;
+    const calls: string[][] = [];
+    const execute = (
+      command: string,
+      arguments_: string[],
+    ): string => {
+      expect(command).toBe('gh');
+      calls.push([...arguments_]);
+      const endpoint = arguments_.at(-1);
+      if (endpoint === 'repos/OpenCoven/sdk/issues/40') {
+        return JSON.stringify({
+          number: 40,
+          state: 'closed',
+          state_reason: 'completed',
+          locked: true,
+        });
+      }
+      if (endpoint === 'repos/OpenCoven/sdk/issues/comments/4001') {
+        return JSON.stringify({
+          id: 4001,
+          issue_url: 'https://api.github.com/repos/OpenCoven/sdk/issues/40',
+          body: reviewBody,
+          created_at: '2026-08-29T04:00:00Z',
+          updated_at: '2026-08-29T04:00:00Z',
+          author_association: 'OWNER',
+          user: {
+            login: 'BunsDev',
+          },
+        });
+      }
+      throw new Error(`Unexpected GitHub review endpoint ${endpoint}`);
+    };
+
+    expect(
+      verifyPublicationSecurityReview({
+        publicationCandidate,
+        sourceTree,
+        execute,
+      } as never),
+    ).toEqual({
+      issue: 'OpenCoven/sdk#40',
+      commentId: '4001',
+      reviewer: 'BunsDev',
+      commit: publicationCandidate.unlockCommit,
+      tree: sourceTree,
+      disposition: 'ship',
+    });
+    expect(
+      calls.every(
+        (arguments_) =>
+          arguments_.includes('--hostname')
+          && arguments_.includes('github.com'),
+      ),
+    ).toBe(true);
+
+    expect(() =>
+      verifyPublicationSecurityReview({
+        publicationCandidate,
+        sourceTree,
+        execute: (
+          command: string,
+          arguments_: string[],
+        ): string => {
+          const response = execute(command, arguments_);
+          if (
+            arguments_.at(-1)
+              === 'repos/OpenCoven/sdk/issues/comments/4001'
+          ) {
+            return JSON.stringify({
+              ...JSON.parse(response),
+              body: reviewBody.replace(
+                publicationCandidate.unlockCommit,
+                'c'.repeat(40),
+              ),
+            });
+          }
+          return response;
+        },
+      } as never),
+    ).toThrow(/does not authorize the exact publication source/u);
   });
 
   test('validates strict SemVer and optional tag requirements', () => {
@@ -699,7 +932,9 @@ describe('release readiness contract', () => {
           throw new Error('must not execute while locked');
         },
       }),
-    ).toThrow('release.config.json must name a passing SDK #38 aggregate record');
+    ).toThrow(
+      'release.config.json publicationCandidate must be unlocked and security-reviewed before publication artifacts are created',
+    );
   });
 
   test('requires the release workflow identity and a tag on HEAD', () => {
@@ -730,6 +965,73 @@ describe('release readiness contract', () => {
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
       'Release workflow publish job must use environment npm-release',
+    );
+  });
+
+  test('enforces authoritative evidence access in the preflight workflow job', () => {
+    const fixture = createReleaseFixture();
+    const workflowPath = resolve(fixture, '.github/workflows/release.yml');
+    const workflow = readFileSync(workflowPath, 'utf8').replace(
+      '      attestations: read',
+      '      attestations: none',
+    );
+    writeFileSync(workflowPath, workflow);
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow preflight job must contain attestations: read',
+    );
+
+    const actionsFixture = createReleaseFixture();
+    const actionsWorkflowPath = resolve(
+      actionsFixture,
+      '.github/workflows/release.yml',
+    );
+    const actionsWorkflow = readFileSync(actionsWorkflowPath, 'utf8').replace(
+      '      actions: read',
+      '      actions: none',
+    );
+    writeFileSync(actionsWorkflowPath, actionsWorkflow);
+
+    expect(() => validateReleaseReadiness({ root: actionsFixture })).toThrow(
+      'Release workflow preflight job must contain actions: read',
+    );
+
+    const tokenFixture = createReleaseFixture();
+    const tokenWorkflowPath = resolve(
+      tokenFixture,
+      '.github/workflows/release.yml',
+    );
+    const tokenWorkflow = readFileSync(tokenWorkflowPath, 'utf8').replace(
+      '          GH_TOKEN: ${{ github.token }}',
+      '          GH_TOKEN: ${{ secrets.LONG_LIVED_TOKEN }}',
+    );
+    writeFileSync(tokenWorkflowPath, tokenWorkflow);
+
+    expect(() => validateReleaseReadiness({ root: tokenFixture })).toThrow(
+      'Release workflow step Verify authoritative conformance evidence and release tag must use the standard GitHub workflow token',
+    );
+
+    const verificationTokenFixture = createReleaseFixture();
+    const verificationTokenWorkflowPath = resolve(
+      verificationTokenFixture,
+      '.github/workflows/release.yml',
+    );
+    const verificationTokenWorkflow = readFileSync(
+      verificationTokenWorkflowPath,
+      'utf8',
+    ).replace(
+      '      - name: Verify repository\n        run:',
+      '      - name: Verify repository\n        env:\n          GH_TOKEN: ${{ github.token }}\n        run:',
+    );
+    writeFileSync(
+      verificationTokenWorkflowPath,
+      verificationTokenWorkflow,
+    );
+
+    expect(() =>
+      validateReleaseReadiness({ root: verificationTokenFixture }),
+    ).toThrow(
+      'Release workflow repository verification must not receive GH_TOKEN',
     );
   });
 

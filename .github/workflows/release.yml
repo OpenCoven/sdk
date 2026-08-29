@@ -26,6 +26,11 @@ jobs:
   preflight:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      actions: read
+      attestations: read
+      contents: read
+      issues: read
     env:
       RELEASE_VERSION: ${{ inputs.version }}
       OPENCOVEN_CAVE_AUTHORITY_ROOT: ${{ github.workspace }}/.artifacts/cave-authority
@@ -33,9 +38,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
+      - name: Require frozen Node runtime
+        run: |
+          expected="v$(cat .node-version)"
+          if [ "$expected" != "v24.18.1" ] || [ "$(node --version)" != "$expected" ]; then
+            echo "Release verification requires exact Node $expected." >&2
+            exit 1
+          fi
       - name: Require main
         if: github.ref != 'refs/heads/main'
         run: |
@@ -66,12 +79,16 @@ jobs:
           validator_commit="$(node -e 'const fs=require("node:fs"); const p=process.argv[1]; const v=JSON.parse(fs.readFileSync(p,"utf8")).validator?.commit; if(!/^[0-9a-f]{40}$/.test(v??"")) process.exit(1); process.stdout.write(v)' "$aggregate_record")"
           git cat-file -e "$validator_commit^{commit}"
           runtime_paths=(
+            .node-version
             .github/workflows/release.yml
+            conformance/release-artifact-manifest.schema.json
             package.json
             pnpm-lock.yaml
             scripts/aggregate-client-v1-conformance.mjs
             scripts/conformance-contract.mjs
             scripts/create-release-artifacts.mjs
+            scripts/github-conformance-evidence.mjs
+            scripts/github-release-authorization.mjs
             scripts/owned-temp-directory.mjs
             scripts/package-artifacts.mjs
             scripts/publish-release-artifacts.mjs
@@ -89,20 +106,15 @@ jobs:
           path: .artifacts/cave-authority
           fetch-depth: 1
           persist-credentials: false
-      - name: Verify release tag
+      - name: Verify authoritative conformance evidence and release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: >-
           node ./scripts/verify-release-readiness.mjs
           --version "$RELEASE_VERSION"
           --tag "sdk-v$RELEASE_VERSION"
           --require-tag
           --require-conformance-evidence
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          version: 10.34.0
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Verify repository
-        run: corepack pnpm@10.34.0 verify
       - name: Require clean reviewed tree
         run: |
           if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
@@ -110,21 +122,66 @@ jobs:
             echo "Release verification changed the reviewed tree." >&2
             exit 1
           fi
-      - name: Create release artifacts
+      - name: Create publication candidate artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: >-
-          corepack pnpm@10.34.0 release:artifacts --
-          --output .artifacts/release
+          node ./scripts/create-release-artifacts.mjs
+          --output .artifacts/publication
           --version "$RELEASE_VERSION"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: opencoven-sdk-${{ inputs.version }}
-          path: .artifacts/release
+          name: opencoven-sdk-publication-${{ inputs.version }}
+          path: .artifacts/publication
           if-no-files-found: error
           retention-days: 7
 
+  repository-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      OPENCOVEN_CAVE_AUTHORITY_ROOT: ${{ github.workspace }}/.artifacts/cave-authority
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: OpenCoven/coven-cave
+          ref: 2a0ff9237e94e652e477b22f60fd6d721b9e6451
+          path: .artifacts/cave-authority
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10.34.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Require frozen Node runtime
+        run: |
+          expected="v$(cat .node-version)"
+          if [ "$expected" != "v24.18.1" ] || [ "$(node --version)" != "$expected" ]; then
+            echo "Repository verification requires exact Node $expected." >&2
+            exit 1
+          fi
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify repository
+        run: corepack pnpm@10.34.0 verify:repository
+      - name: Require clean reviewed tree
+        run: |
+          if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
+            git status --short --untracked-files=all
+            echo "Repository verification changed the reviewed tree." >&2
+            exit 1
+          fi
+
   publish:
     if: inputs.mode == 'publish'
-    needs: preflight
+    needs: [preflight, repository-verification]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: npm-release
@@ -132,17 +189,27 @@ jobs:
       RELEASE_VERSION: ${{ inputs.version }}
       OPENCOVEN_CAVE_AUTHORITY_ROOT: ${{ github.workspace }}/.artifacts/cave-authority
     permissions:
+      actions: read
       contents: read
       id-token: write
       attestations: write
+      issues: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
           ref: ${{ github.sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
+      - name: Require frozen Node runtime
+        run: |
+          expected="v$(cat .node-version)"
+          if [ "$expected" != "v24.18.1" ] || [ "$(node --version)" != "$expected" ]; then
+            echo "Release verification requires exact Node $expected." >&2
+            exit 1
+          fi
       - name: Pin reviewed release runtime
         run: |
           aggregate_record="$(node -e 'const c=require("./release.config.json"); process.stdout.write(c.conformanceEvidence.aggregateRecord ?? "")')"
@@ -168,12 +235,16 @@ jobs:
           validator_commit="$(node -e 'const fs=require("node:fs"); const p=process.argv[1]; const v=JSON.parse(fs.readFileSync(p,"utf8")).validator?.commit; if(!/^[0-9a-f]{40}$/.test(v??"")) process.exit(1); process.stdout.write(v)' "$aggregate_record")"
           git cat-file -e "$validator_commit^{commit}"
           runtime_paths=(
+            .node-version
             .github/workflows/release.yml
+            conformance/release-artifact-manifest.schema.json
             package.json
             pnpm-lock.yaml
             scripts/aggregate-client-v1-conformance.mjs
             scripts/conformance-contract.mjs
             scripts/create-release-artifacts.mjs
+            scripts/github-conformance-evidence.mjs
+            scripts/github-release-authorization.mjs
             scripts/owned-temp-directory.mjs
             scripts/package-artifacts.mjs
             scripts/publish-release-artifacts.mjs
@@ -193,9 +264,11 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: opencoven-sdk-${{ inputs.version }}
-          path: .artifacts/release
+          name: opencoven-sdk-publication-${{ inputs.version }}
+          path: .artifacts/publication
       - name: Validate publication gates
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: >-
           node ./scripts/verify-release-readiness.mjs
           --mode publish
@@ -205,10 +278,12 @@ jobs:
           --require-conformance-evidence
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: .artifacts/release/tarballs/**/*.tgz
+          subject-path: .artifacts/publication/tarballs/**/*.tgz
       - name: Publish exact release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           OPENCOVEN_RELEASE_AUTHORIZATION=publish \
             node ./scripts/publish-release-artifacts.mjs \
-            --artifact-root .artifacts/release \
+            --artifact-root .artifacts/publication \
             --version "$RELEASE_VERSION"
