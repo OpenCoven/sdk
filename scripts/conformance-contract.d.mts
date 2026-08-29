@@ -94,6 +94,7 @@ export interface PlatformEvidence {
     caveContractFixture: string;
     hpkeVectors: string;
     consumerLock: string;
+    assertionRegistry: string;
     sdkTarballs: Array<{
       packageName: string;
       sha256: string;
@@ -121,7 +122,16 @@ export interface PlatformEvidence {
   };
   sdkAssertions: AssertionEntry[];
   chatAssertions: AssertionEntry[];
-  notCovered: string[];
+  coverage: {
+    cave: true;
+    coven: true;
+    sdk: true;
+    chat: true;
+  };
+  notCovered: Array<{
+    scopeId: string;
+    diagnosticId: string;
+  }>;
   isolation: {
     strategy: string;
     network: string;
@@ -146,12 +156,12 @@ export interface AggregationArguments {
   caveRoot: string;
   recordPaths: string[];
   outputPath: string;
-  registryPath: string | null;
 }
 
 export interface AggregateConformanceInput {
   caveEngine: CaveAssertionEngine;
   caveEngineSha256: string;
+  assertionRegistrySha256: string;
   canonicalPlatforms: readonly string[];
   registry: AssertionRegistry;
   platformRecords: PlatformEvidence[];
@@ -165,6 +175,11 @@ export interface AggregatedConformanceEvidence {
   caveAssertionAuthority: {
     repository: 'OpenCoven/coven-cave';
     path: 'scripts/client-v1-conformance.mjs';
+    commit: string;
+    sha256: string;
+  };
+  assertionRegistryAuthority: {
+    path: 'conformance/client-v1-cross-repository-assertions.json';
     commit: string;
     sha256: string;
   };
@@ -193,6 +208,10 @@ export function parsePlatformEvidence(
   source?: string,
 ): PlatformEvidence;
 export function readAssertionRegistry(path: string): AssertionRegistry;
+export function parseAssertionRegistry(
+  text: string,
+  source?: string,
+): AssertionRegistry;
 export function scanConformanceEvidence(value: unknown): void;
 export function aggregateConformanceEvidence(
   input: AggregateConformanceInput,

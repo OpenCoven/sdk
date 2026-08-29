@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, test, vi } from 'vitest';
 
@@ -19,6 +20,7 @@ import type {
 
 const SHA_A = 'a'.repeat(64);
 const SHA_B = 'b'.repeat(64);
+const SHA_REGISTRY = 'e'.repeat(64);
 const COMMIT_A = 'a'.repeat(40);
 const COMMIT_B = 'b'.repeat(40);
 const COMMIT_C = 'c'.repeat(40);
@@ -170,6 +172,7 @@ function createPlatformEvidence(
       caveContractFixture: SHA_B,
       hpkeVectors: 'c'.repeat(64),
       consumerLock: 'd'.repeat(64),
+      assertionRegistry: SHA_REGISTRY,
       sdkTarballs: [
         { packageName: '@opencoven/sdk-core', sha256: '1'.repeat(64) },
         { packageName: '@opencoven/cave-client', sha256: '2'.repeat(64) },
@@ -205,6 +208,12 @@ function createPlatformEvidence(
       ...registry.chat.common.map(assertion),
       assertion(chatPlatformId),
     ],
+    coverage: {
+      cave: true,
+      coven: true,
+      sdk: true,
+      chat: true,
+    },
     notCovered: [],
     isolation: {
       strategy: 'process-owned-temporary-roots',
@@ -265,8 +274,23 @@ describe('cross-repository conformance contract', () => {
       caveRoot: '../coven-cave',
       recordPaths: ['darwin.json', 'linux.json', 'windows.json'],
       outputPath: 'aggregate.json',
-      registryPath: null,
     });
+    expect(() =>
+      parseConformanceAggregationArgs([
+        '--cave-root',
+        '../cave',
+        '--record',
+        'darwin.json',
+        '--record',
+        'linux.json',
+        '--record',
+        'windows.json',
+        '--out',
+        'aggregate.json',
+        '--registry',
+        'rogue.json',
+      ]),
+    ).toThrow('Unknown option --registry');
     expect(() =>
       parseConformanceAggregationArgs(['--cave-root', '../cave', '--wat']),
     ).toThrow('Unknown option --wat');
@@ -313,6 +337,30 @@ describe('cross-repository conformance contract', () => {
       parsePlatformEvidence(JSON.stringify(routeAssertion), 'route.json'),
     ).not.toThrow();
     expect(() =>
+      parsePlatformEvidence(
+        JSON.stringify({ ...record, platform: 'linux-arm64' }),
+        'platform.json',
+      ),
+    ).toThrow('platform.json.platform is not a canonical platform id');
+    expect(() =>
+      parsePlatformEvidence(
+        JSON.stringify({
+          ...record,
+          environment: { ...record.environment, os: 'freebsd' },
+        }),
+        'os.json',
+      ),
+    ).toThrow('os.json.environment.os is not canonical');
+    expect(() =>
+      parsePlatformEvidence(
+        JSON.stringify({
+          ...record,
+          environment: { ...record.environment, arch: 'ia32' },
+        }),
+        'arch.json',
+      ),
+    ).toThrow('arch.json.environment.arch is not canonical');
+    expect(() =>
       parsePlatformEvidence(' '.repeat(1_048_577), 'large.json'),
     ).toThrow('large.json exceeds the 1048576-byte evidence limit');
   });
@@ -336,6 +384,7 @@ describe('cross-repository conformance contract', () => {
     const first = aggregateConformanceEvidence({
       caveEngine,
       caveEngineSha256: SHA_A,
+      assertionRegistrySha256: SHA_REGISTRY,
       canonicalPlatforms: PLATFORMS,
       registry,
       platformRecords: records,
@@ -343,6 +392,7 @@ describe('cross-repository conformance contract', () => {
     const second = aggregateConformanceEvidence({
       caveEngine,
       caveEngineSha256: SHA_A,
+      assertionRegistrySha256: SHA_REGISTRY,
       canonicalPlatforms: PLATFORMS,
       registry,
       platformRecords: createRecords(),
@@ -366,6 +416,11 @@ describe('cross-repository conformance contract', () => {
       commit: COMMIT_A,
       sha256: SHA_A,
     });
+    expect(first.assertionRegistryAuthority).toEqual({
+      path: 'conformance/client-v1-cross-repository-assertions.json',
+      commit: COMMIT_C,
+      sha256: SHA_REGISTRY,
+    });
     expect(checkAssertionCoverage).toHaveBeenCalledTimes(18);
     expect(renderConformanceRecord).toHaveBeenCalledTimes(6);
     expect(JSON.stringify(first)).not.toContain('../coven-cave');
@@ -375,6 +430,7 @@ describe('cross-repository conformance contract', () => {
     const input = {
       caveEngine: createCaveEngine(),
       caveEngineSha256: SHA_A,
+      assertionRegistrySha256: SHA_REGISTRY,
       canonicalPlatforms: PLATFORMS,
       registry,
     };
@@ -403,13 +459,14 @@ describe('cross-repository conformance contract', () => {
     };
     expect(() =>
       aggregateConformanceEvidence({ ...input, platformRecords: unexpected }),
-    ).toThrow('unexpected platform "linux-arm64"');
+    ).toThrow('linux-arm64.platform is not a canonical platform id');
   });
 
   test('fails on missing, duplicate, unexpected, failed, or skipped assertions', () => {
     const input = {
       caveEngine: createCaveEngine(),
       caveEngineSha256: SHA_A,
+      assertionRegistrySha256: SHA_REGISTRY,
       canonicalPlatforms: PLATFORMS,
       registry,
     };
@@ -454,24 +511,44 @@ describe('cross-repository conformance contract', () => {
     ).toThrow('darwin-arm64 Chat assertion "chat.common" did not pass');
   });
 
-  test('fails when SDK or Chat remains notCovered', () => {
+  test('requires structured complete coverage and allowlisted notCovered scopes', () => {
     const records = createRecords();
-    records[0]?.notCovered.push('Chat restart coverage remains external.');
+    if (records[0] !== undefined) {
+      delete (records[0].coverage as Partial<PlatformEvidence['coverage']>).chat;
+    }
     expect(() =>
       aggregateConformanceEvidence({
         caveEngine: createCaveEngine(),
         caveEngineSha256: SHA_A,
+        assertionRegistrySha256: SHA_REGISTRY,
         canonicalPlatforms: PLATFORMS,
         registry,
         platformRecords: records,
       }),
-    ).toThrow('darwin-arm64 notCovered still excludes SDK or Chat');
+    ).toThrow('darwin-arm64.coverage is missing required field "chat"');
+
+    const unknownScope = createRecords();
+    unknownScope[0]?.notCovered.push({
+      scopeId: 'chat',
+      diagnosticId: 'scope.chat.not-covered',
+    });
+    expect(() =>
+      aggregateConformanceEvidence({
+        caveEngine: createCaveEngine(),
+        caveEngineSha256: SHA_A,
+        assertionRegistrySha256: SHA_REGISTRY,
+        canonicalPlatforms: PLATFORMS,
+        registry,
+        platformRecords: unknownScope,
+      }),
+    ).toThrow('darwin-arm64.notCovered scopeId "chat" is not allowlisted');
   });
 
   test('fails when commits or artifact digests differ across platforms', () => {
     const input = {
       caveEngine: createCaveEngine(),
       caveEngineSha256: SHA_A,
+      assertionRegistrySha256: SHA_REGISTRY,
       canonicalPlatforms: PLATFORMS,
       registry,
     };
@@ -497,6 +574,7 @@ describe('cross-repository conformance contract', () => {
       aggregateConformanceEvidence({
         caveEngine: createCaveEngine(),
         caveEngineSha256: SHA_A,
+        assertionRegistrySha256: SHA_REGISTRY,
         canonicalPlatforms: PLATFORMS,
         registry,
         platformRecords: records,
@@ -511,6 +589,7 @@ describe('cross-repository conformance contract', () => {
       aggregateConformanceEvidence({
         caveEngine: createCaveEngine(),
         caveEngineSha256: SHA_A,
+        assertionRegistrySha256: SHA_REGISTRY,
         canonicalPlatforms: PLATFORMS,
         registry,
         platformRecords: workspaceLinked,
@@ -522,6 +601,7 @@ describe('cross-repository conformance contract', () => {
     const input = {
       caveEngine: createCaveEngine(),
       caveEngineSha256: SHA_A,
+      assertionRegistrySha256: SHA_REGISTRY,
       canonicalPlatforms: PLATFORMS,
       registry,
     };
@@ -538,6 +618,19 @@ describe('cross-repository conformance contract', () => {
       'darwin-arm64 Cave assertion engine digest does not match the loaded engine',
     );
 
+    const registryDigest = createRecords();
+    if (registryDigest[0] !== undefined) {
+      registryDigest[0].digests.assertionRegistry = SHA_B;
+    }
+    expect(() =>
+      aggregateConformanceEvidence({
+        ...input,
+        platformRecords: registryDigest,
+      }),
+    ).toThrow(
+      'darwin-arm64 assertion registry digest does not match the committed registry',
+    );
+
     const caveRecord = createRecords();
     if (caveRecord[0] !== undefined) {
       caveRecord[0].caveRecord.includeTtl = false;
@@ -548,6 +641,23 @@ describe('cross-repository conformance contract', () => {
         platformRecords: caveRecord,
       }),
     ).toThrow('darwin-arm64 Cave record did not include the TTL assertions');
+  });
+
+  test('accepts a frozen record from Cave without mutating it', () => {
+    const engine = createCaveEngine();
+    const renderer = createCaveEngine();
+    engine.renderConformanceRecord = (entries, context) =>
+      Object.freeze(renderer.renderConformanceRecord(entries, context));
+    expect(() =>
+      aggregateConformanceEvidence({
+        caveEngine: engine,
+        caveEngineSha256: SHA_A,
+        assertionRegistrySha256: SHA_REGISTRY,
+        canonicalPlatforms: PLATFORMS,
+        registry,
+        platformRecords: createRecords(),
+      }),
+    ).not.toThrow();
   });
 
   test('bounds retained evidence and rejects secrets, content, and private paths', () => {
@@ -574,7 +684,10 @@ describe('cross-repository conformance contract', () => {
   });
 
   test('ships the complete registry, schema, command, and runbook', () => {
-    const workspaceRoot = resolve(import.meta.dirname, '..');
+    const workspaceRoot = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '..',
+    );
     const loaded = readAssertionRegistry(
       resolve(
         workspaceRoot,
@@ -615,7 +728,7 @@ describe('cross-repository conformance contract', () => {
       'node ./scripts/aggregate-client-v1-conformance.mjs',
     );
     expect(manifest.scripts?.['test:conformance-contract']).toBe(
-      'vitest run tests/conformance-contract.spec.ts',
+      'vitest run tests/conformance-contract.spec.ts tests/conformance-cli-security.spec.ts',
     );
 
     const runbook = readFileSync(
@@ -628,5 +741,6 @@ describe('cross-repository conformance contract', () => {
     expect(runbook).toContain('Cave remains the assertion authority');
     expect(runbook).toContain('No command in this repository starts a platform run');
     expect(runbook).toContain('conformance:aggregate');
+    expect(runbook).toContain('assertion registry SHA-256');
   });
 });

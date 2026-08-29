@@ -9,6 +9,15 @@ const CANONICAL_PLATFORMS = Object.freeze([
   'linux-x64',
   'win32-x64',
 ]);
+const CANONICAL_OPERATING_SYSTEMS = Object.freeze(['darwin', 'linux', 'win32']);
+const CANONICAL_ARCHITECTURES = Object.freeze(['arm64', 'x64']);
+const COVERAGE_SCOPES = Object.freeze(['cave', 'coven', 'sdk', 'chat']);
+const NOT_COVERED_SCOPE_IDS = Object.freeze([
+  'cross-process-pairing',
+  'oauth-ui',
+  'remote-peer',
+  'write-apis',
+]);
 const SDK_TARBALLS = Object.freeze([
   '@opencoven/sdk-core',
   '@opencoven/cave-client',
@@ -318,6 +327,58 @@ function expectTarballs(value, label) {
   });
 }
 
+function expectCoverage(value, label) {
+  const object = expectExactObject(value, COVERAGE_SCOPES, label);
+  const coverage = {};
+  for (const scopeId of COVERAGE_SCOPES) {
+    if (object[scopeId] !== true) {
+      throw new Error(`${label}.${scopeId} must be true`);
+    }
+    coverage[scopeId] = true;
+  }
+  return coverage;
+}
+
+function expectNotCovered(value, label) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array`);
+  }
+  if (value.length > NOT_COVERED_SCOPE_IDS.length) {
+    throw new Error(`${label} exceeds the allowlisted scope count`);
+  }
+  const seen = new Set();
+  return value.map((entry, index) => {
+    const object = expectExactObject(
+      entry,
+      ['scopeId', 'diagnosticId'],
+      `${label}[${index}]`,
+    );
+    const scopeId = expectString(
+      object.scopeId,
+      `${label}[${index}].scopeId`,
+      { maxBytes: 64 },
+    );
+    if (!NOT_COVERED_SCOPE_IDS.includes(scopeId)) {
+      throw new Error(`${label} scopeId ${JSON.stringify(scopeId)} is not allowlisted`);
+    }
+    if (seen.has(scopeId)) {
+      throw new Error(`${label} contains duplicate scopeId ${JSON.stringify(scopeId)}`);
+    }
+    seen.add(scopeId);
+    return {
+      scopeId,
+      diagnosticId: expectString(
+        object.diagnosticId,
+        `${label}[${index}].diagnosticId`,
+        {
+          pattern: /^[a-z0-9]+(?:[._/-][a-z0-9]+)*$/u,
+          maxBytes: 192,
+        },
+      ),
+    };
+  });
+}
+
 function expectCaveRecord(value, label) {
   if (!isPlainObject(value)) {
     throw new Error(`${label} must be a JSON object`);
@@ -423,6 +484,7 @@ function validatePlatformEvidence(value, source) {
       'caveRecord',
       'sdkAssertions',
       'chatAssertions',
+      'coverage',
       'notCovered',
       'isolation',
     ],
@@ -456,24 +518,37 @@ function validatePlatformEvidence(value, source) {
       'caveContractFixture',
       'hpkeVectors',
       'consumerLock',
+      'assertionRegistry',
       'sdkTarballs',
     ],
     `${source}.digests`,
   );
+  const platform = expectString(object.platform, `${source}.platform`, {
+    maxBytes: 32,
+  });
+  if (!CANONICAL_PLATFORMS.includes(platform)) {
+    throw new Error(`${source}.platform is not a canonical platform id`);
+  }
+  const os = expectString(environment.os, `${source}.environment.os`, {
+    maxBytes: 16,
+  });
+  if (!CANONICAL_OPERATING_SYSTEMS.includes(os)) {
+    throw new Error(`${source}.environment.os is not canonical`);
+  }
+  const arch = expectString(environment.arch, `${source}.environment.arch`, {
+    maxBytes: 16,
+  });
+  if (!CANONICAL_ARCHITECTURES.includes(arch)) {
+    throw new Error(`${source}.environment.arch is not canonical`);
+  }
   const record = {
     schemaVersion: 1,
     issue: 'OpenCoven/sdk#38',
-    platform: expectString(object.platform, `${source}.platform`, {
-      maxBytes: 32,
-    }),
+    platform,
     ranAt: expectTimestamp(object.ranAt, `${source}.ranAt`),
     environment: {
-      os: expectString(environment.os, `${source}.environment.os`, {
-        maxBytes: 16,
-      }),
-      arch: expectString(environment.arch, `${source}.environment.arch`, {
-        maxBytes: 16,
-      }),
+      os,
+      arch,
       nodeVersion: expectString(
         environment.nodeVersion,
         `${source}.environment.nodeVersion`,
@@ -516,6 +591,10 @@ function validatePlatformEvidence(value, source) {
         digests.consumerLock,
         `${source}.digests.consumerLock`,
       ),
+      assertionRegistry: expectSha256(
+        digests.assertionRegistry,
+        `${source}.digests.assertionRegistry`,
+      ),
       sdkTarballs: expectTarballs(
         digests.sdkTarballs,
         `${source}.digests.sdkTarballs`,
@@ -532,9 +611,8 @@ function validatePlatformEvidence(value, source) {
       `${source}.chatAssertions`,
       expectCrossAssertion,
     ),
-    notCovered: expectStringArray(object.notCovered, `${source}.notCovered`, {
-      maxEntries: 64,
-    }),
+    coverage: expectCoverage(object.coverage, `${source}.coverage`),
+    notCovered: expectNotCovered(object.notCovered, `${source}.notCovered`),
     isolation: expectIsolation(object.isolation, `${source}.isolation`),
   };
   scanConformanceEvidence(record);
@@ -553,7 +631,6 @@ export function parseConformanceAggregationArgs(argv) {
   const args = argv[0] === '--' ? argv.slice(1) : [...argv];
   let caveRoot = null;
   let outputPath = null;
-  let registryPath = null;
   const recordPaths = [];
   for (let index = 0; index < args.length; index += 1) {
     const flag = args[index];
@@ -574,12 +651,6 @@ export function parseConformanceAggregationArgs(argv) {
       index += 1;
       continue;
     }
-    if (flag === '--registry') {
-      if (registryPath !== null) throw new Error('Duplicate option --registry');
-      registryPath = expectValue(args, index, flag);
-      index += 1;
-      continue;
-    }
     throw new Error(`Unknown option ${flag}`);
   }
   if (caveRoot === null) throw new Error('Missing required option --cave-root');
@@ -587,7 +658,7 @@ export function parseConformanceAggregationArgs(argv) {
     throw new Error('Conformance aggregation requires exactly three --record values');
   }
   if (outputPath === null) throw new Error('Missing required option --out');
-  return { caveRoot, recordPaths, outputPath, registryPath };
+  return { caveRoot, recordPaths, outputPath };
 }
 
 export function scanConformanceEvidence(value) {
@@ -728,19 +799,29 @@ function validateAssertionRegistry(value, label = 'assertion registry') {
   };
 }
 
-export function readAssertionRegistry(path) {
+export function parseAssertionRegistry(text, source = 'assertion registry') {
   let parsed;
   try {
-    const text = readFileSync(path, 'utf8');
     parsed = JSON.parse(text);
-    assertNoDuplicateJsonKeys(text, 'assertion registry');
+    assertNoDuplicateJsonKeys(text, source);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Cannot parse ${source}: ${message}`, {
+      cause: error,
+    });
+  }
+  return validateAssertionRegistry(parsed, source);
+}
+
+export function readAssertionRegistry(path) {
+  try {
+    return parseAssertionRegistry(readFileSync(path, 'utf8'));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Cannot read assertion registry ${path}: ${message}`, {
       cause: error,
     });
   }
-  return validateAssertionRegistry(parsed, 'assertion registry');
 }
 
 function canonicalize(value) {
@@ -987,24 +1068,14 @@ function validateCaveRecord(record, engine, expectedCaveIds) {
   if (!isPlainObject(authoritativeRecord)) {
     throw new Error('Cave assertion engine returned an invalid record');
   }
-  authoritativeRecord.nodeVersion = nodeVersion;
-  if (!equalJson(caveRecord, authoritativeRecord)) {
+  const comparableRecord = {
+    ...authoritativeRecord,
+    nodeVersion,
+  };
+  if (!equalJson(caveRecord, comparableRecord)) {
     throw new Error(`${platform} Cave record does not match the authoritative renderer`);
   }
   return summary;
-}
-
-function validateAggregateNotCovered(record) {
-  const seen = new Set();
-  for (const item of record.notCovered) {
-    if (seen.has(item)) {
-      throw new Error(`${record.platform} notCovered contains a duplicate entry`);
-    }
-    seen.add(item);
-    if (/\b(?:sdk|chat)\b/iu.test(item)) {
-      throw new Error(`${record.platform} notCovered still excludes SDK or Chat`);
-    }
-  }
 }
 
 export function aggregateConformanceEvidence(input) {
@@ -1013,6 +1084,10 @@ export function aggregateConformanceEvidence(input) {
   const caveEngineSha256 = expectSha256(
     input.caveEngineSha256,
     'loaded Cave assertion engine digest',
+  );
+  const assertionRegistrySha256 = expectSha256(
+    input.assertionRegistrySha256,
+    'committed assertion registry digest',
   );
   const normalizedRecords = input.platformRecords.map((record, index) =>
     validatePlatformEvidence(
@@ -1046,6 +1121,9 @@ export function aggregateConformanceEvidence(input) {
     if (record.digests.caveAssertionEngine !== caveEngineSha256) {
       throw new Error(`${record.platform} Cave assertion engine digest does not match the loaded engine`);
     }
+    if (record.digests.assertionRegistry !== assertionRegistrySha256) {
+      throw new Error(`${record.platform} assertion registry digest does not match the committed registry`);
+    }
     if (!equalJson(record.releases, baseline.releases)) {
       throw new Error(`${record.platform} releases do not match ${baseline.platform}`);
     }
@@ -1076,7 +1154,6 @@ export function aggregateConformanceEvidence(input) {
       expectedChatIds,
       `${record.platform} Chat`,
     ).passed;
-    validateAggregateNotCovered(record);
     validateIsolation(record);
   }
 
@@ -1090,6 +1167,11 @@ export function aggregateConformanceEvidence(input) {
       path: registry.cave.engine,
       commit: baseline.commits.cave,
       sha256: caveEngineSha256,
+    },
+    assertionRegistryAuthority: {
+      path: 'conformance/client-v1-cross-repository-assertions.json',
+      commit: baseline.commits.sdk,
+      sha256: assertionRegistrySha256,
     },
     candidate: {
       releases: baseline.releases,

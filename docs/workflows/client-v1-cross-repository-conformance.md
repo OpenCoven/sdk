@@ -32,9 +32,12 @@ not maintain a second copy of Cave's record shape.
 
 The record names exact Cave, Coven, SDK, and Chat commits; Cave and Coven
 release versions; Node and pnpm versions; the four canonical SDK tarball
-SHA-256 values; the Cave assertion engine, contract fixture, HPKE vector, and
-consumer lock SHA-256 values. Those commits, releases, and digests must be
-identical on all three platforms.
+SHA-256 values; the Cave assertion engine, committed assertion registry,
+contract fixture, HPKE vector, and consumer lock SHA-256 values. The assertion registry SHA-256 is computed only from the tracked
+`conformance/client-v1-cross-repository-assertions.json` blob at the SDK commit
+named by the records. Those commits, releases, and digests must be identical on
+all three platforms. The aggregator also requires a clean SDK Git top-level;
+there is no registry override.
 
 SDK and Chat assertions come from
 [`conformance/client-v1-cross-repository-assertions.json`](../../conformance/client-v1-cross-repository-assertions.json).
@@ -43,9 +46,12 @@ to Cave's generic `checkAssertionCoverage` helper. Every Cave, SDK, and
 platform-applicable Chat assertion must appear once and pass. A failure or skip
 fails aggregation.
 
-The cross-repository `notCovered` list is explicit and may describe unrelated
-limitations, but it must not exclude SDK or Chat. Cave's nested Cave-only record
-continues to carry Cave's authoritative scope statement unchanged.
+The structured `coverage` object must contain `cave`, `coven`, `sdk`, and
+`chat`, all set to `true`; none can disappear into prose. The explicit
+`notCovered` list accepts only the non-release scope IDs `write-apis`,
+`oauth-ui`, `remote-peer`, and `cross-process-pairing`, each paired with a
+stable diagnostic ID. Cave's nested Cave-only record continues to carry Cave's
+authoritative scope statement unchanged.
 
 ## Isolation and retained-data proof
 
@@ -67,7 +73,9 @@ filesystem paths, Windows pipe handles, and oversized strings or structures.
 
 ## Aggregate three completed records
 
-Use a clean Cave checkout at the exact commit named by every platform record:
+Use a clean Cave checkout at the exact commit named by every platform record.
+`--cave-root` must be that repository's Git top-level, and the engine must be a
+tracked regular file whose executed bytes equal its `HEAD` Git blob:
 
 ```bash
 corepack pnpm@10.34.0 conformance:aggregate -- \
@@ -78,9 +86,11 @@ corepack pnpm@10.34.0 conformance:aggregate -- \
   --out docs/client-v1-cross-repository-results/<candidate>.json
 ```
 
-The output path must not already exist. Input order does not affect output:
-records are emitted in canonical platform order, and the aggregate contains no
-checkout or input path. Run the focused contract tests with:
+The output path must not already exist. Publication writes a complete sibling
+file and atomically hard-links it into place, so a concurrent creator wins
+without being overwritten. Input order does not affect output: records are
+emitted in canonical platform order, and the aggregate contains no checkout or
+input path. Run the focused contract tests with:
 
 ```bash
 corepack pnpm@10.34.0 test:conformance-contract
