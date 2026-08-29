@@ -26,7 +26,7 @@
     "typecheck": "corepack pnpm@10.34.0 exec tsc --pretty false --noEmit -p tsconfig.eslint.json",
     "test": "corepack pnpm@10.34.0 build && vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:conformance-contract": "vitest run tests/conformance-contract.spec.ts tests/conformance-cli-security.spec.ts",
+    "test:conformance-contract": "vitest run tests/conformance-contract.spec.ts tests/conformance-cli-security.spec.ts tests/conformance-gaps.spec.ts tests/conformance-checkouts-publication.spec.ts",
     "test:stress": "node ./scripts/run-operation-stress.mjs",
     "lint": "pnpm exec eslint . --max-warnings=0",
     "release:status": "changeset status",

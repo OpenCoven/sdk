@@ -28,9 +28,25 @@ After the native consumer has produced those three records, validate and
 combine them with `corepack pnpm@10.34.0 conformance:aggregate -- ...` as
 documented in
 [`docs/workflows/client-v1-cross-repository-conformance.md`](docs/workflows/client-v1-cross-repository-conformance.md).
-The SDK command imports Cave's exact locked assertion engine and validates
-already-completed evidence; it does not execute a platform journey or change
-release state.
+The SDK command imports Cave's exact locked committed assertion engine and
+validates already-completed evidence; it does not execute a platform journey
+or change release state.
+
+Before advancing this candidate, review the canonical aggregate, copy its exact
+bytes to
+`docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json`,
+and set `release.config.json` `conformanceEvidence.aggregateRecord` to that
+relative path in the same reviewed change. Confirm the three input records came
+from the named protected platform jobs; the deterministic parser validates
+their contents but does not authenticate arbitrary local JSON. Then run:
+
+```bash
+corepack pnpm@10.34.0 verify:release --require-conformance-evidence
+```
+
+The current value remains `null`, so candidate advancement is intentionally
+blocked until a real named three-platform aggregate exists. This does not open
+`publishingEnabled`, change package privacy, create a tag, or authorize npm.
 
 Before unlocking, create and protect the `npm-release` environment, confirm
 branch protections and required checks, confirm npm organization ownership,

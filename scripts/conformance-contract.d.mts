@@ -1,4 +1,102 @@
+export type CanonicalPlatform =
+  | 'darwin-arm64'
+  | 'linux-x64'
+  | 'win32-x64';
 export type ConformanceResult = 'pass' | 'fail' | 'skip';
+
+export interface FileMetadata {
+  path: string;
+  size: number;
+  sha256: string;
+}
+
+export interface ReleaseManifestMetadata {
+  file: 'release-manifest.json';
+  version: string;
+  size: number;
+  sha256: string;
+}
+
+export interface SdkPackageMetadata {
+  packageName:
+    | '@opencoven/sdk-core'
+    | '@opencoven/cave-client'
+    | '@opencoven/coven-client'
+    | '@opencoven/sdk';
+  version: string;
+  releaseFile: string;
+  vendorPath: string;
+  size: number;
+  sha256: string;
+}
+
+export interface VendorFileMetadata {
+  packageName: SdkPackageMetadata['packageName'];
+  path: string;
+  size: number;
+  sha256: string;
+}
+
+export interface CheckoutIdentity {
+  repository: string;
+  commit: string;
+  tree: string;
+}
+
+export interface ValidatorIdentity extends CheckoutIdentity {
+  repository: 'OpenCoven/sdk';
+  contract: FileMetadata;
+  schema: FileMetadata;
+}
+
+export interface FrozenConformanceLock {
+  schemaVersion: 1;
+  issue: 'OpenCoven/sdk#38';
+  candidate: CheckoutIdentity & {
+    repository: 'OpenCoven/sdk';
+    releaseManifest: ReleaseManifestMetadata;
+    sdkPackages: SdkPackageMetadata[];
+    cavePackageFiles: FileMetadata[];
+  };
+  sources: {
+    cave: CheckoutIdentity & {
+      repository: 'OpenCoven/coven-cave';
+      releaseVersion: string;
+      files: FileMetadata[];
+    };
+    coven: CheckoutIdentity & {
+      repository: 'OpenCoven/coven';
+      releaseVersion: string;
+    };
+    chat: CheckoutIdentity & {
+      repository: 'OpenCoven/chat';
+      consumerLock: FileMetadata;
+      vendorFiles: VendorFileMetadata[];
+    };
+  };
+  toolchain: {
+    nodeVersion: string;
+    pnpmVersion: string;
+    rustVersion: string;
+    tauriVersion: string;
+  };
+  harness: {
+    name: string;
+    version: string;
+    repository: 'OpenCoven/chat';
+  };
+  scanners: {
+    redaction: {
+      name: string;
+      version: string;
+    };
+    retainedEvidence: {
+      name: string;
+      version: string;
+    };
+  };
+  assertionRegistry: FileMetadata;
+}
 
 export interface AssertionEntry {
   id: string;
@@ -17,17 +115,13 @@ export interface ConformanceSummary {
   passed: number;
   failed: number;
   skipped: number;
-  status: string;
+  status: 'passed' | 'failed';
 }
 
 export interface CaveAssertionEngine {
   COVERAGE_ASSERTION_ID: string;
-  FINDINGS: Array<Record<string, unknown>>;
+  FINDINGS: CaveFinding[];
   NOT_COVERED: string[];
-  expectedAssertionIds(
-    includeTtl: boolean,
-    includeAuthorityTakeover?: boolean,
-  ): string[];
   checkAssertionCoverage(
     entries: readonly { id: string }[],
     expected: readonly string[],
@@ -43,83 +137,130 @@ export interface CaveAssertionEngine {
       commit: string;
       platform: string;
       includeTtl: boolean;
-      authorityTakeover: PlatformEvidence['caveRecord']['authorityTakeover'];
+      authorityTakeover: CaveRecord['authorityTakeover'];
       notCovered: string[];
-      findings: Array<Record<string, unknown>>;
+      findings: CaveFinding[];
     },
-  ): PlatformEvidence['caveRecord'];
+  ): CaveRecord;
 }
 
 export interface AssertionRegistry {
-  schemaVersion: 1;
-  cave: {
-    engine: 'scripts/client-v1-conformance.mjs';
-    requireIncludeTtl: true;
-    requireAuthorityTakeover: true;
+  schemaVersion: 2;
+  provenance: {
+    repository: 'OpenCoven/coven-cave';
+    commit: string;
+    tree: string;
+    engine: FileMetadata;
+    includeTtl: true;
+    includeAuthorityTakeover: true;
   };
-  sdk: string[];
-  chat: {
-    common: string[];
-    platforms: {
-      'darwin-arm64': string[];
-      'linux-x64': string[];
-      'win32-x64': string[];
+  requiredSubjects: ['cave', 'coven', 'sdk', 'chat'];
+  assertions: {
+    cave: string[];
+    sdk: string[];
+    chat: {
+      common: string[];
+      platforms: Record<CanonicalPlatform, string[]>;
     };
   };
+  notCovered: Array<{
+    scopeId:
+      | 'cross-process-pairing'
+      | 'oauth-ui'
+      | 'remote-peer'
+      | 'write-apis';
+    diagnosticId: string;
+  }>;
+}
+
+export interface CaveFinding {
+  id: string;
+  where: string;
+  says: string;
+  measured: string;
+  severity: string;
+  why: string;
+}
+
+export interface CaveRecord {
+  harness: 'scripts/client-v1-conformance.mjs';
+  issues: string[];
+  scope: string;
+  ranAt: string;
+  caveVersion: string;
+  commit: string;
+  platform: CanonicalPlatform;
+  nodeVersion: string;
+  includeTtl: true;
+  authorityTakeover: {
+    authorityMode: 'enforce';
+    discoveryVersion: 2;
+    mechanism: 'hpke-bound-v1';
+  };
+  notCovered: string[];
+  findings: CaveFinding[];
+  summary: ConformanceSummary;
+  assertions: CaveAssertionEntry[];
 }
 
 export interface PlatformEvidence {
-  schemaVersion: 1;
+  schemaVersion: 2;
   issue: 'OpenCoven/sdk#38';
-  platform: string;
-  ranAt: string;
+  platform: CanonicalPlatform;
+  timing: {
+    startedAt: string;
+    completedAt: string;
+    durationMs: number;
+  };
   environment: {
-    os: string;
-    arch: string;
+    os: 'darwin' | 'linux' | 'win32';
+    arch: 'arm64' | 'x64';
     nodeVersion: string;
-    packageManagerVersion: string;
+    pnpmVersion: string;
+    rustVersion: string;
+    tauriVersion: string;
+    nativeCustody: {
+      backend:
+        | 'macos-keychain'
+        | 'linux-keyring'
+        | 'windows-credential-manager';
+      available: true;
+    };
+    covenIdentity: {
+      backend:
+        | 'unix-peer-credentials'
+        | 'windows-named-pipe-client-identity';
+      available: true;
+    };
   };
   releases: {
     cave: string;
     coven: string;
   };
-  commits: {
-    cave: string;
-    coven: string;
-    sdk: string;
-    chat: string;
+  provenance: {
+    candidate: CheckoutIdentity;
+    validator: ValidatorIdentity;
+    cave: CheckoutIdentity;
+    coven: CheckoutIdentity;
+    chat: CheckoutIdentity;
   };
-  digests: {
-    caveAssertionEngine: string;
-    caveContractFixture: string;
-    hpkeVectors: string;
-    consumerLock: string;
-    assertionRegistry: string;
-    sdkTarballs: Array<{
-      packageName: string;
-      sha256: string;
-    }>;
+  harness: CheckoutIdentity & {
+    name: string;
+    version: string;
+    repository: 'OpenCoven/chat';
+    invocationId: string;
   };
-  caveRecord: {
-    harness: string;
-    issues: string[];
-    scope: string;
-    ranAt: string;
-    caveVersion: string;
-    commit: string;
-    platform: string;
-    nodeVersion: string;
-    includeTtl: boolean;
-    authorityTakeover: {
-      authorityMode: string;
-      discoveryVersion: number;
-      mechanism: string;
-    };
-    notCovered: string[];
-    findings: Array<Record<string, unknown>>;
-    summary: ConformanceSummary;
-    assertions: CaveAssertionEntry[];
+  artifacts: {
+    frozenLock: FileMetadata;
+    assertionRegistry: FileMetadata;
+    releaseManifest: ReleaseManifestMetadata;
+    sdkPackages: SdkPackageMetadata[];
+    candidateCaveFiles: FileMetadata[];
+    caveAuthorityFiles: FileMetadata[];
+    consumerLock: FileMetadata;
+    chatVendorFiles: VendorFileMetadata[];
   };
+  caveRecord: CaveRecord;
   sdkAssertions: AssertionEntry[];
   chatAssertions: AssertionEntry[];
   coverage: {
@@ -128,65 +269,91 @@ export interface PlatformEvidence {
     sdk: true;
     chat: true;
   };
-  notCovered: Array<{
-    scopeId: string;
-    diagnosticId: string;
-  }>;
+  notCovered: AssertionRegistry['notCovered'];
   isolation: {
-    strategy: string;
-    network: string;
-    sourceCheckoutDependency: boolean;
-    workspaceLinkDependency: boolean;
-    retainedPrivatePaths: boolean;
-    retainedSocketHandles: boolean;
+    strategy: 'process-owned-temporary-roots';
+    network: 'loopback-only';
+    sourceCheckoutDependency: false;
+    workspaceLinkDependency: false;
+    retainedPrivatePaths: false;
+    retainedSocketHandles: false;
     roots: Array<{
-      id: string;
-      ownershipVerified: boolean;
-      removedAfterRun: boolean;
+      id:
+        | 'cave-home'
+        | 'coven-home'
+        | 'consumer-home'
+        | 'native-credential-store';
+      opaqueId: string;
+      ownershipVerified: true;
+      removedAfterRun: true;
     }>;
     operatorState: Array<{
-      id: string;
+      id:
+        | 'cave-home'
+        | 'coven-home'
+        | 'native-credential-store'
+        | 'projects';
       beforeSha256: string;
       afterSha256: string;
     }>;
   };
+  scans: {
+    redaction: {
+      status: 'passed';
+      scanner: string;
+      version: string;
+    };
+    retainedEvidence: {
+      status: 'passed';
+      scanner: string;
+      version: string;
+    };
+  };
 }
 
 export interface AggregationArguments {
+  candidateRoot: string;
   caveRoot: string;
+  covenRoot: string;
+  chatRoot: string;
+  harnessRoot: string;
   recordPaths: string[];
-  outputPath: string;
+  outputName: string;
 }
 
 export interface AggregateConformanceInput {
   caveEngine: CaveAssertionEngine;
   caveEngineSha256: string;
   assertionRegistrySha256: string;
-  canonicalPlatforms: readonly string[];
+  frozenLockSha256: string;
+  frozenLockSize: number;
+  frozenLock: FrozenConformanceLock;
+  canonicalPlatforms: readonly CanonicalPlatform[];
   registry: AssertionRegistry;
   platformRecords: PlatformEvidence[];
 }
 
 export interface AggregatedConformanceEvidence {
-  schemaVersion: 1;
+  schemaVersion: 2;
   issue: 'OpenCoven/sdk#38';
   kind: 'client-v1-cross-repository-conformance';
-  canonicalPlatforms: string[];
-  caveAssertionAuthority: {
-    repository: 'OpenCoven/coven-cave';
-    path: 'scripts/client-v1-conformance.mjs';
-    commit: string;
-    sha256: string;
-  };
-  assertionRegistryAuthority: {
-    path: 'conformance/client-v1-cross-repository-assertions.json';
-    commit: string;
-    sha256: string;
+  canonicalPlatforms: CanonicalPlatform[];
+  contract: {
+    frozenLock: FileMetadata;
+    assertionRegistry: FileMetadata;
   };
   candidate: {
-    releases: PlatformEvidence['releases'];
-    commits: PlatformEvidence['commits'];
-    digests: PlatformEvidence['digests'];
+    provenance: CheckoutIdentity;
+    releaseManifest: ReleaseManifestMetadata;
+    sdkPackages: SdkPackageMetadata[];
+    cavePackageFiles: FileMetadata[];
+  };
+  validator: ValidatorIdentity;
+  authorities: {
+    cave: CheckoutIdentity;
+    coven: CheckoutIdentity;
+    chat: CheckoutIdentity;
+    harness: Omit<PlatformEvidence['harness'], 'invocationId'>;
   };
   platforms: PlatformEvidence[];
   summary: {
@@ -206,13 +373,36 @@ export function parseConformanceAggregationArgs(
 export function parsePlatformEvidence(
   text: string,
   source?: string,
+  schema?: Record<string, unknown>,
 ): PlatformEvidence;
-export function readAssertionRegistry(path: string): AssertionRegistry;
+export function readFrozenConformanceLock(
+  path?: string,
+): FrozenConformanceLock;
+export function parseFrozenConformanceLock(
+  text: string,
+  source?: string,
+): FrozenConformanceLock;
+export function readAssertionRegistry(path?: string): AssertionRegistry;
 export function parseAssertionRegistry(
   text: string,
   source?: string,
 ): AssertionRegistry;
+export function validateJsonSchemaValue<T>(
+  value: T,
+  schema: Record<string, unknown>,
+  label?: string,
+): T;
 export function scanConformanceEvidence(value: unknown): void;
+export function serializeCanonicalJson(value: unknown): string;
+export function parseAggregatedConformanceEvidence(
+  text: string,
+  source?: string,
+  options?: {
+    frozenLockText?: string;
+    assertionRegistryText?: string;
+    schema?: Record<string, unknown>;
+  },
+): AggregatedConformanceEvidence;
 export function aggregateConformanceEvidence(
   input: AggregateConformanceInput,
 ): AggregatedConformanceEvidence;

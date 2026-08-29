@@ -1,8 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { devNull } from 'node:os';
 import { resolve } from 'node:path';
 
 import { PUBLIC_PACKAGES } from './repository-metadata.mjs';
+import { parseAggregatedConformanceEvidence } from './conformance-contract.mjs';
 
 const CONFIG_FIELDS = Object.freeze([
   'schemaVersion',
@@ -13,6 +16,7 @@ const CONFIG_FIELDS = Object.freeze([
   'githubEnvironment',
   'supportedNode',
   'nativeConformancePlatforms',
+  'conformanceEvidence',
   'packages',
 ]);
 const NODE_ENGINE = '>=24.18.0 <25';
@@ -22,8 +26,43 @@ const SUPPORTED_PLATFORMS = Object.freeze([
   'linux-x64',
   'win32-x64',
 ]);
+const CONFORMANCE_RESULTS_DIRECTORY =
+  'docs/client-v1-cross-repository-results';
+const CONFORMANCE_LOCK_PATH =
+  'conformance/client-v1-cross-repository-lock.json';
+const CONFORMANCE_REGISTRY_PATH =
+  'conformance/client-v1-cross-repository-assertions.json';
+const CONFORMANCE_SCHEMA_PATH =
+  'conformance/client-v1-cross-repository-evidence.schema.json';
 const STRICT_SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+
+function createReadinessGitEnvironment() {
+  const environment = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!key.toUpperCase().startsWith('GIT_') && value !== undefined) {
+      environment[key] = value;
+    }
+  }
+  environment.GIT_CONFIG_GLOBAL = devNull;
+  environment.GIT_CONFIG_NOSYSTEM = '1';
+  environment.GIT_NO_REPLACE_OBJECTS = '1';
+  environment.GIT_OPTIONAL_LOCKS = '0';
+  environment.GIT_TERMINAL_PROMPT = '0';
+  return environment;
+}
+
+function readCommittedBlob(root, commit, path) {
+  return execFileSync(
+    'git',
+    ['-C', root, 'cat-file', 'blob', `${commit}:${path}`],
+    {
+      encoding: 'buffer',
+      env: createReadinessGitEnvironment(),
+      stdio: ['ignore', 'pipe', 'ignore'],
+    },
+  );
+}
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -96,6 +135,25 @@ function validateConfigValues(config) {
   ) {
     throw new Error(
       'release.config.json supportedNode must specify minimum 24.18.0 and major 24',
+    );
+  }
+
+  assertExactFields(
+    config.conformanceEvidence,
+    ['issue', 'candidateCommit', 'aggregateRecord'],
+    'release.config.json conformanceEvidence',
+  );
+  if (
+    config.conformanceEvidence.issue !== 'OpenCoven/sdk#38'
+    || config.conformanceEvidence.candidateCommit
+      !== 'acc38488f00860d246c3c553375634d64806eabb'
+    || (
+      config.conformanceEvidence.aggregateRecord !== null
+      && typeof config.conformanceEvidence.aggregateRecord !== 'string'
+    )
+  ) {
+    throw new Error(
+      'release.config.json conformanceEvidence must bind SDK #38 to the frozen candidate',
     );
   }
 
@@ -184,12 +242,16 @@ export function validateReleaseReadiness({
   version,
   tag,
   requireTag = false,
+  requireConformanceEvidence = false,
 } = {}) {
   if (mode !== 'verify' && mode !== 'publish') {
     throw new Error(`Release mode must be verify or publish, received ${String(mode)}`);
   }
   if (typeof requireTag !== 'boolean') {
     throw new Error('requireTag must be a boolean');
+  }
+  if (typeof requireConformanceEvidence !== 'boolean') {
+    throw new Error('requireConformanceEvidence must be a boolean');
   }
   if (version !== undefined) {
     assertStrictSemVer(version);
@@ -304,9 +366,174 @@ export function validateReleaseReadiness({
     throw new Error('Release publishing is disabled by release.config.json');
   }
 
+  const aggregateRecord = config.conformanceEvidence.aggregateRecord;
+  let conformanceEvidenceRecord = null;
+  if (aggregateRecord === null) {
+    if (requireConformanceEvidence || mode === 'publish') {
+      throw new Error(
+        'release.config.json must name a passing SDK #38 aggregate record',
+      );
+    }
+  } else {
+    const expectedRecord =
+      `${CONFORMANCE_RESULTS_DIRECTORY}/${config.conformanceEvidence.candidateCommit}.json`;
+    if (aggregateRecord !== expectedRecord) {
+      throw new Error(
+        `release.config.json conformanceEvidence.aggregateRecord must be ${expectedRecord}`,
+      );
+    }
+    const recordPath = resolve(root, aggregateRecord);
+    let stats;
+    try {
+      stats = lstatSync(recordPath);
+    } catch (error) {
+      throw new Error(
+        'release.config.json conformance evidence record does not exist',
+        { cause: error },
+      );
+    }
+    if (stats.isSymbolicLink() || !stats.isFile() || stats.size > 1_048_576) {
+      throw new Error(
+        'release.config.json conformance evidence record must be a bounded regular file',
+      );
+    }
+    try {
+      const aggregateText = readFileSync(recordPath, 'utf8');
+      const envelope = JSON.parse(aggregateText);
+      if (
+        !isRecord(envelope)
+        || !isRecord(envelope.validator)
+        || typeof envelope.validator.commit !== 'string'
+        || !/^[0-9a-f]{40}$/.test(envelope.validator.commit)
+      ) {
+        throw new Error('aggregate validator commit is missing or invalid');
+      }
+      const validatorCommit = envelope.validator.commit;
+      const frozenLockBytes = readCommittedBlob(
+        root,
+        validatorCommit,
+        CONFORMANCE_LOCK_PATH,
+      );
+      const assertionRegistryBytes = readCommittedBlob(
+        root,
+        validatorCommit,
+        CONFORMANCE_REGISTRY_PATH,
+      );
+      const schemaBytes = readCommittedBlob(
+        root,
+        validatorCommit,
+        CONFORMANCE_SCHEMA_PATH,
+      );
+      const aggregate = parseAggregatedConformanceEvidence(
+        aggregateText,
+        'release conformance aggregate',
+        {
+          frozenLockText: frozenLockBytes.toString('utf8'),
+          assertionRegistryText: assertionRegistryBytes.toString('utf8'),
+          schema: JSON.parse(schemaBytes.toString('utf8')),
+        },
+      );
+      const validatorTree = execFileSync(
+        'git',
+        [
+          '-C',
+          root,
+          'rev-parse',
+          `${aggregate.validator.commit}^{tree}`,
+        ],
+        {
+          encoding: 'utf8',
+          env: createReadinessGitEnvironment(),
+          stdio: ['ignore', 'pipe', 'ignore'],
+        },
+      ).trim();
+      if (validatorTree !== aggregate.validator.tree) {
+        throw new Error('aggregate validator tree does not match its commit');
+      }
+      const candidateTree = execFileSync(
+        'git',
+        [
+          '-C',
+          root,
+          'rev-parse',
+          `${config.conformanceEvidence.candidateCommit}^{tree}`,
+        ],
+        {
+          encoding: 'utf8',
+          env: createReadinessGitEnvironment(),
+          stdio: ['ignore', 'pipe', 'ignore'],
+        },
+      ).trim();
+      if (
+        aggregate.candidate.provenance.commit
+          !== config.conformanceEvidence.candidateCommit
+        || aggregate.candidate.provenance.tree !== candidateTree
+      ) {
+        throw new Error(
+          'aggregate candidate does not match the configured frozen candidate',
+        );
+      }
+      execFileSync(
+        'git',
+        [
+          '-C',
+          root,
+          'merge-base',
+          '--is-ancestor',
+          config.conformanceEvidence.candidateCommit,
+          aggregate.validator.commit,
+        ],
+        {
+          env: createReadinessGitEnvironment(),
+          stdio: 'ignore',
+        },
+      );
+      execFileSync(
+        'git',
+        [
+          '-C',
+          root,
+          'merge-base',
+          '--is-ancestor',
+          aggregate.validator.commit,
+          'HEAD',
+        ],
+        {
+          env: createReadinessGitEnvironment(),
+          stdio: 'ignore',
+        },
+      );
+      for (const metadata of [
+        aggregate.validator.contract,
+        aggregate.validator.schema,
+      ]) {
+        const bytes = readCommittedBlob(
+          root,
+          aggregate.validator.commit,
+          metadata.path,
+        );
+        if (
+          bytes.byteLength !== metadata.size
+          || createHash('sha256').update(bytes).digest('hex') !== metadata.sha256
+        ) {
+          throw new Error(
+            `aggregate validator file ${metadata.path} does not match its committed bytes`,
+          );
+        }
+      }
+    } catch (error) {
+      throw new Error(
+        'release.config.json conformance evidence record is not a complete canonical aggregate',
+        { cause: error },
+      );
+    }
+    conformanceEvidenceRecord = aggregateRecord;
+  }
+
   return {
     version: fixedVersion,
     publishingEnabled: config.publishingEnabled,
     packages: PUBLIC_PACKAGES.map(({ packageName }) => packageName),
+    conformanceEvidenceRecord,
   };
 }

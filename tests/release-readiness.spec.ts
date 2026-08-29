@@ -41,6 +41,7 @@ interface MutablePackageManifest {
 type MutableReleaseConfig = Omit<
   ReleaseConfig,
   | 'githubEnvironment'
+  | 'conformanceEvidence'
   | 'nativeConformancePlatforms'
   | 'npmAccess'
   | 'npmDistTag'
@@ -49,6 +50,11 @@ type MutableReleaseConfig = Omit<
   | 'supportedNode'
   | 'tagPrefix'
 > & {
+  conformanceEvidence: {
+    aggregateRecord: string | null;
+    candidateCommit: string;
+    issue: string;
+  };
   githubEnvironment: string;
   npmAccess: string;
   npmDistTag: string;
@@ -111,6 +117,11 @@ function createReleaseFixture(): string {
     resolve(workspaceRoot, 'release.config.json'),
     resolve(fixture, 'release.config.json'),
   );
+  cpSync(
+    resolve(workspaceRoot, 'conformance'),
+    resolve(fixture, 'conformance'),
+    { recursive: true },
+  );
   mkdirSync(resolve(fixture, '.github/workflows'), { recursive: true });
   cpSync(
     resolve(workspaceRoot, '.github/workflows/release.yml'),
@@ -156,6 +167,64 @@ afterEach(() => {
 });
 
 describe('release readiness contract', () => {
+  test('blocks candidate advancement until a named passing aggregate exists', () => {
+    const config = readReleaseConfig(workspaceRoot);
+    expect(config.conformanceEvidence).toEqual({
+      issue: 'OpenCoven/sdk#38',
+      candidateCommit: 'acc38488f00860d246c3c553375634d64806eabb',
+      aggregateRecord: null,
+    });
+    expect(() =>
+      validateReleaseReadiness({
+        root: workspaceRoot,
+        requireConformanceEvidence: true,
+      }),
+    ).toThrow('release.config.json must name a passing SDK #38 aggregate record');
+
+    const fixture = createReleaseFixture();
+    const recordPath =
+      'docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json';
+    mkdirSync(resolve(fixture, dirname(recordPath)), { recursive: true });
+    writeFileSync(
+      resolve(fixture, recordPath),
+      `${JSON.stringify(
+        {
+          schemaVersion: 2,
+          issue: 'OpenCoven/sdk#38',
+          kind: 'client-v1-cross-repository-conformance',
+          canonicalPlatforms: SUPPORTED_PLATFORMS,
+          candidate: {
+            provenance: {
+              repository: 'OpenCoven/sdk',
+              commit: 'acc38488f00860d246c3c553375634d64806eabb',
+              tree: '643be6db60736dc8bd7b01873dcd1c14f26d93ef',
+            },
+          },
+          summary: {
+            status: 'passed',
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    updateJson<MutableReleaseConfig>(
+      resolve(fixture, 'release.config.json'),
+      (fixtureConfig) => {
+        fixtureConfig.conformanceEvidence.aggregateRecord = recordPath;
+      },
+    );
+
+    expect(() =>
+      validateReleaseReadiness({
+        root: fixture,
+        requireConformanceEvidence: true,
+      }),
+    ).toThrow(
+      'release.config.json conformance evidence record is not a complete canonical aggregate',
+    );
+  });
+
   test('keeps publication disabled while packages are private', () => {
     const config = readReleaseConfig(workspaceRoot);
 
@@ -385,6 +454,7 @@ describe('release readiness contract', () => {
       version: '0.1.0',
       publishingEnabled: false,
       packages: PUBLIC_PACKAGES.map(({ packageName }) => packageName),
+      conformanceEvidenceRecord: null,
     });
   });
 

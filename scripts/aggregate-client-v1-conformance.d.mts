@@ -1,29 +1,57 @@
-import type { AggregatedConformanceEvidence } from './conformance-contract.d.mts';
+import type {
+  AggregatedConformanceEvidence,
+  CheckoutIdentity,
+} from './conformance-contract.d.mts';
 
-export interface InspectedCaveAssertionEngine {
-  commit: string;
+export interface InspectedCheckout extends CheckoutIdentity {
+  root: string;
+}
+
+export interface InspectedTrackedFile {
+  blob: string;
+  bytes: Buffer;
+  size: number;
+  sha256: string;
+}
+
+export interface InspectedCaveAssertionEngine extends InspectedCheckout {
   blob: string;
   digest: string;
+  size: number;
   sourceBytes: Buffer;
 }
 
-export function inspectCaveAssertionEngine(
-  caveRoot: string,
-): InspectedCaveAssertionEngine;
+export function inspectRepositoryCheckout(
+  root: string,
+  expected: {
+    repository: string;
+    commit?: string;
+    tree?: string;
+  },
+  label: string,
+): InspectedCheckout;
 
-export function readTrackedHeadFileAtCommit(
+export function readTrackedFileAtCommit(
   root: string,
   relativePath: string,
   label: string,
   capturedCommit: string,
-): {
-  blob: string;
-  bytes: Buffer;
-  digest: string;
-};
+): InspectedTrackedFile;
+
+export function inspectCaveAssertionEngine(
+  caveRoot: string,
+  expectedIdentity?: {
+    repository: string;
+    commit?: string;
+    tree?: string;
+  },
+): InspectedCaveAssertionEngine;
 
 export function loadCommittedCaveAssertionEngine(
-  inspected: InspectedCaveAssertionEngine,
+  inspected: Pick<
+    InspectedCaveAssertionEngine,
+    'digest' | 'sourceBytes'
+  >,
 ): Promise<Record<string, unknown>>;
 
 export function assertAggregationHostPlatform(
@@ -33,19 +61,23 @@ export function assertAggregationHostPlatform(
 export function fsyncPublicationDirectory(
   directoryPath: string,
   platform?: NodeJS.Platform,
-): void;
-
-export function publishPreparedEvidence(
-  temporaryPath: string,
-  outputPath: string,
-  syncDirectory?: (directoryPath: string) => void,
+  expectedIdentity?: {
+    dev: number;
+    ino: number;
+  },
 ): void;
 
 export function publishEvidenceAtomically(
-  outputPath: string,
+  outputRoot: string,
+  outputName: string,
   bytes: string,
-  platform?: NodeJS.Platform,
-): void;
+  options?: {
+    platform?: NodeJS.Platform;
+    beforeLink?: () => void;
+    afterLinkBeforeVerify?: () => void;
+    afterLink?: () => void;
+  },
+): string;
 
 export function runConformanceAggregation(
   argv?: string[],

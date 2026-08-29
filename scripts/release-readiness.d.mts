@@ -21,6 +21,11 @@ export interface ReleaseConfig {
     major: 24;
   };
   nativeConformancePlatforms: NativeConformancePlatforms;
+  conformanceEvidence: {
+    issue: 'OpenCoven/sdk#38';
+    candidateCommit: 'acc38488f00860d246c3c553375634d64806eabb';
+    aggregateRecord: string | null;
+  };
   packages: string[];
 }
 
@@ -30,12 +35,14 @@ export interface ReleaseReadinessOptions {
   version?: string;
   tag?: string;
   requireTag?: boolean;
+  requireConformanceEvidence?: boolean;
 }
 
 export interface ReleaseReadinessSummary {
   version: string;
   publishingEnabled: boolean;
   packages: string[];
+  conformanceEvidenceRecord: string | null;
 }
 
 export function readReleaseConfig(root?: string): ReleaseConfig;

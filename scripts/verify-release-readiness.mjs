@@ -7,6 +7,15 @@ function parseArguments(arguments_) {
 
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
+    if (argument === '--require-conformance-evidence') {
+      if (options.requireConformanceEvidence !== undefined) {
+        throw new Error(
+          'Option --require-conformance-evidence may only be provided once',
+        );
+      }
+      options.requireConformanceEvidence = true;
+      continue;
+    }
     if (argument === '--require-tag') {
       if (options.requireTag !== undefined) {
         throw new Error('Option --require-tag may only be provided once');
