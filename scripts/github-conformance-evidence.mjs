@@ -21,9 +21,20 @@ import {
   cleanupOwnedTempRoot,
   createOwnedTempDirectory,
 } from './owned-temp-directory.mjs';
+import { parseReleaseWorkflowDocument } from './release-readiness.mjs';
 
 const MAX_GITHUB_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_ATTESTATION_BUNDLE_BYTES = 16 * 1024 * 1024;
+const CHECKOUT_ACTION =
+  'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1';
+const SETUP_NODE_ACTION =
+  'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020';
+const PNPM_SETUP_ACTION =
+  'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86';
+const UPLOAD_ARTIFACT_ACTION =
+  'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
+const ATTEST_BUILD_PROVENANCE_ACTION =
+  'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8';
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -67,86 +78,210 @@ function expectedBranch(sourceRef) {
   return sourceRef.slice(prefix.length);
 }
 
-function workflowLine(line) {
-  return line.replace(/\s+#.*$/u, '').replace(/\s+$/u, '');
-}
-
-function exactWorkflowLineCount(lines, expected) {
-  return lines.filter((line) => workflowLine(line) === expected).length;
-}
-
-function extractWorkflowJobs(lines) {
-  const jobsIndexes = lines
-    .map((line, index) => (workflowLine(line) === 'jobs:' ? index : -1))
-    .filter((index) => index >= 0);
-  if (jobsIndexes.length !== 1) {
-    throw new Error('Frozen Chat workflow must define one exact jobs graph');
+function countExactStringValues(value, expected) {
+  if (typeof value === 'string') {
+    return value === expected ? 1 : 0;
   }
-  const jobsIndex = jobsIndexes[0];
-  const markers = [];
-  for (let index = jobsIndex + 1; index < lines.length; index += 1) {
-    const line = workflowLine(lines[index]);
-    if (line.length === 0) {
-      continue;
-    }
-    if (/^\S/u.test(line)) {
-      throw new Error(
-        'Frozen Chat evidence workflow must be dedicated to its exact jobs graph',
-      );
-    }
-    const marker = /^ {2}([a-z0-9][a-z0-9_-]*):$/u.exec(line);
-    if (marker !== null) {
-      markers.push({ id: marker[1], index });
-      continue;
-    }
-    if (/^ {2}\S/u.test(line)) {
-      throw new Error('Frozen Chat workflow contains a non-canonical job key');
-    }
-  }
-  const jobs = new Map();
-  for (let index = 0; index < markers.length; index += 1) {
-    const marker = markers[index];
-    const end = markers[index + 1]?.index ?? lines.length;
-    if (jobs.has(marker.id)) {
-      throw new Error('Frozen Chat workflow contains a duplicate job key');
-    }
-    jobs.set(marker.id, {
-      id: marker.id,
-      start: marker.index,
-      end,
-      lines: lines.slice(marker.index, end),
-    });
-  }
-  return jobs;
-}
-
-function actionStepLines(job, action) {
-  const pattern = new RegExp(
-    `^ {6}- uses: ${action.replace('/', '\\/')}@[0-9a-f]{40}$`,
-    'u',
-  );
-  const indexes = job.lines
-    .map((line, index) =>
-      pattern.test(workflowLine(line)) ? index : -1,
-    )
-    .filter((index) => index >= 0);
-  if (indexes.length !== 1) {
-    throw new Error(
-      `Frozen Chat protected evidence job must use ${action} exactly once`,
+  if (Array.isArray(value)) {
+    return value.reduce(
+      (count, entry) => count + countExactStringValues(entry, expected),
+      0,
     );
   }
-  const start = indexes[0];
-  let end = job.lines.length;
-  for (let index = start + 1; index < job.lines.length; index += 1) {
-    if (/^ {6}-\s/u.test(workflowLine(job.lines[index]))) {
-      end = index;
-      break;
-    }
+  if (isRecord(value)) {
+    return Object.values(value).reduce(
+      (count, entry) => count + countExactStringValues(entry, expected),
+      0,
+    );
   }
-  return job.lines.slice(start, end);
+  return 0;
 }
 
-function verifyProtectedWorkflow(text, producer) {
+function exactToolchainCommand(toolchain) {
+  return [
+    'node --input-type=module --eval "import { execFileSync }',
+    'from \'node:child_process\'; const run = (command, args) =>',
+    'execFileSync(command, args, { encoding: \'utf8\' }).trim();',
+    `if (process.version !== '${toolchain.nodeVersion}'`,
+    `|| 'pnpm@' + run('pnpm', ['--version']) !== '${toolchain.pnpmVersion}'`,
+    `|| !run('rustc', ['--version']).startsWith('rustc ${toolchain.rustVersion} ')`,
+    `|| run('pnpm', ['exec', 'tauri', '--version'])`,
+    `!== 'tauri-cli ${toolchain.tauriVersion}')`,
+    'throw new Error(\'Frozen toolchain does not match\');"',
+  ].join(' ');
+}
+
+function exactHarnessDigestCommand(producer) {
+  return [
+    'node --input-type=module --eval "import { createHash }',
+    'from \'node:crypto\'; import { lstatSync, readFileSync }',
+    'from \'node:fs\';',
+    `const path = '${producer.harness.path}'; const stats = lstatSync(path);`,
+    'const bytes = readFileSync(path);',
+    'if (!stats.isFile() || stats.isSymbolicLink()',
+    `|| bytes.byteLength !== ${producer.harness.size}`,
+    '|| createHash(\'sha256\').update(bytes).digest(\'hex\')',
+    `!== '${producer.harness.sha256}')`,
+    'throw new Error(\'Frozen harness bytes do not match\');"',
+  ].join(' ');
+}
+
+function exactHarnessCommand(producer, recordPath) {
+  return [
+    `node ${producer.harness.path}`,
+    '--platform "${{ matrix.platform }}"',
+    `--output "${recordPath}"`,
+  ].join(' ');
+}
+
+function exactCanonicalValidationCommand(recordPath, schemaVersion) {
+  return [
+    'node --input-type=module --eval "import { lstatSync, readFileSync }',
+    'from \'node:fs\'; const sort = (value) => Array.isArray(value)',
+    '? value.map(sort) : value !== null && typeof value === \'object\'',
+    '? Object.fromEntries(Object.keys(value).sort().map((key) =>',
+    '[key, sort(value[key])])) : value; const path = process.argv[1];',
+    'const stats = lstatSync(path); const text = readFileSync(path, \'utf8\');',
+    'const value = JSON.parse(text); if (!stats.isFile()',
+    '|| stats.isSymbolicLink() || stats.size < 1 || stats.size > 1048576',
+    `|| value === null || Array.isArray(value) || value.schemaVersion !== ${schemaVersion}`,
+    '|| value.platform !== process.argv[2]',
+    '|| JSON.stringify(sort(value), null, 2) + \'\\n\' !== text)',
+    'throw new Error(\'Platform record is not canonical\');"',
+    `"${recordPath}" "\${{ matrix.platform }}"`,
+  ].join(' ');
+}
+
+function expectedProtectedWorkflow(producer, toolchain) {
+  const artifactName = producer.workflow.artifactNameTemplate.replace(
+    '{platform}',
+    '${{ matrix.platform }}',
+  );
+  const recordPath = producer.workflow.recordPathTemplate.replace(
+    '{platform}',
+    '${{ matrix.platform }}',
+  );
+  const pnpmVersion = toolchain.pnpmVersion.slice('pnpm@'.length);
+  return {
+    name: producer.workflow.name,
+    on: {
+      workflow_dispatch: null,
+    },
+    permissions: {
+      contents: 'read',
+    },
+    jobs: {
+      [producer.workflow.job]: {
+        name: producer.workflow.jobNameTemplate.replace(
+          '{platform}',
+          '${{ matrix.platform }}',
+        ),
+        'timeout-minutes': 60,
+        strategy: {
+          'fail-fast': false,
+          matrix: {
+            include: Object.entries(producer.workflow.runnerLabels).map(
+              ([platform, labels]) => ({
+                platform,
+                runner: labels[0],
+              }),
+            ),
+          },
+        },
+        'runs-on': '${{ matrix.runner }}',
+        environment: producer.workflow.environment,
+        permissions: {
+          attestations: 'write',
+          contents: 'read',
+          'id-token': 'write',
+        },
+        steps: [
+          {
+            uses: CHECKOUT_ACTION,
+            with: {
+              'persist-credentials': false,
+              ref: '${{ github.sha }}',
+            },
+          },
+          {
+            uses: SETUP_NODE_ACTION,
+            with: {
+              'node-version': toolchain.nodeVersion.slice(1),
+            },
+          },
+          {
+            uses: PNPM_SETUP_ACTION,
+            with: {
+              version: pnpmVersion,
+            },
+          },
+          {
+            name: 'Install frozen dependencies',
+            run:
+              `corepack ${toolchain.pnpmVersion} install `
+              + '--frozen-lockfile --ignore-scripts',
+          },
+          {
+            name: 'Set up frozen Rust',
+            run:
+              `rustup toolchain install ${toolchain.rustVersion} `
+              + `--profile minimal && rustup default ${toolchain.rustVersion}`,
+          },
+          {
+            name: 'Require frozen toolchain',
+            run: exactToolchainCommand(toolchain),
+          },
+          {
+            name: 'Verify frozen harness bytes',
+            run: exactHarnessDigestCommand(producer),
+          },
+          {
+            name: 'Produce platform evidence',
+            run: exactHarnessCommand(producer, recordPath),
+          },
+          {
+            name: 'Validate canonical platform record',
+            run: exactCanonicalValidationCommand(
+              recordPath,
+              producer.recordSchemaVersion,
+            ),
+          },
+          {
+            uses: UPLOAD_ARTIFACT_ACTION,
+            with: {
+              name: artifactName,
+              path: recordPath,
+              'if-no-files-found': 'error',
+              'retention-days': 30,
+              overwrite: false,
+              'include-hidden-files': true,
+            },
+          },
+          {
+            uses: ATTEST_BUILD_PROVENANCE_ACTION,
+            with: {
+              'subject-path': recordPath,
+            },
+          },
+        ],
+      },
+      [producer.workflow.aggregationJob]: {
+        name: producer.workflow.aggregationJobName,
+        needs: producer.workflow.job,
+        'runs-on': producer.workflow.aggregationRunnerLabels[0],
+        permissions: {},
+        steps: [
+          {
+            name: 'Confirm protected evidence matrix',
+            run: 'echo "protected evidence matrix completed"',
+          },
+        ],
+      },
+    },
+  };
+}
+
+export function verifyProtectedWorkflow(text, producer, toolchain) {
   if (
     typeof text !== 'string'
     || Buffer.byteLength(text, 'utf8') > MAX_GITHUB_RESPONSE_BYTES
@@ -162,207 +297,50 @@ function verifyProtectedWorkflow(text, producer) {
       'Frozen Chat workflow bytes do not match the reviewed workflow digest',
     );
   }
-  if (text.includes('\r') || text.includes('\t')) {
-    throw new Error('Frozen Chat workflow must use canonical LF YAML indentation');
-  }
-  const lines = text.split('\n');
   if (
-    exactWorkflowLineCount(lines, `name: ${producer.workflow.name}`) !== 1
-  ) {
-    throw new Error('Frozen Chat workflow name does not match the frozen identity');
-  }
-  const jobs = extractWorkflowJobs(lines);
-  const protectedJob = jobs.get(producer.workflow.job);
-  const aggregationJob = jobs.get(producer.workflow.aggregationJob);
-  if (protectedJob === undefined) {
-    throw new Error(
-      'Frozen Chat workflow does not define the protected evidence job',
-    );
-  }
-  if (aggregationJob === undefined) {
-    throw new Error(
-      'Frozen Chat workflow does not define the non-artifact aggregation job',
-    );
-  }
-
-  const restrictedActions = [
-    'actions/upload-artifact',
-    'actions/attest-build-provenance',
-  ];
-  for (const job of jobs.values()) {
-    for (const line of job.lines) {
-      const normalized = workflowLine(line);
-      for (const action of restrictedActions) {
-        if (
-          normalized.includes(action)
-          && (
-            job.id !== producer.workflow.job
-            || !new RegExp(
-              `^ {6}- uses: ${action.replace('/', '\\/')}@[0-9a-f]{40}$`,
-              'u',
-            ).test(normalized)
-          )
-        ) {
-          throw new Error(
-            'Frozen Chat workflow requires that only the protected evidence job may upload or attest expected platform artifacts',
-          );
-        }
-      }
-    }
-  }
-
-  if (
-    jobs.size !== 2
-    || !jobs.has(producer.workflow.job)
-    || !jobs.has(producer.workflow.aggregationJob)
-  ) {
-    throw new Error('Frozen Chat workflow does not match the exact frozen job graph');
-  }
-
-  const protectedLines = protectedJob.lines;
-  if (
-    exactWorkflowLineCount(
-      protectedLines,
-      `    name: ${producer.workflow.jobNameTemplate.replace(
-        '{platform}',
-        '${{ matrix.platform }}',
-      )}`,
-    ) !== 1
-    || exactWorkflowLineCount(
-      protectedLines,
-      '    runs-on: ${{ matrix.runner }}',
-    ) !== 1
-    || exactWorkflowLineCount(
-      protectedLines,
-      `    environment: ${producer.workflow.environment}`,
-    ) !== 1
+    !text.endsWith('\n')
+    || text.includes('\r')
+    || text.includes('\t')
+    || /[^\n\x20-\x7e]/u.test(text)
   ) {
     throw new Error(
-      'Frozen Chat workflow evidence job is not bound to the protected environment',
+      'Frozen Chat workflow must use canonical printable ASCII LF YAML',
     );
   }
-
-  const writePermissionLines = [
-    '      attestations: write',
-    '      id-token: write',
-  ];
-  for (const permissionLine of writePermissionLines) {
-    if (exactWorkflowLineCount(protectedLines, permissionLine) !== 1) {
-      throw new Error(
-        'Frozen Chat protected evidence job lacks exact attestation permissions',
-      );
-    }
-    for (const job of jobs.values()) {
-      if (
-        job.id !== producer.workflow.job
-        && exactWorkflowLineCount(job.lines, permissionLine) !== 0
-      ) {
-        throw new Error(
-          'Frozen Chat workflow grants artifact attestation authority outside the protected evidence job',
-        );
-      }
-    }
-  }
-  const jobsStart = Math.min(...[...jobs.values()].map(({ start }) => start));
   if (
-    lines.slice(0, jobsStart).some((line) =>
-      writePermissionLines.includes(workflowLine(line)),
-    )
+    /^[ ]*[A-Za-z0-9_-]+:\s*[|>][+-]?\s*(?:#.*)?$/mu.test(text)
   ) {
     throw new Error(
-      'Frozen Chat workflow grants artifact attestation authority outside the protected evidence job',
+      'Frozen Chat workflow must not use multiline or folded YAML scalars',
     );
   }
-
-  const matrixEntries = [];
-  for (let index = 0; index < protectedLines.length; index += 1) {
-    const match = /^ {10}- platform: ([a-z0-9-]+)$/u.exec(
-      workflowLine(protectedLines[index]),
-    );
-    if (match === null) {
-      continue;
-    }
-    const runnerMatch = /^ {12}runner: ([a-z0-9.-]+)$/u.exec(
-      workflowLine(protectedLines[index + 1] ?? ''),
-    );
-    if (runnerMatch === null) {
-      throw new Error(
-        'Frozen Chat workflow matrix does not bind each platform to one runner',
-      );
-    }
-    matrixEntries.push({
-      platform: match[1],
-      runner: runnerMatch[1],
-    });
-  }
-  const expectedMatrix = producer.workflow.runnerLabels
-    ? Object.entries(producer.workflow.runnerLabels).map(
-        ([platform, labels]) => ({
-          platform,
-          runner: labels[0],
-        }),
-      )
-    : [];
-  if (JSON.stringify(matrixEntries) !== JSON.stringify(expectedMatrix)) {
+  let workflow;
+  try {
+    workflow = parseReleaseWorkflowDocument(text);
+  } catch (error) {
+    const detail = error instanceof Error ? `: ${error.message}` : '';
     throw new Error(
-      'Frozen Chat workflow matrix does not match the exact platform job graph',
+      `Frozen Chat workflow must be valid unambiguous YAML${detail}`,
+      { cause: error },
     );
   }
-
+  const expected = expectedProtectedWorkflow(producer, toolchain);
   const artifactName = producer.workflow.artifactNameTemplate.replace(
     '{platform}',
     '${{ matrix.platform }}',
   );
-  const recordPath = producer.workflow.recordPathTemplate.replace(
-    '{platform}',
-    '${{ matrix.platform }}',
-  );
-  const attestStep = actionStepLines(
-    protectedJob,
-    'actions/attest-build-provenance',
-  );
-  const uploadStep = actionStepLines(
-    protectedJob,
-    'actions/upload-artifact',
-  );
   if (
-    exactWorkflowLineCount(
-      attestStep,
-      `          subject-path: ${recordPath}`,
-    ) !== 1
-    || exactWorkflowLineCount(
-      uploadStep,
-      `          name: ${artifactName}`,
-    ) !== 1
-    || exactWorkflowLineCount(
-      uploadStep,
-      `          path: ${recordPath}`,
-    ) !== 1
+    countExactStringValues(workflow, artifactName) !== 1
   ) {
     throw new Error(
-      'Frozen Chat protected evidence job does not attest and upload the exact platform-derived record',
+      'Frozen Chat workflow must contain the exact artifact name only once',
     );
   }
-
-  const aggregationLines = aggregationJob.lines
-    .map(workflowLine)
-    .filter((line) => line.length > 0);
-  const expectedAggregationLines = [
-    `  ${producer.workflow.aggregationJob}:`,
-    `    name: ${producer.workflow.aggregationJobName}`,
-    `    needs: ${producer.workflow.job}`,
-    `    runs-on: ${producer.workflow.aggregationRunnerLabels[0]}`,
-    '    permissions: {}',
-    '    steps:',
-    '      - name: Confirm protected evidence matrix',
-    '        run: echo "protected evidence matrix completed"',
-  ];
   if (
-    JSON.stringify(aggregationLines)
-      !== JSON.stringify(expectedAggregationLines)
+    JSON.stringify(workflow) !== JSON.stringify(expected)
   ) {
     throw new Error(
-      'Frozen Chat workflow must use the exact non-artifact aggregation job',
+      'Frozen Chat workflow must use the exact reviewed protected evidence graph',
     );
   }
 }
@@ -751,7 +729,7 @@ export function verifyGitHubConformanceEvidence({
       ],
       { cwd: owned.rootPath, env },
     );
-    verifyProtectedWorkflow(workflowText, producer);
+    verifyProtectedWorkflow(workflowText, producer, lock.toolchain);
     const environment = parseGitHubJson(
       runGh(
         execute,

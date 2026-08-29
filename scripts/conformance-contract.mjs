@@ -29,6 +29,11 @@ const CANONICAL_PLATFORMS = Object.freeze([
   'linux-x64',
   'win32-x64',
 ]);
+const PROTECTED_WORKFLOW_RUNNER_LABELS = Object.freeze({
+  'darwin-arm64': Object.freeze(['macos-14']),
+  'linux-x64': Object.freeze(['ubuntu-24.04']),
+  'win32-x64': Object.freeze(['windows-2025']),
+});
 const REQUIRED_SUBJECTS = Object.freeze(['cave', 'coven', 'sdk', 'chat']);
 const SDK_PACKAGE_NAMES = Object.freeze([
   '@opencoven/sdk-core',
@@ -860,22 +865,25 @@ function expectEvidenceProducer(value, label) {
       || producer.command !== 'test:phase1-conformance'
       || producer.recordSchemaVersion !== 2
       || producer.harness.path !== 'scripts/phase1-conformance.mjs'
+      || producer.workflow.name !== 'client-v1 conformance'
       || producer.workflow.path
         !== '.github/workflows/client-v1-conformance.yml'
       || producer.workflow.job !== 'platform-conformance'
-      || producer.workflow.jobNameTemplate.split('{platform}').length !== 2
+      || producer.workflow.jobNameTemplate
+        !== 'platform-conformance ({platform})'
       || producer.workflow.aggregationJob !== 'aggregate-conformance'
       || producer.workflow.aggregationJob === producer.workflow.job
-      || producer.workflow.aggregationJobName.includes('{platform}')
-      || producer.workflow.aggregationRunnerLabels.length !== 1
+      || producer.workflow.aggregationJobName !== 'aggregate-conformance'
+      || JSON.stringify(producer.workflow.aggregationRunnerLabels)
+        !== JSON.stringify(['ubuntu-24.04'])
       || producer.workflow.environment !== 'client-v1-conformance'
       || producer.workflow.artifactNameTemplate
         !== 'client-v1-conformance-{platform}'
       || producer.workflow.recordPathTemplate
         !== '.artifacts/client-v1-conformance-{platform}.json'
-      || Object.values(producer.workflow.runnerLabels).some(
-        (labels) => labels.length !== 1,
-      )
+      || producer.workflow.sourceRef !== 'refs/heads/main'
+      || JSON.stringify(producer.workflow.runnerLabels)
+        !== JSON.stringify(PROTECTED_WORKFLOW_RUNNER_LABELS)
       || producer.workflow.signerWorkflow
         !== `${producer.repository}/${producer.workflow.path}`
       || producer.workflow.signerDigest !== producer.commit

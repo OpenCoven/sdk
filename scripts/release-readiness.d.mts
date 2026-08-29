@@ -70,6 +70,10 @@ export function validateReleaseWorkflow(
   config: ReleaseConfig,
 ): void;
 
+export function parseReleaseWorkflowDocument(
+  workflow: string,
+): Record<string, unknown>;
+
 export function assertFrozenNodeRuntime(
   root?: string,
   actualVersion?: string,

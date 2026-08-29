@@ -1069,6 +1069,7 @@ function parseWorkflowYamlScalar(value, lineIndex) {
     return scalar.slice(1, -1).replaceAll("''", "'");
   }
   assertNoWorkflowYamlIndirection(scalar);
+  if (scalar === '{}') return {};
   if (scalar.startsWith('!') || scalar.startsWith('{')) {
     throw workflowYamlError('unsupported YAML scalar syntax', lineIndex);
   }
@@ -1181,7 +1182,7 @@ function parseWorkflowYamlPair(lines, lineIndex, keyIndent, pairText) {
 }
 
 function parseWorkflowYamlMapping(lines, startIndex, indent) {
-  const value = {};
+  const value = Object.create(null);
   let index = startIndex;
   for (; index < lines.length;) {
     const line = workflowLine(lines, index);
@@ -1241,7 +1242,8 @@ function parseWorkflowYamlSequence(lines, startIndex, indent) {
         indent + 2,
         itemText,
       );
-      const item = { [firstPair.key]: firstPair.value };
+      const item = Object.create(null);
+      item[firstPair.key] = firstPair.value;
       const continuation = parseWorkflowYamlMapping(
         lines,
         firstPair.nextIndex,
@@ -1263,7 +1265,7 @@ function parseWorkflowYamlSequence(lines, startIndex, indent) {
   return { value, nextIndex: index };
 }
 
-function parseReleaseWorkflowDocument(workflow) {
+export function parseReleaseWorkflowDocument(workflow) {
   const lines = workflow.split('\n');
   const parsed = parseWorkflowYamlMapping(lines, 0, 0);
   const remaining = nextWorkflowYamlContent(lines, parsed.nextIndex);

@@ -1,6 +1,7 @@
 import type {
   AggregatedConformanceEvidence,
   CaveAssertionEngine,
+  FrozenConformanceLock,
   ReviewedEvidenceIndex,
 } from './conformance-contract.mjs';
 
@@ -9,6 +10,15 @@ export interface GitHubConformanceVerification {
   index: ReviewedEvidenceIndex;
   receipt: Record<string, unknown>;
 }
+
+export function verifyProtectedWorkflow(
+  text: string,
+  producer: Extract<
+    FrozenConformanceLock['evidenceProducer'],
+    { status: 'compatible' }
+  >,
+  toolchain: FrozenConformanceLock['toolchain'],
+): void;
 
 export function verifyGitHubConformanceEvidence(options: {
   frozenLockText: string;

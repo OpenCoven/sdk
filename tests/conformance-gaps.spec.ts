@@ -16,6 +16,7 @@ import {
 import * as contract from '../scripts/conformance-contract.mjs';
 import {
   verifyGitHubConformanceEvidence,
+  verifyProtectedWorkflow,
 } from '../scripts/github-conformance-evidence.mjs';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -32,16 +33,108 @@ const schemaPath = resolve(
   'conformance/client-v1-cross-repository-evidence.schema.json',
 );
 const PLATFORMS = ['darwin-arm64', 'linux-x64', 'win32-x64'] as const;
+const CHECKOUT_ACTION =
+  'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1';
+const SETUP_NODE_ACTION =
+  'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020';
+const PNPM_SETUP_ACTION =
+  'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86';
+const UPLOAD_ARTIFACT_ACTION =
+  'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
+const ATTEST_BUILD_PROVENANCE_ACTION =
+  'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8';
+const TEST_RECORD_PATH =
+  '.artifacts/client-v1-conformance-${{ matrix.platform }}.json';
+const TEST_ARTIFACT_NAME =
+  'client-v1-conformance-${{ matrix.platform }}';
+const TEST_TOOLCHAIN_COMMAND = [
+  'node --input-type=module --eval "import { execFileSync }',
+  'from \'node:child_process\'; const run = (command, args) =>',
+  'execFileSync(command, args, { encoding: \'utf8\' }).trim();',
+  'if (process.version !== \'v24.18.1\'',
+  '|| \'pnpm@\' + run(\'pnpm\', [\'--version\']) !== \'pnpm@10.34.0\'',
+  '|| !run(\'rustc\', [\'--version\']).startsWith(\'rustc 1.95.0 \')',
+  '|| run(\'pnpm\', [\'exec\', \'tauri\', \'--version\'])',
+  '!== \'tauri-cli 2.11.4\')',
+  'throw new Error(\'Frozen toolchain does not match\');"',
+].join(' ');
+const TEST_HARNESS_DIGEST_COMMAND = [
+  'node --input-type=module --eval "import { createHash }',
+  'from \'node:crypto\'; import { lstatSync, readFileSync }',
+  'from \'node:fs\'; const path = \'scripts/phase1-conformance.mjs\';',
+  'const stats = lstatSync(path); const bytes = readFileSync(path);',
+  'if (!stats.isFile() || stats.isSymbolicLink()',
+  '|| bytes.byteLength !== 120000',
+  '|| createHash(\'sha256\').update(bytes).digest(\'hex\')',
+  `!== '${'2'.repeat(64)}')`,
+  'throw new Error(\'Frozen harness bytes do not match\');"',
+].join(' ');
+const TEST_HARNESS_COMMAND = [
+  'node scripts/phase1-conformance.mjs',
+  '--platform "${{ matrix.platform }}"',
+  `--output "${TEST_RECORD_PATH}"`,
+].join(' ');
+const TEST_CANONICAL_VALIDATION_COMMAND = [
+  'node --input-type=module --eval "import { lstatSync, readFileSync }',
+  'from \'node:fs\'; const sort = (value) => Array.isArray(value)',
+  '? value.map(sort) : value !== null && typeof value === \'object\'',
+  '? Object.fromEntries(Object.keys(value).sort().map((key) =>',
+  '[key, sort(value[key])])) : value; const path = process.argv[1];',
+  'const stats = lstatSync(path); const text = readFileSync(path, \'utf8\');',
+  'const value = JSON.parse(text); if (!stats.isFile()',
+  '|| stats.isSymbolicLink() || stats.size < 1 || stats.size > 1048576',
+  '|| value === null || Array.isArray(value) || value.schemaVersion !== 2',
+  '|| value.platform !== process.argv[2]',
+  '|| JSON.stringify(sort(value), null, 2) + \'\\n\' !== text)',
+  'throw new Error(\'Platform record is not canonical\');"',
+  `"${TEST_RECORD_PATH}" "\${{ matrix.platform }}"`,
+].join(' ');
+
+function yamlSingleQuoted(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
 
 function producerArtifactSteps(): string[] {
   return [
-    '      - uses: actions/attest-build-provenance@2222222222222222222222222222222222222222',
+    `      - uses: ${UPLOAD_ARTIFACT_ACTION}`,
     '        with:',
-    '          subject-path: .artifacts/client-v1-conformance-${{ matrix.platform }}.json',
-    '      - uses: actions/upload-artifact@1111111111111111111111111111111111111111',
+    `          name: ${TEST_ARTIFACT_NAME}`,
+    `          path: ${TEST_RECORD_PATH}`,
+    '          if-no-files-found: error',
+    '          retention-days: 30',
+    '          overwrite: false',
+    '          include-hidden-files: true',
+    `      - uses: ${ATTEST_BUILD_PROVENANCE_ACTION}`,
     '        with:',
-    '          name: client-v1-conformance-${{ matrix.platform }}',
-    '          path: .artifacts/client-v1-conformance-${{ matrix.platform }}.json',
+    `          subject-path: ${TEST_RECORD_PATH}`,
+  ];
+}
+
+function protectedProducerSteps(): string[] {
+  return [
+    `      - uses: ${CHECKOUT_ACTION}`,
+    '        with:',
+    '          persist-credentials: false',
+    '          ref: ${{ github.sha }}',
+    `      - uses: ${SETUP_NODE_ACTION}`,
+    '        with:',
+    '          node-version: 24.18.1',
+    `      - uses: ${PNPM_SETUP_ACTION}`,
+    '        with:',
+    '          version: 10.34.0',
+    '      - name: Install frozen dependencies',
+    '        run: corepack pnpm@10.34.0 install --frozen-lockfile --ignore-scripts',
+    '      - name: Set up frozen Rust',
+    '        run: rustup toolchain install 1.95.0 --profile minimal && rustup default 1.95.0',
+    '      - name: Require frozen toolchain',
+    `        run: ${yamlSingleQuoted(TEST_TOOLCHAIN_COMMAND)}`,
+    '      - name: Verify frozen harness bytes',
+    `        run: ${yamlSingleQuoted(TEST_HARNESS_DIGEST_COMMAND)}`,
+    '      - name: Produce platform evidence',
+    `        run: ${TEST_HARNESS_COMMAND}`,
+    '      - name: Validate canonical platform record',
+    `        run: ${yamlSingleQuoted(TEST_CANONICAL_VALIDATION_COMMAND)}`,
+    ...producerArtifactSteps(),
   ];
 }
 
@@ -59,6 +152,7 @@ function createProducerWorkflow({
     'jobs:',
     '  platform-conformance:',
     '    name: platform-conformance (${{ matrix.platform }})',
+    '    timeout-minutes: 60',
     '    strategy:',
     '      fail-fast: false',
     '      matrix:',
@@ -76,9 +170,9 @@ function createProducerWorkflow({
     '      contents: read',
     '      id-token: write',
     '    steps:',
-    '      - name: Produce platform evidence',
-    '        run: node scripts/phase1-conformance.mjs',
-    ...(siblingSubstitute ? [] : producerArtifactSteps()),
+    ...(siblingSubstitute
+      ? protectedProducerSteps().slice(0, -producerArtifactSteps().length)
+      : protectedProducerSteps()),
     ...(siblingSubstitute
       ? [
           '  sibling-substitute:',
@@ -875,6 +969,49 @@ describe('unresolved SDK #38 conformance gaps', () => {
     );
   });
 
+  test('freezes the future protected workflow identity and runner graph', () => {
+    const mutations: Array<
+      (workflow: Record<string, unknown>) => void
+    > = [
+      (workflow) => {
+        workflow.name = '${{ github.ref }}';
+      },
+      (workflow) => {
+        workflow.jobNameTemplate = '${{ matrix.name }} ({platform})';
+      },
+      (workflow) => {
+        workflow.aggregationJobName = '${{ github.sha }}';
+      },
+      (workflow) => {
+        workflow.sourceRef = 'refs/heads/release';
+      },
+      (workflow) => {
+        workflow.aggregationRunnerLabels = ['macos-14'];
+      },
+      (workflow) => {
+        workflow.runnerLabels = {
+          'darwin-arm64': ['macos-14'],
+          'linux-x64': ['self-hosted-linux'],
+          'win32-x64': ['windows-2025'],
+        };
+      },
+    ];
+
+    for (const mutate of mutations) {
+      const lock = createCompatibleLock();
+      const producer = lock.evidenceProducer as {
+        workflow: Record<string, unknown>;
+      };
+      mutate(producer.workflow);
+      expect(() =>
+        contract.parseFrozenConformanceLock(
+          contract.serializeCanonicalJson(lock),
+          'mutated compatible producer',
+        ),
+      ).toThrow(/does not identify a schema-v2 Chat producer/u);
+    }
+  });
+
   test('freezes every Cave assertion and the complete exclusion set', () => {
     const registry = readRegistry() as {
       schemaVersion: number;
@@ -1449,6 +1586,12 @@ describe('unresolved SDK #38 conformance gaps', () => {
     const aggregatePath =
       'docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json';
     const producer = TEST_COMPATIBLE_PRODUCER;
+    const toolchain = lock.toolchain as {
+      nodeVersion: string;
+      pnpmVersion: string;
+      rustVersion: string;
+      tauriVersion: string;
+    };
     const recordTexts = new Map(
       aggregateRecord.platforms.map((record) => [
         record.platform,
@@ -1816,6 +1959,14 @@ describe('unresolved SDK #38 conformance gaps', () => {
         indexText: contract.serializeCanonicalJson(workflowIndex),
       };
     };
+    const beforeProtectedUpload = (
+      workflowText: string,
+      insertedLines: string[],
+    ) =>
+      workflowText.replace(
+        `      - uses: ${UPLOAD_ARTIFACT_ACTION}`,
+        `${insertedLines.join('\n')}\n      - uses: ${UPLOAD_ARTIFACT_ACTION}`,
+      );
 
     expect(
       verifyGitHubConformanceEvidence(verificationInput as never).aggregate,
@@ -1857,6 +2008,264 @@ describe('unresolved SDK #38 conformance gaps', () => {
       }),
     ).toBe(true);
 
+    const arbitraryActionDisabledOfficialSteps = beforeProtectedUpload(
+      TEST_PRODUCER_WORKFLOW_TEXT,
+      [
+        '      - uses: example/fabricate-evidence@3333333333333333333333333333333333333333',
+        '        with:',
+        `          path: ${TEST_RECORD_PATH}`,
+      ],
+    )
+      .replace(
+        `      - uses: ${UPLOAD_ARTIFACT_ACTION}\n        with:`,
+        `      - uses: ${UPLOAD_ARTIFACT_ACTION}\n        if: false\n        with:`,
+      )
+      .replace(
+        `      - uses: ${ATTEST_BUILD_PROVENANCE_ACTION}\n        with:`,
+        `      - uses: ${ATTEST_BUILD_PROVENANCE_ACTION}\n        if: false\n        with:`,
+      );
+    const invalidWorkflowVariants = [
+      {
+        name: 'arbitrary action with disabled official evidence steps',
+        workflow: arbitraryActionDisabledOfficialSteps,
+      },
+      {
+        name: 'YAML anchor',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          'permissions:\n',
+          'x-permissions: &evidence-permissions\n  contents: read\npermissions:\n',
+        ),
+      },
+      {
+        name: 'YAML alias',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          'permissions:\n',
+          'x-value: &evidence-value read\nx-copy: *evidence-value\npermissions:\n',
+        ),
+      },
+      {
+        name: 'YAML merge key',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          'permissions:\n',
+          [
+            'x-defaults: &evidence-defaults',
+            '  contents: read',
+            'x-merged:',
+            '  <<: *evidence-defaults',
+            'permissions:',
+            '',
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'prototype-shadowing YAML key',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          'permissions:\n',
+          '__proto__: ignored\npermissions:\n',
+        ),
+      },
+      {
+        name: 'local composite action',
+        workflow: beforeProtectedUpload(TEST_PRODUCER_WORKFLOW_TEXT, [
+          '      - uses: ./.github/actions/fabricate-evidence',
+        ]),
+      },
+      {
+        name: 'local reusable workflow',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '  aggregate-conformance:',
+            '    name: aggregate-conformance',
+            '    needs: platform-conformance',
+            '    runs-on: ubuntu-24.04',
+            '    permissions: {}',
+            '    steps:',
+            '      - name: Confirm protected evidence matrix',
+            '        run: echo "protected evidence matrix completed"',
+          ].join('\n'),
+          [
+            '  aggregate-conformance:',
+            '    needs: platform-conformance',
+            '    uses: ./.github/workflows/aggregate.yml',
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'multiline curl artifact upload',
+        workflow: beforeProtectedUpload(TEST_PRODUCER_WORKFLOW_TEXT, [
+          '      - name: Upload replacement through the API',
+          '        run: >-',
+          '          curl --fail-with-body --request POST',
+          '          https://api.github.com/repos/OpenCoven/chat/actions/artifacts',
+        ]),
+      },
+      {
+        name: 'multiline gh attestation call',
+        workflow: beforeProtectedUpload(TEST_PRODUCER_WORKFLOW_TEXT, [
+          '      - name: Attest replacement through the CLI',
+          '        run: |-',
+          `          gh attestation verify "${TEST_RECORD_PATH}"`,
+          '          --repo OpenCoven/chat',
+        ]),
+      },
+      {
+        name: 'OIDC token request',
+        workflow: beforeProtectedUpload(TEST_PRODUCER_WORKFLOW_TEXT, [
+          '      - name: Request an OIDC token',
+          '        run: curl --fail-with-body "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=attacker" -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"',
+        ]),
+      },
+      {
+        name: 'alternate record generator',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          `        run: ${TEST_HARNESS_COMMAND}`,
+          '        run: node scripts/fabricate-evidence.mjs --output ".artifacts/client-v1-conformance-${{ matrix.platform }}.json"',
+        ),
+      },
+      {
+        name: 'record mutation after canonical validation',
+        workflow: beforeProtectedUpload(TEST_PRODUCER_WORKFLOW_TEXT, [
+          '      - name: Rewrite validated evidence',
+          `        run: node scripts/rewrite-evidence.mjs "${TEST_RECORD_PATH}"`,
+        ]),
+      },
+      {
+        name: 'aggregation record substitution',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '        run: echo "protected evidence matrix completed"',
+          `        run: node scripts/fabricate-evidence.mjs --output "${TEST_RECORD_PATH}"`,
+        ),
+      },
+      {
+        name: 'duplicate artifact-name occurrence',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '    permissions:\n      attestations: write',
+          [
+            '    env:',
+            `      SHADOW_ARTIFACT_NAME: ${TEST_ARTIFACT_NAME}`,
+            '    permissions:',
+            '      attestations: write',
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'script artifact upload',
+        workflow: beforeProtectedUpload(TEST_PRODUCER_WORKFLOW_TEXT, [
+          '      - name: Upload replacement with a script',
+          `        run: node scripts/upload-evidence.mjs "${TEST_RECORD_PATH}"`,
+        ]),
+      },
+      {
+        name: 'dynamic action reference',
+        workflow: beforeProtectedUpload(TEST_PRODUCER_WORKFLOW_TEXT, [
+          '      - uses: ${{ matrix.evidence-action }}',
+        ]),
+      },
+      {
+        name: 'dynamic artifact name',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          `          name: ${TEST_ARTIFACT_NAME}`,
+          '          name: ${{ format(\'client-v1-conformance-{0}\', matrix.platform) }}',
+        ),
+      },
+      {
+        name: 'dynamic record path',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          `          path: ${TEST_RECORD_PATH}`,
+          '          path: ${{ github.workspace }}/replacement.json',
+        ),
+      },
+      {
+        name: 'unreviewed official action pin',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          CHECKOUT_ACTION,
+          'actions/checkout@4444444444444444444444444444444444444444',
+        ),
+      },
+      {
+        name: 'dynamic checkout ref',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '          ref: ${{ github.sha }}',
+          '          ref: ${{ github.ref }}',
+        ),
+      },
+      {
+        name: 'disabled required setup step',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          `      - uses: ${SETUP_NODE_ACTION}\n        with:`,
+          `      - uses: ${SETUP_NODE_ACTION}\n        if: false\n        with:`,
+        ),
+      },
+      {
+        name: 'unreviewed trigger',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '  workflow_dispatch:\n',
+          '  workflow_dispatch:\n  pull_request_target:\n',
+        ),
+      },
+      {
+        name: 'extra writable permission',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '      id-token: write\n',
+          '      id-token: write\n      packages: write\n',
+        ),
+      },
+      {
+        name: 'extra job output',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '    strategy:\n',
+          [
+            '    outputs:',
+            '      record: ${{ steps.fabricate.outputs.record }}',
+            '    strategy:',
+            '',
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'Unicode line separator',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          'permissions:\n',
+          '# hidden\u2028permissions: write-all\npermissions:\n',
+        ),
+      },
+    ];
+    for (const variant of invalidWorkflowVariants) {
+      const workflowProducer: Parameters<
+        typeof verifyProtectedWorkflow
+      >[1] = {
+        ...producer,
+        workflow: {
+          ...producer.workflow,
+          size: Buffer.byteLength(variant.workflow, 'utf8'),
+          sha256: sha256(variant.workflow),
+          aggregationRunnerLabels: [
+            ...producer.workflow.aggregationRunnerLabels,
+          ],
+          runnerLabels: {
+            'darwin-arm64': [
+              ...producer.workflow.runnerLabels['darwin-arm64'],
+            ],
+            'linux-x64': [
+              ...producer.workflow.runnerLabels['linux-x64'],
+            ],
+            'win32-x64': [
+              ...producer.workflow.runnerLabels['win32-x64'],
+            ],
+          },
+        },
+      };
+      expect(
+        () =>
+          verifyProtectedWorkflow(
+            variant.workflow,
+            workflowProducer,
+            toolchain,
+          ),
+        variant.name,
+      ).toThrow(/workflow/u);
+    }
+
     expect(() =>
       verifyGitHubConformanceEvidence({
         ...verificationInputForWorkflow(
@@ -1884,7 +2293,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           return execute(command, arguments_, options);
         },
       } as never),
-    ).toThrow(/protected environment/u);
+    ).toThrow(/exact reviewed protected evidence graph/u);
 
     const siblingSubstituteWorkflow = createProducerWorkflow({
       siblingSubstitute: true,
@@ -1908,7 +2317,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           return execute(command, arguments_, options);
         },
       } as never),
-    ).toThrow(/only the protected evidence job may upload or attest/u);
+    ).toThrow(/exact reviewed protected evidence graph/u);
 
     const artifactAggregationWorkflow =
       TEST_PRODUCER_WORKFLOW_TEXT.replace(
@@ -1934,7 +2343,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           return execute(command, arguments_, options);
         },
       } as never),
-    ).toThrow(/non-artifact aggregation job/u);
+    ).toThrow(/exact reviewed protected evidence graph/u);
 
     expect(() =>
       verifyGitHubConformanceEvidence({

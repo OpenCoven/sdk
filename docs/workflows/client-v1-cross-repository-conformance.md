@@ -217,12 +217,32 @@ self-authenticating claims.
 
 Release readiness uses `gh api` to fetch the workflow bytes at the frozen Chat
 commit and requires their exact reviewed size and SHA-256. The dedicated
-workflow may contain only the protected platform matrix job and a
-non-artifact aggregation job. Static validation requires the exact ordered
-platform/runner matrix, environment, scoped OIDC/attestation permissions, and
-commit-derived record paths; `actions/upload-artifact` and
-`actions/attest-build-provenance` may occur exactly once and only in the
-protected matrix job.
+workflow is then parsed with the same unambiguous YAML parser used for the
+release workflow. It must use printable ASCII with LF endings and a final
+newline, and cannot use anchors, aliases, merge keys, block scalars, duplicate
+keys, or prototype-shadowing keys.
+
+The parsed document must equal the complete reviewed structure: only a manual
+dispatch trigger, top-level `contents: read`, the exact ordered
+platform/runner matrix, the protected environment, the exact job permissions,
+and exactly two jobs. The protected matrix job has one fixed sequence:
+pinned checkout without persisted credentials, pinned Node and pnpm setup,
+frozen dependency and Rust setup, exact Node/pnpm/Rust/Tauri verification,
+exact harness size/SHA-256 verification, direct invocation of the frozen
+harness to the platform-derived record path, read-only canonical JSON and
+platform validation, the pinned official artifact upload, and the pinned
+official provenance attestation. None of those steps may have an `if`
+condition. The artifact name occurs as a scalar exactly once, and the
+record path is identical across generation, validation, upload, and
+attestation. There is no mutable step after validation.
+
+No other action, command, permission, output, condition, expression, local or
+reusable workflow, upload path, or attestation path is accepted. The
+aggregation job has no permissions and can only confirm successful completion
+of the protected matrix; it cannot generate, upload, attest, or replace a
+platform record. This structural template is exercised synthetically in tests
+only. The committed lock remains blocked until Chat contains the real reviewed
+schema-v2 producer and matching workflow bytes.
 
 The three records must come from one exact run attempt. The verifier fetches
 the attempt's complete job list and requires exactly the three successful
