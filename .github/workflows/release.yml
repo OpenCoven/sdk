@@ -285,12 +285,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: publication-candidate
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
     permissions:
       actions: read
-      attestations: write
+      attestations: read
       contents: read
       deployments: read
-      id-token: write
       issues: read
     env:
       RELEASE_VERSION: ${{ inputs.version }}
@@ -369,31 +371,62 @@ jobs:
             "$node_path" ./scripts/create-release-artifacts.mjs \
               --output .artifacts/publication \
               --version "$RELEASE_VERSION"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}
           path: .artifacts/publication
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+
+  publication-candidate-attestation:
+    if: inputs.mode == 'verify'
+    needs: publication-candidate
+    name: publication-candidate-attestation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      bundle-artifact-id: ${{ steps.upload-bundle.outputs.artifact-id }}
+      bundle-artifact-digest: ${{ steps.upload-bundle.outputs.artifact-digest }}
+    permissions:
+      actions: read
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.publication-candidate.outputs.artifact-id }}
+          path: ${{ runner.temp }}/opencoven-publication-candidate
+          digest-mismatch: error
+      - id: attest
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-path: |
-            .artifacts/publication/release-manifest.json
-            .artifacts/publication/publication-source-manifest.json
-            .artifacts/publication/tarballs/**/*.tgz
+            ${{ runner.temp }}/opencoven-publication-candidate/release-manifest.json
+            ${{ runner.temp }}/opencoven-publication-candidate/publication-source-manifest.json
+            ${{ runner.temp }}/opencoven-publication-candidate/tarballs/**/*.tgz
+          show-summary: false
+      - id: upload-bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: opencoven-sdk-publication-attestation-${{ github.sha }}-${{ inputs.version }}
+          path: ${{ steps.attest.outputs.bundle-path }}
+          if-no-files-found: error
+          retention-days: 30
 
   approval-witness:
     if: inputs.mode == 'publish'
     needs: [preflight, repository-verification]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
     permissions:
       actions: read
-      attestations: write
       contents: read
       deployments: read
-      id-token: write
-      issues: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -443,15 +476,35 @@ jobs:
             "$node_path" ./scripts/github-environment-approval-evidence.mjs \
               --mode witness \
               --output "$RUNNER_TEMP/opencoven-pending-approval"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: opencoven-sdk-pending-approval-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/opencoven-pending-approval
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+
+  approval-witness-attestation:
+    if: inputs.mode == 'publish'
+    needs: approval-witness
+    name: approval-witness-attestation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.approval-witness.outputs.artifact-id }}
+          path: ${{ runner.temp }}/opencoven-pending-approval
+          digest-mismatch: error
+      - uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-path: ${{ runner.temp }}/opencoven-pending-approval/pending-approval.json
+          show-summary: false
 
   approval-evidence:
     if: inputs.mode == 'publish'
@@ -463,12 +516,13 @@ jobs:
       OPENCOVEN_SECURITY_REVIEW_COMMENT_ID: ${{ inputs.security-review-comment-id }}
     outputs:
       publish-job-id: ${{ steps.resolve-publish-job.outputs.publish-job-id }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
     permissions:
       actions: read
-      attestations: write
+      attestations: read
       contents: read
       deployments: read
-      id-token: write
       issues: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -557,24 +611,46 @@ jobs:
               --pending-root "$RUNNER_TEMP/opencoven-pending-approval" \
               --security-review "$RUNNER_TEMP/opencoven-approval-input/security-review.json" \
               --output "$RUNNER_TEMP/opencoven-protected-approval"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: opencoven-sdk-protected-approval-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/opencoven-protected-approval
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+
+  approval-evidence-attestation:
+    if: inputs.mode == 'publish'
+    needs: approval-evidence
+    name: approval-evidence-attestation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.approval-evidence.outputs.artifact-id }}
+          path: ${{ runner.temp }}/opencoven-protected-approval
+          digest-mismatch: error
+      - uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-path: ${{ runner.temp }}/opencoven-protected-approval/protected-approval.json
+          show-summary: false
 
   publish:
     if: inputs.mode == 'publish'
-    needs: [preflight, repository-verification, approval-witness, approval-evidence]
+    needs: [preflight, repository-verification, approval-witness, approval-witness-attestation, approval-evidence, approval-evidence-attestation]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: npm-publish
     env:
       RELEASE_VERSION: ${{ inputs.version }}
       OPENCOVEN_SECURITY_REVIEW_COMMENT_ID: ${{ inputs.security-review-comment-id }}
+      OPENCOVEN_NPM_PUBLISH_ENVIRONMENT: npm-publish
       PUBLISH_JOB_ID: ${{ needs.approval-evidence.outputs.publish-job-id }}
     permissions:
       actions: read
@@ -608,12 +684,14 @@ jobs:
           fi
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: opencoven-sdk-pending-approval-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.approval-witness.outputs.artifact-id }}
           path: ${{ runner.temp }}/opencoven-pending-approval
+          digest-mismatch: error
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: opencoven-sdk-protected-approval-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.approval-evidence.outputs.artifact-id }}
           path: ${{ runner.temp }}/opencoven-protected-approval
+          digest-mismatch: error
       - name: Resolve exact publication authorization
         id: authorization
         env:
@@ -632,11 +710,20 @@ jobs:
               --github-output "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: ${{ steps.authorization.outputs.artifact-name }}
+          artifact-ids: ${{ steps.authorization.outputs.artifact-id }}
           path: .artifacts/publication
           github-token: ${{ github.token }}
           repository: OpenCoven/sdk
           run-id: ${{ steps.authorization.outputs.run-id }}
+          digest-mismatch: error
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ steps.authorization.outputs.attestation-bundle-artifact-id }}
+          path: ${{ runner.temp }}/opencoven-publication-attestation
+          github-token: ${{ github.token }}
+          repository: OpenCoven/sdk
+          run-id: ${{ steps.authorization.outputs.run-id }}
+          digest-mismatch: error
       - name: Verify exact reviewed publication bytes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -665,6 +752,7 @@ jobs:
             OPENCOVEN_SECURITY_REVIEW_COMMENT_ID="$OPENCOVEN_SECURITY_REVIEW_COMMENT_ID" \
             "$node_path" ./scripts/github-release-authorization.mjs \
               --artifact-root .artifacts/publication \
+              --attestation-root "$RUNNER_TEMP/opencoven-publication-attestation" \
               > "$RUNNER_TEMP/opencoven-approval-input/security-review.json"
           /usr/bin/env -i \
             PATH="${node_path%/node}:/usr/bin:/bin" \
@@ -719,6 +807,7 @@ jobs:
             RUNNER_TOOL_CACHE="$RUNNER_TOOL_CACHE" \
             RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
             OPENCOVEN_AUTHENTICATED_NODE_PATH="$node_path" \
+            OPENCOVEN_NPM_PUBLISH_ENVIRONMENT="$OPENCOVEN_NPM_PUBLISH_ENVIRONMENT" \
             OPENCOVEN_RELEASE_AUTHORIZATION="$OPENCOVEN_RELEASE_AUTHORIZATION" \
             OPENCOVEN_SECURITY_REVIEW_COMMENT_ID="$OPENCOVEN_SECURITY_REVIEW_COMMENT_ID" \
             PUBLISH_JOB_ID="$PUBLISH_JOB_ID" \
@@ -726,6 +815,7 @@ jobs:
             ACTIONS_ID_TOKEN_REQUEST_TOKEN="$ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$node_path" ./scripts/publish-release-artifacts.mjs \
               --artifact-root .artifacts/publication \
+              --attestation-root "$RUNNER_TEMP/opencoven-publication-attestation" \
               --pending-approval-root "$RUNNER_TEMP/opencoven-pending-approval" \
               --protected-approval-root "$RUNNER_TEMP/opencoven-protected-approval" \
               --version "$RELEASE_VERSION"

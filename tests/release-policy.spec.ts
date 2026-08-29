@@ -41,6 +41,11 @@ describe('release and support policies', () => {
     expect(releasing).toContain('creates four tarballs');
     expect(releasing).toContain('reviewed evidence index');
     expect(releasing).toContain('GitHub artifact attestation');
+    expect(releasing).toContain('publication-candidate-attestation');
+    expect(releasing).toContain('environment: `npm-publish`');
+    expect(releasing).toContain(
+      'the only OIDC-bearing job that may check out or execute repository-controlled',
+    );
     expect(releasing).toContain('--signer-workflow');
     expect(releasing).toContain('--signer-digest');
     expect(releasing).toContain('--source-digest');

@@ -116,7 +116,7 @@ function validateOidcRequestEnvironment(env) {
   return { requestUrl, requestToken };
 }
 
-function validateGitHubPublishProvenance(env, manifest) {
+function validateGitHubPublishProvenance(env, manifest, trustedPublisher) {
   const expectedWorkflowRef =
     `${manifest.provenance.repository}/${manifest.provenance.workflow}`
     + `@${manifest.provenance.sourceRef}`;
@@ -127,7 +127,11 @@ function validateGitHubPublishProvenance(env, manifest) {
     || env.GITHUB_WORKFLOW_SHA !== manifest.source.commit
     || env.GITHUB_REF !== manifest.provenance.sourceRef
     || env.GITHUB_SHA !== manifest.source.commit
-    || env.GITHUB_JOB !== 'publish'
+    || trustedPublisher.repository !== env.GITHUB_REPOSITORY
+    || trustedPublisher.workflow !== 'release.yml'
+    || env.GITHUB_JOB !== trustedPublisher.job
+    || env.OPENCOVEN_NPM_PUBLISH_ENVIRONMENT
+      !== trustedPublisher.environment
     || env.GITHUB_EVENT_NAME !== 'workflow_dispatch'
     || env.GITHUB_REPOSITORY_ID !== '1337664127'
     || env.GITHUB_REPOSITORY_OWNER_ID !== '270919577'
@@ -157,8 +161,18 @@ function validateGitHubPublishProvenance(env, manifest) {
   };
 }
 
-function createSterileNpmContext(env, registry, manifest, runtime) {
-  const provenance = validateGitHubPublishProvenance(env, manifest);
+function createSterileNpmContext(
+  env,
+  registry,
+  manifest,
+  runtime,
+  trustedPublisher,
+) {
+  const provenance = validateGitHubPublishProvenance(
+    env,
+    manifest,
+    trustedPublisher,
+  );
   const owned = createOwnedTempDirectory({
     prefix: 'opencoven-sdk-npm-publish',
     childSegments: ['publish'],
@@ -457,6 +471,7 @@ function copyAuthorizedTarball(entry, artifactRoot, context) {
 export function publishReleaseArtifacts({
   root = process.cwd(),
   artifactRoot,
+  attestationRoot,
   pendingApprovalRoot,
   protectedApprovalRoot,
   version,
@@ -494,11 +509,13 @@ export function publishReleaseArtifacts({
   const { authorization, manifest } = verifyPublicationSecurityReview({
     root,
     artifactRoot,
+    attestationRoot,
     commentId,
     execute: githubExecute,
     env,
     allowedArtifactRoots: [
       artifactRoot,
+      attestationRoot,
       pendingApprovalRoot,
       protectedApprovalRoot,
     ],
@@ -547,6 +564,7 @@ export function publishReleaseArtifacts({
       config.npmRegistry,
       manifest,
       runtime,
+      config.npmTrustedPublisher,
     );
     const npmVersion = runNpm(
       execute,
@@ -626,13 +644,15 @@ function parseArguments(arguments_) {
     const key =
       argument === '--artifact-root'
         ? 'artifactRoot'
-        : argument === '--pending-approval-root'
-          ? 'pendingApprovalRoot'
-          : argument === '--protected-approval-root'
-            ? 'protectedApprovalRoot'
-        : argument === '--version'
-          ? 'version'
-          : undefined;
+        : argument === '--attestation-root'
+          ? 'attestationRoot'
+          : argument === '--pending-approval-root'
+            ? 'pendingApprovalRoot'
+            : argument === '--protected-approval-root'
+              ? 'protectedApprovalRoot'
+              : argument === '--version'
+                ? 'version'
+                : undefined;
     if (key === undefined) {
       throw new Error(`Unknown option ${argument}`);
     }

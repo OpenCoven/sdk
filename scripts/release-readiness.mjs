@@ -32,6 +32,7 @@ const CONFIG_FIELDS = Object.freeze([
   'npmRegistry',
   'npmCliDistribution',
   'githubEnvironment',
+  'npmTrustedPublisher',
   'supportedNode',
   'nativeConformancePlatforms',
   'conformanceEvidence',
@@ -43,10 +44,14 @@ const NODE_ENGINE = '>=24.18.0 <25';
 const FROZEN_NODE_VERSION = 'v24.18.1';
 const NODE_VERSION_PATH = '.node-version';
 const RELEASE_WORKFLOW_PATH = '.github/workflows/release.yml';
-const ATTEST_BUILD_PROVENANCE_ACTION =
-  'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8';
+const ATTEST_ACTION =
+  'actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d';
+const DOWNLOAD_ARTIFACT_ACTION =
+  'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c';
 const PUBLICATION_ARTIFACT_NAME =
   'opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}';
+const PUBLICATION_ATTESTATION_ARTIFACT_NAME =
+  'opencoven-sdk-publication-attestation-${{ github.sha }}-${{ inputs.version }}';
 const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
 const PREFLIGHT_JOB_SHA256 =
@@ -54,13 +59,19 @@ const PREFLIGHT_JOB_SHA256 =
 const REPOSITORY_VERIFICATION_JOB_SHA256 =
   '271cda1603d40f9b2a7c4baf5c910e5fdd030a4a5d9218cd5c957246aecc2697';
 const PUBLICATION_CANDIDATE_JOB_SHA256 =
-  '3879c961f1a80ef1263baf5bc497adad611c966f14beb92fe7460abfc6e51497';
+  'f87f40a0b7e5b9d57d59c7dc9b87d2647443ceb5e066a900feba7f98fcbdddb1';
+const PUBLICATION_CANDIDATE_ATTESTATION_JOB_SHA256 =
+  'c71d5252333f4641ab2407ab5e872adf61f74d8ee02dad1c8d51fea99c158d41';
 const APPROVAL_WITNESS_JOB_SHA256 =
-  'f84d52dc6c640d6221be2be533dfbdaba032a11c34e106960cebbab1ccbffb1b';
+  'baf9668fa031de06a7c8afda619759af4183120282a98be666b235057dd847fa';
+const APPROVAL_WITNESS_ATTESTATION_JOB_SHA256 =
+  'edc0d5c8f815b749fad361deda8fbe52943f53665f98c4fce18a4fe55475772d';
 const APPROVAL_EVIDENCE_JOB_SHA256 =
-  '0f4d8cfca7ed4eda4ca315518f4da5d2bd2a9ea09f7cec0c4ceb4b6604eef1dd';
+  '6b29bd05f534ef08ed8c9b8490e893bb87a0447bbff948f9c3513a5397724940';
+const APPROVAL_EVIDENCE_ATTESTATION_JOB_SHA256 =
+  '35a45193f8540e64648b9332a26f6247aedabfcace9f34af51cce79c5f07ec5e';
 const PUBLISH_JOB_SHA256 =
-  '5ae50754711ba4a5eb9f895100ad64a9bdb626fa7330c6b5cc35b0d3b28b8296';
+  'ff5743fef786dc09498fb5b40ec3aabcf76eea801180aedbb9b0c4780d7776fd';
 const EXPECTED_RELEASE_CONTROLS = Object.freeze({
   name: 'release',
   on: {
@@ -519,8 +530,8 @@ function readManifest(root, packageMetadata) {
 }
 
 function validateConfigValues(config) {
-  if (config.schemaVersion !== 6) {
-    throw new Error('release.config.json schemaVersion must be 6');
+  if (config.schemaVersion !== 7) {
+    throw new Error('release.config.json schemaVersion must be 7');
   }
   if (typeof config.publishingEnabled !== 'boolean') {
     throw new Error('release.config.json publishingEnabled must be a boolean');
@@ -562,6 +573,21 @@ function validateConfigValues(config) {
   }
   if (config.githubEnvironment !== 'npm-release') {
     throw new Error('release.config.json githubEnvironment must be npm-release');
+  }
+  assertExactFields(
+    config.npmTrustedPublisher,
+    ['repository', 'workflow', 'environment', 'job'],
+    'release.config.json npmTrustedPublisher',
+  );
+  if (
+    config.npmTrustedPublisher.repository !== 'OpenCoven/sdk'
+    || config.npmTrustedPublisher.workflow !== 'release.yml'
+    || config.npmTrustedPublisher.environment !== 'npm-publish'
+    || config.npmTrustedPublisher.job !== 'publish'
+  ) {
+    throw new Error(
+      'release.config.json npmTrustedPublisher must bind the exact final publish workflow environment and job',
+    );
   }
 
   assertExactFields(
@@ -612,7 +638,9 @@ function validateConfigValues(config) {
       'environment',
       'environmentId',
       'witnessJob',
+      'witnessAttestationJob',
       'approvalJob',
+      'approvalAttestationJob',
       'publishJob',
       'reviewer',
     ],
@@ -627,7 +655,11 @@ function validateConfigValues(config) {
     config.protectedApproval.environment !== config.githubEnvironment
     || config.protectedApproval.environmentId !== '20778492972'
     || config.protectedApproval.witnessJob !== 'approval-witness'
+    || config.protectedApproval.witnessAttestationJob
+      !== 'approval-witness-attestation'
     || config.protectedApproval.approvalJob !== 'approval-evidence'
+    || config.protectedApproval.approvalAttestationJob
+      !== 'approval-evidence-attestation'
     || config.protectedApproval.publishJob !== 'publish'
     || config.protectedApproval.reviewer.id !== 68980965
     || config.protectedApproval.reviewer.authorAssociation !== 'MEMBER'
@@ -647,6 +679,7 @@ function validateConfigValues(config) {
       'securityReviewIssue',
       'workflow',
       'job',
+      'attestationJob',
     ],
     'release.config.json publicationCandidate',
   );
@@ -656,6 +689,8 @@ function validateConfigValues(config) {
     || config.publicationCandidate.securityReviewIssue !== 'OpenCoven/sdk#40'
     || config.publicationCandidate.workflow !== RELEASE_WORKFLOW_PATH
     || config.publicationCandidate.job !== 'publication-candidate'
+    || config.publicationCandidate.attestationJob
+      !== 'publication-candidate-attestation'
   ) {
     throw new Error(
       'release.config.json publicationCandidate must identify the dedicated #40-reviewed candidate job',
@@ -1241,6 +1276,44 @@ function validateWorkflowActionIndirection(workflow) {
   }
 }
 
+function validateIsolatedAttestationJob(job, jobName, expectedActions) {
+  const permissions = isRecord(job.permissions) ? job.permissions : null;
+  if (
+    permissions === null
+    || JSON.stringify(permissions) !== JSON.stringify({
+      actions: 'read',
+      attestations: 'write',
+      contents: 'read',
+      'id-token': 'write',
+    })
+    || Object.hasOwn(job, 'environment')
+    || Object.hasOwn(job, 'uses')
+    || Object.hasOwn(job, 'container')
+    || Object.hasOwn(job, 'services')
+    || Object.hasOwn(job, 'defaults')
+    || Object.hasOwn(job, 'env')
+  ) {
+    throw new Error(
+      `Release workflow ${jobName} must be a checkout-free isolated OIDC attestation job`,
+    );
+  }
+  const steps = readStructuredWorkflowSteps(job, jobName);
+  if (
+    steps.length !== expectedActions.length
+    || steps.some(
+      (step, index) =>
+        Object.hasOwn(step, 'run')
+        || Object.hasOwn(step, 'shell')
+        || Object.hasOwn(step, 'env')
+        || step.uses !== expectedActions[index],
+    )
+  ) {
+    throw new Error(
+      `Release workflow ${jobName} must use only the exact pinned official artifact and attestation actions`,
+    );
+  }
+}
+
 export function validateReleaseWorkflow(root, config) {
   const workflowPath = resolve(root, RELEASE_WORKFLOW_PATH);
   if (!existsSync(workflowPath)) {
@@ -1380,30 +1453,13 @@ export function validateReleaseWorkflow(root, config) {
       'Release workflow candidate upload must be active and unconditional',
     );
   }
-  const candidateAttestationSteps = structuredCandidateSteps.filter(
-    (step) => step.uses === ATTEST_BUILD_PROVENANCE_ACTION,
-  );
-  if (
-    candidateAttestationSteps.length !== 1
-    || Object.hasOwn(candidateAttestationSteps[0], 'if')
-  ) {
-    throw new Error(
-      'Release workflow candidate attestation must be active and unconditional',
-    );
-  }
   const candidateCreationIndex = structuredCandidateSteps.indexOf(
     candidateCreationSteps[0],
   );
   const candidateUploadIndex = structuredCandidateSteps.indexOf(
     candidateUploadSteps[0],
   );
-  const candidateAttestationIndex = structuredCandidateSteps.indexOf(
-    candidateAttestationSteps[0],
-  );
-  if (
-    candidateCreationIndex >= candidateUploadIndex
-    || candidateUploadIndex >= candidateAttestationIndex
-  ) {
+  if (candidateCreationIndex >= candidateUploadIndex) {
     throw new Error(
       'Release workflow candidate steps must use the exact reviewed order',
     );
@@ -1427,10 +1483,9 @@ export function validateReleaseWorkflow(root, config) {
   );
   for (const [permission, value] of [
     ['actions', 'read'],
-    ['attestations', 'write'],
+    ['attestations', 'read'],
     ['contents', 'read'],
     ['deployments', 'read'],
-    ['id-token', 'write'],
     ['issues', 'read'],
   ]) {
     if (candidatePermissions?.[permission] !== value) {
@@ -1439,9 +1494,21 @@ export function validateReleaseWorkflow(root, config) {
       );
     }
   }
-  if (Object.keys(candidatePermissions ?? {}).length !== 6) {
+  if (Object.keys(candidatePermissions ?? {}).length !== 5) {
     throw new Error(
       'Release workflow publication-candidate job must not receive unreviewed permissions',
+    );
+  }
+  if (
+    JSON.stringify(structuredCandidateJob.outputs) !== JSON.stringify({
+      'artifact-id': '${{ steps.upload.outputs.artifact-id }}',
+      'artifact-digest': '${{ steps.upload.outputs.artifact-digest }}',
+    })
+    || JSON.stringify(structuredCandidateJob)
+      .includes('ACTIONS_ID_TOKEN_REQUEST_')
+  ) {
+    throw new Error(
+      'Release workflow publication-candidate job must expose only immutable artifact outputs and no OIDC capability',
     );
   }
   const candidateEnvironment = readWorkflowStepMapping(
@@ -1485,6 +1552,53 @@ export function validateReleaseWorkflow(root, config) {
       'Release workflow publication-candidate job must use only the exact reviewed ordered steps',
     );
   }
+  const candidateAttestationJob = readWorkflowJob(
+    workflow,
+    config.publicationCandidate.attestationJob,
+  );
+  const structuredCandidateAttestationJob = readStructuredWorkflowJob(
+    structuredWorkflow,
+    config.publicationCandidate.attestationJob,
+  );
+  if (
+    readWorkflowJobScalar(candidateAttestationJob, 'if')
+      !== "inputs.mode == 'verify'"
+    || readWorkflowJobScalar(candidateAttestationJob, 'needs')
+      !== config.publicationCandidate.job
+    || readWorkflowJobScalar(candidateAttestationJob, 'name')
+      !== config.publicationCandidate.attestationJob
+  ) {
+    throw new Error(
+      'Release workflow candidate attestation must run only after the unprivileged producer',
+    );
+  }
+  validateIsolatedAttestationJob(
+    structuredCandidateAttestationJob,
+    config.publicationCandidate.attestationJob,
+    [DOWNLOAD_ARTIFACT_ACTION, ATTEST_ACTION, UPLOAD_ARTIFACT_ACTION],
+  );
+  if (
+    countStringOccurrences(
+      structuredCandidateAttestationJob,
+      '${{ needs.publication-candidate.outputs.artifact-id }}',
+    ) !== 1
+    || countStringOccurrences(
+      structuredCandidateAttestationJob,
+      PUBLICATION_ATTESTATION_ARTIFACT_NAME,
+    ) !== 1
+  ) {
+    throw new Error(
+      'Release workflow candidate attestation must consume the exact producer artifact and upload one reviewable bundle',
+    );
+  }
+  if (
+    structuredWorkflowDigest(structuredCandidateAttestationJob)
+      !== PUBLICATION_CANDIDATE_ATTESTATION_JOB_SHA256
+  ) {
+    throw new Error(
+      'Release workflow candidate-attestation job must use only the exact reviewed ordered steps',
+    );
+  }
   const publishJob = readWorkflowJob(workflow, 'publish');
   const structuredPublishJob = readStructuredWorkflowJob(
     structuredWorkflow,
@@ -1498,6 +1612,15 @@ export function validateReleaseWorkflow(root, config) {
     structuredWorkflow,
     config.protectedApproval.witnessJob,
   );
+  const approvalWitnessAttestationJob = readWorkflowJob(
+    workflow,
+    config.protectedApproval.witnessAttestationJob,
+  );
+  const structuredApprovalWitnessAttestationJob =
+    readStructuredWorkflowJob(
+      structuredWorkflow,
+      config.protectedApproval.witnessAttestationJob,
+    );
   const approvalEvidenceJob = readWorkflowJob(
     workflow,
     config.protectedApproval.approvalJob,
@@ -1506,19 +1629,56 @@ export function validateReleaseWorkflow(root, config) {
     structuredWorkflow,
     config.protectedApproval.approvalJob,
   );
+  const approvalEvidenceAttestationJob = readWorkflowJob(
+    workflow,
+    config.protectedApproval.approvalAttestationJob,
+  );
+  const structuredApprovalEvidenceAttestationJob =
+    readStructuredWorkflowJob(
+      structuredWorkflow,
+      config.protectedApproval.approvalAttestationJob,
+    );
   if (
     readWorkflowJobScalar(approvalWitnessJob, 'if') !== "inputs.mode == 'publish'"
     || readWorkflowJobScalar(approvalWitnessJob, 'needs')
       !== '[preflight, repository-verification]'
+    || readWorkflowJobScalar(approvalWitnessAttestationJob, 'if')
+      !== "inputs.mode == 'publish'"
+    || readWorkflowJobScalar(approvalWitnessAttestationJob, 'needs')
+      !== config.protectedApproval.witnessJob
     || readWorkflowJobScalar(approvalEvidenceJob, 'if')
       !== "inputs.mode == 'publish'"
     || readWorkflowJobScalar(approvalEvidenceJob, 'needs')
       !== '[preflight, repository-verification]'
     || readWorkflowJobScalar(approvalEvidenceJob, 'environment')
       !== config.protectedApproval.environment
+    || readWorkflowJobScalar(approvalEvidenceAttestationJob, 'if')
+      !== "inputs.mode == 'publish'"
+    || readWorkflowJobScalar(approvalEvidenceAttestationJob, 'needs')
+      !== config.protectedApproval.approvalJob
   ) {
     throw new Error(
       'Release workflow must create pending and protected approval evidence before publication',
+    );
+  }
+  if (
+    JSON.stringify(structuredApprovalWitnessJob.permissions)
+      !== JSON.stringify({
+        actions: 'read',
+        contents: 'read',
+        deployments: 'read',
+      })
+    || JSON.stringify(structuredApprovalEvidenceJob.permissions)
+      !== JSON.stringify({
+        actions: 'read',
+        attestations: 'read',
+        contents: 'read',
+        deployments: 'read',
+        issues: 'read',
+      })
+  ) {
+    throw new Error(
+      'Release workflow approval producers must not receive OIDC or attestation-write permissions',
     );
   }
   const jobsSource = workflow.slice(workflow.indexOf('\njobs:\n') + 7);
@@ -1531,8 +1691,11 @@ export function validateReleaseWorkflow(root, config) {
         'preflight',
         'repository-verification',
         'publication-candidate',
+        'publication-candidate-attestation',
         'approval-witness',
+        'approval-witness-attestation',
         'approval-evidence',
+        'approval-evidence-attestation',
         'publish',
       ])
   ) {
@@ -1541,10 +1704,13 @@ export function validateReleaseWorkflow(root, config) {
   const expectedStepCounts = {
     preflight: 9,
     'repository-verification': 7,
-    'publication-candidate': 7,
-    'approval-witness': 6,
-    'approval-evidence': 9,
-    publish: 9,
+    'publication-candidate': 6,
+    'publication-candidate-attestation': 3,
+    'approval-witness': 5,
+    'approval-witness-attestation': 2,
+    'approval-evidence': 8,
+    'approval-evidence-attestation': 2,
+    publish: 10,
   };
   if (
     Object.entries(expectedStepCounts).some(([jobName, stepCount]) =>
@@ -1571,8 +1737,12 @@ export function validateReleaseWorkflow(root, config) {
   if (
     structuredWorkflowDigest(structuredApprovalWitnessJob)
       !== APPROVAL_WITNESS_JOB_SHA256
+    || structuredWorkflowDigest(structuredApprovalWitnessAttestationJob)
+      !== APPROVAL_WITNESS_ATTESTATION_JOB_SHA256
     || structuredWorkflowDigest(structuredApprovalEvidenceJob)
       !== APPROVAL_EVIDENCE_JOB_SHA256
+    || structuredWorkflowDigest(structuredApprovalEvidenceAttestationJob)
+      !== APPROVAL_EVIDENCE_ATTESTATION_JOB_SHA256
   ) {
     throw new Error(
       'Release workflow approval jobs must use only the exact reviewed ordered steps',
@@ -1583,7 +1753,7 @@ export function validateReleaseWorkflow(root, config) {
   ).length;
   const totalUploadCount =
     workflow.match(/actions\/upload-artifact@[0-9a-f]{40}/gu)?.length ?? 0;
-  if (candidateUploadCount !== 1 || totalUploadCount !== 3) {
+  if (candidateUploadCount !== 1 || totalUploadCount !== 4) {
     throw new Error(
       'Release workflow must contain exactly one publication candidate upload',
     );
@@ -1592,8 +1762,11 @@ export function validateReleaseWorkflow(root, config) {
     ['preflight', preflightJob],
     ['repository-verification', repositoryVerificationJob],
     ['publication-candidate', candidateJob],
+    ['publication-candidate-attestation', candidateAttestationJob],
     ['approval-witness', approvalWitnessJob],
+    ['approval-witness-attestation', approvalWitnessAttestationJob],
     ['approval-evidence', approvalEvidenceJob],
+    ['approval-evidence-attestation', approvalEvidenceAttestationJob],
     ['publish', publishJob],
   ].filter(([, lines]) =>
     lines.some((line) => line.includes('actions/upload-artifact@')),
@@ -1602,27 +1775,29 @@ export function validateReleaseWorkflow(root, config) {
     JSON.stringify(uploadArtifactOwners.map(([name]) => name))
       !== JSON.stringify([
         'publication-candidate',
+        'publication-candidate-attestation',
         'approval-witness',
         'approval-evidence',
       ])
   ) {
     throw new Error(
-      'Only the candidate and approval-evidence jobs may upload release evidence',
+      'Only the candidate, candidate-attestation, and approval-evidence jobs may upload release evidence',
     );
   }
   if (
-    structuredPublishJob.environment !== undefined
+    structuredPublishJob.environment
+      !== config.npmTrustedPublisher.environment
   ) {
     throw new Error(
-      'Release workflow publish job must consume the attested protected approval without creating a second environment deployment',
+      'Release workflow publish job must use the exact npm trusted-publisher environment',
     );
   }
   if (
     readWorkflowJobScalar(publishJob, 'needs')
-      !== '[preflight, repository-verification, approval-witness, approval-evidence]'
+      !== '[preflight, repository-verification, approval-witness, approval-witness-attestation, approval-evidence, approval-evidence-attestation]'
   ) {
     throw new Error(
-      'Release workflow publish job must require verification and both approval-evidence jobs',
+      'Release workflow publish job must require verification and both isolated approval-attestation jobs',
     );
   }
   const permissions = readWorkflowJobMapping(publishJob, 'permissions');
@@ -1645,21 +1820,33 @@ export function validateReleaseWorkflow(root, config) {
       'Release workflow publish job must use only reviewed publication permissions',
     );
   }
-  const candidateAttestationCount = candidateJob.filter((line) =>
-    line.includes('actions/attest-build-provenance@'),
+  validateIsolatedAttestationJob(
+    structuredApprovalWitnessAttestationJob,
+    config.protectedApproval.witnessAttestationJob,
+    [DOWNLOAD_ARTIFACT_ACTION, ATTEST_ACTION],
+  );
+  validateIsolatedAttestationJob(
+    structuredApprovalEvidenceAttestationJob,
+    config.protectedApproval.approvalAttestationJob,
+    [DOWNLOAD_ARTIFACT_ACTION, ATTEST_ACTION],
+  );
+  const candidateAttestationCount = candidateAttestationJob.filter((line) =>
+    line.includes('actions/attest@'),
   ).length;
   const publishAttestationCount = publishJob.filter((line) =>
-    line.includes('actions/attest-build-provenance@'),
+    line.includes('actions/attest@'),
   ).length;
-  const approvalWitnessAttestationCount = approvalWitnessJob.filter((line) =>
-    line.includes('actions/attest-build-provenance@'),
-  ).length;
-  const approvalEvidenceAttestationCount = approvalEvidenceJob.filter((line) =>
-    line.includes('actions/attest-build-provenance@'),
-  ).length;
+  const approvalWitnessAttestationCount =
+    approvalWitnessAttestationJob.filter((line) =>
+      line.includes('actions/attest@'),
+    ).length;
+  const approvalEvidenceAttestationCount =
+    approvalEvidenceAttestationJob.filter((line) =>
+      line.includes('actions/attest@'),
+    ).length;
   const totalAttestationCount =
     workflow.match(
-      /actions\/attest-build-provenance@[0-9a-f]{40}/gu,
+      /actions\/attest@[0-9a-f]{40}/gu,
     )?.length ?? 0;
   if (
     candidateAttestationCount !== 1
@@ -1670,6 +1857,25 @@ export function validateReleaseWorkflow(root, config) {
   ) {
     throw new Error(
       'Release workflow must attest only candidate and approval evidence bytes',
+    );
+  }
+  const oidcJobIds = Object.entries(structuredWorkflow.jobs)
+    .filter(([, job]) =>
+      isRecord(job)
+      && isRecord(job.permissions)
+      && job.permissions['id-token'] === 'write',
+    )
+    .map(([jobName]) => jobName);
+  if (
+    JSON.stringify(oidcJobIds) !== JSON.stringify([
+      config.publicationCandidate.attestationJob,
+      config.protectedApproval.witnessAttestationJob,
+      config.protectedApproval.approvalAttestationJob,
+      config.npmTrustedPublisher.job,
+    ])
+  ) {
+    throw new Error(
+      'Release workflow must grant OIDC only to isolated attesters and the final publisher',
     );
   }
   for (const stepName of [
@@ -1697,7 +1903,11 @@ export function validateReleaseWorkflow(root, config) {
     )
     || !publishJob.some((line) =>
       line.trim()
-        === 'name: ${{ steps.authorization.outputs.artifact-name }}',
+        === 'artifact-ids: ${{ steps.authorization.outputs.artifact-id }}',
+    )
+    || !publishJob.some((line) =>
+      line.trim()
+        === 'artifact-ids: ${{ steps.authorization.outputs.attestation-bundle-artifact-id }}',
     )
   ) {
     throw new Error(

@@ -181,6 +181,7 @@ describe('workflow action pins', () => {
     const publishJob = releaseWorkflow.slice(
       releaseWorkflow.indexOf('\n  publish:\n'),
     );
+    expect(publishJob).toContain('environment: npm-publish');
     expect(publishJob).not.toContain('environment: npm-release');
     expect(releaseWorkflow).toContain('id-token: write');
     expect(releaseWorkflow).toContain('attestations: write');
@@ -192,7 +193,7 @@ describe('workflow action pins', () => {
     for (const action of [
       'actions/upload-artifact',
       'actions/download-artifact',
-      'actions/attest-build-provenance',
+      'actions/attest',
     ]) {
       expect(actionPins(releaseWorkflow).map((pin) => pin.action)).toContain(action);
     }
@@ -251,7 +252,9 @@ describe('workflow action pins', () => {
 
   test('requires attested pending and protected approval evidence before publish', () => {
     expect(releaseWorkflow).toContain('\n  approval-witness:\n');
+    expect(releaseWorkflow).toContain('\n  approval-witness-attestation:\n');
     expect(releaseWorkflow).toContain('\n  approval-evidence:\n');
+    expect(releaseWorkflow).toContain('\n  approval-evidence-attestation:\n');
     expect(releaseWorkflow).toContain(
       'environment: npm-release',
     );
@@ -262,7 +265,7 @@ describe('workflow action pins', () => {
       'opencoven-sdk-protected-approval-${{ github.run_id }}-${{ github.run_attempt }}',
     );
     expect(releaseWorkflow).toContain(
-      'needs: [preflight, repository-verification, approval-witness, approval-evidence]',
+      'needs: [preflight, repository-verification, approval-witness, approval-witness-attestation, approval-evidence, approval-evidence-attestation]',
     );
     expect(releaseWorkflow).toContain(
       'PUBLISH_JOB_ID: ${{ needs.approval-evidence.outputs.publish-job-id }}',

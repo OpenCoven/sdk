@@ -50,6 +50,7 @@ type MutableReleaseConfig = Omit<
   | 'npmCliDistribution'
   | 'npmDistTag'
   | 'npmRegistry'
+  | 'npmTrustedPublisher'
   | 'packages'
   | 'publicationCandidate'
   | 'protectedApproval'
@@ -65,6 +66,12 @@ type MutableReleaseConfig = Omit<
     issue: string;
   };
   githubEnvironment: string;
+  npmTrustedPublisher: {
+    repository: string;
+    workflow: string;
+    environment: string;
+    job: string;
+  };
   npmAccess: string;
   npmCliVersion: string;
   npmCliDistribution: {
@@ -82,12 +89,15 @@ type MutableReleaseConfig = Omit<
     job: string;
     securityReviewIssue: string;
     workflow: string;
+    attestationJob: string;
   };
   protectedApproval: {
     environment: string;
     environmentId: string;
     witnessJob: string;
+    witnessAttestationJob: string;
     approvalJob: string;
+    approvalAttestationJob: string;
     publishJob: string;
     reviewer: {
       id: number;
@@ -389,10 +399,18 @@ describe('release readiness contract', () => {
     expect(workflow).toContain("if: inputs.mode == 'verify'");
     const candidateJob = workflow.slice(
       candidateJobIndex,
+      workflow.indexOf('\n  publication-candidate-attestation:\n'),
+    );
+    const candidateAttestationJob = workflow.slice(
+      workflow.indexOf('\n  publication-candidate-attestation:\n'),
       workflow.indexOf('\n  approval-witness:\n'),
     );
-    expect(candidateJob).toContain('id-token: write');
-    expect(candidateJob).toContain('attestations: write');
+    expect(candidateJob).not.toContain('id-token: write');
+    expect(candidateJob).toContain('attestations: read');
+    expect(candidateAttestationJob).toContain('id-token: write');
+    expect(candidateAttestationJob).toContain('attestations: write');
+    expect(candidateAttestationJob).not.toContain('actions/checkout@');
+    expect(candidateAttestationJob).not.toContain('run:');
     expect(publishJob).toContain(
       'name: Resolve exact publication authorization',
     );
@@ -437,12 +455,21 @@ describe('release readiness contract', () => {
       securityReviewIssue: 'OpenCoven/sdk#40',
       workflow: '.github/workflows/release.yml',
       job: 'publication-candidate',
+      attestationJob: 'publication-candidate-attestation',
+    });
+    expect(config.npmTrustedPublisher).toEqual({
+      repository: 'OpenCoven/sdk',
+      workflow: 'release.yml',
+      environment: 'npm-publish',
+      job: 'publish',
     });
     expect(config.protectedApproval).toEqual({
       environment: 'npm-release',
       environmentId: '20778492972',
       witnessJob: 'approval-witness',
+      witnessAttestationJob: 'approval-witness-attestation',
       approvalJob: 'approval-evidence',
+      approvalAttestationJob: 'approval-evidence-attestation',
       publishJob: 'publish',
       reviewer: {
         id: 68980965,
@@ -751,7 +778,7 @@ describe('release readiness contract', () => {
   });
 
   test('requires the canonical native conformance platform matrix', () => {
-    expect(readReleaseConfig(workspaceRoot).schemaVersion).toBe(6);
+    expect(readReleaseConfig(workspaceRoot).schemaVersion).toBe(7);
     expect(readReleaseConfig(workspaceRoot).nativeConformancePlatforms).toEqual(
       SUPPORTED_PLATFORMS,
     );
@@ -980,17 +1007,17 @@ describe('release readiness contract', () => {
     ).toThrow('Release tag sdk-v0.1.0 is absent');
   });
 
-  test('enforces the protected publish job in the release workflow contract', () => {
+  test('enforces the npm trusted-publisher environment on the final publish job', () => {
     const fixture = createReleaseFixture();
     const workflowPath = resolve(fixture, '.github/workflows/release.yml');
     const workflow = readFileSync(workflowPath, 'utf8').replace(
-      '  publish:\n',
-      '  publish:\n    environment: npm-release\n',
+      '    environment: npm-publish\n',
+      '',
     );
     writeFileSync(workflowPath, workflow);
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      /second environment deployment/u,
+      /exact npm trusted-publisher environment/u,
     );
   });
 
@@ -1009,7 +1036,7 @@ describe('release readiness contract', () => {
     const workflowPath = resolve(fixture, '.github/workflows/release.yml');
     const workflow = readFileSync(workflowPath, 'utf8');
     const uploadStep =
-      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1';
+      '      - id: upload\n        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1';
     writeFileSync(
       workflowPath,
       workflow.replace(uploadStep, `${uploadStep}\n${uploadStep}`),
@@ -1043,9 +1070,10 @@ describe('release readiness contract', () => {
     );
     updateReleaseWorkflow(
       fixture,
-      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n',
+      '      - id: upload\n        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n',
       [
-        '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
+        '      - id: upload',
+        '        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
         '        if: false',
         '',
       ].join('\n'),
@@ -1096,9 +1124,10 @@ describe('release readiness contract', () => {
     const fixture = createReleaseFixture();
     updateReleaseWorkflow(
       fixture,
-      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n',
+      '      - id: upload\n        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n',
       [
-        '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
+        '      - id: upload',
+        '        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
         '        if: false',
         '',
       ].join('\n'),
@@ -1117,9 +1146,10 @@ describe('release readiness contract', () => {
     const fixture = createReleaseFixture();
     updateReleaseWorkflow(
       fixture,
-      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n',
+      '      - id: upload\n        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n',
       [
-        '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
+        '      - id: upload',
+        '        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
         `        if: ${condition}`,
         '',
       ].join('\n'),
@@ -1200,11 +1230,11 @@ describe('release readiness contract', () => {
       '      - name: Create immutable publication candidate\n',
     );
     const uploadStart = workflow.indexOf(
-      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n',
+      '      - id: upload\n        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n',
       createStart,
     );
     const attestationStart = workflow.indexOf(
-      '      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2\n',
+      '\n  publication-candidate-attestation:\n',
       uploadStart,
     );
     expect(createStart).toBeGreaterThan(-1);
@@ -1240,28 +1270,110 @@ describe('release readiness contract', () => {
     );
   });
 
-  test('uploads and attests candidate bytes only in the candidate-producing job', () => {
+  test('uploads candidate bytes before isolated attestation', () => {
     const workflow = readFileSync(
       resolve(workspaceRoot, '.github/workflows/release.yml'),
       'utf8',
     );
     const candidateStart = workflow.indexOf('\n  publication-candidate:\n');
+    const candidateAttestationStart = workflow.indexOf(
+      '\n  publication-candidate-attestation:\n',
+    );
+    const approvalWitnessStart = workflow.indexOf('\n  approval-witness:\n');
     const publishStart = workflow.indexOf('\n  publish:\n');
-    const candidateJob = workflow.slice(candidateStart, publishStart);
+    const candidateJob = workflow.slice(
+      candidateStart,
+      candidateAttestationStart,
+    );
+    const candidateAttestationJob = workflow.slice(
+      candidateAttestationStart,
+      approvalWitnessStart,
+    );
     const publishJob = workflow.slice(publishStart);
     const createIndex = candidateJob.indexOf(
       'name: Create immutable publication candidate',
     );
     const uploadIndex = candidateJob.indexOf('uses: actions/upload-artifact@');
-    const attestationIndex = candidateJob.indexOf(
-      'uses: actions/attest-build-provenance@',
-    );
 
     expect(createIndex).toBeGreaterThan(-1);
     expect(uploadIndex).toBeGreaterThan(createIndex);
-    expect(attestationIndex).toBeGreaterThan(uploadIndex);
     expect(candidateJob).toContain('    environment: publication-candidate');
-    expect(publishJob).not.toContain('actions/attest-build-provenance@');
+    expect(candidateJob).not.toContain('id-token: write');
+    expect(candidateJob).not.toContain('uses: actions/attest@');
+    expect(candidateAttestationJob).toContain('id-token: write');
+    expect(candidateAttestationJob).toContain('uses: actions/attest@');
+    expect(candidateAttestationJob).not.toContain('actions/checkout@');
+    expect(publishJob).not.toContain('uses: actions/attest@');
+  });
+
+  test('rejects OIDC capability on the candidate-controlled build job', () => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(
+      fixture,
+      [
+        '    environment: publication-candidate',
+        '    outputs:',
+        '      artifact-id: ${{ steps.upload.outputs.artifact-id }}',
+        '      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}',
+        '    permissions:',
+        '      actions: read',
+        '      attestations: read',
+        '      contents: read',
+        '      deployments: read',
+        '      issues: read',
+        '    env:',
+        '      RELEASE_VERSION: ${{ inputs.version }}',
+      ].join('\n'),
+      [
+        '    environment: publication-candidate',
+        '    outputs:',
+        '      artifact-id: ${{ steps.upload.outputs.artifact-id }}',
+        '      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}',
+        '    permissions:',
+        '      actions: read',
+        '      attestations: read',
+        '      contents: read',
+        '      deployments: read',
+        '      id-token: write',
+        '      issues: read',
+        '    env:',
+        '      RELEASE_VERSION: ${{ inputs.version }}',
+      ].join('\n'),
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      /publication-candidate job must not receive unreviewed permissions/u,
+    );
+  });
+
+  test.each([
+    [
+      'checkout',
+      '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n',
+    ],
+    [
+      'local action',
+      '      - uses: ./.github/actions/attest-candidate\n',
+    ],
+    [
+      'repository shell',
+      [
+        '      - name: Run candidate-controlled code',
+        '        run: node ./tsup.config.ts',
+        '',
+      ].join('\n'),
+    ],
+  ])('rejects %s in an OIDC-bearing attestation job', (_label, replacement) => {
+    const fixture = createReleaseFixture();
+    updateReleaseWorkflow(
+      fixture,
+      '      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1\n',
+      replacement,
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      /candidate-attestation must use only the exact pinned official artifact and attestation actions/u,
+    );
   });
 
   test.each([
@@ -1308,9 +1420,10 @@ describe('release readiness contract', () => {
     const fixture = createReleaseFixture();
     updateReleaseWorkflow(
       fixture,
-      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n        with:\n',
+      '      - id: upload\n        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n        with:\n',
       [
-        '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
+        '      - id: upload',
+        '        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
         '        env:',
         '          NODE_OPTIONS: --require ./evil.cjs',
       ].join(lineBreak) + '\n        with:\n',
@@ -1568,8 +1681,8 @@ describe('release readiness contract', () => {
     ],
     [
       'candidate attestation subjects',
-      '            .artifacts/publication/tarballs/**/*.tgz\n',
-      '            .artifacts/publication/substituted/**/*.tgz\n',
+      '            ${{ runner.temp }}/opencoven-publication-candidate/tarballs/**/*.tgz\n',
+      '            ${{ runner.temp }}/opencoven-publication-candidate/substituted/**/*.tgz\n',
     ],
   ])('rejects substituted %s with the same candidate step count', (
     _label,
@@ -1580,7 +1693,7 @@ describe('release readiness contract', () => {
     updateReleaseWorkflow(fixture, search, replacement);
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'Release workflow publication-candidate job must use only the exact reviewed ordered steps',
+      /Release workflow (?:publication-candidate|candidate-attestation) job must use only the exact reviewed ordered steps/u,
     );
   });
 
@@ -1758,7 +1871,7 @@ describe('release readiness contract', () => {
     ).toBe(true);
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      /Release workflow (?:publish job must consume the attested protected approval without creating a second environment deployment|must use the exact frozen release job and step graph)/u,
+      /Release workflow (?:publish job must use the exact npm trusted-publisher environment|must use the exact frozen release job and step graph)/u,
     );
   });
 });

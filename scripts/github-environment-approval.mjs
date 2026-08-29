@@ -298,9 +298,17 @@ function normalizeExpected(options, label = 'expected') {
       ),
     },
     witnessJob: expectNonEmptyString(expected.witnessJob, `${label}.witnessJob`),
+    witnessAttestationJob: expectNonEmptyString(
+      expected.witnessAttestationJob,
+      `${label}.witnessAttestationJob`,
+    ),
     approvalJob: expectNonEmptyString(
       expected.approvalJob,
       `${label}.approvalJob`,
+    ),
+    approvalAttestationJob: expectNonEmptyString(
+      expected.approvalAttestationJob,
+      `${label}.approvalAttestationJob`,
     ),
     publishJob: expectNonEmptyString(
       expected.publishJob,

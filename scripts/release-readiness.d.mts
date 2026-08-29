@@ -10,7 +10,7 @@ export type NativeConformancePlatforms = readonly [
 ];
 
 export interface ReleaseConfig {
-  schemaVersion: 6;
+  schemaVersion: 7;
   publishingEnabled: boolean;
   tagPrefix: 'sdk-v';
   npmAccess: 'public';
@@ -24,6 +24,12 @@ export interface ReleaseConfig {
     entrypointSha256: '8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7';
   };
   githubEnvironment: 'npm-release';
+  npmTrustedPublisher: {
+    repository: 'OpenCoven/sdk';
+    workflow: 'release.yml';
+    environment: 'npm-publish';
+    job: 'publish';
+  };
   supportedNode: {
     minimum: '24.18.0';
     major: 24;
@@ -42,12 +48,15 @@ export interface ReleaseConfig {
     securityReviewIssue: 'OpenCoven/sdk#40';
     workflow: '.github/workflows/release.yml';
     job: 'publication-candidate';
+    attestationJob: 'publication-candidate-attestation';
   };
   protectedApproval: {
     environment: 'npm-release';
     environmentId: '20778492972';
     witnessJob: 'approval-witness';
+    witnessAttestationJob: 'approval-witness-attestation';
     approvalJob: 'approval-evidence';
+    approvalAttestationJob: 'approval-evidence-attestation';
     publishJob: 'publish';
     reviewer: {
       id: 68980965;

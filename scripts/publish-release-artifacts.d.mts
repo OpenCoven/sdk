@@ -18,6 +18,7 @@ export function createNpmPublishArgs(options: {
 export function publishReleaseArtifacts(options?: {
   root?: string;
   artifactRoot?: string;
+  attestationRoot?: string;
   pendingApprovalRoot?: string;
   protectedApprovalRoot?: string;
   version?: string;

@@ -20,6 +20,7 @@ import {
 import {
   createPublicationAuthorizationRecord as createRawPublicationAuthorizationRecord,
   resolvePublicationSecurityReview,
+  verifyPublicationSecurityReview,
 } from '../scripts/github-release-authorization.mjs';
 import {
   publishReleaseArtifacts,
@@ -58,27 +59,56 @@ const NPM_REGISTRY = 'https://registry.npmjs.org/';
 const NPM_VERSION = '11.5.1';
 const REVIEWER_ID = 68980965;
 const APPROVAL_ENVIRONMENT_ID = '20778492972';
+const CANDIDATE_ARTIFACT_DIGEST = `sha256:${'c'.repeat(64)}`;
+const CANDIDATE_ATTESTATION_BUNDLE_DIGEST = `sha256:${'d'.repeat(64)}`;
+const CANDIDATE_ATTESTATION_BUNDLE_TEXT =
+  '{"mediaType":"application/vnd.dev.sigstore.bundle.v0.3+json"}\n';
 
 type PublicationAuthorizationOptions = Parameters<
   typeof createRawPublicationAuthorizationRecord
 >[0];
 
+type CandidateAttestationOptions = {
+  artifactDigest: string;
+  attestationJobId: string;
+  attestationBundle: {
+    artifactId: string;
+    artifactDigest: string;
+    file: 'attestation.json';
+    size: number;
+    sha256: string;
+  };
+};
+
 function createPublicationAuthorizationRecord(
   options: Omit<
     PublicationAuthorizationOptions,
-    'deploymentId' | 'environmentId'
+    | 'artifactDigest'
+    | 'attestationBundle'
+    | 'attestationJobId'
+    | 'deploymentId'
+    | 'environmentId'
   > & Partial<
-    Pick<
+    CandidateAttestationOptions & Pick<
       PublicationAuthorizationOptions,
       'deploymentId' | 'environmentId'
     >
   >,
 ) {
   return createRawPublicationAuthorizationRecord({
+    artifactDigest: CANDIDATE_ARTIFACT_DIGEST,
+    attestationJobId: '20001',
+    attestationBundle: {
+      artifactId: '30001',
+      artifactDigest: CANDIDATE_ATTESTATION_BUNDLE_DIGEST,
+      file: 'attestation.json',
+      size: Buffer.byteLength(CANDIDATE_ATTESTATION_BUNDLE_TEXT, 'utf8'),
+      sha256: sha256(CANDIDATE_ATTESTATION_BUNDLE_TEXT),
+    },
     deploymentId: '40000',
     environmentId: '50000',
     ...options,
-  });
+  } as never);
 }
 
 interface PublicationManifest {
@@ -195,7 +225,7 @@ function createReleaseFixture({
   const config = JSON.parse(
     readFileSync(resolve(workspaceRoot, 'release.config.json'), 'utf8'),
   ) as Record<string, unknown>;
-  config.schemaVersion = 6;
+  config.schemaVersion = 7;
   config.publishingEnabled = true;
   config.npmCliVersion = NPM_VERSION;
   config.npmRegistry = NPM_REGISTRY;
@@ -205,6 +235,7 @@ function createReleaseFixture({
     securityReviewIssue: 'OpenCoven/sdk#40',
     workflow: '.github/workflows/release.yml',
     job: 'publication-candidate',
+    attestationJob: 'publication-candidate-attestation',
   };
   writeFileSync(
     resolve(root, 'release.config.json'),
@@ -404,6 +435,12 @@ function createGitHubExecute(
       const approvalEvidence =
         path.endsWith('/pending-approval.json')
         || path.endsWith('/protected-approval.json');
+      if (!approvalEvidence) {
+        expect(arguments_).toContain('--bundle');
+        expect(arguments_[arguments_.indexOf('--bundle') + 1]).toMatch(
+          /attestation\.json$/u,
+        );
+      }
       return JSON.stringify([
         {
           verificationResult: {
@@ -507,7 +544,7 @@ function createGitHubExecute(
         === 'repos/OpenCoven/sdk/actions/runs/10000/attempts/1/jobs?per_page=100'
     ) {
       return JSON.stringify({
-        total_count: 1,
+        total_count: 2,
         jobs: [
           {
             id: 20000,
@@ -519,6 +556,23 @@ function createGitHubExecute(
             name: 'publication-candidate',
             workflow_name: 'release',
             labels: ['ubuntu-latest'],
+            started_at: '2026-08-29T15:00:00Z',
+            completed_at: '2026-08-29T15:05:00Z',
+            status: 'completed',
+            conclusion: 'success',
+          },
+          {
+            id: 20001,
+            run_id: 10000,
+            run_attempt: 1,
+            head_sha: authorization.source.commit,
+            html_url:
+              'https://github.com/OpenCoven/sdk/actions/runs/10000/job/20001',
+            name: 'publication-candidate-attestation',
+            workflow_name: 'release',
+            labels: ['ubuntu-latest'],
+            started_at: '2026-08-29T15:05:01Z',
+            completed_at: '2026-08-29T15:06:00Z',
             status: 'completed',
             conclusion: 'success',
           },
@@ -530,7 +584,7 @@ function createGitHubExecute(
         === 'repos/OpenCoven/sdk/actions/runs/11000/attempts/1/jobs?per_page=100'
     ) {
       return JSON.stringify({
-        total_count: 3,
+        total_count: 5,
         jobs: [
           {
             id: 21000,
@@ -540,6 +594,17 @@ function createGitHubExecute(
             name: 'approval-witness',
             started_at: '2026-08-29T16:00:00Z',
             completed_at: '2026-08-29T16:00:01Z',
+            status: 'completed',
+            conclusion: 'success',
+          },
+          {
+            id: 21500,
+            run_id: 11000,
+            run_attempt: 1,
+            head_sha: authorization.source.commit,
+            name: 'approval-witness-attestation',
+            started_at: '2026-08-29T16:00:01Z',
+            completed_at: '2026-08-29T16:00:02Z',
             status: 'completed',
             conclusion: 'success',
           },
@@ -555,12 +620,23 @@ function createGitHubExecute(
             conclusion: 'success',
           },
           {
+            id: 22500,
+            run_id: 11000,
+            run_attempt: 1,
+            head_sha: authorization.source.commit,
+            name: 'approval-evidence-attestation',
+            started_at: '2026-08-29T16:00:03Z',
+            completed_at: '2026-08-29T16:00:04Z',
+            status: 'completed',
+            conclusion: 'success',
+          },
+          {
             id: 23000,
             run_id: 11000,
             run_attempt: 1,
             head_sha: authorization.source.commit,
             name: 'publish',
-            started_at: '2026-08-29T16:00:03Z',
+            started_at: '2026-08-29T16:00:04Z',
             completed_at: null,
             status: 'in_progress',
             conclusion: null,
@@ -664,6 +740,19 @@ function createGitHubExecute(
       return JSON.stringify({
         id: 30000,
         name: authorization.artifact.name,
+        digest: authorization.artifact.digest,
+        expired: false,
+        workflow_run: {
+          id: 10000,
+          head_sha: authorization.source.commit,
+        },
+      });
+    }
+    if (endpoint === 'repos/OpenCoven/sdk/actions/artifacts/30001') {
+      return JSON.stringify({
+        id: 30001,
+        name: authorization.attestation.bundle.artifactName,
+        digest: authorization.attestation.bundle.artifactDigest,
         expired: false,
         workflow_run: {
           id: 10000,
@@ -683,9 +772,10 @@ function createGitHubExecute(
       });
     }
     if (
-      endpoint.startsWith(
-        'repos/OpenCoven/sdk/actions/runs/10000/artifacts?',
-      )
+      endpoint
+        === `repos/OpenCoven/sdk/actions/runs/10000/artifacts?name=${
+          encodeURIComponent(authorization.artifact.name)
+        }&per_page=100`
     ) {
       return JSON.stringify({
         total_count: 1,
@@ -693,6 +783,29 @@ function createGitHubExecute(
           {
             id: 30000,
             name: authorization.artifact.name,
+            digest: authorization.artifact.digest,
+            expired: false,
+            workflow_run: {
+              id: 10000,
+              head_sha: authorization.source.commit,
+            },
+          },
+        ],
+      });
+    }
+    if (
+      endpoint
+        === `repos/OpenCoven/sdk/actions/runs/10000/artifacts?name=${
+          encodeURIComponent(authorization.attestation.bundle.artifactName)
+        }&per_page=100`
+    ) {
+      return JSON.stringify({
+        total_count: 1,
+        artifacts: [
+          {
+            id: 30001,
+            name: authorization.attestation.bundle.artifactName,
+            digest: authorization.attestation.bundle.artifactDigest,
             expired: false,
             workflow_run: {
               id: 10000,
@@ -819,6 +932,7 @@ function publicationEnvironment(
     GITHUB_REF: 'refs/heads/main',
     GITHUB_SHA: git(sourceRoot, ['rev-parse', 'HEAD']),
     GITHUB_JOB: 'publish',
+    OPENCOVEN_NPM_PUBLISH_ENVIRONMENT: 'npm-publish',
     PUBLISH_JOB_ID: '23000',
     GITHUB_RUN_ID: '11000',
     GITHUB_RUN_ATTEMPT: '1',
@@ -856,7 +970,9 @@ function writeApprovalArtifacts(
       roleName: 'admin',
     },
     witnessJob: 'approval-witness',
+    witnessAttestationJob: 'approval-witness-attestation',
     approvalJob: 'approval-evidence',
+    approvalAttestationJob: 'approval-evidence-attestation',
     publishJob: 'publish',
   };
   const source = {
@@ -1006,6 +1122,18 @@ function testPublicationRuntime() {
   };
 }
 
+function writeCandidateAttestationBundle(): string {
+  const attestationRoot = mkdtempSync(
+    resolve(tmpdir(), 'opencoven-candidate-attestation-'),
+  );
+  fixtures.push(attestationRoot);
+  writeFileSync(
+    resolve(attestationRoot, 'attestation.json'),
+    CANDIDATE_ATTESTATION_BUNDLE_TEXT,
+  );
+  return attestationRoot;
+}
+
 function prepareTestNpmCli() {
   const owned = createOwnedTempDirectory({
     prefix: 'opencoven-test-npm-cli',
@@ -1035,8 +1163,10 @@ function publishTestRelease(
     publishOptions.root ?? workspaceRoot,
     authorization,
   );
+  const attestationRoot = writeCandidateAttestationBundle();
   return publishReleaseArtifacts({
     ...approvalRoots,
+    attestationRoot,
     resolveRuntime: () => testPublicationRuntime(),
     prepareNpmCli: () => prepareTestNpmCli(),
     ...publishOptions,
@@ -1050,6 +1180,53 @@ afterEach(() => {
 });
 
 describe('publication security', { timeout: 30_000 }, () => {
+  test('binds the unprivileged producer artifact and isolated attestation bundle', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-candidate-attestation-binding-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+
+    expect(authorization).toMatchObject({
+      schemaVersion: 6,
+      provenance: {
+        job: 'publication-candidate',
+        jobId: '20000',
+        environment: 'publication-candidate',
+      },
+      artifact: {
+        id: '30000',
+        name: candidate.manifest.provenance.artifactName,
+        digest: CANDIDATE_ARTIFACT_DIGEST,
+      },
+      attestation: {
+        job: 'publication-candidate-attestation',
+        jobId: '20001',
+        bundle: {
+          artifactId: '30001',
+          artifactName:
+            `opencoven-sdk-publication-attestation-${
+              candidate.manifest.source.commit
+            }-${VERSION}`,
+          artifactDigest: CANDIDATE_ATTESTATION_BUNDLE_DIGEST,
+          file: 'attestation.json',
+          size: Buffer.byteLength(
+            CANDIDATE_ATTESTATION_BUNDLE_TEXT,
+            'utf8',
+          ),
+          sha256: sha256(CANDIDATE_ATTESTATION_BUNDLE_TEXT),
+        },
+      },
+    });
+  });
+
   test('rejects a recycled reviewer login with the wrong immutable user id', () => {
     const sourceRoot = createReleaseFixture();
     const artifactRoot = mkdtempSync(
@@ -1162,6 +1339,7 @@ describe('publication security', { timeout: 30_000 }, () => {
       publishReleaseArtifacts({
         root: sourceRoot,
         artifactRoot,
+        attestationRoot: writeCandidateAttestationBundle(),
         version: VERSION,
         env: publicationEnvironment(sourceRoot),
         execute: createNpmExecute([]),
@@ -1169,6 +1347,56 @@ describe('publication security', { timeout: 30_000 }, () => {
         resolveRuntime: () => testPublicationRuntime(),
       } as never),
     ).toThrow(/attested protected-environment approval evidence/u);
+  });
+
+  test('rejects malformed approval-attestation job timestamps', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-malformed-approval-time-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const githubExecute = createGitHubExecute(authorization);
+
+    expect(() =>
+      publishTestRelease({
+        authorization,
+        root: sourceRoot,
+        artifactRoot,
+        version: VERSION,
+        env: publicationEnvironment(sourceRoot),
+        execute: createNpmExecute([]),
+        githubExecute: (command: string, arguments_: string[]) => {
+          const response = githubExecute(command, arguments_);
+          if (
+            (arguments_.at(-1) ?? '')
+              === 'repos/OpenCoven/sdk/actions/runs/11000/attempts/1/jobs?per_page=100'
+          ) {
+            const jobs = JSON.parse(response) as {
+              jobs: Array<{
+                name: string;
+                started_at: string;
+              }>;
+            };
+            const attestationJob = jobs.jobs.find(
+              (entry) => entry.name === 'approval-evidence-attestation',
+            );
+            expect(attestationJob).toBeDefined();
+            attestationJob!.started_at = 'not-a-date';
+            return JSON.stringify(jobs);
+          }
+          return response;
+        },
+      } as never),
+    ).toThrow(
+      /requires exactly one approval-evidence-attestation job/u,
+    );
   });
 
   test('binds the authorization to the exact candidate environment and deployment', () => {
@@ -1199,6 +1427,151 @@ describe('publication security', { timeout: 30_000 }, () => {
       environmentId: '50000',
       deploymentId: '40000',
     });
+  });
+
+  test('requires the attestation job to run after the candidate producer completes', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-candidate-job-order-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const execute = createGitHubExecute(authorization);
+
+    expect(() =>
+      resolvePublicationSecurityReview({
+        root: sourceRoot,
+        commentId: '4001',
+        execute: (command: string, arguments_: string[]) => {
+          const response = execute(command, arguments_);
+          const endpoint = arguments_.at(-1) ?? '';
+          if (
+            endpoint
+              === 'repos/OpenCoven/sdk/actions/runs/10000/attempts/1/jobs?per_page=100'
+          ) {
+            const jobs = JSON.parse(response) as {
+              jobs: Array<{
+                name: string;
+                started_at: string;
+              }>;
+            };
+            const attestationJob = jobs.jobs.find(
+              (entry) => entry.name === 'publication-candidate-attestation',
+            );
+            expect(attestationJob).toBeDefined();
+            attestationJob!.started_at = '2026-08-29T15:04:59Z';
+            return JSON.stringify(jobs);
+          }
+          return response;
+        },
+        env: { GH_TOKEN: 'github-token' },
+      } as never),
+    ).toThrow(/attestation job must start after the candidate producer/u);
+  });
+
+  test.each([
+    [
+      'candidate artifact digest',
+      'repos/OpenCoven/sdk/actions/artifacts/30000',
+      (value: Record<string, unknown>) => {
+        value.digest = `sha256:${'e'.repeat(64)}`;
+      },
+      /exact publication artifact/u,
+    ],
+    [
+      'attestation job identity',
+      'repos/OpenCoven/sdk/actions/runs/10000/attempts/1/jobs?per_page=100',
+      (value: Record<string, unknown>) => {
+        const jobs = value.jobs as Array<Record<string, unknown>>;
+        const attestationJob = jobs.find(
+          (entry) => entry.id === 20001,
+        );
+        expect(attestationJob).toBeDefined();
+        attestationJob!.name = 'substituted-attestation';
+      },
+      /successful candidate-attestation job/u,
+    ],
+    [
+      'attestation bundle artifact digest',
+      'repos/OpenCoven/sdk/actions/artifacts/30001',
+      (value: Record<string, unknown>) => {
+        value.digest = `sha256:${'e'.repeat(64)}`;
+      },
+      /exact candidate attestation bundle artifact/u,
+    ],
+  ])('rejects drift in the exact %s binding', (
+    _label,
+    targetEndpoint,
+    mutate,
+    expectedError,
+  ) => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-candidate-binding-drift-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const execute = createGitHubExecute(authorization);
+
+    expect(() =>
+      resolvePublicationSecurityReview({
+        root: sourceRoot,
+        commentId: '4001',
+        execute: (command: string, arguments_: string[]) => {
+          const response = execute(command, arguments_);
+          if ((arguments_.at(-1) ?? '') === targetEndpoint) {
+            const value = JSON.parse(response) as Record<string, unknown>;
+            mutate(value);
+            return JSON.stringify(value);
+          }
+          return response;
+        },
+        env: { GH_TOKEN: 'github-token' },
+      } as never),
+    ).toThrow(expectedError);
+  });
+
+  test('rejects candidate attestation bundle bytes not authorized by #40', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-candidate-bundle-bytes-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const attestationRoot = writeCandidateAttestationBundle();
+    writeFileSync(
+      resolve(attestationRoot, 'attestation.json'),
+      '{"substituted":true}\n',
+    );
+
+    expect(() =>
+      verifyPublicationSecurityReview({
+        root: sourceRoot,
+        artifactRoot,
+        attestationRoot,
+        commentId: '4001',
+        execute: createGitHubExecute(authorization),
+        env: { GH_TOKEN: 'github-token' },
+      } as never),
+    ).toThrow(/attestation bundle does not match the #40-authorized bytes/u);
   });
 
   test('binds the reviewed sterile publisher runtime path and digest', () => {

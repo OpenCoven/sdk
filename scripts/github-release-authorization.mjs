@@ -2,7 +2,12 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, readFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  lstatSync,
+  readFileSync,
+  readdirSync,
+} from 'node:fs';
 import { devNull } from 'node:os';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +25,9 @@ import {
 } from './release-readiness.mjs';
 
 const MAX_GITHUB_RESPONSE_BYTES = 1_048_576;
+const MAX_ATTESTATION_BUNDLE_BYTES = 16 * 1_048_576;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+const ARTIFACT_DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const GIT_OID_PATTERN = /^[0-9a-f]{40}$/u;
 const POSITIVE_ID_PATTERN = /^[1-9]\d*$/u;
 const REVIEWER_ID = 68980965;
@@ -116,6 +123,7 @@ function verifyCandidateAttestation(
   path,
   expectedSha256,
   authorization,
+  bundlePath,
   env,
 ) {
   const output = execute(
@@ -137,6 +145,8 @@ function verifyCandidateAttestation(
       '--predicate-type',
       'https://slsa.dev/provenance/v1',
       '--deny-self-hosted-runners',
+      '--bundle',
+      bundlePath,
       '--format',
       'json',
       '--hostname',
@@ -234,6 +244,9 @@ function canonicalPackageEntries(packages) {
 
 export function createPublicationAuthorizationRecord({
   artifactId,
+  artifactDigest,
+  attestationJobId,
+  attestationBundle,
   deploymentId,
   environmentId,
   jobId,
@@ -243,6 +256,21 @@ export function createPublicationAuthorizationRecord({
   if (
     typeof artifactId !== 'string'
     || !POSITIVE_ID_PATTERN.test(artifactId)
+    || typeof artifactDigest !== 'string'
+    || !ARTIFACT_DIGEST_PATTERN.test(artifactDigest)
+    || typeof attestationJobId !== 'string'
+    || !POSITIVE_ID_PATTERN.test(attestationJobId)
+    || !isRecord(attestationBundle)
+    || typeof attestationBundle.artifactId !== 'string'
+    || !POSITIVE_ID_PATTERN.test(attestationBundle.artifactId)
+    || typeof attestationBundle.artifactDigest !== 'string'
+    || !ARTIFACT_DIGEST_PATTERN.test(attestationBundle.artifactDigest)
+    || attestationBundle.file !== 'attestation.json'
+    || !Number.isSafeInteger(attestationBundle.size)
+    || attestationBundle.size <= 0
+    || attestationBundle.size > MAX_ATTESTATION_BUNDLE_BYTES
+    || typeof attestationBundle.sha256 !== 'string'
+    || !SHA256_PATTERN.test(attestationBundle.sha256)
     || typeof deploymentId !== 'string'
     || !POSITIVE_ID_PATTERN.test(deploymentId)
     || typeof environmentId !== 'string'
@@ -256,6 +284,11 @@ export function createPublicationAuthorizationRecord({
   ) {
     throw new Error('Publication authorization input is invalid');
   }
+  assertExactFields(
+    attestationBundle,
+    ['artifactId', 'artifactDigest', 'file', 'size', 'sha256'],
+    'Publication authorization attestation bundle input',
+  );
   assertExactFields(
     manifest.source,
     ['repository', 'commit', 'tree', 'runtimeManifest', 'npmConfigFiles'],
@@ -300,8 +333,11 @@ export function createPublicationAuthorizationRecord({
     ],
     'Publication candidate provenance',
   );
+  const attestationBundleArtifactName =
+    `opencoven-sdk-publication-attestation-${manifest.source.commit}`
+    + `-${manifest.version}`;
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     kind: 'opencoven-sdk-publication-security-review',
     issue: 'OpenCoven/sdk#40',
     disposition: 'ship',
@@ -357,6 +393,19 @@ export function createPublicationAuthorizationRecord({
     artifact: {
       id: artifactId,
       name: manifest.provenance.artifactName,
+      digest: artifactDigest,
+    },
+    attestation: {
+      job: 'publication-candidate-attestation',
+      jobId: attestationJobId,
+      bundle: {
+        artifactId: attestationBundle.artifactId,
+        artifactName: attestationBundleArtifactName,
+        artifactDigest: attestationBundle.artifactDigest,
+        file: attestationBundle.file,
+        size: attestationBundle.size,
+        sha256: attestationBundle.sha256,
+      },
     },
   };
 }
@@ -391,6 +440,7 @@ function parseAuthorizationBody(text) {
       'publisher',
       'provenance',
       'artifact',
+      'attestation',
     ],
     'Publication authorization',
   );
@@ -464,12 +514,29 @@ function parseAuthorizationBody(text) {
   );
   assertExactFields(
     value.artifact,
-    ['id', 'name'],
+    ['id', 'name', 'digest'],
     'Publication authorization artifact',
+  );
+  assertExactFields(
+    value.attestation,
+    ['job', 'jobId', 'bundle'],
+    'Publication authorization attestation',
+  );
+  assertExactFields(
+    value.attestation.bundle,
+    [
+      'artifactId',
+      'artifactName',
+      'artifactDigest',
+      'file',
+      'size',
+      'sha256',
+    ],
+    'Publication authorization attestation bundle',
   );
   const packages = canonicalPackageEntries(value.packages);
   if (
-    value.schemaVersion !== 5
+    value.schemaVersion !== 6
     || value.kind !== 'opencoven-sdk-publication-security-review'
     || value.issue !== 'OpenCoven/sdk#40'
     || value.disposition !== 'ship'
@@ -551,6 +618,28 @@ function parseAuthorizationBody(text) {
     || typeof value.artifact.name !== 'string'
     || value.artifact.name
       !== `opencoven-sdk-publication-${value.source.commit}-${value.version}`
+    || typeof value.artifact.digest !== 'string'
+    || !ARTIFACT_DIGEST_PATTERN.test(value.artifact.digest)
+    || value.attestation.job !== 'publication-candidate-attestation'
+    || typeof value.attestation.jobId !== 'string'
+    || !POSITIVE_ID_PATTERN.test(value.attestation.jobId)
+    || typeof value.attestation.bundle.artifactId !== 'string'
+    || !POSITIVE_ID_PATTERN.test(value.attestation.bundle.artifactId)
+    || value.attestation.bundle.artifactName
+      !== (
+        `opencoven-sdk-publication-attestation-${value.source.commit}`
+        + `-${value.version}`
+      )
+    || typeof value.attestation.bundle.artifactDigest !== 'string'
+    || !ARTIFACT_DIGEST_PATTERN.test(
+      value.attestation.bundle.artifactDigest,
+    )
+    || value.attestation.bundle.file !== 'attestation.json'
+    || !Number.isSafeInteger(value.attestation.bundle.size)
+    || value.attestation.bundle.size <= 0
+    || value.attestation.bundle.size > MAX_ATTESTATION_BUNDLE_BYTES
+    || typeof value.attestation.bundle.sha256 !== 'string'
+    || !SHA256_PATTERN.test(value.attestation.bundle.sha256)
     || packages.some((entry) => entry.version !== value.version)
   ) {
     throw new Error('GitHub security review authorization record is invalid');
@@ -584,10 +673,10 @@ function expectAuthorizedRun(value, authorization) {
   }
 }
 
-function expectAuthorizedJob(value, authorization) {
+function expectAuthorizedJob(value, authorization, expected) {
   if (
     !isRecord(value)
-    || value.id !== Number(authorization.provenance.jobId)
+    || value.id !== Number(expected.id)
     || value.run_id !== Number(authorization.provenance.runId)
     || value.run_attempt !== authorization.provenance.runAttempt
     || value.head_sha !== authorization.source.commit
@@ -595,19 +684,27 @@ function expectAuthorizedJob(value, authorization) {
       !== (
         'https://github.com/OpenCoven/sdk/actions/runs/'
         + `${authorization.provenance.runId}/job/`
-        + authorization.provenance.jobId
+        + expected.id
       )
-    || value.name !== authorization.provenance.job
+    || value.name !== expected.name
     || value.workflow_name !== 'release'
     || value.status !== 'completed'
     || value.conclusion !== 'success'
+    || typeof value.started_at !== 'string'
+    || !Number.isFinite(Date.parse(value.started_at))
+    || typeof value.completed_at !== 'string'
+    || !Number.isFinite(Date.parse(value.completed_at))
     || !Array.isArray(value.labels)
     || value.labels.includes('self-hosted')
   ) {
     throw new Error(
-      'GitHub security review does not bind the successful candidate-producing job',
+      `GitHub security review does not bind the successful ${expected.label} job`,
     );
   }
+  return {
+    startedAt: value.started_at,
+    completedAt: value.completed_at,
+  };
 }
 
 function expectAuthorizedEnvironment(value, authorization) {
@@ -672,20 +769,53 @@ function expectAuthorizedDeploymentStatuses(value, authorization) {
   }
 }
 
-function expectAuthorizedArtifact(value, authorization) {
+function expectAuthorizedArtifact(value, authorization, expected, label) {
   if (
     !isRecord(value)
-    || value.id !== Number(authorization.artifact.id)
-    || value.name !== authorization.artifact.name
+    || value.id !== Number(expected.id)
+    || value.name !== expected.name
+    || value.digest !== expected.digest
     || value.expired !== false
     || !isRecord(value.workflow_run)
     || value.workflow_run.id !== Number(authorization.provenance.runId)
     || value.workflow_run.head_sha !== authorization.source.commit
   ) {
     throw new Error(
-      'GitHub security review does not bind the exact publication artifact',
+      `GitHub security review does not bind the exact ${label} artifact`,
     );
   }
+}
+
+function readCandidateAttestationBundle(root, authorization) {
+  if (typeof root !== 'string' || root.length === 0) {
+    throw new Error(
+      'Publication requires the exact #40-authorized candidate attestation bundle',
+    );
+  }
+  const entries = readdirSync(root);
+  if (
+    entries.length !== 1
+    || entries[0] !== authorization.attestation.bundle.file
+  ) {
+    throw new Error(
+      'Candidate attestation artifact must contain exactly the reviewed bundle',
+    );
+  }
+  const path = resolve(root, entries[0]);
+  const stats = lstatSync(path);
+  const bytes = readFileSync(path);
+  if (
+    stats.isSymbolicLink()
+    || !stats.isFile()
+    || bytes.byteLength !== authorization.attestation.bundle.size
+    || bytes.byteLength > MAX_ATTESTATION_BUNDLE_BYTES
+    || sha256(bytes) !== authorization.attestation.bundle.sha256
+  ) {
+    throw new Error(
+      'Candidate attestation bundle does not match the #40-authorized bytes',
+    );
+  }
+  return path;
 }
 
 export function resolvePublicationSecurityReview({
@@ -839,6 +969,8 @@ export function resolvePublicationSecurityReview({
     authorization.provenance.workflow
       !== config.publicationCandidate.workflow
     || authorization.provenance.job !== config.publicationCandidate.job
+    || authorization.attestation.job
+      !== config.publicationCandidate.attestationJob
     || authorization.provenance.environment
       !== config.publicationCandidate.environment
     || authorization.toolchain.npmVersion !== config.npmCliVersion
@@ -866,27 +998,52 @@ export function resolvePublicationSecurityReview({
     `repos/OpenCoven/sdk/actions/runs/${authorization.provenance.runId}/attempts/${authorization.provenance.runAttempt}/jobs?per_page=100`,
     env,
   );
-  if (
-    !isRecord(jobs)
-    || !Array.isArray(jobs.jobs)
-    || jobs.jobs.filter(
-      (job) =>
-        isRecord(job)
-        && job.id === Number(authorization.provenance.jobId),
-    ).length !== 1
-  ) {
+  if (!isRecord(jobs) || !Array.isArray(jobs.jobs)) {
     throw new Error(
       'GitHub security review does not bind the candidate workflow job graph',
     );
   }
-  expectAuthorizedJob(
-    jobs.jobs.find(
-      (job) =>
-        isRecord(job)
-        && job.id === Number(authorization.provenance.jobId),
-    ),
-    authorization,
+  const candidateJobs = jobs.jobs.filter(
+    (job) =>
+      isRecord(job)
+      && job.id === Number(authorization.provenance.jobId),
   );
+  const attestationJobs = jobs.jobs.filter(
+    (job) =>
+      isRecord(job)
+      && job.id === Number(authorization.attestation.jobId),
+  );
+  if (candidateJobs.length !== 1 || attestationJobs.length !== 1) {
+    throw new Error(
+      'GitHub security review does not bind the candidate workflow job graph',
+    );
+  }
+  const candidateJob = expectAuthorizedJob(
+    candidateJobs[0],
+    authorization,
+    {
+      id: authorization.provenance.jobId,
+      name: authorization.provenance.job,
+      label: 'candidate-producing',
+    },
+  );
+  const attestationJob = expectAuthorizedJob(
+    attestationJobs[0],
+    authorization,
+    {
+      id: authorization.attestation.jobId,
+      name: authorization.attestation.job,
+      label: 'candidate-attestation',
+    },
+  );
+  if (
+    Date.parse(attestationJob.startedAt)
+      < Date.parse(candidateJob.completedAt)
+  ) {
+    throw new Error(
+      'GitHub security review candidate attestation job must start after the candidate producer completes',
+    );
+  }
   const environment = runGitHubApi(
     execute,
     `repos/OpenCoven/sdk/environments/${encodeURIComponent(authorization.provenance.environment)}`,
@@ -910,7 +1067,16 @@ export function resolvePublicationSecurityReview({
     `repos/OpenCoven/sdk/actions/artifacts/${authorization.artifact.id}`,
     env,
   );
-  expectAuthorizedArtifact(artifact, authorization);
+  expectAuthorizedArtifact(
+    artifact,
+    authorization,
+    {
+      id: authorization.artifact.id,
+      name: authorization.artifact.name,
+      digest: authorization.artifact.digest,
+    },
+    'publication',
+  );
   const artifacts = runGitHubApi(
     execute,
     `repos/OpenCoven/sdk/actions/runs/${authorization.provenance.runId}/artifacts?name=${encodeURIComponent(authorization.artifact.name)}&per_page=100`,
@@ -926,7 +1092,56 @@ export function resolvePublicationSecurityReview({
       'GitHub security review artifact name is not unique in the candidate run',
     );
   }
-  expectAuthorizedArtifact(artifacts.artifacts[0], authorization);
+  expectAuthorizedArtifact(
+    artifacts.artifacts[0],
+    authorization,
+    {
+      id: authorization.artifact.id,
+      name: authorization.artifact.name,
+      digest: authorization.artifact.digest,
+    },
+    'publication',
+  );
+  const attestationBundleArtifact = runGitHubApi(
+    execute,
+    `repos/OpenCoven/sdk/actions/artifacts/${authorization.attestation.bundle.artifactId}`,
+    env,
+  );
+  expectAuthorizedArtifact(
+    attestationBundleArtifact,
+    authorization,
+    {
+      id: authorization.attestation.bundle.artifactId,
+      name: authorization.attestation.bundle.artifactName,
+      digest: authorization.attestation.bundle.artifactDigest,
+    },
+    'candidate attestation bundle',
+  );
+  const attestationBundleArtifacts = runGitHubApi(
+    execute,
+    `repos/OpenCoven/sdk/actions/runs/${authorization.provenance.runId}/artifacts?name=${encodeURIComponent(authorization.attestation.bundle.artifactName)}&per_page=100`,
+    env,
+  );
+  if (
+    !isRecord(attestationBundleArtifacts)
+    || attestationBundleArtifacts.total_count !== 1
+    || !Array.isArray(attestationBundleArtifacts.artifacts)
+    || attestationBundleArtifacts.artifacts.length !== 1
+  ) {
+    throw new Error(
+      'GitHub security review attestation bundle name is not unique in the candidate run',
+    );
+  }
+  expectAuthorizedArtifact(
+    attestationBundleArtifacts.artifacts[0],
+    authorization,
+    {
+      id: authorization.attestation.bundle.artifactId,
+      name: authorization.attestation.bundle.artifactName,
+      digest: authorization.attestation.bundle.artifactDigest,
+    },
+    'candidate attestation bundle',
+  );
   return {
     ...authorization,
     commentId,
@@ -940,6 +1155,7 @@ export function resolvePublicationSecurityReview({
 export function verifyPublicationSecurityReview({
   root = process.cwd(),
   artifactRoot,
+  attestationRoot,
   commentId,
   allowedArtifactRoots,
   execute = execFileSync,
@@ -949,7 +1165,10 @@ export function verifyPublicationSecurityReview({
     root,
     commentId,
     allowedArtifactRoot: artifactRoot,
-    allowedArtifactRoots,
+    allowedArtifactRoots: [
+      attestationRoot,
+      ...(Array.isArray(allowedArtifactRoots) ? allowedArtifactRoots : []),
+    ],
     execute,
     env,
   });
@@ -969,6 +1188,10 @@ export function verifyPublicationSecurityReview({
       artifactName: authorization.artifact.name,
     },
   });
+  const attestationBundlePath = readCandidateAttestationBundle(
+    attestationRoot,
+    authorization,
+  );
   const manifestText = readFileSync(
     resolve(artifactRoot, 'release-manifest.json'),
     'utf8',
@@ -1003,11 +1226,21 @@ export function verifyPublicationSecurityReview({
       subject.path,
       subject.sha256,
       authorization,
+      attestationBundlePath,
       env,
     );
   }
   const expected = createPublicationAuthorizationRecord({
     artifactId: authorization.artifact.id,
+    artifactDigest: authorization.artifact.digest,
+    attestationJobId: authorization.attestation.jobId,
+    attestationBundle: {
+      artifactId: authorization.attestation.bundle.artifactId,
+      artifactDigest: authorization.attestation.bundle.artifactDigest,
+      file: authorization.attestation.bundle.file,
+      size: authorization.attestation.bundle.size,
+      sha256: authorization.attestation.bundle.sha256,
+    },
     deploymentId: authorization.provenance.deploymentId,
     environmentId: authorization.provenance.environmentId,
     jobId: authorization.provenance.jobId,
@@ -1033,6 +1266,7 @@ export function verifyPublicationSecurityReview({
     publisher: authorization.publisher,
     provenance: authorization.provenance,
     artifact: authorization.artifact,
+    attestation: authorization.attestation,
   };
   if (serializeCanonicalJson(actualBody) !== serializeCanonicalJson(expected)) {
     throw new Error(
@@ -1051,6 +1285,8 @@ function parseArguments(arguments_) {
         ? 'commentId'
         : argument === '--artifact-root'
           ? 'artifactRoot'
+          : argument === '--attestation-root'
+            ? 'attestationRoot'
           : argument === '--github-output'
             ? 'githubOutput'
             : undefined;
@@ -1082,6 +1318,7 @@ export function main(arguments_ = process.argv.slice(2)) {
     : verifyPublicationSecurityReview({
         root,
         artifactRoot: options.artifactRoot,
+        attestationRoot: options.attestationRoot,
         commentId: options.commentId,
       }).authorization;
   if (options.githubOutput !== undefined) {
@@ -1091,6 +1328,7 @@ export function main(arguments_ = process.argv.slice(2)) {
         `run-id=${result.provenance.runId}`,
         `artifact-name=${result.artifact.name}`,
         `artifact-id=${result.artifact.id}`,
+        `attestation-bundle-artifact-id=${result.attestation.bundle.artifactId}`,
         '',
       ].join('\n'),
       { encoding: 'utf8' },

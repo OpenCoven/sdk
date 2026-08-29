@@ -111,7 +111,9 @@ const expected = {
     roleName: 'admin',
   },
   witnessJob: 'approval-witness',
+  witnessAttestationJob: 'approval-witness-attestation',
   approvalJob: 'approval-evidence',
+  approvalAttestationJob: 'approval-evidence-attestation',
   publishJob: 'publish',
 };
 

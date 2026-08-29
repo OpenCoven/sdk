@@ -3,7 +3,7 @@ import type {
 } from './create-release-artifacts.mjs';
 
 export interface PublicationSecurityReview {
-  schemaVersion: 5;
+  schemaVersion: 6;
   kind: 'opencoven-sdk-publication-security-review';
   issue: 'OpenCoven/sdk#40';
   disposition: 'ship';
@@ -40,12 +40,34 @@ export interface PublicationSecurityReview {
   artifact: {
     id: string;
     name: string;
+    digest: string;
+  };
+  attestation: {
+    job: 'publication-candidate-attestation';
+    jobId: string;
+    bundle: {
+      artifactId: string;
+      artifactName: string;
+      artifactDigest: string;
+      file: 'attestation.json';
+      size: number;
+      sha256: string;
+    };
   };
   commentId?: string;
 }
 
 export function createPublicationAuthorizationRecord(options: {
   artifactId: string;
+  artifactDigest: string;
+  attestationJobId: string;
+  attestationBundle: {
+    artifactId: string;
+    artifactDigest: string;
+    file: 'attestation.json';
+    size: number;
+    sha256: string;
+  };
   deploymentId: string;
   environmentId: string;
   jobId: string;
@@ -65,6 +87,7 @@ export function resolvePublicationSecurityReview(options: {
 export function verifyPublicationSecurityReview(options: {
   root?: string;
   artifactRoot: string;
+  attestationRoot: string;
   commentId: string;
   allowedArtifactRoots?: Array<string | undefined>;
   execute?: typeof import('node:child_process').execFileSync;

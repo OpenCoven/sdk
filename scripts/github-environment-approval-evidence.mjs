@@ -113,7 +113,11 @@ function expectedApproval(config) {
     environmentId: config.protectedApproval.environmentId,
     reviewer: { ...config.protectedApproval.reviewer },
     witnessJob: config.protectedApproval.witnessJob,
+    witnessAttestationJob:
+      config.protectedApproval.witnessAttestationJob,
     approvalJob: config.protectedApproval.approvalJob,
+    approvalAttestationJob:
+      config.protectedApproval.approvalAttestationJob,
     publishJob: config.protectedApproval.publishJob,
   };
 }
@@ -191,6 +195,13 @@ function getRunJobs(execute, context, env) {
   return jobs.jobs;
 }
 
+function isValidTimestamp(value) {
+  return (
+    typeof value === 'string'
+    && Number.isFinite(Date.parse(value))
+  );
+}
+
 function findExactJob(
   jobs,
   context,
@@ -205,7 +216,11 @@ function findExactJob(
       && job.run_id === Number(context.workflow.runId)
       && job.run_attempt === context.workflow.runAttempt
       && job.head_sha === context.source.commit
-      && (!requireStartedAt || typeof job.started_at === 'string')
+      && (!requireStartedAt || isValidTimestamp(job.started_at))
+      && (
+        job.status !== 'completed'
+        || isValidTimestamp(job.completed_at)
+      )
       && statuses.includes(job.status),
   );
   if (matches.length !== 1) {
@@ -543,9 +558,19 @@ export function captureProtectedApprovalReceipt({
     expected.witnessJob,
     ['completed'],
   );
+  const witnessAttestationJob = findExactJob(
+    jobs,
+    context,
+    expected.witnessAttestationJob,
+    ['completed'],
+  );
   if (
     witnessJob.id !== pendingEvidence.witnessJob.id
     || witnessJob.conclusion !== 'success'
+    || witnessAttestationJob.conclusion !== 'success'
+    || typeof witnessJob.completedAt !== 'string'
+    || Date.parse(witnessAttestationJob.startedAt)
+      < Date.parse(witnessJob.completedAt)
   ) {
     throw new Error(
       'Pending protected-environment approval witness did not complete successfully',
@@ -747,6 +772,18 @@ export function verifyProtectedApprovalArtifacts({
     expected.approvalJob,
     ['completed'],
   );
+  const witnessAttestationJob = findExactJob(
+    jobs,
+    context,
+    expected.witnessAttestationJob,
+    ['completed'],
+  );
+  const approvalAttestationJob = findExactJob(
+    jobs,
+    context,
+    expected.approvalAttestationJob,
+    ['completed'],
+  );
   const publishJob = findExactJob(
     jobs,
     context,
@@ -758,16 +795,25 @@ export function verifyProtectedApprovalArtifacts({
     || Date.parse(witnessJob.startedAt)
       !== Date.parse(pendingEvidence.witnessJob.startedAt)
     || witnessJob.conclusion !== 'success'
+    || witnessAttestationJob.conclusion !== 'success'
+    || typeof witnessJob.completedAt !== 'string'
+    || Date.parse(witnessAttestationJob.startedAt)
+      < Date.parse(witnessJob.completedAt)
     || approvalJob.id !== receipt.approvalJob.id
     || Date.parse(approvalJob.startedAt)
       !== Date.parse(receipt.approvalJob.startedAt)
     || approvalJob.conclusion !== 'success'
+    || approvalAttestationJob.conclusion !== 'success'
+    || typeof approvalJob.completedAt !== 'string'
+    || Date.parse(approvalAttestationJob.startedAt)
+      < Date.parse(approvalJob.completedAt)
     || publishJob.id !== receipt.publishJob.id
     || publishJob.name !== receipt.publishJob.name
-    || typeof approvalJob.completedAt !== 'string'
     || timestampSecond(receipt.createdAt)
       > timestampSecond(approvalJob.completedAt)
-    || Date.parse(approvalJob.completedAt) > Date.parse(publishJob.startedAt)
+    || typeof approvalAttestationJob.completedAt !== 'string'
+    || Date.parse(approvalAttestationJob.completedAt)
+      > Date.parse(publishJob.startedAt)
   ) {
     throw new Error(
       'Protected environment approval evidence jobs did not complete successfully',

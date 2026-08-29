@@ -22,7 +22,9 @@ export interface ExpectedProtectedEnvironment {
     roleName: string;
   };
   witnessJob: string;
+  witnessAttestationJob: string;
   approvalJob: string;
+  approvalAttestationJob: string;
   publishJob: string;
 }
 
