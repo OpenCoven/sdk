@@ -103,8 +103,8 @@ before the SDK treats them as real.
 | --- | --- | --- | --- |
 | `conversations.create` | `POST /api/client/v1/conversations` | `conversations:write` | Create one empty canonical conversation. |
 | `messages.send` | `POST /api/client/v1/conversations/:id/messages` | `chat:write` | Accept one text send or one explicit retry. |
-| `operations.read` | `GET /api/client/v1/operations/:id` | `chat:write` | Read non-content operation state and replay bounds. |
-| `operations.events` | `GET /api/client/v1/operations/:id/events` | `chat:write` | Read a bounded event page, optionally waiting for new events. |
+| `operations.read` | `GET /api/client/v1/operations/:id` | Stored originating scope | Read non-content operation state and replay bounds. |
+| `operations.events` | `GET /api/client/v1/operations/:id/events` | Stored originating scope | Read a bounded event page, optionally waiting for new events. |
 | `operations.stop` | `POST /api/client/v1/operations/:id/stop` | `chat:write` | Persist Stop intent and signal the canonical executor. |
 
 Capability membership is additive:
@@ -117,6 +117,15 @@ Capability membership is additive:
 All five routes are paired-bearer operations and must be protected by the
 active Client v1 authority mechanism. They must not be added to
 `CLIENT_V1_PUBLIC_ROUTES`.
+
+The operation manifest must distinguish fixed authorization from
+operation-derived authorization. Existing routes remain
+`scopeMode: "fixed"`. `operations.read` and `operations.events` use
+`scopeMode: "originating-operation"` with no fixed scope string; after locating
+the caller-owned operation, Cave requires the scope stored when that operation
+was claimed. A create operation therefore remains readable with
+`conversations:write`, while send/retry operations require `chat:write`.
+`operations.read` and `operations.events` are authorized by the stored originating scope.
 
 The producer must also add exact generated-fixture limits:
 
@@ -183,6 +192,7 @@ export type CaveSendConversationMessageRequest =
     };
 
 export type CaveConversationOperationState =
+  | "pending"
   | "accepted"
   | "running"
   | "stopping"
@@ -192,8 +202,9 @@ export type CaveConversationOperationState =
 
 export interface CaveConversationOperation {
   id: CaveConversationOperationId;
-  kind: "conversation.create" | "message.send" | "message.retry";
+  kind: "conversations.create" | "messages.send";
   state: CaveConversationOperationState;
+  originatingScope: "chat:write" | "conversations:write";
   conversationId: string;
   inputTurnId?: string;
   outputTurnId?: string;
@@ -252,6 +263,17 @@ export type CaveConversationEvent =
       outputTurnId: string;
     });
 
+export interface CaveConversationEventPage {
+  operation: CaveConversationOperation;
+  events: readonly CaveConversationEvent[];
+  complete: boolean;
+  cursor?: {
+    current?: CaveConversationEventCursor;
+    next?: CaveConversationEventCursor;
+    hasMore: boolean;
+  };
+}
+
 export interface CaveConversationStreamOptions extends OperationOptions {
   cursor?: CaveConversationEventCursor;
 }
@@ -290,6 +312,9 @@ There is no `request(path, init)` method.
 
 - `operationId` is the caller-supplied UUID that identifies one logical
   mutation and its idempotency record.
+- `CaveConversationOperation.kind` is the exact Client v1 operation identifier
+  (`conversations.create` or `messages.send`). Retry remains a
+  `messages.send` operation distinguished by `retryOfTurnId`.
 - envelope `requestId` remains an optional per-HTTP-attempt correlation value.
 - Chat's native `op1-...` attempt IDs remain local cancellation tokens.
 - Cave private-chat `runId` remains private implementation state.
@@ -325,7 +350,8 @@ The successful transaction:
 
 1. authorizes `conversations:write`;
 2. validates the full request;
-3. claims the operation ID and request hash;
+3. claims the operation ID, originating scope, and request hash as a public
+   `pending` operation;
 4. chooses the conversation ID;
 5. persists the empty canonical conversation with an internal
    `createdByOperationId`;
@@ -349,7 +375,7 @@ A text send:
 2. validates the conversation and exact UTF-8 text;
 3. requires the conversation to remain canonical, writable, and free of
    another nonterminal message operation;
-4. claims the operation;
+4. claims a public `pending` operation with originating scope `chat:write`;
 5. persists a new user turn carrying the operation ID;
 6. allocates the output assistant-turn ID;
 7. emits `operation.accepted`;
@@ -431,7 +457,7 @@ base64url(
   SHA-256(
     JCS({
       version: 1,
-      operation: "<operation id>",
+      operationKind: "<Client v1 operation identifier>",
       target: { ...canonical route identifiers },
       input: { ...exact accepted logical input }
     })
@@ -440,6 +466,7 @@ base64url(
 ```
 
 The operation UUID is not part of the hash because it is the record key.
+`operationKind` is the fixed producer operation identifier, not that UUID.
 Bearer material, HPKE material, request nonce, timestamps, headers, transport
 attempt IDs, and envelope `requestId` are excluded. Defaults that affect the
 mutation are resolved before hashing.
@@ -460,6 +487,7 @@ version
 credentialId
 operationId
 operation kind
+originating scope
 request hash
 internal phase
 public state
@@ -483,13 +511,14 @@ records.
 
 | Existing record | Same request hash | Different request hash |
 | --- | --- | --- |
-| Safe pre-dispatch claim | The single claim owner may continue; a concurrent caller receives the current recorded state. | `conflict / idempotency_key_reused` |
+| Safe pre-dispatch claim | Return the recorded `pending` operation to concurrent callers; never start another owner. An explicit same-hash resubmission may acquire an abandoned claim through one compare-and-swap recovery lease. | `conflict / idempotency_key_reused` |
 | Accepted/running/stopping | Return current operation; never start another executor. | `conflict / idempotency_key_reused` |
 | Completed/failed/cancelled | Replay the recorded result with `replayed: true`. | `conflict / idempotency_key_reused` |
 | Result metadata compacted to tombstone | `reconcile_required / idempotency_result_expired`; never execute again. | `conflict / idempotency_key_reused` |
 
 Claims must be linearizable. Concurrent duplicates execute at most once across
-threads and processes.
+threads and processes. `pending` is a real public state, so neither mutation
+responses nor `operations.read` expose an unrepresentable internal phase.
 
 Full terminal result metadata is retained for seven days. It then compacts to a
 content-free tombstone retained for the lifetime of the Cave installation.
@@ -505,14 +534,14 @@ dispatch:
 claimed -> accepted -> dispatching/running -> stopping? -> terminal
 ```
 
-`claimed` and `dispatching` are internal; consumers see the public states in
-section 5.
+`claimed` maps to public `pending`; `dispatching` remains internal. Consumers
+see only the public states in section 5.
 
 Startup recovery follows this table:
 
 | Durable evidence | Recovery |
 | --- | --- |
-| Claim exists; no conversation marker or executor dispatch marker | Keep a safe pre-dispatch claim. Only an explicit same-hash resubmission may continue it. |
+| Claim exists; no conversation marker or executor dispatch marker | Keep a public `pending` operation. One explicit same-hash resubmission may acquire a new recovery lease and continue it; concurrent duplicates only observe `pending`. |
 | Create marker exists; operation result incomplete | Reconstruct completed create from the canonical conversation. |
 | User turn exists; dispatch never began | Persist a failed assistant turn with fixed code `authority_restarted_before_dispatch`; mark failed. |
 | Dispatch may have begun; no canonical terminal assistant turn | Persist available partial output, then a failed assistant turn with fixed code `authority_restarted_during_execution`; never redispatch. |
@@ -550,7 +579,7 @@ The ordering guarantees are:
 Heartbeat/empty long-poll responses are transport activity, not events and do
 not consume IDs.
 
-### 10.2 Cursor
+### 10.2 Cursor and page completion
 
 Every event carries a route-specific opaque base64url cursor no longer than the
 existing 512-character cursor limit. The producer payload is:
@@ -563,16 +592,42 @@ The route validates canonical base64url encoding, exact keys, version,
 operation match, and event ID. Malformed cursors return `invalid_request`.
 
 `GET .../events?cursor=<cursor>&limit=<1..100>&waitMs=<0..25000>` returns only
-events with a greater event ID. Without a cursor it begins at event `1`.
+events with a greater event ID.
 
-### 10.3 Retention and replay gaps
+Every response contains the current `CaveConversationOperation`, its ordered
+event slice, and `complete`. `complete` is true exactly when the operation is
+terminal and no event after the response cursor can exist. It is independent
+of whether the current page contains the terminal event.
+
+### 10.3 Cursor decision matrix
+
+| Input and retained state | Result |
+| --- | --- |
+| Unknown or foreign operation | `not_found`; cursor details are not evaluated or disclosed. |
+| Malformed or non-canonical cursor | `invalid_request / cursor_malformed`. |
+| No cursor; replay floor is `1` | Begin at event `1`. Return `complete: true` only when the operation is already terminal and the returned page reaches its terminal event. |
+| No cursor; replay floor is greater than `1` | `reconcile_required / replay_gap`; absence of a cursor never authorizes starting after an eviction. |
+| Cursor names another operation | `reconcile_required / cursor_operation_mismatch`. |
+| Cursor event ID is less than `replayFloorEventId - 1` | `reconcile_required / replay_gap`. |
+| Cursor event ID equals `replayFloorEventId - 1` | Return retained events beginning at the replay floor. |
+| Cursor event ID is retained and less than the latest event ID | Return only events with greater IDs, subject to page limits. |
+| Cursor equals the latest event ID while the operation is pending, accepted, running, or stopping | Long-poll for the bounded wait; an empty timeout page has `complete: false`. |
+| Cursor equals the terminal event ID | Return an empty event page with `complete: true` and the recorded terminal operation state. |
+| Cursor event ID is greater than the latest event ID | `reconcile_required / cursor_ahead`. |
+| Terminal event journal has expired | `reconcile_required / operation_expired`, whether or not a cursor was supplied. |
+
+This table is the complete precedence order. In particular, a missing cursor
+after any eviction is a replay gap, not an implicit request for the oldest
+remaining event.
+
+### 10.4 Retention and replay gaps
 
 While an operation is live, Cave retains the newest events up to both 1 MiB and
 10,000 events. After terminal state, the retained event journal expires after
 24 hours. The operation record and canonical transcript outlive the journal.
 
-If the supplied cursor precedes the replay floor, names another operation, or
-names an expired journal, the route returns:
+For a retained-history mismatch, the route returns the reason selected by the
+matrix above, for example:
 
 ```json
 {
@@ -587,7 +642,7 @@ names an expired journal, the route returns:
 It does not emit a synthetic progress event and does not start from the oldest
 remaining delta.
 
-### 10.4 One translator
+### 10.5 One translator
 
 The SDK has one parser/translator for event pages. Initial attachment and every
 resumed long poll pass through it.
@@ -602,7 +657,9 @@ The translator:
 - treats a forward gap, reordered event, changed operation ID, malformed
   terminal sequence, or event after terminal as `invalid_response`;
 - yields immutable typed events in wire order;
-- updates the resume cursor only after yielding the corresponding event.
+- updates the resume cursor only after yielding the corresponding event;
+- terminates when `complete` is true, including when the page contains no events;
+- continues polling an empty page only when `complete` is false.
 
 `OperationOptions.timeoutMs` is one total stream budget. Each long poll receives
 only the remaining budget. A caller abort closes the current event read and the
@@ -652,15 +709,18 @@ On this error a consumer:
 
 1. stops rendering the incomplete stream as continuous;
 2. reads `operations.read`;
-3. reloads `getConversation`;
-4. reloads `listConversationMessages` from the first page;
-5. replaces, rather than appends to, its local projection;
-6. waits for terminal operation state when canonical output is not yet
-   available.
+3. waits until the operation is terminal when canonical output is not yet
+   available, without rendering later deltas as continuous with the discarded
+   prefix;
+4. after terminal completion, reloads `getConversation`;
+5. after terminal completion, reloads `listConversationMessages` from the first
+   page and follows its bounded canonical pagination;
+6. replaces, rather than appends to, its local projection.
 
-The SDK never fabricates omitted deltas. Chat keeps reconciliation in its query
-and mutation adapters; it does not turn it into a global disconnected
-connection state.
+The post-terminal message reload is mandatory even if an earlier reconciliation
+read found only the durable input turn. The SDK never fabricates omitted
+deltas. Chat keeps reconciliation in its query and mutation adapters; it does
+not turn it into a global disconnected connection state.
 
 ## 13. Security, audit, and redaction
 
@@ -669,7 +729,10 @@ connection state.
 - Every route is direct-loopback Client v1 ingress and HPKE-authority-bound
   when active.
 - Create requires `conversations:write`.
-- Send, operation read/events, and Stop require `chat:write`.
+- Send/retry and Stop require `chat:write`.
+- Operation read/events require the stored `originatingScope` after operation
+  ownership is established, so create operations require
+  `conversations:write` and send/retry operations require `chat:write`.
 - Existing `chat:read` remains sufficient only for canonical reads.
 - A stored read-only credential is never silently widened. Chat and CLI must
   request new scopes through explicit pairing consent.
@@ -864,19 +927,19 @@ speculative route paths.
 | --- | --- |
 | Cave contract | Route/registry/fixture/doc bijection; scopes; capability truth; protected-operation list; limits; additive Client v1 compatibility. |
 | Request validation | UUID case normalization; exact text byte bound; invalid/foreign IDs; exactly one of text or `retryOfTurnId`; no unknown fields; canonical request hash vectors. |
-| Idempotency | Same key/same hash at every phase; same key/different hash conflict; concurrent duplicate claims execute once; terminal result replay; seven-day compaction; lifetime tombstone refusal. |
+| Idempotency | Public `pending` state for pre-dispatch claims; same key/same hash at every phase; abandoned-claim recovery lease; same key/different hash conflict; concurrent duplicate claims execute once; terminal result replay; seven-day compaction; lifetime tombstone refusal. |
 | Crash recovery | Inject failure before/after claim, input-turn persistence, dispatch marker, executor launch, Stop persistence, terminal transcript write, terminal event write, and tombstone compaction. |
 | Create | Duplicate create produces one conversation; restart reconstructs result; caller cannot supply root/runtime/harness/origin/transcript. |
 | Send | Accepted event follows durable input turn; one executor launch; terminal event follows durable assistant turn; partial output is retained on failure/cancel. |
 | Conversation serialization | One nonterminal send/retry per conversation; same-operation duplicate replay; different-operation `conversation_busy`; cross-credential race. |
 | Retry | Only failed/cancelled active-leaf assistant turns; fresh operation UUID; source operation UUID refusal; exact canonical prompt reuse; no retry of successful/running/foreign/attachment-bearing turn. |
 | Stop | Before registration, during execution, after completion, concurrent completion race, repeated Stop, unknown/foreign operation, restart with durable Stop intent. |
-| Events | Contiguous IDs; per-event cursors; initial/resume parity; duplicate suppression; empty long poll; bounded page; byte/count/time eviction; cursor-operation mismatch; replay gap. |
+| Events | Contiguous IDs; per-event cursors; initial/resume parity; duplicate suppression; empty long poll; bounded page; byte/count/time eviction; every cursor-matrix row including no cursor after eviction, cursor ahead, terminal cursor, and expired journal; empty terminal page completion. |
 | SDK | Hostile envelopes, accessors, prototypes, cycles, unknown events, reordered events, event after terminal, operation ID on every post-validation error, optional old transports, total timeout, abort closes read only. |
 | Managed native | Exact command allowlist; no bearer in webview; body/event bounds; native cancellation; hostile result snapshots; no generic URL/path/headers bridge. |
 | CLI | Human/JSON/NDJSON golden ordering; split UTF-8 chunks; stdout backpressure; terminal failure after output; no prompt argv; secret/cause/stack redaction. |
 | Packed consumer | Exact tarball install; type-only and runtime use; direct transport example; managed-browser example; no workspace/source-relative imports. |
-| Chat | Scope-upgrade consent; create/send/resume/Stop/retry; restart; revoked credential; instance replacement; query invalidation; no browser storage or diagnostic content leak. |
+| Chat | Scope-upgrade consent; originating-scope operation reads; create/send/resume/Stop/retry; restart; revoked credential; instance replacement; query invalidation; wait-to-terminal followed by a fresh canonical message reload; no browser storage or diagnostic content leak. |
 | Real authority | Duplicate send under transport loss; Cave restart at every phase; replay retention gap; canonical branch move; exact artifact digests; stable assertion IDs; no skip counted as pass. |
 | Platform | Passing immutable evidence on `darwin-arm64`, `linux-x64`, and `win32-x64`. |
 | Security | Separate review of authority binding, content duplication, local store permissions, operation enumeration, rate limits, audit/redaction, and release artifact exposure. |
