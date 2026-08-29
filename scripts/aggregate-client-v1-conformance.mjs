@@ -30,7 +30,7 @@ import { readReleaseConfig } from './release-readiness.mjs';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const assertionRegistryPath =
   'conformance/client-v1-cross-repository-assertions.json';
-const durablePublicationPlatforms = new Set(['darwin', 'linux', 'win32']);
+const aggregationHostPlatforms = new Set(['darwin', 'linux']);
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -139,11 +139,7 @@ export function fsyncPublicationDirectory(
   directoryPath,
   platform = process.platform,
 ) {
-  if (!durablePublicationPlatforms.has(platform)) {
-    throw new Error(
-      `Durable evidence publication is unsupported on platform ${JSON.stringify(platform)}`,
-    );
-  }
+  assertAggregationHostPlatform(platform);
   let descriptor;
   try {
     descriptor = openSync(directoryPath, 'r');
@@ -155,6 +151,14 @@ export function fsyncPublicationDirectory(
     );
   } finally {
     if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+export function assertAggregationHostPlatform(platform = process.platform) {
+  if (!aggregationHostPlatforms.has(platform)) {
+    throw new Error(
+      'Conformance aggregation is supported only on darwin and linux coordinators',
+    );
   }
 }
 
@@ -184,7 +188,12 @@ export function publishPreparedEvidence(
   }
 }
 
-export function publishEvidenceAtomically(outputPath, bytes) {
+export function publishEvidenceAtomically(
+  outputPath,
+  bytes,
+  platform = process.platform,
+) {
+  assertAggregationHostPlatform(platform);
   const resolvedOutput = resolve(outputPath);
   mkdirSync(dirname(resolvedOutput), { recursive: true, mode: 0o700 });
   const temporaryPath = resolve(
@@ -199,7 +208,11 @@ export function publishEvidenceAtomically(outputPath, bytes) {
     } finally {
       closeSync(descriptor);
     }
-    publishPreparedEvidence(temporaryPath, resolvedOutput);
+    publishPreparedEvidence(
+      temporaryPath,
+      resolvedOutput,
+      (directoryPath) => fsyncPublicationDirectory(directoryPath, platform),
+    );
   } catch (error) {
     try {
       unlinkSync(temporaryPath);
@@ -226,6 +239,7 @@ export function publishEvidenceAtomically(outputPath, bytes) {
 }
 
 export async function runConformanceAggregation(argv = process.argv.slice(2)) {
+  assertAggregationHostPlatform();
   const options = parseConformanceAggregationArgs(argv);
   const resolvedSdkRoot = realpathSync(repositoryRoot);
   const sdkGitRoot = realpathSync(

@@ -15,6 +15,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, beforeAll, describe, expect, test } from 'vitest';
 
 import {
+  assertAggregationHostPlatform,
+  fsyncPublicationDirectory,
   inspectCaveAssertionEngine,
   loadCommittedCaveAssertionEngine,
   publishEvidenceAtomically,
@@ -72,6 +74,14 @@ afterEach(() => {
 });
 
 describe('conformance aggregation filesystem trust', () => {
+  test('allows Unix aggregation coordinators and fails closed on win32', () => {
+    expect(() => assertAggregationHostPlatform('darwin')).not.toThrow();
+    expect(() => assertAggregationHostPlatform('linux')).not.toThrow();
+    expect(() => assertAggregationHostPlatform('win32')).toThrow(
+      'Conformance aggregation is supported only on darwin and linux coordinators',
+    );
+  });
+
   test('requires cave-root to be the Git top-level', () => {
     const fixture = createCaveRepository();
     expect(() =>
@@ -134,6 +144,28 @@ describe('conformance aggregation filesystem trust', () => {
       publishEvidenceAtomically(outputPath, '{"candidate":"second"}\n'),
     ).toThrow('Refusing to overwrite existing evidence');
     expect(readFileSync(outputPath, 'utf8')).toBe('{"candidate":"first"}\n');
+  });
+
+  test('win32 publication fails before creating a parent or destination', () => {
+    const root = mkdtempSync(resolve(artifactRoot, 'conformance-win32-gate-'));
+    temporaryRoots.push(root);
+    const parentPath = resolve(root, 'not-created');
+    const outputPath = resolve(parentPath, 'evidence.json');
+
+    expect(() =>
+      publishEvidenceAtomically(
+        outputPath,
+        '{"candidate":"blocked"}\n',
+        'win32',
+      ),
+    ).toThrow(
+      'Conformance aggregation is supported only on darwin and linux coordinators',
+    );
+    expect(existsSync(parentPath)).toBe(false);
+    expect(existsSync(outputPath)).toBe(false);
+    expect(() => fsyncPublicationDirectory(root, 'win32')).toThrow(
+      'Conformance aggregation is supported only on darwin and linux coordinators',
+    );
   });
 
   test('fsyncs the parent directory after link and temporary unlink', () => {

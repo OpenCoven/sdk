@@ -16,6 +16,13 @@ target:
 - `linux-x64`
 - `win32-x64`
 
+Aggregation itself runs once on a `darwin` or `linux` CI coordinator. The
+coordinator still requires and validates the `win32-x64` record; this host
+restriction does not narrow the three-platform evidence matrix. `win32` hosts
+fail before any temporary or destination evidence path is created because
+Node does not provide the parent-directory durability primitive required by
+this publication contract there.
+
 ## Platform record contract
 
 Each input must satisfy
@@ -94,11 +101,11 @@ The output path must not already exist. Publication writes and `fsync`s a
 complete sibling file, then atomically hard-links it into place, so exactly one
 concurrent creator wins without being overwritten. It then `fsync`s the parent
 directory after the link and temporary-file unlink. Directory synchronization
-is mandatory on `darwin`, `linux`, and `win32`; an unsupported platform or
-directory-sync failure fails publication rather than reporting success. Input
-order does not affect output: records are emitted in canonical platform order,
-and the aggregate contains no checkout or input path. Run the focused contract
-tests with:
+is mandatory on the supported `darwin` and `linux` coordinator hosts; an
+unsupported host or directory-sync failure fails publication rather than
+reporting success. Input order does not affect output: records are emitted in
+canonical platform order, and the aggregate contains no checkout or input
+path. Run the focused contract tests with:
 
 ```bash
 corepack pnpm@10.34.0 test:conformance-contract

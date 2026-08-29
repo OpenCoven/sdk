@@ -26,6 +26,10 @@ export function loadCommittedCaveAssertionEngine(
   inspected: InspectedCaveAssertionEngine,
 ): Promise<Record<string, unknown>>;
 
+export function assertAggregationHostPlatform(
+  platform?: NodeJS.Platform,
+): void;
+
 export function fsyncPublicationDirectory(
   directoryPath: string,
   platform?: NodeJS.Platform,
@@ -40,6 +44,7 @@ export function publishPreparedEvidence(
 export function publishEvidenceAtomically(
   outputPath: string,
   bytes: string,
+  platform?: NodeJS.Platform,
 ): void;
 
 export function runConformanceAggregation(

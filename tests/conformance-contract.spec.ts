@@ -742,5 +742,11 @@ describe('cross-repository conformance contract', () => {
     expect(runbook).toContain('No command in this repository starts a platform run');
     expect(runbook).toContain('conformance:aggregate');
     expect(runbook).toContain('assertion registry SHA-256');
+    expect(runbook).toContain(
+      'Aggregation itself runs once on a `darwin` or `linux` CI coordinator.',
+    );
+    expect(runbook).toMatch(
+      /The\s+coordinator still requires and validates the `win32-x64` record/u,
+    );
   });
 });
