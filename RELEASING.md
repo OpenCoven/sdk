@@ -15,8 +15,8 @@ A normal publication requires both independent locks to be open:
 
 1. reviewed repository changes set `publishingEnabled` to `true` in
    `release.config.json`, set the four release package manifests to
-   non-private, and name one exact unlock commit in
-   `publicationCandidate.unlockCommit`;
+   non-private, and leave the exact release workflow, candidate job, npm
+   registry, and npm CLI version pinned;
 2. the protected GitHub environment `npm-release` approves the publish job.
 
 `release.config.json` deliberately identifies two different artifact sets:
@@ -26,33 +26,70 @@ A normal publication requires both independent locks to be open:
   exact private SDK candidate consumed by Chat. Those bytes are conformance
   inputs only and must never be submitted to npm.
 - `publicationCandidate.artifactSet` is `publication-candidate`. Its
-  `unlockCommit`, `securityReviewedCommit`, and `securityReviewCommentId`
-  remain `null` while publication is disabled. A later authorization change
-  may set the commits to the same exact non-private version/unlock commit and
-  name the immutable #40 ship-disposition comment only after #40 has reviewed
-  that commit.
+  workflow and job identify the dedicated verify-mode producer. No commit or
+  #40 comment is written into a descendant configuration commit.
 
-Publication artifacts use schema version 2 from
+Publication artifacts use schema version 3 from
 [`conformance/release-artifact-manifest.schema.json`](conformance/release-artifact-manifest.schema.json).
-They carry the exact source commit/tree and #40-reviewed commit. Any source
-drift requires a new unlock commit, new artifact bytes, and a new #40 review;
-the frozen conformance digests are never reused as publication digests.
-Readiness fetches #40 and the configured comment through `gh api`, requires the
-issue to be closed, completed, and locked, and accepts only an unedited
-canonical ship record from CODEOWNER `BunsDev` naming the exact commit and
-tree. Matching config hashes alone cannot authorize publication.
+The exact release commit produces these bytes before SHIP authorization. The
+manifest carries its commit/tree, the reviewed repository `.npmrc` digest, the
+Node/pnpm/npm pack toolchain, the exact workflow commit/ref/run attempt/job,
+the unique commit-derived artifact name, and every tarball filename, size, and
+SHA-256. It contains no security-review claim.
 
-The configured comment body is recursively key-sorted, two-space-indented JSON
-with one trailing newline:
+After that immutable artifact exists, #40 reviews the raw
+`release-manifest.json` bytes and all four tarballs. The selected comment ID is
+a publish-dispatch input, not a repository change. Publication fetches #40 and
+the exact comment through `gh api`, requires the issue to be closed, completed,
+and locked, and accepts only unedited canonical JSON from CODEOWNER `BunsDev`.
+The record binds the exact source commit/tree, raw manifest size/SHA-256,
+ordered package entries, pack toolchain, workflow/run attempt/job ID, and
+GitHub artifact ID/name. Matching source content, a descendant commit, or a
+freshly repacked equivalent archive cannot authorize different bytes.
+
+The comment body is recursively key-sorted, two-space-indented JSON with one
+trailing newline. Its shape is:
 
 ```json
 {
-  "commit": "<unlock-commit>",
+  "artifact": {
+    "id": "<artifact-id>",
+    "name": "opencoven-sdk-publication-<release-commit>-<version>"
+  },
   "disposition": "ship",
   "issue": "OpenCoven/sdk#40",
   "kind": "opencoven-sdk-publication-security-review",
-  "schemaVersion": 1,
-  "tree": "<unlock-tree>"
+  "manifest": {
+    "file": "release-manifest.json",
+    "sha256": "<raw-manifest-sha256>",
+    "size": "<raw-manifest-size>"
+  },
+  "packages": [
+    "<the four exact ordered filename/size/SHA-256 entries>"
+  ],
+  "provenance": {
+    "job": "publication-candidate",
+    "jobId": "<job-id>",
+    "repository": "OpenCoven/sdk",
+    "runAttempt": "<run-attempt>",
+    "runId": "<run-id>",
+    "sourceRef": "refs/heads/main",
+    "workflow": ".github/workflows/release.yml",
+    "workflowCommit": "<release-commit>"
+  },
+  "schemaVersion": 2,
+  "source": {
+    "commit": "<release-commit>",
+    "repository": "OpenCoven/sdk",
+    "tree": "<release-tree>"
+  },
+  "toolchain": {
+    "nodeVersion": "v24.18.1",
+    "npmVersion": "11.5.1",
+    "packCommand": "corepack pnpm@10.34.0 pack --ignore-scripts",
+    "pnpmVersion": "pnpm@10.34.0"
+  },
+  "version": "<version>"
 }
 ```
 
@@ -182,16 +219,22 @@ in a separate contents-only job without `GH_TOKEN`; checkout credentials are
 never persisted. The publish job requires both the authoritative/artifact
 preflight and repository-verification jobs.
 
-Only after the publication lock is opened may `release:artifacts` run. It
-clones the exact `publicationCandidate.unlockCommit`, installs its frozen
-dependency lock, builds and packs that reviewed source, creates four tarballs,
-rejects every tarball whose packed `package.json` contains `private: true`, and
-writes the schema-v2 publication manifest. The preflight uploads only
-`opencoven-sdk-publication-<version>`. The publish job does not rebuild; it
-downloads that exact artifact set, repeats manifest/digest/private checks,
-attests the tarballs, and invokes npm on those exact files. The current
-`publicationCandidate` values are `null`, so no publication candidate can be
-created yet. Verify mode never publishes.
+When `publishingEnabled` is opened on the exact non-private release commit,
+verify mode runs the dedicated `publication-candidate` job. It clones that
+exact `HEAD`, installs its frozen dependency lock, builds and packs with
+scripts disabled, creates four tarballs, rejects `private: true`,
+`publishConfig`, and publish lifecycle scripts, and writes the schema-v3
+publication manifest. Candidate creation does not require SHIP. The job
+has no OIDC or attestation-write permission and uploads exactly
+`opencoven-sdk-publication-<commit>-<version>`. Verify mode never publishes.
+
+After #40 reviews those exact bytes, publish mode must run again from the same
+commit and tree. It resolves the immutable comment, verifies the successful
+candidate workflow run and exact numeric job and artifact IDs, downloads that
+prior artifact by reviewed run/name, and byte-verifies the raw manifest and
+every tarball. It never rebuilds or repacks. A gzip header, compression-level,
+filename, size, digest, workflow run, artifact, commit, or tree change requires
+new candidate bytes and a new #40 review.
 
 ## 6. First-publish bootstrap
 
@@ -221,9 +264,19 @@ protected `npm-release` GitHub environment where supported. Confirm all four:
 ## 8. Normal OIDC publication
 
 After bootstrap, normal releases use workflow mode `publish`. The protected
-job obtains short-lived OIDC identity, attests the preflight tarballs, and
-publishes those exact files. `NPM_TOKEN` and `NODE_AUTH_TOKEN` fallback are
-forbidden. The workflow must never rebuild or repack in the publish job.
+job obtains short-lived OIDC identity, attests the downloaded reviewed
+tarballs, and publishes those exact files. It uses pinned npm `11.5.1`, rejects
+`NPM_TOKEN` and `NODE_AUTH_TOKEN`, and discards inherited npm config, proxy,
+certificate override, lifecycle, and unrelated GitHub-token inputs. Each
+tarball is copied byte-for-byte into an owner-private temporary directory
+outside the checkout. npm runs there with generated private user/global
+configs and cache, registry pinned by config and CLI to
+`https://registry.npmjs.org/`, strict certificate validation, no auth token or
+`always-auth`, and `--ignore-scripts`. GitHub's two short-lived OIDC request
+variables, a fixed non-secret `GITHUB_ACTIONS=true` provider marker, and only
+the validated repository/workflow/ref/commit/run/hosted-runner fields required
+for npm's SLSA provenance reach npm. Resolved npm config is checked before the
+first publish. The workflow must never rebuild or repack in the publish job.
 
 ## 9. Registry and provenance validation
 

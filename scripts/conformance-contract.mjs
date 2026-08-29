@@ -574,24 +574,32 @@ function expectEvidenceSchemaMetadata(value, label) {
   return metadata;
 }
 
+function expectRunnerLabelList(value, label) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 8) {
+    throw new Error(`${label} must be a non-empty bounded array`);
+  }
+  const labels = value.map((entry, index) =>
+    expectString(entry, `${label}[${index}]`, {
+      pattern: IDENTIFIER_PATTERN,
+      maxBytes: 64,
+    }),
+  );
+  if (
+    new Set(labels).size !== labels.length
+    || labels.includes('self-hosted')
+  ) {
+    throw new Error(`${label} must identify unique GitHub-hosted runner labels`);
+  }
+  return labels;
+}
+
 function expectRunnerLabels(value, label) {
   const object = expectExactObject(value, CANONICAL_PLATFORMS, label);
   return Object.fromEntries(
-    CANONICAL_PLATFORMS.map((platform) => {
-      const labels = object[platform];
-      if (!Array.isArray(labels) || labels.length === 0 || labels.length > 8) {
-        throw new Error(`${label}.${platform} must be a non-empty bounded array`);
-      }
-      return [
-        platform,
-        labels.map((entry, index) =>
-          expectString(entry, `${label}.${platform}[${index}]`, {
-            pattern: IDENTIFIER_PATTERN,
-            maxBytes: 64,
-          }),
-        ),
-      ];
-    }),
+    CANONICAL_PLATFORMS.map((platform) => [
+      platform,
+      expectRunnerLabelList(object[platform], `${label}.${platform}`),
+    ]),
   );
 }
 
@@ -678,10 +686,19 @@ function expectEvidenceProducer(value, label) {
     const workflow = expectExactObject(
       object.workflow,
       [
+        'name',
         'path',
+        'size',
+        'sha256',
         'job',
         'jobNameTemplate',
+        'aggregationJob',
+        'aggregationJobName',
+        'aggregationRunnerLabels',
         'environment',
+        'environmentId',
+        'artifactNameTemplate',
+        'recordPathTemplate',
         'sourceRef',
         'runnerLabels',
         'signerWorkflow',
@@ -740,9 +757,23 @@ function expectEvidenceProducer(value, label) {
         { minimum: 1, maximum: 1_000 },
       ),
       workflow: {
+        name: expectString(
+          workflow.name,
+          `${label}.workflow.name`,
+          { maxBytes: 128 },
+        ),
         path: expectRelativePath(
           workflow.path,
           `${label}.workflow.path`,
+        ),
+        size: expectInteger(
+          workflow.size,
+          `${label}.workflow.size`,
+          { minimum: 1, maximum: 4 * 1024 * 1024 },
+        ),
+        sha256: expectSha256(
+          workflow.sha256,
+          `${label}.workflow.sha256`,
         ),
         job: expectString(workflow.job, `${label}.workflow.job`, {
           pattern: IDENTIFIER_PATTERN,
@@ -753,10 +784,39 @@ function expectEvidenceProducer(value, label) {
           `${label}.workflow.jobNameTemplate`,
           { maxBytes: 192 },
         ),
+        aggregationJob: expectString(
+          workflow.aggregationJob,
+          `${label}.workflow.aggregationJob`,
+          { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+        ),
+        aggregationJobName: expectString(
+          workflow.aggregationJobName,
+          `${label}.workflow.aggregationJobName`,
+          { maxBytes: 192 },
+        ),
+        aggregationRunnerLabels: expectRunnerLabelList(
+          workflow.aggregationRunnerLabels,
+          `${label}.workflow.aggregationRunnerLabels`,
+        ),
         environment: expectString(
           workflow.environment,
           `${label}.workflow.environment`,
           { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+        ),
+        environmentId: expectString(
+          workflow.environmentId,
+          `${label}.workflow.environmentId`,
+          { pattern: /^[1-9]\d*$/u, maxBytes: 32 },
+        ),
+        artifactNameTemplate: expectString(
+          workflow.artifactNameTemplate,
+          `${label}.workflow.artifactNameTemplate`,
+          { maxBytes: 192 },
+        ),
+        recordPathTemplate: expectString(
+          workflow.recordPathTemplate,
+          `${label}.workflow.recordPathTemplate`,
+          { maxBytes: 256 },
         ),
         sourceRef: expectString(
           workflow.sourceRef,
@@ -800,7 +860,22 @@ function expectEvidenceProducer(value, label) {
       || producer.command !== 'test:phase1-conformance'
       || producer.recordSchemaVersion !== 2
       || producer.harness.path !== 'scripts/phase1-conformance.mjs'
+      || producer.workflow.path
+        !== '.github/workflows/client-v1-conformance.yml'
+      || producer.workflow.job !== 'platform-conformance'
       || producer.workflow.jobNameTemplate.split('{platform}').length !== 2
+      || producer.workflow.aggregationJob !== 'aggregate-conformance'
+      || producer.workflow.aggregationJob === producer.workflow.job
+      || producer.workflow.aggregationJobName.includes('{platform}')
+      || producer.workflow.aggregationRunnerLabels.length !== 1
+      || producer.workflow.environment !== 'client-v1-conformance'
+      || producer.workflow.artifactNameTemplate
+        !== 'client-v1-conformance-{platform}'
+      || producer.workflow.recordPathTemplate
+        !== '.artifacts/client-v1-conformance-{platform}.json'
+      || Object.values(producer.workflow.runnerLabels).some(
+        (labels) => labels.length !== 1,
+      )
       || producer.workflow.signerWorkflow
         !== `${producer.repository}/${producer.workflow.path}`
       || producer.workflow.signerDigest !== producer.commit
@@ -3215,10 +3290,19 @@ export function parseReviewedEvidenceIndex(
   const producerWorkflow = expectExactObject(
     producerObject.workflow,
     [
+      'name',
       'path',
+      'size',
+      'sha256',
       'job',
       'jobNameTemplate',
+      'aggregationJob',
+      'aggregationJobName',
+      'aggregationRunnerLabels',
       'environment',
+      'environmentId',
+      'artifactNameTemplate',
+      'recordPathTemplate',
       'sourceRef',
       'runnerLabels',
       'signerWorkflow',
@@ -3260,9 +3344,23 @@ export function parseReviewedEvidenceIndex(
       ),
     },
     workflow: {
+      name: expectString(
+        producerWorkflow.name,
+        `${source}.producer.workflow.name`,
+        { maxBytes: 128 },
+      ),
       path: expectRelativePath(
         producerWorkflow.path,
         `${source}.producer.workflow.path`,
+      ),
+      size: expectInteger(
+        producerWorkflow.size,
+        `${source}.producer.workflow.size`,
+        { minimum: 1, maximum: 4 * 1024 * 1024 },
+      ),
+      sha256: expectSha256(
+        producerWorkflow.sha256,
+        `${source}.producer.workflow.sha256`,
       ),
       job: expectString(
         producerWorkflow.job,
@@ -3274,10 +3372,39 @@ export function parseReviewedEvidenceIndex(
         `${source}.producer.workflow.jobNameTemplate`,
         { maxBytes: 192 },
       ),
+      aggregationJob: expectString(
+        producerWorkflow.aggregationJob,
+        `${source}.producer.workflow.aggregationJob`,
+        { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+      ),
+      aggregationJobName: expectString(
+        producerWorkflow.aggregationJobName,
+        `${source}.producer.workflow.aggregationJobName`,
+        { maxBytes: 192 },
+      ),
+      aggregationRunnerLabels: expectRunnerLabelList(
+        producerWorkflow.aggregationRunnerLabels,
+        `${source}.producer.workflow.aggregationRunnerLabels`,
+      ),
       environment: expectString(
         producerWorkflow.environment,
         `${source}.producer.workflow.environment`,
         { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+      ),
+      environmentId: expectString(
+        producerWorkflow.environmentId,
+        `${source}.producer.workflow.environmentId`,
+        { pattern: /^[1-9]\d*$/u, maxBytes: 32 },
+      ),
+      artifactNameTemplate: expectString(
+        producerWorkflow.artifactNameTemplate,
+        `${source}.producer.workflow.artifactNameTemplate`,
+        { maxBytes: 192 },
+      ),
+      recordPathTemplate: expectString(
+        producerWorkflow.recordPathTemplate,
+        `${source}.producer.workflow.recordPathTemplate`,
+        { maxBytes: 256 },
       ),
       sourceRef: expectString(
         producerWorkflow.sourceRef,
@@ -3369,6 +3496,7 @@ export function parseReviewedEvidenceIndex(
         'runId',
         'runAttempt',
         'jobId',
+        'deploymentId',
         'artifactName',
         'artifactSha256',
         'attestationSubjectSha256',
@@ -3390,6 +3518,11 @@ export function parseReviewedEvidenceIndex(
       jobId: expectString(
         jobObject.jobId,
         `${label}.protectedJob.jobId`,
+        { pattern: /^[1-9]\d*$/u, maxBytes: 32 },
+      ),
+      deploymentId: expectString(
+        jobObject.deploymentId,
+        `${label}.protectedJob.deploymentId`,
         { pattern: /^[1-9]\d*$/u, maxBytes: 32 },
       ),
       artifactName: expectString(
@@ -3428,7 +3561,10 @@ export function parseReviewedEvidenceIndex(
     }
     if (
       protectedJob.artifactName
-        !== `client-v1-conformance-${platform}`
+        !== producer.workflow.artifactNameTemplate.replace(
+          '{platform}',
+          platform,
+        )
     ) {
       throw new Error(
         `${source} ${platform} artifact name does not match its platform`,
@@ -3441,6 +3577,7 @@ export function parseReviewedEvidenceIndex(
       protectedJob.runId,
       protectedJob.runAttempt,
       protectedJob.jobId,
+      protectedJob.deploymentId,
     ].join(':'),
   );
   if (
@@ -3448,6 +3585,28 @@ export function parseReviewedEvidenceIndex(
   ) {
     throw new Error(
       `${source} protected job provenance must be unique per platform`,
+    );
+  }
+  const jobIds = platforms.map(({ protectedJob }) => protectedJob.jobId);
+  const deploymentIds = platforms.map(
+    ({ protectedJob }) => protectedJob.deploymentId,
+  );
+  if (
+    new Set(jobIds).size !== jobIds.length
+    || new Set(deploymentIds).size !== deploymentIds.length
+  ) {
+    throw new Error(
+      `${source} protected job and deployment ids must be unique per platform`,
+    );
+  }
+  const runIdentities = new Set(
+    platforms.map(({ protectedJob }) =>
+      `${protectedJob.runId}:${protectedJob.runAttempt}`,
+    ),
+  );
+  if (runIdentities.size !== 1) {
+    throw new Error(
+      `${source} protected matrix jobs must come from one exact workflow run attempt`,
     );
   }
   return canonicalize({

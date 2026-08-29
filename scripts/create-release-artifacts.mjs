@@ -7,6 +7,7 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
@@ -17,9 +18,6 @@ import {
   cleanupOwnedTempRoot,
   createOwnedTempDirectory,
 } from './owned-temp-directory.mjs';
-import {
-  verifyPublicationSecurityReview,
-} from './github-release-authorization.mjs';
 import { packPublicPackages } from './package-artifacts.mjs';
 import {
   parseFrozenConformanceLock,
@@ -31,6 +29,7 @@ import {
   readPackedPackageManifest,
 } from './repository-metadata.mjs';
 import {
+  inspectReleaseRepository,
   readReleaseConfig,
   validateReleaseReadiness,
 } from './release-readiness.mjs';
@@ -41,6 +40,20 @@ const RELEASE_MANIFEST_SCHEMA_PATH = resolve(
   '../conformance/release-artifact-manifest.schema.json',
 );
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const PUBLICATION_TOOLCHAIN = Object.freeze({
+  nodeVersion: 'v24.18.1',
+  pnpmVersion: 'pnpm@10.34.0',
+  npmVersion: '11.5.1',
+  packCommand: 'corepack pnpm@10.34.0 pack --ignore-scripts',
+});
+const CANONICAL_REPOSITORY_NPMRC = [
+  'engine-strict=true',
+  'save-exact=true',
+  'shared-workspace-lockfile=true',
+  'prefer-workspace-packages=true',
+  'link-workspace-packages=true',
+  '',
+].join('\n');
 
 function digest(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -93,7 +106,11 @@ function runReleaseProcess(command, args, cwd, options = {}) {
   });
 }
 
-function createCommittedReleaseSource(root, commit) {
+function createCommittedReleaseSource(
+  root,
+  commit,
+  { ignoreInstallScripts = false } = {},
+) {
   if (
     typeof commit !== 'string'
     || !/^[0-9a-f]{40}$/u.test(commit)
@@ -143,7 +160,12 @@ function createCommittedReleaseSource(root, commit) {
     }
     runReleaseProcess(
       'corepack',
-      ['pnpm@10.34.0', 'install', '--frozen-lockfile'],
+      [
+        'pnpm@10.34.0',
+        'install',
+        '--frozen-lockfile',
+        ...(ignoreInstallScripts ? ['--ignore-scripts'] : []),
+      ],
       owned.path,
       { timeout: 300_000 },
     );
@@ -189,21 +211,36 @@ export function serializeReleaseManifest(manifest) {
             sha256: entry.sha256,
           })),
         }
-      : manifest.schemaVersion === 2
+      : manifest.schemaVersion === 3
         ? {
-            schemaVersion: 2,
+            schemaVersion: 3,
             artifactSet: manifest.artifactSet,
             version: manifest.version,
             source: {
               repository: manifest.source.repository,
               commit: manifest.source.commit,
               tree: manifest.source.tree,
+              npmConfigFiles: manifest.source.npmConfigFiles.map((entry) => ({
+                path: entry.path,
+                size: entry.size,
+                sha256: entry.sha256,
+              })),
             },
-            securityReview: {
-              issue: manifest.securityReview.issue,
-              commentId: manifest.securityReview.commentId,
-              reviewer: manifest.securityReview.reviewer,
-              reviewedCommit: manifest.securityReview.reviewedCommit,
+            toolchain: {
+              nodeVersion: manifest.toolchain.nodeVersion,
+              pnpmVersion: manifest.toolchain.pnpmVersion,
+              npmVersion: manifest.toolchain.npmVersion,
+              packCommand: manifest.toolchain.packCommand,
+            },
+            provenance: {
+              repository: manifest.provenance.repository,
+              workflow: manifest.provenance.workflow,
+              workflowCommit: manifest.provenance.workflowCommit,
+              sourceRef: manifest.provenance.sourceRef,
+              runId: manifest.provenance.runId,
+              runAttempt: manifest.provenance.runAttempt,
+              job: manifest.provenance.job,
+              artifactName: manifest.provenance.artifactName,
             },
             packages: manifest.packages.map((entry) => ({
               name: entry.name,
@@ -216,7 +253,7 @@ export function serializeReleaseManifest(manifest) {
         : null;
   if (canonicalManifest === null) {
     throw new Error(
-      `${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 2`,
+      `${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 3`,
     );
   }
   return `${JSON.stringify(
@@ -304,7 +341,7 @@ function readReleaseManifest(artifactRoot) {
       ['schemaVersion', 'version', 'packages'],
       RELEASE_MANIFEST_NAME,
     );
-  } else if (manifest.schemaVersion === 2) {
+  } else if (manifest.schemaVersion === 3) {
     assertExactFields(
       manifest,
       [
@@ -312,13 +349,14 @@ function readReleaseManifest(artifactRoot) {
         'artifactSet',
         'version',
         'source',
-        'securityReview',
+        'toolchain',
+        'provenance',
         'packages',
       ],
       RELEASE_MANIFEST_NAME,
     );
   } else {
-    throw new Error(`${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 2`);
+    throw new Error(`${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 3`);
   }
   if (!Array.isArray(manifest.packages)) {
     throw new Error(`${RELEASE_MANIFEST_NAME} packages must be an array`);
@@ -336,6 +374,32 @@ export function assertPublishablePackedManifest(manifest, packageName) {
   if (manifest.private === true) {
     throw new Error(
       `${packageName} publication artifact must not contain private: true`,
+    );
+  }
+  const publishLifecycleScripts = [
+    'prepublish',
+    'prepare',
+    'prepublishOnly',
+    'prepack',
+    'postpack',
+    'publish',
+    'postpublish',
+  ];
+  if (
+    typeof manifest.scripts === 'object'
+    && manifest.scripts !== null
+    && !Array.isArray(manifest.scripts)
+    && publishLifecycleScripts.some((name) =>
+      Object.hasOwn(manifest.scripts, name),
+    )
+  ) {
+    throw new Error(
+      `${packageName} publication artifact must not contain publish lifecycle scripts`,
+    );
+  }
+  if (manifest.publishConfig !== undefined) {
+    throw new Error(
+      `${packageName} publication artifact must not contain publishConfig overrides`,
     );
   }
 }
@@ -445,12 +509,14 @@ function packArtifactEntries({
   build,
   version,
   requirePublishable,
+  ignoreScripts = false,
   env,
 }) {
   const tarballs = packPublicPackages({
     root: packageRoot,
     destinationRoot: resolve(artifactRoot, 'tarballs'),
     build,
+    ignoreScripts,
     env,
   });
   return PUBLIC_PACKAGES.map(({ packageName, workspaceDirectory }) => {
@@ -671,74 +737,156 @@ export function verifyConformanceArtifacts({
   return manifest;
 }
 
-function requireUnlockedPublicationCandidate(config) {
-  const publication = config.publicationCandidate;
+export function inspectRepositoryNpmConfiguration(root) {
+  const trackedConfigPaths = runReleaseProcess(
+    'git',
+    ['ls-files', '-z'],
+    root,
+  )
+    .split('\0')
+    .filter((path) => {
+      const name = basename(path);
+      return name === '.npmrc' || name === 'npmrc';
+    });
   if (
-    config.publishingEnabled !== true
-    || typeof publication.unlockCommit !== 'string'
-    || publication.securityReviewedCommit !== publication.unlockCommit
+    trackedConfigPaths.length !== 1
+    || trackedConfigPaths[0] !== '.npmrc'
   ) {
     throw new Error(
-      'release.config.json publicationCandidate must be unlocked and security-reviewed before publication artifacts are created',
+      'Release repository npm configuration is not canonical',
     );
   }
-  return publication;
+  const path = resolve(root, '.npmrc');
+  const stats = lstatSync(path);
+  const bytes = readFileSync(path);
+  const committedBytes = runReleaseProcess(
+    'git',
+    ['show', 'HEAD:.npmrc'],
+    root,
+    { encoding: 'buffer' },
+  );
+  if (
+    stats.isSymbolicLink()
+    || !stats.isFile()
+    || !bytes.equals(committedBytes)
+    || bytes.toString('utf8') !== CANONICAL_REPOSITORY_NPMRC
+  ) {
+    throw new Error(
+      'Release repository npm configuration is not canonical',
+    );
+  }
+  return [
+    {
+      path: '.npmrc',
+      size: bytes.byteLength,
+      sha256: digest(bytes),
+    },
+  ];
 }
 
 function inspectPublicationSource(root, config) {
-  const publication = requireUnlockedPublicationCandidate(config);
-  const releaseCommit = runReleaseProcess(
+  if (config.publishingEnabled !== true) {
+    throw new Error('Release publishing is disabled by release.config.json');
+  }
+  const checkout = inspectReleaseRepository(root);
+  const status = runReleaseProcess(
     'git',
-    ['rev-parse', 'HEAD'],
-    root,
-  ).trim();
-  runReleaseProcess(
-    'git',
-    ['cat-file', '-e', `${publication.unlockCommit}^{commit}`],
-    root,
+    ['status', '--porcelain=v1', '--untracked-files=all'],
+    checkout.root,
   );
-  runReleaseProcess(
-    'git',
-    ['merge-base', '--is-ancestor', publication.unlockCommit, releaseCommit],
-    root,
-  );
+  if (status.length !== 0) {
+    throw new Error(
+      'Publication artifacts require a clean exact release commit checkout',
+    );
+  }
   runReleaseProcess(
     'git',
     [
       'merge-base',
       '--is-ancestor',
       config.conformanceEvidence.candidateCommit,
-      publication.unlockCommit,
+      checkout.commit,
     ],
-    root,
+    checkout.root,
   );
-  const sourceTree = runReleaseProcess(
-    'git',
-    ['rev-parse', `${publication.unlockCommit}^{tree}`],
-    root,
-  ).trim();
-  const securityReview = verifyPublicationSecurityReview({
-    publicationCandidate: publication,
-    sourceTree,
-  });
   return {
-    releaseCommit,
-    sourceCommit: publication.unlockCommit,
-    sourceTree,
-    securityReview,
+    releaseCommit: checkout.commit,
+    sourceCommit: checkout.commit,
+    sourceTree: checkout.tree,
+    npmConfigFiles: inspectRepositoryNpmConfiguration(checkout.root),
   };
+}
+
+function readPublicationProvenance(env, source, config, version) {
+  const workflowRefPrefix =
+    `${source.repository ?? 'OpenCoven/sdk'}/`
+    + `${config.publicationCandidate.workflow}@`;
+  const workflowRef = env.GITHUB_WORKFLOW_REF;
+  const runAttempt = Number(env.GITHUB_RUN_ATTEMPT);
+  const expectedArtifactName =
+    `opencoven-sdk-publication-${source.sourceCommit}-${version}`;
+  if (
+    env.GITHUB_REPOSITORY !== 'OpenCoven/sdk'
+    || env.GITHUB_SHA !== source.sourceCommit
+    || env.GITHUB_WORKFLOW_SHA !== source.sourceCommit
+    || typeof workflowRef !== 'string'
+    || !workflowRef.startsWith(workflowRefPrefix)
+    || workflowRef.slice(workflowRefPrefix.length) !== 'refs/heads/main'
+    || env.GITHUB_JOB !== config.publicationCandidate.job
+    || typeof env.GITHUB_RUN_ID !== 'string'
+    || !/^[1-9]\d*$/u.test(env.GITHUB_RUN_ID)
+    || !Number.isSafeInteger(runAttempt)
+    || runAttempt < 1
+    || runAttempt > 1_000
+    || env.OPENCOVEN_PUBLICATION_ARTIFACT_NAME !== expectedArtifactName
+  ) {
+    throw new Error(
+      'Publication candidate requires exact GitHub workflow provenance for the release commit',
+    );
+  }
+  return {
+    repository: 'OpenCoven/sdk',
+    workflow: config.publicationCandidate.workflow,
+    workflowCommit: source.sourceCommit,
+    sourceRef: 'refs/heads/main',
+    runId: env.GITHUB_RUN_ID,
+    runAttempt,
+    job: config.publicationCandidate.job,
+    artifactName: expectedArtifactName,
+  };
+}
+
+function listArtifactFiles(root, directory = root) {
+  const files = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = resolve(directory, entry.name);
+    const stats = lstatSync(path);
+    if (stats.isSymbolicLink()) {
+      throw new Error('Publication artifact set must not contain symbolic links');
+    }
+    if (entry.isDirectory()) {
+      files.push(...listArtifactFiles(root, path));
+      continue;
+    }
+    if (!entry.isFile()) {
+      throw new Error('Publication artifact set must contain only regular files');
+    }
+    files.push(relative(root, path).split(sep).join('/'));
+  }
+  return files.sort();
 }
 
 function verifyPublicationArtifactSet({
   root,
   artifactRoot,
   version,
+  expectedProvenance,
 }) {
   const config = readReleaseConfig(root);
   const source = inspectPublicationSource(root, config);
   const { manifest } = readReleaseManifest(artifactRoot);
   if (
-    manifest.schemaVersion !== 2
+    manifest.schemaVersion !== 3
     || manifest.artifactSet !== 'publication-candidate'
   ) {
     throw new Error(
@@ -747,26 +895,62 @@ function verifyPublicationArtifactSet({
   }
   assertExactFields(
     manifest.source,
-    ['repository', 'commit', 'tree'],
+    ['repository', 'commit', 'tree', 'npmConfigFiles'],
     `${RELEASE_MANIFEST_NAME} source`,
   );
   assertExactFields(
-    manifest.securityReview,
-    ['issue', 'commentId', 'reviewer', 'reviewedCommit'],
-    `${RELEASE_MANIFEST_NAME} securityReview`,
+    manifest.toolchain,
+    ['nodeVersion', 'pnpmVersion', 'npmVersion', 'packCommand'],
+    `${RELEASE_MANIFEST_NAME} toolchain`,
   );
+  assertExactFields(
+    manifest.provenance,
+    [
+      'repository',
+      'workflow',
+      'workflowCommit',
+      'sourceRef',
+      'runId',
+      'runAttempt',
+      'job',
+      'artifactName',
+    ],
+    `${RELEASE_MANIFEST_NAME} provenance`,
+  );
+  const expectedArtifactName =
+    `opencoven-sdk-publication-${source.sourceCommit}-${manifest.version}`;
   if (
     manifest.source.repository !== 'OpenCoven/sdk'
     || manifest.source.commit !== source.sourceCommit
     || manifest.source.tree !== source.sourceTree
-    || manifest.securityReview.issue !== source.securityReview.issue
-    || manifest.securityReview.commentId !== source.securityReview.commentId
-    || manifest.securityReview.reviewer !== source.securityReview.reviewer
-    || manifest.securityReview.reviewedCommit
-      !== source.securityReview.commit
+    || JSON.stringify(manifest.source.npmConfigFiles)
+      !== JSON.stringify(source.npmConfigFiles)
+    || JSON.stringify(manifest.toolchain)
+      !== JSON.stringify(PUBLICATION_TOOLCHAIN)
+    || manifest.toolchain.npmVersion !== config.npmCliVersion
+    || manifest.provenance.repository !== 'OpenCoven/sdk'
+    || manifest.provenance.workflow
+      !== config.publicationCandidate.workflow
+    || manifest.provenance.workflowCommit !== source.sourceCommit
+    || manifest.provenance.sourceRef !== 'refs/heads/main'
+    || manifest.provenance.job !== config.publicationCandidate.job
+    || manifest.provenance.artifactName !== expectedArtifactName
+    || typeof manifest.provenance.runId !== 'string'
+    || !/^[1-9]\d*$/u.test(manifest.provenance.runId)
+    || !Number.isSafeInteger(manifest.provenance.runAttempt)
+    || manifest.provenance.runAttempt < 1
   ) {
     throw new Error(
-      `${RELEASE_MANIFEST_NAME} publication source must match the exact #40-reviewed unlock commit`,
+      `${RELEASE_MANIFEST_NAME} publication source and provenance must match the exact release commit`,
+    );
+  }
+  if (
+    expectedProvenance !== undefined
+    && JSON.stringify(manifest.provenance)
+      !== JSON.stringify(expectedProvenance)
+  ) {
+    throw new Error(
+      `${RELEASE_MANIFEST_NAME} provenance does not match the expected workflow run`,
     );
   }
   if (version !== undefined && manifest.version !== version) {
@@ -781,9 +965,23 @@ function verifyPublicationArtifactSet({
     requirePublishable: true,
     env: createReleaseProcessEnvironment(),
   });
+  const expectedFiles = [
+    RELEASE_MANIFEST_NAME,
+    ...manifest.packages.map(({ file }) => file),
+  ].sort();
+  if (
+    JSON.stringify(listArtifactFiles(artifactRoot))
+      !== JSON.stringify(expectedFiles)
+  ) {
+    throw new Error(
+      'Publication artifact set contains unexpected or missing files',
+    );
+  }
   if (
     runReleaseProcess('git', ['rev-parse', 'HEAD'], root).trim()
       !== source.releaseCommit
+    || runReleaseProcess('git', ['rev-parse', 'HEAD^{tree}'], root).trim()
+      !== source.sourceTree
   ) {
     throw new Error(
       'Release checkout changed commit during publication artifact verification',
@@ -797,6 +995,7 @@ export function createPublicationArtifacts({
   outputRoot,
   build = true,
   version,
+  env = process.env,
 } = {}) {
   if (typeof build !== 'boolean') {
     throw new Error('build must be a boolean');
@@ -805,15 +1004,21 @@ export function createPublicationArtifacts({
   const source = inspectPublicationSource(root, config);
   if (!build) {
     throw new Error(
-      'Publication artifacts must build from the committed unlock source',
+      'Publication artifacts must build from the committed release source',
     );
   }
   const readiness = validateReleaseReadiness({
     root,
-    mode: 'publish',
+    mode: 'verify',
     version,
     requireConformanceEvidence: true,
   });
+  const provenance = readPublicationProvenance(
+    env,
+    source,
+    config,
+    readiness.version,
+  );
   const ownedDirectory =
     outputRoot === undefined
       ? createOwnedTempDirectory({
@@ -825,6 +1030,7 @@ export function createPublicationArtifacts({
   const committedSource = createCommittedReleaseSource(
     root,
     source.sourceCommit,
+    { ignoreInstallScripts: true },
   );
 
   try {
@@ -838,23 +1044,21 @@ export function createPublicationArtifacts({
       build,
       version: readiness.version,
       requirePublishable: true,
+      ignoreScripts: true,
       env: createReleaseProcessEnvironment(),
     });
     const manifest = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       artifactSet: 'publication-candidate',
       version: readiness.version,
       source: {
         repository: 'OpenCoven/sdk',
         commit: source.sourceCommit,
         tree: source.sourceTree,
+        npmConfigFiles: source.npmConfigFiles,
       },
-      securityReview: {
-        issue: source.securityReview.issue,
-        commentId: source.securityReview.commentId,
-        reviewer: source.securityReview.reviewer,
-        reviewedCommit: source.securityReview.commit,
-      },
+      toolchain: { ...PUBLICATION_TOOLCHAIN },
+      provenance,
       packages,
     };
     writeFileSync(manifestPath, serializeReleaseManifest(manifest), {
@@ -864,6 +1068,7 @@ export function createPublicationArtifacts({
       root,
       artifactRoot,
       version: readiness.version,
+      expectedProvenance: provenance,
     });
     return {
       artifactRoot,
@@ -881,27 +1086,17 @@ export function verifyPublicationArtifacts({
   root = process.cwd(),
   artifactRoot,
   version,
+  expectedProvenance,
 } = {}) {
   if (typeof artifactRoot !== 'string' || artifactRoot.length === 0) {
     throw new Error('artifactRoot is required');
   }
-  const manifest = verifyPublicationArtifactSet({
+  return verifyPublicationArtifactSet({
     root,
     artifactRoot,
     version,
+    expectedProvenance,
   });
-  const readiness = validateReleaseReadiness({
-    root,
-    mode: 'publish',
-    version: manifest.version,
-    requireConformanceEvidence: true,
-  });
-  if (readiness.version !== manifest.version) {
-    throw new Error(
-      `${RELEASE_MANIFEST_NAME} version must be ${readiness.version}`,
-    );
-  }
-  return manifest;
 }
 
 export function parseReleaseArtifactArguments(arguments_) {

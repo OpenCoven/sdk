@@ -10,6 +10,7 @@ permissions:
   actions: read
   attestations: read
   contents: read
+  deployments: read
   issues: read
 
 concurrency:

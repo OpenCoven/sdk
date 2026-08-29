@@ -32,6 +32,75 @@ const schemaPath = resolve(
   'conformance/client-v1-cross-repository-evidence.schema.json',
 );
 const PLATFORMS = ['darwin-arm64', 'linux-x64', 'win32-x64'] as const;
+
+function producerArtifactSteps(): string[] {
+  return [
+    '      - uses: actions/attest-build-provenance@2222222222222222222222222222222222222222',
+    '        with:',
+    '          subject-path: .artifacts/client-v1-conformance-${{ matrix.platform }}.json',
+    '      - uses: actions/upload-artifact@1111111111111111111111111111111111111111',
+    '        with:',
+    '          name: client-v1-conformance-${{ matrix.platform }}',
+    '          path: .artifacts/client-v1-conformance-${{ matrix.platform }}.json',
+  ];
+}
+
+function createProducerWorkflow({
+  siblingSubstitute = false,
+}: {
+  siblingSubstitute?: boolean;
+} = {}): string {
+  return [
+    'name: client-v1 conformance',
+    'on:',
+    '  workflow_dispatch:',
+    'permissions:',
+    '  contents: read',
+    'jobs:',
+    '  platform-conformance:',
+    '    name: platform-conformance (${{ matrix.platform }})',
+    '    strategy:',
+    '      fail-fast: false',
+    '      matrix:',
+    '        include:',
+    '          - platform: darwin-arm64',
+    '            runner: macos-14',
+    '          - platform: linux-x64',
+    '            runner: ubuntu-24.04',
+    '          - platform: win32-x64',
+    '            runner: windows-2025',
+    '    runs-on: ${{ matrix.runner }}',
+    '    environment: client-v1-conformance',
+    '    permissions:',
+    '      attestations: write',
+    '      contents: read',
+    '      id-token: write',
+    '    steps:',
+    '      - name: Produce platform evidence',
+    '        run: node scripts/phase1-conformance.mjs',
+    ...(siblingSubstitute ? [] : producerArtifactSteps()),
+    ...(siblingSubstitute
+      ? [
+          '  sibling-substitute:',
+          '    name: sibling-substitute',
+          '    runs-on: ubuntu-24.04',
+          '    steps:',
+          ...producerArtifactSteps(),
+        ]
+      : []),
+    '  aggregate-conformance:',
+    '    name: aggregate-conformance',
+    '    needs: platform-conformance',
+    '    runs-on: ubuntu-24.04',
+    '    permissions: {}',
+    '    steps:',
+    '      - name: Confirm protected evidence matrix',
+    '        run: echo "protected evidence matrix completed"',
+    '',
+  ].join('\n');
+}
+
+const TEST_PRODUCER_WORKFLOW_TEXT = createProducerWorkflow();
 const TEST_COMPATIBLE_PRODUCER = {
   status: 'compatible',
   repository: 'OpenCoven/chat',
@@ -51,10 +120,20 @@ const TEST_COMPATIBLE_PRODUCER = {
   command: 'test:phase1-conformance',
   recordSchemaVersion: 2,
   workflow: {
+    name: 'client-v1 conformance',
     path: '.github/workflows/client-v1-conformance.yml',
+    size: Buffer.byteLength(TEST_PRODUCER_WORKFLOW_TEXT, 'utf8'),
+    sha256: sha256(TEST_PRODUCER_WORKFLOW_TEXT),
     job: 'platform-conformance',
     jobNameTemplate: 'platform-conformance ({platform})',
+    aggregationJob: 'aggregate-conformance',
+    aggregationJobName: 'aggregate-conformance',
+    aggregationRunnerLabels: ['ubuntu-24.04'],
     environment: 'client-v1-conformance',
+    environmentId: '5000',
+    artifactNameTemplate: 'client-v1-conformance-{platform}',
+    recordPathTemplate:
+      '.artifacts/client-v1-conformance-{platform}.json',
     sourceRef: 'refs/heads/main',
     runnerLabels: {
       'darwin-arm64': ['macos-14'],
@@ -1229,24 +1308,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           size: 120_000,
           sha256: '2'.repeat(64),
         },
-        workflow: {
-          path: '.github/workflows/client-v1-conformance.yml',
-          job: 'platform-conformance',
-          jobNameTemplate: 'platform-conformance ({platform})',
-          environment: 'client-v1-conformance',
-          sourceRef: 'refs/heads/main',
-          runnerLabels: {
-            'darwin-arm64': ['macos-14'],
-            'linux-x64': ['ubuntu-24.04'],
-            'win32-x64': ['windows-2025'],
-          },
-          signerWorkflow:
-            'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-          signerDigest: 'f'.repeat(40),
-          sourceDigest: 'f'.repeat(40),
-          predicateType: 'https://slsa.dev/provenance/v1',
-          denySelfHostedRunners: true,
-        },
+        workflow: structuredClone(TEST_COMPATIBLE_PRODUCER.workflow),
       },
       platforms: aggregateRecord.platforms.map((record, index_) => {
         const recordText = contract.serializeCanonicalJson(record);
@@ -1258,9 +1320,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
             sha256: sha256(recordText),
           },
           protectedJob: {
-            runId: String(10_000 + index_),
+            runId: '10000',
             runAttempt: 1,
             jobId: String(20_000 + index_),
+            deploymentId: String(40_000 + index_),
             artifactName: `client-v1-conformance-${record.platform}`,
             artifactSha256,
             attestationSubjectSha256: artifactSha256,
@@ -1347,6 +1410,24 @@ describe('unresolved SDK #38 conformance gaps', () => {
     ).toThrow(
       'duplicate protected job index protected job provenance must be unique per platform',
     );
+
+    const reusedJobId = structuredClone(index);
+    reusedJobId.platforms[1]!.protectedJob.jobId =
+      reusedJobId.platforms[0]!.protectedJob.jobId;
+    expect(() =>
+      parseReviewedEvidenceIndex(
+        contract.serializeCanonicalJson(reusedJobId) as never,
+        'reused job id index' as never,
+        {
+          frozenLock: compatibleLock,
+          aggregate: aggregateRecord,
+          aggregatePath,
+          aggregateText,
+        } as never,
+      ),
+    ).toThrow(
+      'reused job id index protected job and deployment ids must be unique per platform',
+    );
   });
 
   test('authenticates downloaded GitHub records instead of committed aggregate claims', () => {
@@ -1417,9 +1498,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
             sha256: recordSha256,
           },
           protectedJob: {
-            runId: String(10_000 + index_),
+            runId: '10000',
             runAttempt: 1,
             jobId: String(20_000 + index_),
+            deploymentId: String(40_000 + index_),
             artifactName: `client-v1-conformance-${platform}`,
             artifactSha256: recordSha256,
             attestationSubjectSha256: recordSha256,
@@ -1441,20 +1523,37 @@ describe('unresolved SDK #38 conformance gaps', () => {
       if (arguments_[0] === 'api') {
         const endpoint = arguments_.at(-1) ?? '';
         if (endpoint.includes('/contents/.github/workflows/')) {
-          return [
-            'name: client-v1 conformance',
-            'jobs:',
-            '  platform-conformance:',
-            '    environment: client-v1-conformance',
-            '    runs-on: ${{ matrix.runner }}',
-            '',
-          ].join('\n');
+          return TEST_PRODUCER_WORKFLOW_TEXT;
+        }
+        if (endpoint.endsWith('/environments/client-v1-conformance')) {
+          return JSON.stringify({
+            id: Number(producer.workflow.environmentId),
+            name: producer.workflow.environment,
+            protection_rules: [
+              {
+                type: 'required_reviewers',
+                prevent_self_review: true,
+                reviewers: [
+                  {
+                    type: 'User',
+                    reviewer: { login: 'evidence-reviewer' },
+                  },
+                ],
+              },
+              { type: 'branch_policy' },
+            ],
+            deployment_branch_policy: {
+              protected_branches: true,
+              custom_branch_policies: false,
+            },
+          });
         }
         const runMatch = /\/actions\/runs\/(\d+)$/u.exec(endpoint);
         if (runMatch !== null) {
           const runId = runMatch[1];
           return JSON.stringify({
             id: Number(runId),
+            name: producer.workflow.name,
             run_attempt: 1,
             head_sha: producer.commit,
             head_branch: 'main',
@@ -1465,40 +1564,128 @@ describe('unresolved SDK #38 conformance gaps', () => {
             head_repository: { full_name: producer.repository },
           });
         }
-        const jobMatch = /\/actions\/jobs\/(\d+)$/u.exec(endpoint);
-        if (jobMatch !== null) {
-          const jobId = Number(jobMatch[1]);
-          const index_ = jobId - 20_000;
-          const platform = PLATFORMS[index_] ?? 'darwin-arm64';
-          const actualIndex = PLATFORMS.indexOf(platform);
-          return JSON.stringify({
-            id: 20_000 + actualIndex,
-            run_id: 10_000 + actualIndex,
+        const jobsMatch =
+          /\/actions\/runs\/(\d+)\/attempts\/(\d+)\/jobs\?per_page=100$/u.exec(
+            endpoint,
+          );
+        if (jobsMatch !== null) {
+          const runId = Number(jobsMatch[1]);
+          const runAttempt = Number(jobsMatch[2]);
+          const jobs = PLATFORMS.map((platform, index_) => ({
+            id: 20_000 + index_,
+            run_id: runId,
+            run_attempt: runAttempt,
             head_sha: producer.commit,
+            html_url:
+              `https://github.com/${producer.repository}/actions/runs/`
+              + `${runId}/job/${20_000 + index_}`,
             name: producer.workflow.jobNameTemplate.replace(
               '{platform}',
               platform,
             ),
             labels: producer.workflow.runnerLabels[platform],
+            workflow_name: producer.workflow.name,
+            status: 'completed',
+            conclusion: 'success',
+          }));
+          jobs.push({
+            id: 25_000,
+            run_id: runId,
+            run_attempt: runAttempt,
+            head_sha: producer.commit,
+            html_url:
+              `https://github.com/${producer.repository}/actions/runs/`
+              + `${runId}/job/25000`,
+            name: producer.workflow.aggregationJobName,
+            labels: producer.workflow.aggregationRunnerLabels,
+            workflow_name: producer.workflow.name,
             status: 'completed',
             conclusion: 'success',
           });
+          return JSON.stringify({
+            total_count: jobs.length,
+            jobs,
+          });
+        }
+        const deploymentMatch = /\/deployments\/(\d+)$/u.exec(endpoint);
+        if (deploymentMatch !== null) {
+          const deploymentId = Number(deploymentMatch[1]);
+          const index_ = deploymentId - 40_000;
+          const platform = PLATFORMS[index_];
+          if (platform === undefined) {
+            throw new Error(`Unexpected test deployment ${deploymentId}`);
+          }
+          return JSON.stringify({
+            id: deploymentId,
+            sha: producer.commit,
+            ref: 'main',
+            task: 'deploy',
+            environment: producer.workflow.environment,
+            transient_environment: false,
+            statuses_url:
+              `https://api.github.com/repos/${producer.repository}/deployments/`
+              + `${deploymentId}/statuses`,
+            repository_url:
+              `https://api.github.com/repos/${producer.repository}`,
+            performed_via_github_app: {
+              slug: 'github-actions',
+            },
+          });
+        }
+        const deploymentStatusesMatch =
+          /\/deployments\/(\d+)\/statuses\?per_page=100$/u.exec(endpoint);
+        if (deploymentStatusesMatch !== null) {
+          const deploymentId = Number(deploymentStatusesMatch[1]);
+          const index_ = deploymentId - 40_000;
+          const platform = PLATFORMS[index_];
+          if (platform === undefined) {
+            throw new Error(`Unexpected test deployment ${deploymentId}`);
+          }
+          const jobId = 20_000 + index_;
+          const jobUrl =
+            `https://github.com/${producer.repository}/actions/runs/10000/job/`
+            + `${jobId}`;
+          return JSON.stringify([
+            {
+              state: 'success',
+              environment: producer.workflow.environment,
+              log_url: jobUrl,
+              target_url: jobUrl,
+            },
+            {
+              state: 'pending',
+              environment: producer.workflow.environment,
+              log_url: jobUrl,
+              target_url: jobUrl,
+            },
+          ]);
         }
         const artifactsMatch =
           /\/actions\/runs\/(\d+)\/artifacts\?/u.exec(endpoint);
         if (artifactsMatch !== null) {
           const runId = Number(artifactsMatch[1]);
-          const index_ = runId - 10_000;
-          const platform = PLATFORMS[index_];
+          const artifactNameMatch = /[?&]name=([^&]+)/u.exec(endpoint);
+          const encodedArtifactName = artifactNameMatch?.[1];
+          const artifactName = encodedArtifactName === undefined
+            ? undefined
+            : decodeURIComponent(encodedArtifactName);
+          const platform = PLATFORMS.find(
+            (candidate) =>
+              producer.workflow.artifactNameTemplate.replace(
+                '{platform}',
+                candidate,
+              ) === artifactName,
+          );
           if (platform === undefined) {
-            throw new Error(`Unexpected test run ${runId}`);
+            throw new Error(`Unexpected test artifact ${artifactName}`);
           }
+          const index_ = PLATFORMS.indexOf(platform);
           return JSON.stringify({
             total_count: 1,
             artifacts: [
               {
                 id: 30_000 + index_,
-                name: `client-v1-conformance-${platform}`,
+                name: artifactName,
                 expired: false,
                 workflow_run: {
                   id: runId,
@@ -1575,7 +1762,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
               signature: {
                 certificate: {
                   runInvocationURI:
-                    `https://github.com/OpenCoven/chat/actions/runs/${10_000 + platformIndex}/attempts/1`,
+                    'https://github.com/OpenCoven/chat/actions/runs/10000/attempts/1',
                   runnerEnvironment: 'github-hosted',
                   sourceRepositoryURI: 'https://github.com/OpenCoven/chat',
                   sourceRepositoryDigest: producer.commit,
@@ -1610,6 +1797,25 @@ describe('unresolved SDK #38 conformance gaps', () => {
       caveEngine: createCaveEngine(registry),
       execute,
     };
+    const verificationInputForWorkflow = (workflowText: string) => {
+      const workflowLock = structuredClone(lock);
+      const workflowIndex = structuredClone(index);
+      const workflowMetadata = {
+        ...producer.workflow,
+        size: Buffer.byteLength(workflowText, 'utf8'),
+        sha256: sha256(workflowText),
+      };
+      workflowLock.evidenceProducer = {
+        ...structuredClone(producer),
+        workflow: workflowMetadata,
+      };
+      workflowIndex.producer.workflow = workflowMetadata;
+      return {
+        ...verificationInput,
+        frozenLockText: contract.serializeCanonicalJson(workflowLock),
+        indexText: contract.serializeCanonicalJson(workflowIndex),
+      };
+    };
 
     expect(
       verifyGitHubConformanceEvidence(verificationInput as never).aggregate,
@@ -1618,7 +1824,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       ghCalls.filter(
         (arguments_) => arguments_[0] === 'api',
       ),
-    ).toHaveLength(10);
+    ).toHaveLength(13);
     expect(
       ghCalls.filter(
         (arguments_) =>
@@ -1653,6 +1859,85 @@ describe('unresolved SDK #38 conformance gaps', () => {
 
     expect(() =>
       verifyGitHubConformanceEvidence({
+        ...verificationInputForWorkflow(
+          TEST_PRODUCER_WORKFLOW_TEXT.replace(
+            '    environment: client-v1-conformance',
+            '    environment: unprotected',
+          ),
+        ),
+        execute: (
+          command: string,
+          arguments_: string[],
+          options: { cwd?: string },
+        ) => {
+          if (
+            arguments_[0] === 'api'
+            && (arguments_.at(-1) ?? '').includes(
+              '/contents/.github/workflows/',
+            )
+          ) {
+            return TEST_PRODUCER_WORKFLOW_TEXT.replace(
+              '    environment: client-v1-conformance',
+              '    environment: unprotected',
+            );
+          }
+          return execute(command, arguments_, options);
+        },
+      } as never),
+    ).toThrow(/protected environment/u);
+
+    const siblingSubstituteWorkflow = createProducerWorkflow({
+      siblingSubstitute: true,
+    });
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInputForWorkflow(siblingSubstituteWorkflow),
+        execute: (
+          command: string,
+          arguments_: string[],
+          options: { cwd?: string },
+        ) => {
+          if (
+            arguments_[0] === 'api'
+            && (arguments_.at(-1) ?? '').includes(
+              '/contents/.github/workflows/',
+            )
+          ) {
+            return siblingSubstituteWorkflow;
+          }
+          return execute(command, arguments_, options);
+        },
+      } as never),
+    ).toThrow(/only the protected evidence job may upload or attest/u);
+
+    const artifactAggregationWorkflow =
+      TEST_PRODUCER_WORKFLOW_TEXT.replace(
+        '        run: echo "protected evidence matrix completed"',
+        '      - run: gh attestation verify record.json',
+      );
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInputForWorkflow(artifactAggregationWorkflow),
+        execute: (
+          command: string,
+          arguments_: string[],
+          options: { cwd?: string },
+        ) => {
+          if (
+            arguments_[0] === 'api'
+            && (arguments_.at(-1) ?? '').includes(
+              '/contents/.github/workflows/',
+            )
+          ) {
+            return artifactAggregationWorkflow;
+          }
+          return execute(command, arguments_, options);
+        },
+      } as never),
+    ).toThrow(/non-artifact aggregation job/u);
+
+    expect(() =>
+      verifyGitHubConformanceEvidence({
         ...verificationInput,
         execute: (
           command: string,
@@ -1665,18 +1950,114 @@ describe('unresolved SDK #38 conformance gaps', () => {
               '/contents/.github/workflows/',
             )
           ) {
-            return [
-              'name: client-v1 conformance',
-              'jobs:',
-              '  platform-conformance:',
-              '    environment: unprotected',
-              '',
-            ].join('\n');
+            return `${TEST_PRODUCER_WORKFLOW_TEXT}# drift\n`;
           }
           return execute(command, arguments_, options);
         },
       } as never),
-    ).toThrow(/protected environment/u);
+    ).toThrow(/workflow bytes do not match/u);
+
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInput,
+        execute: (
+          command: string,
+          arguments_: string[],
+          options: { cwd?: string },
+        ) => {
+          const endpoint = arguments_.at(-1) ?? '';
+          if (
+            arguments_[0] === 'api'
+            && endpoint.endsWith('/environments/client-v1-conformance')
+          ) {
+            return JSON.stringify({
+              id: Number(producer.workflow.environmentId),
+              name: producer.workflow.environment,
+              protection_rules: [],
+              deployment_branch_policy: null,
+            });
+          }
+          return execute(command, arguments_, options);
+        },
+      } as never),
+    ).toThrow(/required reviewer and protected-branch rules/u);
+
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInput,
+        execute: (
+          command: string,
+          arguments_: string[],
+          options: { cwd?: string },
+        ) => {
+          const endpoint = arguments_.at(-1) ?? '';
+          if (
+            arguments_[0] === 'api'
+            && endpoint.endsWith('/deployments/40000/statuses?per_page=100')
+          ) {
+            return JSON.stringify([
+              {
+                state: 'success',
+                environment: producer.workflow.environment,
+                log_url:
+                  'https://github.com/OpenCoven/chat/actions/runs/10000/job/29999',
+                target_url:
+                  'https://github.com/OpenCoven/chat/actions/runs/10000/job/29999',
+              },
+              {
+                state: 'pending',
+                environment: producer.workflow.environment,
+                log_url:
+                  'https://github.com/OpenCoven/chat/actions/runs/10000/job/29999',
+                target_url:
+                  'https://github.com/OpenCoven/chat/actions/runs/10000/job/29999',
+              },
+            ]);
+          }
+          return execute(command, arguments_, options);
+        },
+      } as never),
+    ).toThrow(/deployment does not belong to the exact protected job/u);
+
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInput,
+        execute: (
+          command: string,
+          arguments_: string[],
+          options: { cwd?: string },
+        ) => {
+          const endpoint = arguments_.at(-1) ?? '';
+          if (
+            arguments_[0] === 'api'
+            && endpoint.includes('/attempts/1/jobs?per_page=100')
+          ) {
+            const response = JSON.parse(
+              execute(command, arguments_, options),
+            ) as {
+              total_count: number;
+              jobs: Array<Record<string, unknown>>;
+            };
+            response.jobs.push({
+              id: 29_999,
+              run_id: 10_000,
+              run_attempt: 1,
+              head_sha: producer.commit,
+              html_url:
+                'https://github.com/OpenCoven/chat/actions/runs/10000/job/29999',
+              name: 'sibling-substitute',
+              labels: ['ubuntu-24.04'],
+              workflow_name: producer.workflow.name,
+              status: 'completed',
+              conclusion: 'success',
+            });
+            response.total_count = response.jobs.length;
+            return JSON.stringify(response);
+          }
+          return execute(command, arguments_, options);
+        },
+      } as never),
+    ).toThrow(/exact frozen workflow job graph/u);
 
     const fabricatedAggregate = structuredClone(aggregateRecord);
     fabricatedAggregate.platforms[0]!.timing = {

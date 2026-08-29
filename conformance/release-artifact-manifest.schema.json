@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:opencoven:schema:release-artifact-manifest:2",
+  "$id": "urn:opencoven:schema:release-artifact-manifest:3",
   "title": "OpenCoven release artifact manifest",
-  "description": "Separates the frozen private-source conformance artifact set from a later publication candidate built from the exact security-reviewed unlock commit.",
+  "description": "Separates the frozen private-source conformance artifact set from an immutable publication candidate produced before and later bound by the external security review.",
   "oneOf": [
     {
       "$ref": "#/$defs/conformanceArtifactSet"
@@ -19,6 +19,35 @@
     "gitOid": {
       "type": "string",
       "pattern": "^[0-9a-f]{40}$"
+    },
+    "positiveId": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "fileMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "size",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9@._/-]+$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
     },
     "artifact": {
       "type": "object",
@@ -98,12 +127,13 @@
         "artifactSet",
         "version",
         "source",
-        "securityReview",
+        "toolchain",
+        "provenance",
         "packages"
       ],
       "properties": {
         "schemaVersion": {
-          "const": 2
+          "const": 3
         },
         "artifactSet": {
           "const": "publication-candidate"
@@ -119,7 +149,8 @@
           "required": [
             "repository",
             "commit",
-            "tree"
+            "tree",
+            "npmConfigFiles"
           ],
           "properties": {
             "repository": {
@@ -130,31 +161,96 @@
             },
             "tree": {
               "$ref": "#/$defs/gitOid"
+            },
+            "npmConfigFiles": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "prefixItems": [
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/fileMetadata"
+                    },
+                    {
+                      "properties": {
+                        "path": {
+                          "const": ".npmrc"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
             }
           }
         },
-        "securityReview": {
+        "toolchain": {
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "issue",
-            "commentId",
-            "reviewer",
-            "reviewedCommit"
+            "nodeVersion",
+            "pnpmVersion",
+            "npmVersion",
+            "packCommand"
           ],
           "properties": {
-            "issue": {
-              "const": "OpenCoven/sdk#40"
+            "nodeVersion": {
+              "const": "v24.18.1"
             },
-            "commentId": {
-              "type": "string",
-              "pattern": "^[1-9][0-9]*$"
+            "pnpmVersion": {
+              "const": "pnpm@10.34.0"
             },
-            "reviewer": {
-              "const": "BunsDev"
+            "npmVersion": {
+              "const": "11.5.1"
             },
-            "reviewedCommit": {
+            "packCommand": {
+              "const": "corepack pnpm@10.34.0 pack --ignore-scripts"
+            }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "workflow",
+            "workflowCommit",
+            "sourceRef",
+            "runId",
+            "runAttempt",
+            "job",
+            "artifactName"
+          ],
+          "properties": {
+            "repository": {
+              "const": "OpenCoven/sdk"
+            },
+            "workflow": {
+              "const": ".github/workflows/release.yml"
+            },
+            "workflowCommit": {
               "$ref": "#/$defs/gitOid"
+            },
+            "sourceRef": {
+              "const": "refs/heads/main"
+            },
+            "runId": {
+              "$ref": "#/$defs/positiveId"
+            },
+            "runAttempt": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "job": {
+              "const": "publication-candidate"
+            },
+            "artifactName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^opencoven-sdk-publication-[0-9a-f]{40}-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
             }
           }
         },

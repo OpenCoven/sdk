@@ -206,18 +206,34 @@ docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb
 ```
 
 The index records the expected aggregate and primary-record digests, exact
-producer commit/harness/workflow/source-ref identity, hosted-runner labels,
-protected run attempt and job IDs, artifact digest, attestation subject digest,
-and attestation-bundle digest. It also freezes the SLSA predicate, signer
-workflow, signer digest, source digest, and the prohibition on self-hosted
-runners. These values are locators and review expectations, not self-authenticating
-claims.
+producer commit/harness/workflow/source-ref identity, workflow byte
+size/SHA-256, the dedicated two-job graph, hosted-runner labels, protected
+environment ID, one shared run attempt, unique matrix job and deployment IDs,
+artifact digest, attestation subject digest, and attestation-bundle digest. It
+also freezes the platform-derived artifact/record path templates, SLSA
+predicate, signer workflow, signer digest, source digest, and prohibition on
+self-hosted runners. These values are locators and review expectations, not
+self-authenticating claims.
 
-For each platform, release readiness uses `gh api` to fetch the workflow bytes
-at the frozen Chat commit and verify the exact job is bound to the protected
-environment. It fetches the run, job, and artifact records, requires successful
-conclusions and the locked job name/runner labels, and downloads the named
-artifact with:
+Release readiness uses `gh api` to fetch the workflow bytes at the frozen Chat
+commit and requires their exact reviewed size and SHA-256. The dedicated
+workflow may contain only the protected platform matrix job and a
+non-artifact aggregation job. Static validation requires the exact ordered
+platform/runner matrix, environment, scoped OIDC/attestation permissions, and
+commit-derived record paths; `actions/upload-artifact` and
+`actions/attest-build-provenance` may occur exactly once and only in the
+protected matrix job.
+
+The three records must come from one exact run attempt. The verifier fetches
+the attempt's complete job list and requires exactly the three successful
+matrix expansions plus the successful aggregation job, with no sibling or
+alternate job. Because the artifact API does not expose its producing job, the
+index also freezes one deployment ID per matrix job. The verifier fetches the
+exact environment, requires current required-reviewer and protected-branch
+rules, fetches each deployment and all statuses, and requires both a
+pre-execution `pending`/GitHub Actions `waiting` status and a successful status
+whose `log_url` and `target_url` identify the exact numeric matrix job ID. It
+then fetches the unique run artifact and downloads it with:
 
 ```bash
 gh run download <run-id> \

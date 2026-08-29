@@ -18,9 +18,6 @@ import {
   validateReleaseReadiness,
 } from '../scripts/release-readiness.mjs';
 import * as releaseReadinessModule from '../scripts/release-readiness.mjs';
-import {
-  verifyPublicationSecurityReview,
-} from '../scripts/github-release-authorization.mjs';
 import type {
   NativeConformancePlatforms,
   ReleaseConfig,
@@ -49,7 +46,9 @@ type MutableReleaseConfig = Omit<
   | 'conformanceEvidence'
   | 'nativeConformancePlatforms'
   | 'npmAccess'
+  | 'npmCliVersion'
   | 'npmDistTag'
+  | 'npmRegistry'
   | 'packages'
   | 'publicationCandidate'
   | 'schemaVersion'
@@ -64,14 +63,15 @@ type MutableReleaseConfig = Omit<
   };
   githubEnvironment: string;
   npmAccess: string;
+  npmCliVersion: string;
   npmDistTag: string;
+  npmRegistry: string;
   packages: string[];
   publicationCandidate: {
     artifactSet: string;
-    securityReviewCommentId: string | null;
+    job: string;
     securityReviewIssue: string;
-    securityReviewedCommit: string | null;
-    unlockCommit: string | null;
+    workflow: string;
   };
   publishingEnabled: boolean;
   schemaVersion: number;
@@ -124,6 +124,7 @@ const EXTRA_PLATFORM_MATRIX: MutableReleaseConfig['nativeConformancePlatforms'] 
 ];
 const VALIDATOR_RUNTIME_PATHS = [
   '.node-version',
+  '.npmrc',
   '.github/workflows/release.yml',
   'conformance/release-artifact-manifest.schema.json',
   'package.json',
@@ -153,6 +154,10 @@ function createReleaseFixture(): string {
   cpSync(
     resolve(workspaceRoot, '.node-version'),
     resolve(fixture, '.node-version'),
+  );
+  cpSync(
+    resolve(workspaceRoot, '.npmrc'),
+    resolve(fixture, '.npmrc'),
   );
   cpSync(
     resolve(workspaceRoot, 'conformance'),
@@ -265,13 +270,15 @@ describe('release readiness contract', () => {
       'run: corepack pnpm@10.34.0 verify:repository',
     );
     expect(workflow).toContain(
-      'name: Verify authoritative conformance evidence and release tag',
+      'name: Verify authoritative conformance evidence',
     );
+    expect(workflow).toContain('name: Verify publish gates and release tag');
     expect(workflow).toContain('      actions: read');
+    expect(workflow).toContain('      deployments: read');
     expect(workflow).toContain('      issues: read');
     expect(workflow).toContain('GH_TOKEN: ${{ github.token }}');
     expect(workflow).toContain(
-      'name: opencoven-sdk-publication-${{ inputs.version }}',
+      'name: opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}',
     );
     expect(workflow).toContain('path: .artifacts/publication');
     expect(workflow).toContain('expected="v$(cat .node-version)"');
@@ -281,6 +288,7 @@ describe('release readiness contract', () => {
     );
     expect(ciWorkflow).toContain('  actions: read');
     expect(ciWorkflow).toContain('  attestations: read');
+    expect(ciWorkflow).toContain('  deployments: read');
     expect(ciWorkflow).toContain('  issues: read');
     expect(ciWorkflow).toMatch(
       /name: Verify authoritative release gates\s+if: matrix\.node == '24\.18\.1'\s+env:\s+GH_TOKEN: \$\{\{ github\.token \}\}\s+run: node \.\/scripts\/verify-release-readiness\.mjs --require-conformance-evidence/u,
@@ -295,23 +303,48 @@ describe('release readiness contract', () => {
     expect(publishJobIndex).toBeGreaterThan(0);
     const preflightJob = workflow.slice(0, publishJobIndex);
     const publishJob = workflow.slice(publishJobIndex);
+    const preflightOnly = workflow.slice(
+      workflow.indexOf('\n  preflight:\n'),
+      workflow.indexOf('\n  repository-verification:\n'),
+    );
     expect(
       preflightJob.indexOf('name: Pin reviewed release runtime'),
     ).toBeLessThan(preflightJob.indexOf('name: Install dependencies'));
-    expect(
-      preflightJob.indexOf('name: Create publication candidate artifacts'),
-    ).toBeLessThan(
-      preflightJob.indexOf('\n  repository-verification:\n'),
+    expect(preflightOnly).not.toContain('Create immutable publication candidate');
+    const candidateJobIndex = workflow.indexOf('\n  publication-candidate:\n');
+    expect(candidateJobIndex).toBeGreaterThan(
+      workflow.indexOf('\n  repository-verification:\n'),
     );
     expect(workflow).toContain(
       'needs: [preflight, repository-verification]',
     );
-    expect(publishJob).toContain('name: Pin reviewed release runtime');
+    expect(workflow).toContain("if: inputs.mode == 'verify'");
+    expect(
+      workflow.slice(
+        candidateJobIndex,
+        workflow.indexOf('\n  publish:\n'),
+      ),
+    ).not.toContain('id-token: write');
+    expect(publishJob).toContain(
+      'name: Resolve exact publication authorization',
+    );
+    expect(publishJob).toContain(
+      'name: Verify exact reviewed publication bytes',
+    );
     expect(publishJob).not.toContain('name: Install dependencies');
+    expect(publishJob).not.toContain('pnpm pack');
   });
 
   test('blocks candidate advancement until a named passing aggregate exists', () => {
     const config = readReleaseConfig(workspaceRoot);
+    const workspaceManifest = JSON.parse(
+      readFileSync(resolve(workspaceRoot, 'package.json'), 'utf8'),
+    ) as {
+      devDependencies: Record<string, string>;
+    };
+    expect(config.npmCliVersion).toBe('11.5.1');
+    expect(config.npmRegistry).toBe('https://registry.npmjs.org/');
+    expect(workspaceManifest.devDependencies.npm).toBe('11.5.1');
     expect(config.conformanceEvidence).toEqual({
       issue: 'OpenCoven/sdk#38',
       artifactSet: 'conformance-candidate',
@@ -321,9 +354,8 @@ describe('release readiness contract', () => {
     expect(config.publicationCandidate).toEqual({
       artifactSet: 'publication-candidate',
       securityReviewIssue: 'OpenCoven/sdk#40',
-      securityReviewCommentId: null,
-      unlockCommit: null,
-      securityReviewedCommit: null,
+      workflow: '.github/workflows/release.yml',
+      job: 'publication-candidate',
     });
     expect(() =>
       validateReleaseReadiness({
@@ -625,7 +657,7 @@ describe('release readiness contract', () => {
   });
 
   test('requires the canonical native conformance platform matrix', () => {
-    expect(readReleaseConfig(workspaceRoot).schemaVersion).toBe(3);
+    expect(readReleaseConfig(workspaceRoot).schemaVersion).toBe(4);
     expect(readReleaseConfig(workspaceRoot).nativeConformancePlatforms).toEqual(
       SUPPORTED_PLATFORMS,
     );
@@ -745,9 +777,6 @@ describe('release readiness contract', () => {
       resolve(fixture, 'release.config.json'),
       (config) => {
         config.publishingEnabled = true;
-        config.publicationCandidate.unlockCommit = 'a'.repeat(40);
-        config.publicationCandidate.securityReviewedCommit = 'a'.repeat(40);
-        config.publicationCandidate.securityReviewCommentId = '4001';
       },
     );
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
@@ -755,130 +784,24 @@ describe('release readiness contract', () => {
     );
   });
 
-  test('requires publication bytes to come from the exact #40-reviewed unlock commit', () => {
+  test('keeps post-review authorization out of descendant release config commits', () => {
     const fixture = createReleaseFixture();
-    updateJson<MutableReleaseConfig>(
+    updateJson<MutableReleaseConfig & {
+      publicationCandidate: MutableReleaseConfig['publicationCandidate'] & {
+        securityReviewCommentId?: string;
+        unlockCommit?: string;
+      };
+    }>(
       resolve(fixture, 'release.config.json'),
       (config) => {
+        config.publicationCandidate.securityReviewCommentId = '4001';
         config.publicationCandidate.unlockCommit = 'a'.repeat(40);
-        config.publicationCandidate.securityReviewedCommit = 'b'.repeat(40);
       },
     );
 
     expect(() => readReleaseConfig(fixture)).toThrow(
-      'release.config.json publicationCandidate must bind one exact unlock commit reviewed under OpenCoven/sdk#40',
+      'release.config.json publicationCandidate contains unknown field securityReviewCommentId',
     );
-  });
-
-  test('authenticates the #40 ship disposition through GitHub', () => {
-    const selfAssertedFixture = createReleaseFixture();
-    updateJson<MutableReleaseConfig>(
-      resolve(selfAssertedFixture, 'release.config.json'),
-      (config) => {
-        config.publishingEnabled = true;
-        config.publicationCandidate.unlockCommit = 'a'.repeat(40);
-        config.publicationCandidate.securityReviewedCommit = 'a'.repeat(40);
-      },
-    );
-    expect(() => readReleaseConfig(selfAssertedFixture)).toThrow(
-      'release.config.json publicationCandidate must bind one exact unlock commit reviewed under OpenCoven/sdk#40',
-    );
-
-    const publicationCandidate = {
-      artifactSet: 'publication-candidate' as const,
-      securityReviewIssue: 'OpenCoven/sdk#40' as const,
-      securityReviewCommentId: '4001',
-      unlockCommit: 'a'.repeat(40),
-      securityReviewedCommit: 'a'.repeat(40),
-    };
-    const sourceTree = 'b'.repeat(40);
-    const reviewBody = `${JSON.stringify({
-      commit: publicationCandidate.unlockCommit,
-      disposition: 'ship',
-      issue: publicationCandidate.securityReviewIssue,
-      kind: 'opencoven-sdk-publication-security-review',
-      schemaVersion: 1,
-      tree: sourceTree,
-    }, null, 2)}\n`;
-    const calls: string[][] = [];
-    const execute = (
-      command: string,
-      arguments_: string[],
-    ): string => {
-      expect(command).toBe('gh');
-      calls.push([...arguments_]);
-      const endpoint = arguments_.at(-1);
-      if (endpoint === 'repos/OpenCoven/sdk/issues/40') {
-        return JSON.stringify({
-          number: 40,
-          state: 'closed',
-          state_reason: 'completed',
-          locked: true,
-        });
-      }
-      if (endpoint === 'repos/OpenCoven/sdk/issues/comments/4001') {
-        return JSON.stringify({
-          id: 4001,
-          issue_url: 'https://api.github.com/repos/OpenCoven/sdk/issues/40',
-          body: reviewBody,
-          created_at: '2026-08-29T04:00:00Z',
-          updated_at: '2026-08-29T04:00:00Z',
-          author_association: 'OWNER',
-          user: {
-            login: 'BunsDev',
-          },
-        });
-      }
-      throw new Error(`Unexpected GitHub review endpoint ${endpoint}`);
-    };
-
-    expect(
-      verifyPublicationSecurityReview({
-        publicationCandidate,
-        sourceTree,
-        execute,
-      } as never),
-    ).toEqual({
-      issue: 'OpenCoven/sdk#40',
-      commentId: '4001',
-      reviewer: 'BunsDev',
-      commit: publicationCandidate.unlockCommit,
-      tree: sourceTree,
-      disposition: 'ship',
-    });
-    expect(
-      calls.every(
-        (arguments_) =>
-          arguments_.includes('--hostname')
-          && arguments_.includes('github.com'),
-      ),
-    ).toBe(true);
-
-    expect(() =>
-      verifyPublicationSecurityReview({
-        publicationCandidate,
-        sourceTree,
-        execute: (
-          command: string,
-          arguments_: string[],
-        ): string => {
-          const response = execute(command, arguments_);
-          if (
-            arguments_.at(-1)
-              === 'repos/OpenCoven/sdk/issues/comments/4001'
-          ) {
-            return JSON.stringify({
-              ...JSON.parse(response),
-              body: reviewBody.replace(
-                publicationCandidate.unlockCommit,
-                'c'.repeat(40),
-              ),
-            });
-          }
-          return response;
-        },
-      } as never),
-    ).toThrow(/does not authorize the exact publication source/u);
   });
 
   test('validates strict SemVer and optional tag requirements', () => {
@@ -909,6 +832,10 @@ describe('release readiness contract', () => {
         tarball: '/tmp/pkg.tgz',
         access: 'public',
         distTag: 'latest',
+        registry: 'https://registry.npmjs.org/',
+        userconfig: '/tmp/user.npmrc',
+        globalconfig: '/tmp/global.npmrc',
+        cache: '/tmp/npm-cache',
       }),
     ).toEqual([
       'publish',
@@ -918,6 +845,11 @@ describe('release readiness contract', () => {
       '--tag',
       'latest',
       '--provenance',
+      '--ignore-scripts',
+      '--registry=https://registry.npmjs.org/',
+      '--userconfig=/tmp/user.npmrc',
+      '--globalconfig=/tmp/global.npmrc',
+      '--cache=/tmp/npm-cache',
     ]);
   });
 
@@ -933,7 +865,7 @@ describe('release readiness contract', () => {
         },
       }),
     ).toThrow(
-      'release.config.json publicationCandidate must be unlocked and security-reviewed before publication artifacts are created',
+      'Release publishing is disabled by release.config.json',
     );
   });
 
@@ -965,6 +897,22 @@ describe('release readiness contract', () => {
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
       'Release workflow publish job must use environment npm-release',
+    );
+  });
+
+  test('allows exactly one publication artifact upload in the candidate job', () => {
+    const fixture = createReleaseFixture();
+    const workflowPath = resolve(fixture, '.github/workflows/release.yml');
+    const workflow = readFileSync(workflowPath, 'utf8');
+    const uploadStep =
+      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1';
+    writeFileSync(
+      workflowPath,
+      workflow.replace(uploadStep, `${uploadStep}\n${uploadStep}`),
+    );
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow must contain exactly one publication candidate upload',
     );
   });
 
@@ -1008,7 +956,7 @@ describe('release readiness contract', () => {
     writeFileSync(tokenWorkflowPath, tokenWorkflow);
 
     expect(() => validateReleaseReadiness({ root: tokenFixture })).toThrow(
-      'Release workflow step Verify authoritative conformance evidence and release tag must use the standard GitHub workflow token',
+      'Release workflow step Verify authoritative conformance evidence must use the standard GitHub workflow token',
     );
 
     const verificationTokenFixture = createReleaseFixture();

@@ -21,5 +21,6 @@ export function packPublicPackages(options: {
   root: string;
   destinationRoot: string;
   build?: boolean;
+  ignoreScripts?: boolean;
   env?: NodeJS.ProcessEnv;
 }): Record<string, string>;

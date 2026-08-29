@@ -10,11 +10,13 @@ export type NativeConformancePlatforms = readonly [
 ];
 
 export interface ReleaseConfig {
-  schemaVersion: 3;
+  schemaVersion: 4;
   publishingEnabled: boolean;
   tagPrefix: 'sdk-v';
   npmAccess: 'public';
   npmDistTag: 'latest';
+  npmCliVersion: '11.5.1';
+  npmRegistry: 'https://registry.npmjs.org/';
   githubEnvironment: 'npm-release';
   supportedNode: {
     minimum: '24.18.0';
@@ -30,9 +32,8 @@ export interface ReleaseConfig {
   publicationCandidate: {
     artifactSet: 'publication-candidate';
     securityReviewIssue: 'OpenCoven/sdk#40';
-    securityReviewCommentId: string | null;
-    unlockCommit: string | null;
-    securityReviewedCommit: string | null;
+    workflow: '.github/workflows/release.yml';
+    job: 'publication-candidate';
   };
   packages: string[];
 }
@@ -55,6 +56,18 @@ export interface ReleaseReadinessSummary {
 }
 
 export function readReleaseConfig(root?: string): ReleaseConfig;
+
+export function inspectReleaseRepository(root: string): {
+  root: string;
+  repository: 'OpenCoven/sdk';
+  commit: string;
+  tree: string;
+};
+
+export function validateReleaseWorkflow(
+  root: string,
+  config: ReleaseConfig,
+): void;
 
 export function assertFrozenNodeRuntime(
   root?: string,

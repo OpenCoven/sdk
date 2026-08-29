@@ -1,9 +1,11 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "publishingEnabled": false,
   "tagPrefix": "sdk-v",
   "npmAccess": "public",
   "npmDistTag": "latest",
+  "npmCliVersion": "11.5.1",
+  "npmRegistry": "https://registry.npmjs.org/",
   "githubEnvironment": "npm-release",
   "supportedNode": {
     "minimum": "24.18.0",
@@ -23,9 +25,8 @@
   "publicationCandidate": {
     "artifactSet": "publication-candidate",
     "securityReviewIssue": "OpenCoven/sdk#40",
-    "securityReviewCommentId": null,
-    "unlockCommit": null,
-    "securityReviewedCommit": null
+    "workflow": ".github/workflows/release.yml",
+    "job": "publication-candidate"
   },
   "packages": [
     "@opencoven/sdk-core",

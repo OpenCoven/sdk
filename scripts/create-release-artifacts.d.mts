@@ -15,19 +15,34 @@ export interface ConformanceArtifactManifest {
 }
 
 export interface PublicationArtifactManifest {
-  schemaVersion: 2;
+  schemaVersion: 3;
   artifactSet: 'publication-candidate';
   version: string;
   source: {
     repository: 'OpenCoven/sdk';
     commit: string;
     tree: string;
+    npmConfigFiles: Array<{
+      path: '.npmrc';
+      size: number;
+      sha256: string;
+    }>;
   };
-  securityReview: {
-    issue: 'OpenCoven/sdk#40';
-    commentId: string;
-    reviewer: 'BunsDev';
-    reviewedCommit: string;
+  toolchain: {
+    nodeVersion: 'v24.18.1';
+    pnpmVersion: 'pnpm@10.34.0';
+    npmVersion: '11.5.1';
+    packCommand: 'corepack pnpm@10.34.0 pack --ignore-scripts';
+  };
+  provenance: {
+    repository: 'OpenCoven/sdk';
+    workflow: '.github/workflows/release.yml';
+    workflowCommit: string;
+    sourceRef: 'refs/heads/main';
+    runId: string;
+    runAttempt: number;
+    job: 'publication-candidate';
+    artifactName: string;
   };
   packages: ReleaseArtifactEntry[];
 }
@@ -90,13 +105,21 @@ export function createPublicationArtifacts(options?: {
   outputRoot?: string;
   build?: boolean;
   version?: string;
+  env?: NodeJS.ProcessEnv;
 }): CreatePublicationArtifactsResult;
 
 export function verifyPublicationArtifacts(options?: {
   root?: string;
   artifactRoot?: string;
   version?: string;
+  expectedProvenance?: PublicationArtifactManifest['provenance'];
 }): PublicationArtifactManifest;
+
+export function inspectRepositoryNpmConfiguration(root: string): Array<{
+  path: '.npmrc';
+  size: number;
+  sha256: string;
+}>;
 
 export function parseReleaseArtifactArguments(arguments_: string[]): {
   build: boolean;

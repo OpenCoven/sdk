@@ -87,7 +87,7 @@ describe('workflow action pins', () => {
 
   test('uses an explicit read-only GitHub token scope', () => {
     expect(workflow).toMatch(
-      /^permissions:\n\s{2}actions: read\n\s{2}attestations: read\n\s{2}contents: read\n\s{2}issues: read\n/m,
+      /^permissions:\n\s{2}actions: read\n\s{2}attestations: read\n\s{2}contents: read\n\s{2}deployments: read\n\s{2}issues: read\n/m,
     );
   });
 
@@ -205,7 +205,7 @@ describe('workflow action pins', () => {
     // being released.
     const cleanTreeIndex = releaseWorkflow.indexOf('Require clean reviewed tree');
     const artifactsIndex = releaseWorkflow.indexOf(
-      'Create publication candidate artifacts',
+      'Create immutable publication candidate',
     );
 
     expect(cleanTreeIndex).toBeGreaterThan(-1);
@@ -231,7 +231,7 @@ describe('workflow action pins', () => {
       expect(unsafeExpression).toMatch(DIRECT_DISPATCH_INPUT_PATTERN);
     }
     expect(releaseWorkflow.match(/RELEASE_VERSION: \$\{\{ inputs\.version \}\}/gu))
-      .toHaveLength(2);
+      .toHaveLength(3);
     expect(combinedScripts).toContain('--version "$RELEASE_VERSION"');
     expect(combinedScripts).toContain('--tag "sdk-v$RELEASE_VERSION"');
   });

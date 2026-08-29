@@ -105,10 +105,19 @@ export interface FrozenConformanceLock {
         command: 'test:phase1-conformance';
         recordSchemaVersion: 2;
         workflow: {
+          name: string;
           path: string;
+          size: number;
+          sha256: string;
           job: string;
           jobNameTemplate: string;
+          aggregationJob: string;
+          aggregationJobName: string;
+          aggregationRunnerLabels: string[];
           environment: string;
+          environmentId: string;
+          artifactNameTemplate: string;
+          recordPathTemplate: string;
           sourceRef: string;
           runnerLabels: Record<CanonicalPlatform, string[]>;
           signerWorkflow: string;
@@ -422,10 +431,19 @@ export interface ReviewedEvidenceIndex {
       version: string;
     };
     workflow: {
+      name: string;
       path: string;
+      size: number;
+      sha256: string;
       job: string;
       jobNameTemplate: string;
+      aggregationJob: string;
+      aggregationJobName: string;
+      aggregationRunnerLabels: string[];
       environment: string;
+      environmentId: string;
+      artifactNameTemplate: string;
+      recordPathTemplate: string;
       sourceRef: string;
       runnerLabels: Record<CanonicalPlatform, string[]>;
       signerWorkflow: string;
@@ -445,6 +463,7 @@ export interface ReviewedEvidenceIndex {
       runId: string;
       runAttempt: number;
       jobId: string;
+      deploymentId: string;
       artifactName: string;
       artifactSha256: string;
       attestationSubjectSha256: string;

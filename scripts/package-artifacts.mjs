@@ -208,6 +208,7 @@ export function packPublicPackages({
   root,
   destinationRoot,
   build = true,
+  ignoreScripts = false,
   env,
 }) {
   if (build) {
@@ -220,7 +221,12 @@ export function packPublicPackages({
     const destination = resolve(destinationRoot, workspaceDirectory);
     mkdirSync(destination, { recursive: true });
     runPnpm(
-      ['pack', '--pack-destination', destination],
+      [
+        'pack',
+        ...(ignoreScripts ? ['--ignore-scripts'] : []),
+        '--pack-destination',
+        destination,
+      ],
       resolve(root, 'packages', workspaceDirectory),
       { env },
     );

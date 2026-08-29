@@ -59,27 +59,37 @@ describe('release artifacts', () => {
       { $ref: '#/$defs/publicationArtifactSet' },
     ]);
     expect(schema.$defs.conformanceArtifactSet?.required).not.toContain(
-      'securityReview',
+      'provenance',
     );
     expect(schema.$defs.publicationArtifactSet?.required).toEqual([
       'schemaVersion',
       'artifactSet',
       'version',
       'source',
-      'securityReview',
+      'toolchain',
+      'provenance',
       'packages',
     ]);
     expect(
       (
         schema.$defs.publicationArtifactSet as unknown as {
           properties: {
-            securityReview: {
+            provenance: {
               required: string[];
             };
           };
         }
-      ).properties.securityReview.required,
-    ).toEqual(['issue', 'commentId', 'reviewer', 'reviewedCommit']);
+      ).properties.provenance.required,
+    ).toEqual([
+      'repository',
+      'workflow',
+      'workflowCommit',
+      'sourceRef',
+      'runId',
+      'runAttempt',
+      'job',
+      'artifactName',
+    ]);
   });
 
   test('binds conformance artifacts to the frozen candidate metadata', () => {
@@ -157,7 +167,7 @@ describe('release artifacts', () => {
         build: false,
       }),
     ).toThrow(
-      'release.config.json publicationCandidate must be unlocked and security-reviewed before publication artifacts are created',
+      'Release publishing is disabled by release.config.json',
     );
   }, 30_000);
 
