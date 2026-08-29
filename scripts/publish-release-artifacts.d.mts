@@ -1,6 +1,9 @@
 import type {
   PublicationArtifactManifest,
 } from './create-release-artifacts.mjs';
+import type {
+  OwnedTempDirectoryContext,
+} from './owned-temp-directory.mjs';
 
 export function createNpmPublishArgs(options: {
   tarball: string;
@@ -15,6 +18,8 @@ export function createNpmPublishArgs(options: {
 export function publishReleaseArtifacts(options?: {
   root?: string;
   artifactRoot?: string;
+  pendingApprovalRoot?: string;
+  protectedApprovalRoot?: string;
   version?: string;
   env?: Record<string, string | undefined>;
   execute?: (
@@ -28,6 +33,44 @@ export function publishReleaseArtifacts(options?: {
     },
   ) => unknown;
   githubExecute?: typeof import('node:child_process').execFileSync;
+  resolveRuntime?: (
+    options: {
+      env: Record<string, string | undefined>;
+    },
+  ) => {
+    nodePath: string;
+    nodeSize: number;
+    nodeSha256: string;
+    nodeVersion: string;
+    corepackPath: string;
+  };
+  prepareNpmCli?: (
+    options: {
+      version: string;
+      registry: string;
+      runtime: {
+        nodePath: string;
+      };
+      execute: typeof import('node:child_process').execFileSync;
+    },
+  ) => {
+    owned: OwnedTempDirectoryContext;
+    cliPath: string;
+    treeSha256: string;
+  };
 }): PublicationArtifactManifest;
+
+export function prepareAuthenticatedNpmCli(options: {
+  version: string;
+  registry: string;
+  runtime: {
+    nodePath: string;
+  };
+  execute?: typeof import('node:child_process').execFileSync;
+}): {
+  owned: OwnedTempDirectoryContext;
+  cliPath: string;
+  treeSha256: string;
+};
 
 export function main(arguments_?: string[]): PublicationArtifactManifest;

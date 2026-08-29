@@ -21,6 +21,27 @@ export function packPublicPackages(options: {
   root: string;
   destinationRoot: string;
   build?: boolean;
-  ignoreScripts?: boolean;
+  sanitizePublishManifests?: boolean;
   env?: NodeJS.ProcessEnv;
+  nodePath?: string;
+  corepackPath?: string;
 }): Record<string, string>;
+
+export function createPublicPackageBuildInvocation(options: {
+  root: string;
+  packageMetadata: {
+    packageName: string;
+    workspaceDirectory: string;
+    manifestPath: string;
+  };
+  nodePath: string;
+}): {
+  command: string;
+  args: string[];
+  cwd: string;
+};
+
+export function createPublishSafePackageManifest(
+  manifest: Record<string, unknown>,
+  packageName: string,
+): Record<string, unknown>;

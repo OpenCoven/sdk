@@ -47,10 +47,12 @@ type MutableReleaseConfig = Omit<
   | 'nativeConformancePlatforms'
   | 'npmAccess'
   | 'npmCliVersion'
+  | 'npmCliDistribution'
   | 'npmDistTag'
   | 'npmRegistry'
   | 'packages'
   | 'publicationCandidate'
+  | 'protectedApproval'
   | 'schemaVersion'
   | 'supportedNode'
   | 'tagPrefix'
@@ -59,11 +61,18 @@ type MutableReleaseConfig = Omit<
     aggregateRecord: string | null;
     artifactSet: string;
     candidateCommit: string;
+    runtimeManifestSha256: string;
     issue: string;
   };
   githubEnvironment: string;
   npmAccess: string;
   npmCliVersion: string;
+  npmCliDistribution: {
+    tarball: string;
+    integrity: string;
+    treeSha256: string;
+    entrypointSha256: string;
+  };
   npmDistTag: string;
   npmRegistry: string;
   packages: string[];
@@ -73,6 +82,19 @@ type MutableReleaseConfig = Omit<
     job: string;
     securityReviewIssue: string;
     workflow: string;
+  };
+  protectedApproval: {
+    environment: string;
+    environmentId: string;
+    witnessJob: string;
+    approvalJob: string;
+    publishJob: string;
+    reviewer: {
+      id: number;
+      authorAssociation: string;
+      permission: string;
+      roleName: string;
+    };
   };
   publishingEnabled: boolean;
   schemaVersion: number;
@@ -134,11 +156,15 @@ const VALIDATOR_RUNTIME_PATHS = [
   'scripts/conformance-contract.mjs',
   'scripts/create-release-artifacts.mjs',
   'scripts/github-conformance-evidence.mjs',
+  'scripts/github-environment-approval-evidence.mjs',
+  'scripts/github-environment-approval.mjs',
   'scripts/github-release-authorization.mjs',
   'scripts/owned-temp-directory.mjs',
   'scripts/package-artifacts.mjs',
+  'scripts/publication-source-identity.mjs',
   'scripts/publish-release-artifacts.mjs',
   'scripts/release-readiness.mjs',
+  'scripts/release-runtime-integrity.mjs',
   'scripts/repository-metadata.mjs',
   'scripts/verify-committed-conformance-evidence.mjs',
   'scripts/verify-release-readiness.mjs',
@@ -215,6 +241,26 @@ function appendPublishWorkflowStep(fixture: string, step: string): void {
   writeFileSync(workflowPath, `${workflow.trimEnd()}\n${step}\n`);
 }
 
+function appendRepositoryVerificationStep(
+  fixture: string,
+  step: string,
+): void {
+  const workflowPath = resolve(fixture, '.github/workflows/release.yml');
+  const workflow = readFileSync(workflowPath, 'utf8');
+  const jobStart = workflow.indexOf('\n  repository-verification:\n');
+  const nextJob = workflow.indexOf('\n  publication-candidate:\n');
+  const marker = '      - name: Require clean reviewed tree\n';
+  const markerIndex = workflow.indexOf(marker, jobStart);
+  expect(jobStart).toBeGreaterThan(-1);
+  expect(nextJob).toBeGreaterThan(jobStart);
+  expect(markerIndex).toBeGreaterThan(jobStart);
+  expect(markerIndex).toBeLessThan(nextJob);
+  writeFileSync(
+    workflowPath,
+    `${workflow.slice(0, markerIndex)}${step}\n${workflow.slice(markerIndex)}`,
+  );
+}
+
 function updateJson<T extends object>(path: string, update: (value: T) => void): void {
   const value = JSON.parse(readFileSync(path, 'utf8')) as T;
   update(value);
@@ -285,8 +331,9 @@ describe('release readiness contract', () => {
       'node ./scripts/verify-release-readiness.mjs --require-conformance-evidence',
     );
     expect(manifest.scripts.verify).toContain('verify:release');
+    expect(workflow).toContain('assertNoReleaseRuntimeShadows');
     expect(workflow).toContain(
-      'run: corepack pnpm@10.34.0 verify:repository',
+      '"$node_path" "$corepack_path" pnpm@10.34.0',
     );
     expect(workflow).toContain(
       'name: Verify authoritative conformance evidence',
@@ -300,7 +347,9 @@ describe('release readiness contract', () => {
       'name: opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}',
     );
     expect(workflow).toContain('path: .artifacts/publication');
-    expect(workflow).toContain('expected="v$(cat .node-version)"');
+    expect(workflow).toContain(
+      'f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a',
+    );
     const ciWorkflow = readFileSync(
       resolve(workspaceRoot, '.github/workflows/ci.yml'),
       'utf8',
@@ -340,7 +389,7 @@ describe('release readiness contract', () => {
     expect(workflow).toContain("if: inputs.mode == 'verify'");
     const candidateJob = workflow.slice(
       candidateJobIndex,
-      workflow.indexOf('\n  publish:\n'),
+      workflow.indexOf('\n  approval-witness:\n'),
     );
     expect(candidateJob).toContain('id-token: write');
     expect(candidateJob).toContain('attestations: write');
@@ -364,11 +413,22 @@ describe('release readiness contract', () => {
     };
     expect(config.npmCliVersion).toBe('11.5.1');
     expect(config.npmRegistry).toBe('https://registry.npmjs.org/');
-    expect(workspaceManifest.devDependencies.npm).toBe('11.5.1');
+    expect(workspaceManifest.devDependencies.npm).toBeUndefined();
+    expect(config.npmCliDistribution).toEqual({
+      tarball: 'https://registry.npmjs.org/npm/-/npm-11.5.1.tgz',
+      integrity:
+        'sha512-Iy5vXZ55m8tIaSCz6bqQf9+W5XbPfoyURsgWLjOkFglqHTep6RDZqRj2sfYGeRyZvGu2HuJWm0lux0rxPQ29lQ==',
+      treeSha256:
+        'dbe97072240cb2048f84faade50f938bdca3ba04efa67719259f5528397f0f09',
+      entrypointSha256:
+        '8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7',
+    });
     expect(config.conformanceEvidence).toEqual({
       issue: 'OpenCoven/sdk#38',
       artifactSet: 'conformance-candidate',
       candidateCommit: 'acc38488f00860d246c3c553375634d64806eabb',
+      runtimeManifestSha256:
+        '1cf387f4f53f456c87a51ab09ab68f7ff7291480f9a7cd3a4fe3bb70f907e56a',
       aggregateRecord: null,
     });
     expect(config.publicationCandidate).toEqual({
@@ -377,6 +437,19 @@ describe('release readiness contract', () => {
       securityReviewIssue: 'OpenCoven/sdk#40',
       workflow: '.github/workflows/release.yml',
       job: 'publication-candidate',
+    });
+    expect(config.protectedApproval).toEqual({
+      environment: 'npm-release',
+      environmentId: '20778492972',
+      witnessJob: 'approval-witness',
+      approvalJob: 'approval-evidence',
+      publishJob: 'publish',
+      reviewer: {
+        id: 68980965,
+        authorAssociation: 'MEMBER',
+        permission: 'admin',
+        roleName: 'admin',
+      },
     });
     expect(() =>
       validateReleaseReadiness({
@@ -678,7 +751,7 @@ describe('release readiness contract', () => {
   });
 
   test('requires the canonical native conformance platform matrix', () => {
-    expect(readReleaseConfig(workspaceRoot).schemaVersion).toBe(5);
+    expect(readReleaseConfig(workspaceRoot).schemaVersion).toBe(6);
     expect(readReleaseConfig(workspaceRoot).nativeConformancePlatforms).toEqual(
       SUPPORTED_PLATFORMS,
     );
@@ -911,13 +984,13 @@ describe('release readiness contract', () => {
     const fixture = createReleaseFixture();
     const workflowPath = resolve(fixture, '.github/workflows/release.yml');
     const workflow = readFileSync(workflowPath, 'utf8').replace(
-      'environment: npm-release',
-      'environment: unprotected-release',
+      '  publish:\n',
+      '  publish:\n    environment: npm-release\n',
     );
     writeFileSync(workflowPath, workflow);
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'Release workflow publish job must use environment npm-release',
+      /second environment deployment/u,
     );
   });
 
@@ -977,15 +1050,11 @@ describe('release readiness contract', () => {
         '',
       ].join('\n'),
     );
-    updateReleaseWorkflow(
+    appendRepositoryVerificationStep(
       fixture,
-      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
       [
-        '      - name: Verify repository',
-        '        run: corepack pnpm@10.34.0 verify:repository',
         '      - name: Substitute publication candidate upload',
         '        uses: ./.github/actions/upload-publication-candidate',
-        '',
       ].join('\n'),
     );
 
@@ -1034,15 +1103,7 @@ describe('release readiness contract', () => {
         '',
       ].join('\n'),
     );
-    updateReleaseWorkflow(
-      fixture,
-      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
-      [
-        '      - name: Verify repository',
-        '        run: corepack pnpm@10.34.0 verify:repository',
-        step,
-      ].join('\n'),
-    );
+    appendRepositoryVerificationStep(fixture, step);
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
       'Release workflow candidate upload must be active and unconditional',
@@ -1071,15 +1132,11 @@ describe('release readiness contract', () => {
 
   test('rejects an additional sibling local action while the canonical upload remains active', () => {
     const fixture = createReleaseFixture();
-    updateReleaseWorkflow(
+    appendRepositoryVerificationStep(
       fixture,
-      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
       [
-        '      - name: Verify repository',
-        '        run: corepack pnpm@10.34.0 verify:repository',
         '      - name: Upload a sibling publication candidate',
         '        uses: ./.github/actions/upload-publication-candidate',
-        '',
       ].join('\n'),
     );
 
@@ -1108,15 +1165,7 @@ describe('release readiness contract', () => {
     ],
   ])('rejects an additional sibling artifact uploader through %s', (_label, step) => {
     const fixture = createReleaseFixture();
-    updateReleaseWorkflow(
-      fixture,
-      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
-      [
-        '      - name: Verify repository',
-        '        run: corepack pnpm@10.34.0 verify:repository',
-        step,
-      ].join('\n'),
-    );
+    appendRepositoryVerificationStep(fixture, step);
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
       'Release workflow must use the exact frozen release job and step graph',
@@ -1145,25 +1194,24 @@ describe('release readiness contract', () => {
 
   test('rejects candidate upload before candidate creation and verification', () => {
     const fixture = createReleaseFixture();
-    const createStep = [
-      '      - name: Create immutable publication candidate',
-      '        env:',
-      '          GH_TOKEN: ${{ github.token }}',
-      '        run: >-',
-      '          node ./scripts/create-release-artifacts.mjs',
-      '          --output .artifacts/publication',
-      '          --version "$RELEASE_VERSION"',
-      '',
-    ].join('\n');
-    const uploadStep = [
-      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
-      '        with:',
-      '          name: opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}',
-      '          path: .artifacts/publication',
-      '          if-no-files-found: error',
-      '          retention-days: 30',
-      '',
-    ].join('\n');
+    const workflowPath = resolve(fixture, '.github/workflows/release.yml');
+    const workflow = readFileSync(workflowPath, 'utf8');
+    const createStart = workflow.indexOf(
+      '      - name: Create immutable publication candidate\n',
+    );
+    const uploadStart = workflow.indexOf(
+      '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n',
+      createStart,
+    );
+    const attestationStart = workflow.indexOf(
+      '      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2\n',
+      uploadStart,
+    );
+    expect(createStart).toBeGreaterThan(-1);
+    expect(uploadStart).toBeGreaterThan(createStart);
+    expect(attestationStart).toBeGreaterThan(uploadStart);
+    const createStep = workflow.slice(createStart, uploadStart);
+    const uploadStep = workflow.slice(uploadStart, attestationStart);
     updateReleaseWorkflow(
       fixture,
       `${createStep}${uploadStep}`,
@@ -1177,15 +1225,13 @@ describe('release readiness contract', () => {
 
   test('rejects extra publication candidate artifact-name occurrences', () => {
     const fixture = createReleaseFixture();
-    updateReleaseWorkflow(
+    appendRepositoryVerificationStep(
       fixture,
-      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
       [
-        '      - name: Verify repository',
+        '      - name: Substitute candidate artifact name',
         '        env:',
         '          SUBSTITUTE_NAME: opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}',
-        '        run: corepack pnpm@10.34.0 verify:repository',
-        '',
+        '        run: /usr/bin/true',
       ].join('\n'),
     );
 
@@ -1277,7 +1323,7 @@ describe('release readiness contract', () => {
 
   test.each([
     ['candidate', '    environment: publication-candidate'],
-    ['publish', '    environment: npm-release'],
+    ['approval-evidence', '    environment: npm-release'],
   ])('rejects Unicode whitespace in the %s environment name', (
     _label,
     environmentLine,
@@ -1297,23 +1343,21 @@ describe('release readiness contract', () => {
   test.each([
     [
       'multiline artifact API shell',
-      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
+      '              verify:repository\n',
       [
-        '      - name: Verify repository',
-        '        run: |',
-        '          corepack pnpm@10.34.0 verify:repository',
+        '              verify:repository',
         '          gh api repos/OpenCoven/sdk/actions/runs/1/artifacts',
         '',
       ].join('\n'),
     ],
     [
       'local composite action',
-      '      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10\n',
+      '      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0\n',
       '      - uses: ./.github/actions/setup-and-upload\n',
     ],
     [
       'dynamic action expression',
-      '      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10\n',
+      '      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0\n',
       '      - uses: ${{ vars.RELEASE_SETUP_ACTION }}\n',
     ],
     [
@@ -1349,7 +1393,7 @@ describe('release readiness contract', () => {
     );
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'Release workflow publish job must use only the exact reviewed ordered steps',
+      /Release workflow (?:publish job must use only the exact reviewed ordered steps|must use the exact frozen release job and step graph)/u,
     );
   });
 
@@ -1379,7 +1423,7 @@ describe('release readiness contract', () => {
     appendPublishWorkflowStep(fixture, step);
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'Release workflow publish job must use only the exact reviewed ordered steps',
+      /Release workflow (?:publish job must use only the exact reviewed ordered steps|must use the exact frozen release job and step graph)/u,
     );
   });
 
@@ -1427,7 +1471,7 @@ describe('release readiness contract', () => {
     appendPublishWorkflowStep(fixture, step);
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'Release workflow publish job must use only the exact reviewed ordered steps',
+      /Release workflow (?:publish job must use only the exact reviewed ordered steps|must use the exact frozen release job and step graph)/u,
     );
   });
 
@@ -1444,32 +1488,35 @@ describe('release readiness contract', () => {
     );
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'Release workflow publish job must use only the exact reviewed ordered steps',
+      /Release workflow (?:publish job must use only the exact reviewed ordered steps|must use the exact frozen release job and step graph)/u,
     );
   });
 
   test('rejects reordered authorization and artifact download steps', () => {
     const fixture = createReleaseFixture();
-    const authorizationStep = [
-      '      - name: Resolve exact publication authorization',
-      '        id: authorization',
-      '        env:',
-      '          GH_TOKEN: ${{ github.token }}',
-      '        run: >-',
-      '          node ./scripts/github-release-authorization.mjs',
-      '          --github-output "$GITHUB_OUTPUT"',
-      '',
-    ].join('\n');
-    const downloadStep = [
-      '      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1',
-      '        with:',
-      '          name: ${{ steps.authorization.outputs.artifact-name }}',
-      '          path: .artifacts/publication',
-      '          github-token: ${{ github.token }}',
-      '          repository: OpenCoven/sdk',
-      '          run-id: ${{ steps.authorization.outputs.run-id }}',
-      '',
-    ].join('\n');
+    const workflowPath = resolve(fixture, '.github/workflows/release.yml');
+    const workflow = readFileSync(workflowPath, 'utf8');
+    const publishStart = workflow.indexOf('\n  publish:\n');
+    const authorizationStart = workflow.indexOf(
+      '      - name: Resolve exact publication authorization\n',
+      publishStart,
+    );
+    const downloadStart = workflow.indexOf(
+      '      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1\n',
+      authorizationStart,
+    );
+    const verificationStart = workflow.indexOf(
+      '      - name: Verify exact reviewed publication bytes\n',
+      downloadStart,
+    );
+    expect(authorizationStart).toBeGreaterThan(publishStart);
+    expect(downloadStart).toBeGreaterThan(authorizationStart);
+    expect(verificationStart).toBeGreaterThan(downloadStart);
+    const authorizationStep = workflow.slice(
+      authorizationStart,
+      downloadStart,
+    );
+    const downloadStep = workflow.slice(downloadStart, verificationStart);
     updateReleaseWorkflow(
       fixture,
       `${authorizationStep}${downloadStep}`,
@@ -1477,7 +1524,7 @@ describe('release readiness contract', () => {
     );
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'Release workflow publish job must use only the exact reviewed ordered steps',
+      /Release workflow (?:publish job must use only the exact reviewed ordered steps|must use the exact frozen release job and step graph)/u,
     );
   });
 
@@ -1485,28 +1532,28 @@ describe('release readiness contract', () => {
     const fixture = createReleaseFixture();
     updateReleaseWorkflow(
       fixture,
-      '          node ./scripts/publish-release-artifacts.mjs\n          --artifact-root .artifacts/publication\n',
+      '            "$node_path" ./scripts/publish-release-artifacts.mjs \\\n              --artifact-root .artifacts/publication \\\n',
       [
-        '          node ./scripts/secondary-publish.mjs &&',
-        '          node ./scripts/publish-release-artifacts.mjs',
-        '          --artifact-root .artifacts/publication',
+        '            "$node_path" ./scripts/secondary-publish.mjs && \\',
+        '            "$node_path" ./scripts/publish-release-artifacts.mjs \\',
+        '              --artifact-root .artifacts/publication \\',
         '',
       ].join('\n'),
     );
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'Release workflow publish job must use only the exact reviewed ordered steps',
+      /Release workflow (?:publish job must use only the exact reviewed ordered steps|must use the exact frozen release job and step graph)/u,
     );
   });
 
   test.each([
     [
       'candidate creation command',
-      '          node ./scripts/create-release-artifacts.mjs\n          --output .artifacts/publication\n',
+      '            "$node_path" ./scripts/create-release-artifacts.mjs \\\n              --output .artifacts/publication \\\n',
       [
-        '          node ./scripts/secondary-uploader.mjs &&',
-        '          node ./scripts/create-release-artifacts.mjs',
-        '          --output .artifacts/publication',
+        '            "$node_path" ./scripts/secondary-uploader.mjs && \\',
+        '            "$node_path" ./scripts/create-release-artifacts.mjs \\',
+        '              --output .artifacts/publication \\',
         '',
       ].join('\n'),
     ],
@@ -1550,12 +1597,11 @@ describe('release readiness contract', () => {
     ],
     [
       'repository verification shell',
-      '      - name: Verify repository\n        run: corepack pnpm@10.34.0 verify:repository\n',
+      '            "$node_path" "$corepack_path" pnpm@10.34.0 \\\n              --config.pnpmfile=/dev/null \\\n',
       [
-        '      - name: Verify repository',
-        '        run: >-',
-        '          node ./scripts/secondary-release-check.mjs &&',
-        '          corepack pnpm@10.34.0 verify:repository',
+        '            "$node_path" ./scripts/secondary-release-check.mjs && \\',
+        '            "$node_path" "$corepack_path" pnpm@10.34.0 \\',
+        '              --config.pnpmfile=/dev/null \\',
         '',
       ].join('\n'),
     ],
@@ -1665,8 +1711,8 @@ describe('release readiness contract', () => {
       verificationTokenWorkflowPath,
       'utf8',
     ).replace(
-      '      - name: Verify repository\n        run:',
-      '      - name: Verify repository\n        env:\n          GH_TOKEN: ${{ github.token }}\n        run:',
+      '      - name: Verify repository\n        shell:',
+      '      - name: Verify repository\n        env:\n          GH_TOKEN: ${{ github.token }}\n        shell:',
     );
     writeFileSync(
       verificationTokenWorkflowPath,
@@ -1712,7 +1758,7 @@ describe('release readiness contract', () => {
     ).toBe(true);
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'Release workflow publish job must use environment npm-release',
+      /Release workflow (?:publish job must consume the attested protected approval without creating a second environment deployment|must use the exact frozen release job and step graph)/u,
     );
   });
 });

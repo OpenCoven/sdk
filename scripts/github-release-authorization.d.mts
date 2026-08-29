@@ -3,15 +3,23 @@ import type {
 } from './create-release-artifacts.mjs';
 
 export interface PublicationSecurityReview {
-  schemaVersion: 4;
+  schemaVersion: 5;
   kind: 'opencoven-sdk-publication-security-review';
   issue: 'OpenCoven/sdk#40';
   disposition: 'ship';
+  reviewer: {
+    id: 68980965;
+    authorAssociation: 'MEMBER';
+    permission: 'admin';
+    roleName: 'admin';
+    login?: string;
+  };
   version: string;
   source: {
     repository: 'OpenCoven/sdk';
     commit: string;
     tree: string;
+    runtimeManifest: PublicationArtifactManifest['source']['runtimeManifest'];
   };
   manifest: {
     file: 'release-manifest.json';
@@ -34,7 +42,6 @@ export interface PublicationSecurityReview {
     name: string;
   };
   commentId?: string;
-  reviewer?: 'BunsDev';
 }
 
 export function createPublicationAuthorizationRecord(options: {
@@ -50,6 +57,7 @@ export function resolvePublicationSecurityReview(options: {
   root?: string;
   commentId: string;
   allowedArtifactRoot?: string;
+  allowedArtifactRoots?: Array<string | undefined>;
   execute?: typeof import('node:child_process').execFileSync;
   env?: NodeJS.ProcessEnv;
 }): PublicationSecurityReview;
@@ -58,6 +66,7 @@ export function verifyPublicationSecurityReview(options: {
   root?: string;
   artifactRoot: string;
   commentId: string;
+  allowedArtifactRoots?: Array<string | undefined>;
   execute?: typeof import('node:child_process').execFileSync;
   env?: NodeJS.ProcessEnv;
 }): {

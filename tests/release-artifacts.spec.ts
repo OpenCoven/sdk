@@ -75,6 +75,36 @@ describe('release artifacts', () => {
       (
         schema.$defs.publicationArtifactSet as unknown as {
           properties: {
+            schemaVersion: {
+              const: number;
+            };
+            source: {
+              properties: {
+                runtimeManifest: {
+                  type: string;
+                };
+              };
+              required: string[];
+            };
+          };
+        }
+      ).properties.schemaVersion.const,
+    ).toBe(6);
+    expect(
+      (
+        schema.$defs.publicationArtifactSet as unknown as {
+          properties: {
+            source: {
+              required: string[];
+            };
+          };
+        }
+      ).properties.source.required,
+    ).toContain('runtimeManifest');
+    expect(
+      (
+        schema.$defs.publicationArtifactSet as unknown as {
+          properties: {
             provenance: {
               required: string[];
             };

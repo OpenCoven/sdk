@@ -6,28 +6,38 @@ import {
   chmodSync,
   constants,
   copyFileSync,
-  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
-  realpathSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, resolve, sep } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
   verifyPublicationSecurityReview,
 } from './github-release-authorization.mjs';
 import {
+  verifyProtectedApprovalArtifacts,
+} from './github-environment-approval-evidence.mjs';
+import {
   cleanupOwnedTempRoot,
   createOwnedTempDirectory,
 } from './owned-temp-directory.mjs';
 import { PUBLIC_PACKAGES } from './repository-metadata.mjs';
 import { readReleaseConfig } from './release-readiness.mjs';
+import {
+  AUTHENTICATED_NPM_CLI_VERSION,
+  AUTHENTICATED_NPM_TARBALL_URL,
+  createSterileReleaseEnvironment,
+  resolveAuthenticatedReleaseRuntime,
+  verifyAuthenticatedNpmCliTree,
+  verifyAuthenticatedNpmTarball,
+} from './release-runtime-integrity.mjs';
 
 const CANONICAL_NPM_REGISTRY = 'https://registry.npmjs.org/';
-const PUBLISHER_NPM_VERSION = '11.5.1';
+const PUBLISHER_NPM_VERSION = AUTHENTICATED_NPM_CLI_VERSION;
+const MAX_NPM_TARBALL_BYTES = 32 * 1024 * 1024;
 
 function digest(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -147,8 +157,7 @@ function validateGitHubPublishProvenance(env, manifest) {
   };
 }
 
-function createSterileNpmContext(env, registry, manifest) {
-  const oidc = validateOidcRequestEnvironment(env);
+function createSterileNpmContext(env, registry, manifest, runtime) {
   const provenance = validateGitHubPublishProvenance(env, manifest);
   const owned = createOwnedTempDirectory({
     prefix: 'opencoven-sdk-npm-publish',
@@ -168,11 +177,16 @@ function createSterileNpmContext(env, registry, manifest) {
   writeFileSync(userconfig, configText, { flag: 'wx', mode: 0o600 });
   writeFileSync(globalconfig, configText, { flag: 'wx', mode: 0o600 });
 
-  const publishEnvironment = {
-    PATH: env.PATH,
-    HOME: home,
-    TMPDIR: temporary,
-    CI: 'true',
+  const baseEnvironment = {
+    ...createSterileReleaseEnvironment({
+      authenticatedNodePath: runtime.nodePath,
+      home,
+      temporary,
+      corepackHome: resolve(owned.path, 'corepack'),
+      include: {
+        CI: 'true',
+      },
+    }),
     NPM_CONFIG_USERCONFIG: userconfig,
     NPM_CONFIG_GLOBALCONFIG: globalconfig,
     NPM_CONFIG_CACHE: cache,
@@ -189,8 +203,6 @@ function createSterileNpmContext(env, registry, manifest) {
     GITHUB_REPOSITORY_ID: provenance.repositoryId,
     GITHUB_REPOSITORY_OWNER_ID: provenance.repositoryOwnerId,
     RUNNER_ENVIRONMENT: provenance.runnerEnvironment,
-    ACTIONS_ID_TOKEN_REQUEST_URL: oidc.requestUrl,
-    ACTIONS_ID_TOKEN_REQUEST_TOKEN: oidc.requestToken,
   };
   return {
     owned,
@@ -199,92 +211,145 @@ function createSterileNpmContext(env, registry, manifest) {
     userconfig,
     globalconfig,
     cache,
-    env: publishEnvironment,
+    verificationEnv: baseEnvironment,
   };
 }
 
-function resolveReviewedNpmCli(root, version) {
-  const packagePath = realpathSync(resolve(root, 'node_modules/npm/package.json'));
-  const cliPath = realpathSync(resolve(root, 'node_modules/npm/bin/npm-cli.js'));
-  const rootPath = `${realpathSync(root)}${sep}`;
+export function prepareAuthenticatedNpmCli({
+  version,
+  registry,
+  runtime,
+  execute = execFileSync,
+}) {
   if (
-    !packagePath.startsWith(rootPath)
-    || !cliPath.startsWith(rootPath)
-    || !lstatSync(packagePath).isFile()
-    || !lstatSync(cliPath).isFile()
+    version !== AUTHENTICATED_NPM_CLI_VERSION
+    || registry !== CANONICAL_NPM_REGISTRY
   ) {
-    throw new Error('Reviewed npm CLI must be installed inside the release checkout');
+    throw new Error('Authenticated npm CLI request is not canonical');
   }
-  const manifest = JSON.parse(readFileSync(packagePath, 'utf8'));
-  if (manifest.name !== 'npm' || manifest.version !== version) {
-    throw new Error(`Reviewed npm CLI must be exactly npm ${version}`);
-  }
-  return cliPath;
-}
-
-function installReviewedNpmCli(root, env, registry, execute) {
   const owned = createOwnedTempDirectory({
-    prefix: 'opencoven-sdk-npm-install',
-    childSegments: ['install'],
+    prefix: 'opencoven-sdk-npm-cli',
+    childSegments: ['distribution'],
   });
   try {
     const home = resolve(owned.path, 'home');
-    const store = resolve(owned.path, 'store');
     const temporary = resolve(owned.path, 'tmp');
-    for (const directory of [home, store, temporary]) {
+    const corepackHome = resolve(owned.path, 'corepack');
+    const extractRoot = resolve(owned.path, 'extract');
+    for (const directory of [home, temporary, corepackHome, extractRoot]) {
       mkdirSync(directory, { mode: 0o700 });
       chmodSync(directory, 0o700);
     }
-    const userconfig = resolve(owned.path, 'user.npmrc');
-    const globalconfig = resolve(owned.path, 'global.npmrc');
-    const configText = `registry=${registry}\n`;
-    writeFileSync(userconfig, configText, { flag: 'wx', mode: 0o600 });
-    writeFileSync(globalconfig, configText, { flag: 'wx', mode: 0o600 });
+    const environment = createSterileReleaseEnvironment({
+      authenticatedNodePath: runtime.nodePath,
+      home,
+      temporary,
+      corepackHome,
+      include: {
+        CI: 'true',
+      },
+    });
+    const tarballPath = resolve(owned.path, 'npm-11.5.1.tgz');
     execute(
-      'pnpm',
+      '/usr/bin/curl',
       [
-        'install',
-        '--frozen-lockfile',
-        '--ignore-scripts',
-        `--config.registry=${registry}`,
-        `--config.userconfig=${userconfig}`,
-        `--config.globalconfig=${globalconfig}`,
-        `--config.store-dir=${store}`,
+        '--fail',
+        '--silent',
+        '--show-error',
+        '--proto',
+        '=https',
+        '--tlsv1.2',
+        '--output',
+        tarballPath,
+        AUTHENTICATED_NPM_TARBALL_URL,
       ],
       {
-        cwd: root,
-        env: {
-          PATH: env.PATH,
-          HOME: home,
-          TMPDIR: temporary,
-          CI: 'true',
-          NPM_CONFIG_USERCONFIG: userconfig,
-          NPM_CONFIG_GLOBALCONFIG: globalconfig,
-          NPM_CONFIG_REGISTRY: registry,
-        },
-        stdio: 'inherit',
+        cwd: owned.path,
+        env: environment,
+        stdio: ['ignore', 'ignore', 'pipe'],
+        timeout: 120_000,
+        killSignal: 'SIGKILL',
       },
     );
-  } finally {
+    const tarballBytes = readFileSync(tarballPath);
+    if (tarballBytes.byteLength > MAX_NPM_TARBALL_BYTES) {
+      throw new Error('Authenticated npm tarball exceeds the maximum size');
+    }
+    verifyAuthenticatedNpmTarball(tarballBytes);
+    const listing = execute(
+      '/usr/bin/tar',
+      ['-tzf', tarballPath],
+      {
+        cwd: owned.path,
+        env: environment,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 30_000,
+        killSignal: 'SIGKILL',
+      },
+    );
+    const entries = listing
+      .split('\n')
+      .filter((entry) => entry.length > 0);
+    if (
+      entries.length !== 2293
+      || new Set(entries).size !== entries.length
+      || entries.some(
+        (entry) =>
+          !entry.startsWith('package/')
+          || entry.startsWith('/')
+          || entry.includes('\\')
+          || entry.split('/').includes('..'),
+      )
+    ) {
+      throw new Error('Authenticated npm tarball contains an unsafe file list');
+    }
+    execute(
+      '/usr/bin/tar',
+      [
+        '-xzf',
+        tarballPath,
+        '-C',
+        extractRoot,
+        '--no-same-owner',
+        '--no-same-permissions',
+      ],
+      {
+        cwd: owned.path,
+        env: environment,
+        stdio: ['ignore', 'ignore', 'pipe'],
+        timeout: 30_000,
+        killSignal: 'SIGKILL',
+      },
+    );
+    const npmRoot = resolve(extractRoot, 'package');
+    const verified = verifyAuthenticatedNpmCliTree({
+      root: npmRoot,
+      version,
+    });
+    return {
+      owned,
+      cliPath: verified.cliPath,
+      treeSha256: verified.treeSha256,
+    };
+  } catch (error) {
     cleanupOwnedTempRoot(owned);
+    throw error;
   }
 }
 
-function ensureReviewedNpmCli(root, version, env, registry, execute) {
-  const packagePath = resolve(root, 'node_modules/npm/package.json');
-  const cliPath = resolve(root, 'node_modules/npm/bin/npm-cli.js');
-  if (!existsSync(packagePath) && !existsSync(cliPath)) {
-    installReviewedNpmCli(root, env, registry, execute);
-  } else if (!existsSync(packagePath) || !existsSync(cliPath)) {
-    throw new Error('Reviewed npm CLI installation is incomplete');
-  }
-  return resolveReviewedNpmCli(root, version);
-}
-
-function runNpm(execute, npmCli, args, context, capture = false) {
-  return execute(process.execPath, [npmCli, ...args], {
+function runNpm(
+  execute,
+  runtime,
+  npmCli,
+  args,
+  context,
+  environment,
+  capture = false,
+) {
+  return execute(runtime.nodePath, [npmCli, ...args], {
     cwd: context.cwd,
-    env: context.env,
+    env: environment,
     encoding: capture ? 'utf8' : undefined,
     stdio: capture
       ? ['ignore', 'pipe', 'pipe']
@@ -294,12 +359,14 @@ function runNpm(execute, npmCli, args, context, capture = false) {
 
 function assertCanonicalResolvedNpmConfig(
   execute,
+  runtime,
   npmCli,
   context,
   registry,
 ) {
   const output = runNpm(
     execute,
+    runtime,
     npmCli,
     [
       'config',
@@ -311,6 +378,7 @@ function assertCanonicalResolvedNpmConfig(
       `--cache=${context.cache}`,
     ],
     context,
+    context.verificationEnv,
     true,
   );
   let config;
@@ -389,10 +457,14 @@ function copyAuthorizedTarball(entry, artifactRoot, context) {
 export function publishReleaseArtifacts({
   root = process.cwd(),
   artifactRoot,
+  pendingApprovalRoot,
+  protectedApprovalRoot,
   version,
   env = process.env,
   execute = execFileSync,
   githubExecute = execFileSync,
+  resolveRuntime = resolveAuthenticatedReleaseRuntime,
+  prepareNpmCli = prepareAuthenticatedNpmCli,
 } = {}) {
   if (env.OPENCOVEN_RELEASE_AUTHORIZATION !== 'publish') {
     throw new Error('OPENCOVEN_RELEASE_AUTHORIZATION must be publish');
@@ -418,10 +490,34 @@ export function publishReleaseArtifacts({
   ) {
     throw new Error('Release npm registry and CLI version are not canonical');
   }
-  const { manifest } = verifyPublicationSecurityReview({
+  const runtime = resolveRuntime({ env });
+  const { authorization, manifest } = verifyPublicationSecurityReview({
     root,
     artifactRoot,
     commentId,
+    execute: githubExecute,
+    env,
+    allowedArtifactRoots: [
+      artifactRoot,
+      pendingApprovalRoot,
+      protectedApprovalRoot,
+    ],
+  });
+  if (
+    manifest.toolchain.nodeVersion !== runtime.nodeVersion
+    || manifest.toolchain.nodePath !== runtime.nodePath
+    || manifest.toolchain.nodeSize !== runtime.nodeSize
+    || manifest.toolchain.nodeSha256 !== runtime.nodeSha256
+  ) {
+    throw new Error(
+      'Authenticated Node runtime does not match the reviewed publication toolchain',
+    );
+  }
+  verifyProtectedApprovalArtifacts({
+    root,
+    pendingRoot: pendingApprovalRoot,
+    approvalRoot: protectedApprovalRoot,
+    securityReview: authorization,
     execute: githubExecute,
     env,
   });
@@ -429,24 +525,36 @@ export function publishReleaseArtifacts({
     throw new Error(`Publication manifest version must be ${version}`);
   }
 
-  const npmCli = ensureReviewedNpmCli(
-    root,
-    config.npmCliVersion,
-    env,
-    config.npmRegistry,
+  const preparedNpm = prepareNpmCli({
+    version: config.npmCliVersion,
+    registry: config.npmRegistry,
+    runtime,
     execute,
-  );
-  const context = createSterileNpmContext(
-    env,
-    config.npmRegistry,
-    manifest,
-  );
+  });
+  if (
+    preparedNpm.treeSha256 !== config.npmCliDistribution.treeSha256
+    || manifest.toolchain.npmTreeSha256 !== preparedNpm.treeSha256
+  ) {
+    cleanupOwnedTempRoot(preparedNpm.owned);
+    throw new Error(
+      'Authenticated npm CLI tree does not match the reviewed publication toolchain',
+    );
+  }
+  let context;
   try {
+    context = createSterileNpmContext(
+      env,
+      config.npmRegistry,
+      manifest,
+      runtime,
+    );
     const npmVersion = runNpm(
       execute,
-      npmCli,
+      runtime,
+      preparedNpm.cliPath,
       ['--version'],
       context,
+      context.verificationEnv,
       true,
     ).trim();
     if (npmVersion !== config.npmCliVersion) {
@@ -456,10 +564,17 @@ export function publishReleaseArtifacts({
     }
     assertCanonicalResolvedNpmConfig(
       execute,
-      npmCli,
+      runtime,
+      preparedNpm.cliPath,
       context,
       config.npmRegistry,
     );
+    const oidc = validateOidcRequestEnvironment(env);
+    const publishEnvironment = {
+      ...context.verificationEnv,
+      ACTIONS_ID_TOKEN_REQUEST_URL: oidc.requestUrl,
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: oidc.requestToken,
+    };
     for (const packageMetadata of PUBLIC_PACKAGES) {
       const entry = manifest.packages.find(
         ({ name }) => name === packageMetadata.packageName,
@@ -476,7 +591,8 @@ export function publishReleaseArtifacts({
       );
       runNpm(
         execute,
-        npmCli,
+        runtime,
+        preparedNpm.cliPath,
         createNpmPublishArgs({
           tarball,
           access: config.npmAccess,
@@ -487,10 +603,14 @@ export function publishReleaseArtifacts({
           cache: context.cache,
         }),
         context,
+        publishEnvironment,
       );
     }
   } finally {
-    cleanupOwnedTempRoot(context.owned);
+    if (context !== undefined) {
+      cleanupOwnedTempRoot(context.owned);
+    }
+    cleanupOwnedTempRoot(preparedNpm.owned);
   }
 
   return manifest;
@@ -506,6 +626,10 @@ function parseArguments(arguments_) {
     const key =
       argument === '--artifact-root'
         ? 'artifactRoot'
+        : argument === '--pending-approval-root'
+          ? 'pendingApprovalRoot'
+          : argument === '--protected-approval-root'
+            ? 'protectedApprovalRoot'
         : argument === '--version'
           ? 'version'
           : undefined;

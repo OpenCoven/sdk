@@ -33,20 +33,38 @@ import {
   readReleaseConfig,
   validateReleaseReadiness,
 } from './release-readiness.mjs';
+import {
+  applyPublicationMetadataTransform,
+  createPublicationSourceManifest,
+  serializePublicationSourceManifest,
+  verifyPublicationSourceIdentity,
+} from './publication-source-identity.mjs';
+import {
+  AUTHENTICATED_NPM_CLI_ENTRYPOINT_SHA256,
+  AUTHENTICATED_NPM_CLI_TREE_SHA256,
+  AUTHENTICATED_NPM_TARBALL_INTEGRITY,
+  AUTHENTICATED_NPM_TARBALL_URL,
+  AUTHENTICATED_COREPACK_TREE_SHA256,
+  AUTHENTICATED_COREPACK_VERSION,
+  AUTHENTICATED_NODE_LINUX_X64_PATH,
+  AUTHENTICATED_NODE_LINUX_X64_SIZE,
+  AUTHENTICATED_NODE_LINUX_X64_EXECUTABLE_SHA256,
+  assertNoReleaseRuntimeShadows,
+  createSterileReleaseEnvironment,
+  protectedPnpmArguments,
+  resolveAuthenticatedReleaseRuntime,
+} from './release-runtime-integrity.mjs';
 
 const RELEASE_MANIFEST_NAME = 'release-manifest.json';
+const PUBLICATION_SOURCE_MANIFEST_NAME = 'publication-source-manifest.json';
 const RELEASE_MANIFEST_SCHEMA_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../conformance/release-artifact-manifest.schema.json',
 );
 const PUBLISHER_PATH = 'scripts/publish-release-artifacts.mjs';
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
-const PUBLICATION_TOOLCHAIN = Object.freeze({
-  nodeVersion: 'v24.18.1',
-  pnpmVersion: 'pnpm@10.34.0',
-  npmVersion: '11.5.1',
-  packCommand: 'corepack pnpm@10.34.0 pack --ignore-scripts',
-});
+const PUBLICATION_PACK_COMMAND =
+  'sanitize package manifests; node <authenticated-corepack> pnpm@10.34.0 --config.pnpmfile=/dev/null --config.global-pnpmfile=/dev/null pack';
 const CANONICAL_REPOSITORY_NPMRC = [
   'engine-strict=true',
   'save-exact=true',
@@ -55,6 +73,35 @@ const CANONICAL_REPOSITORY_NPMRC = [
   'link-workspace-packages=true',
   '',
 ].join('\n');
+
+function createPublicationToolchain(runtime) {
+  return {
+    nodeVersion: runtime.nodeVersion,
+    nodePath: runtime.nodePath,
+    nodeSize: runtime.nodeSize,
+    nodeSha256: runtime.nodeSha256,
+    corepackVersion: runtime.corepackVersion,
+    corepackTreeSha256: runtime.corepackTreeSha256,
+    pnpmVersion: 'pnpm@10.34.0',
+    npmVersion: '11.5.1',
+    npmTarball: AUTHENTICATED_NPM_TARBALL_URL,
+    npmIntegrity: AUTHENTICATED_NPM_TARBALL_INTEGRITY,
+    npmTreeSha256: AUTHENTICATED_NPM_CLI_TREE_SHA256,
+    npmEntrypointSha256: AUTHENTICATED_NPM_CLI_ENTRYPOINT_SHA256,
+    packCommand: PUBLICATION_PACK_COMMAND,
+  };
+}
+
+const EXPECTED_PUBLICATION_TOOLCHAIN = Object.freeze(
+  createPublicationToolchain({
+    nodeVersion: 'v24.18.1',
+    nodePath: AUTHENTICATED_NODE_LINUX_X64_PATH,
+    nodeSize: AUTHENTICATED_NODE_LINUX_X64_SIZE,
+    nodeSha256: AUTHENTICATED_NODE_LINUX_X64_EXECUTABLE_SHA256,
+    corepackVersion: AUTHENTICATED_COREPACK_VERSION,
+    corepackTreeSha256: AUTHENTICATED_COREPACK_TREE_SHA256,
+  }),
+);
 
 function digest(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -74,32 +121,28 @@ function readCommittedReleaseJson(root, commit, path, label) {
   }
 }
 
-function createReleaseProcessEnvironment() {
-  const environment = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    const normalizedKey = key.toUpperCase();
-    if (
-      !normalizedKey.startsWith('GIT_')
-      && normalizedKey !== 'GH_TOKEN'
-      && normalizedKey !== 'GITHUB_TOKEN'
-      && value !== undefined
-    ) {
-      environment[key] = value;
-    }
-  }
-  environment.GIT_CONFIG_GLOBAL = devNull;
-  environment.GIT_CONFIG_NOSYSTEM = '1';
-  environment.GIT_NO_REPLACE_OBJECTS = '1';
-  environment.GIT_OPTIONAL_LOCKS = '0';
-  environment.GIT_TERMINAL_PROMPT = '0';
-  return environment;
+function createReleaseProcessEnvironment(include = {}) {
+  return {
+    PATH: '/usr/bin:/bin',
+    HOME: process.env.HOME ?? '/tmp',
+    TMPDIR: process.env.TMPDIR ?? '/tmp',
+    LANG: 'C',
+    LC_ALL: 'C',
+    TZ: 'UTC',
+    GIT_CONFIG_GLOBAL: devNull,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_NO_REPLACE_OBJECTS: '1',
+    GIT_OPTIONAL_LOCKS: '0',
+    GIT_TERMINAL_PROMPT: '0',
+    ...include,
+  };
 }
 
 function runReleaseProcess(command, args, cwd, options = {}) {
   return execFileSync(command, args, {
     cwd,
     encoding: options.encoding ?? 'utf8',
-    env: createReleaseProcessEnvironment(),
+    env: options.env ?? createReleaseProcessEnvironment(),
     maxBuffer: 32 * 1024 * 1024,
     stdio: options.stdio ?? ['ignore', 'pipe', 'pipe'],
     timeout: options.timeout ?? 120_000,
@@ -110,7 +153,11 @@ function runReleaseProcess(command, args, cwd, options = {}) {
 function createCommittedReleaseSource(
   root,
   commit,
-  { ignoreInstallScripts = false } = {},
+  {
+    releaseCommit,
+    version,
+    env = process.env,
+  } = {},
 ) {
   if (
     typeof commit !== 'string'
@@ -134,7 +181,7 @@ function createCommittedReleaseSource(
   });
   try {
     runReleaseProcess(
-      'git',
+      '/usr/bin/git',
       [
         'clone',
         '--quiet',
@@ -147,7 +194,7 @@ function createCommittedReleaseSource(
       root,
     );
     runReleaseProcess(
-      'git',
+      '/usr/bin/git',
       ['checkout', '--quiet', '--detach', commit],
       owned.path,
     );
@@ -159,18 +206,58 @@ function createCommittedReleaseSource(
     if (clonedCommit !== commit) {
       throw new Error('Committed release source clone changed commit identity');
     }
+    if (releaseCommit !== undefined) {
+      applyPublicationMetadataTransform({
+        releaseRoot: root,
+        releaseCommit,
+        candidateRoot: owned.path,
+        version,
+      });
+    }
+    const runtime = resolveAuthenticatedReleaseRuntime({ env });
+    const home = resolve(owned.rootPath, 'home');
+    const temporary = resolve(owned.rootPath, 'tmp');
+    const corepackHome = resolve(owned.rootPath, 'corepack');
+    for (const directory of [home, temporary, corepackHome]) {
+      mkdirSync(directory, { mode: 0o700 });
+    }
+    const processEnvironment = {
+      ...createSterileReleaseEnvironment({
+        authenticatedNodePath: runtime.nodePath,
+        home,
+        temporary,
+        corepackHome,
+        include: {
+          CI: 'true',
+        },
+      }),
+      GIT_CONFIG_GLOBAL: devNull,
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_NO_REPLACE_OBJECTS: '1',
+      GIT_OPTIONAL_LOCKS: '0',
+      GIT_TERMINAL_PROMPT: '0',
+    };
     runReleaseProcess(
-      'corepack',
+      runtime.nodePath,
       [
-        'pnpm@10.34.0',
-        'install',
+        runtime.corepackPath,
+        ...protectedPnpmArguments('install', [
         '--frozen-lockfile',
-        ...(ignoreInstallScripts ? ['--ignore-scripts'] : []),
+        '--ignore-scripts',
+        ]),
       ],
       owned.path,
-      { timeout: 300_000 },
+      {
+        timeout: 300_000,
+        env: processEnvironment,
+      },
     );
-    return owned;
+    assertNoReleaseRuntimeShadows(owned.path);
+    return {
+      ...owned,
+      runtime,
+      processEnvironment,
+    };
   } catch (error) {
     cleanupOwnedTempRoot(owned);
     throw error;
@@ -212,15 +299,26 @@ export function serializeReleaseManifest(manifest) {
             sha256: entry.sha256,
           })),
         }
-      : manifest.schemaVersion === 5
+      : manifest.schemaVersion === 6
         ? {
-            schemaVersion: 5,
+            schemaVersion: 6,
             artifactSet: manifest.artifactSet,
             version: manifest.version,
             source: {
               repository: manifest.source.repository,
               commit: manifest.source.commit,
               tree: manifest.source.tree,
+              runtimeManifest: {
+                file: manifest.source.runtimeManifest.file,
+                size: manifest.source.runtimeManifest.size,
+                sha256: manifest.source.runtimeManifest.sha256,
+                runtimeSha256:
+                  manifest.source.runtimeManifest.runtimeSha256,
+                candidateCommit:
+                  manifest.source.runtimeManifest.candidateCommit,
+                candidateTree:
+                  manifest.source.runtimeManifest.candidateTree,
+              },
               npmConfigFiles: manifest.source.npmConfigFiles.map((entry) => ({
                 path: entry.path,
                 size: entry.size,
@@ -229,8 +327,19 @@ export function serializeReleaseManifest(manifest) {
             },
             toolchain: {
               nodeVersion: manifest.toolchain.nodeVersion,
+              nodePath: manifest.toolchain.nodePath,
+              nodeSize: manifest.toolchain.nodeSize,
+              nodeSha256: manifest.toolchain.nodeSha256,
+              corepackVersion: manifest.toolchain.corepackVersion,
+              corepackTreeSha256:
+                manifest.toolchain.corepackTreeSha256,
               pnpmVersion: manifest.toolchain.pnpmVersion,
               npmVersion: manifest.toolchain.npmVersion,
+              npmTarball: manifest.toolchain.npmTarball,
+              npmIntegrity: manifest.toolchain.npmIntegrity,
+              npmTreeSha256: manifest.toolchain.npmTreeSha256,
+              npmEntrypointSha256:
+                manifest.toolchain.npmEntrypointSha256,
               packCommand: manifest.toolchain.packCommand,
             },
             publisher: {
@@ -260,7 +369,7 @@ export function serializeReleaseManifest(manifest) {
         : null;
   if (canonicalManifest === null) {
     throw new Error(
-      `${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 5`,
+      `${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 6`,
     );
   }
   return `${JSON.stringify(
@@ -348,7 +457,7 @@ function readReleaseManifest(artifactRoot) {
       ['schemaVersion', 'version', 'packages'],
       RELEASE_MANIFEST_NAME,
     );
-  } else if (manifest.schemaVersion === 5) {
+  } else if (manifest.schemaVersion === 6) {
     assertExactFields(
       manifest,
       [
@@ -364,7 +473,7 @@ function readReleaseManifest(artifactRoot) {
       RELEASE_MANIFEST_NAME,
     );
   } else {
-    throw new Error(`${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 5`);
+    throw new Error(`${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 6`);
   }
   if (!Array.isArray(manifest.packages)) {
     throw new Error(`${RELEASE_MANIFEST_NAME} packages must be an array`);
@@ -517,15 +626,19 @@ function packArtifactEntries({
   build,
   version,
   requirePublishable,
-  ignoreScripts = false,
+  sanitizePublishManifests = false,
   env,
+  nodePath,
+  corepackPath,
 }) {
   const tarballs = packPublicPackages({
     root: packageRoot,
     destinationRoot: resolve(artifactRoot, 'tarballs'),
     build,
-    ignoreScripts,
+    sanitizePublishManifests,
     env,
+    nodePath,
+    corepackPath,
   });
   return PUBLIC_PACKAGES.map(({ packageName, workspaceDirectory }) => {
     const tarballPath = tarballs[workspaceDirectory];
@@ -807,20 +920,39 @@ function inspectPublicationSource(root, config) {
       'Publication artifacts require a clean exact release commit checkout',
     );
   }
-  runReleaseProcess(
-    'git',
-    [
-      'merge-base',
-      '--is-ancestor',
-      config.conformanceEvidence.candidateCommit,
-      checkout.commit,
-    ],
-    checkout.root,
-  );
+  const runtimeManifest = createPublicationSourceManifest({
+    root: checkout.root,
+    commit: config.conformanceEvidence.candidateCommit,
+  });
+  if (
+    runtimeManifest.runtimeSha256
+      !== config.conformanceEvidence.runtimeManifestSha256
+  ) {
+    throw new Error(
+      'Frozen publication source manifest digest does not match release.config.json',
+    );
+  }
+  verifyPublicationSourceIdentity({
+    root: checkout.root,
+    releaseCommit: checkout.commit,
+    manifest: runtimeManifest,
+  });
+  const runtimeManifestText =
+    serializePublicationSourceManifest(runtimeManifest);
   return {
     releaseCommit: checkout.commit,
     sourceCommit: checkout.commit,
     sourceTree: checkout.tree,
+    runtimeManifest,
+    runtimeManifestText,
+    runtimeManifestMetadata: {
+      file: PUBLICATION_SOURCE_MANIFEST_NAME,
+      size: Buffer.byteLength(runtimeManifestText, 'utf8'),
+      sha256: digest(runtimeManifestText),
+      runtimeSha256: runtimeManifest.runtimeSha256,
+      candidateCommit: runtimeManifest.candidate.commit,
+      candidateTree: runtimeManifest.candidate.tree,
+    },
     npmConfigFiles: inspectRepositoryNpmConfiguration(checkout.root),
     publisher: inspectCommittedPublisher(checkout.root, checkout.commit),
   };
@@ -936,7 +1068,7 @@ function verifyPublicationArtifactSet({
   const source = inspectPublicationSource(root, config);
   const { manifest } = readReleaseManifest(artifactRoot);
   if (
-    manifest.schemaVersion !== 5
+    manifest.schemaVersion !== 6
     || manifest.artifactSet !== 'publication-candidate'
   ) {
     throw new Error(
@@ -945,12 +1077,38 @@ function verifyPublicationArtifactSet({
   }
   assertExactFields(
     manifest.source,
-    ['repository', 'commit', 'tree', 'npmConfigFiles'],
+    ['repository', 'commit', 'tree', 'runtimeManifest', 'npmConfigFiles'],
     `${RELEASE_MANIFEST_NAME} source`,
   );
   assertExactFields(
+    manifest.source.runtimeManifest,
+    [
+      'file',
+      'size',
+      'sha256',
+      'runtimeSha256',
+      'candidateCommit',
+      'candidateTree',
+    ],
+    `${RELEASE_MANIFEST_NAME} source.runtimeManifest`,
+  );
+  assertExactFields(
     manifest.toolchain,
-    ['nodeVersion', 'pnpmVersion', 'npmVersion', 'packCommand'],
+    [
+      'nodeVersion',
+      'nodePath',
+      'nodeSize',
+      'nodeSha256',
+      'corepackVersion',
+      'corepackTreeSha256',
+      'pnpmVersion',
+      'npmVersion',
+      'npmTarball',
+      'npmIntegrity',
+      'npmTreeSha256',
+      'npmEntrypointSha256',
+      'packCommand',
+    ],
     `${RELEASE_MANIFEST_NAME} toolchain`,
   );
   assertExactFields(
@@ -975,14 +1133,37 @@ function verifyPublicationArtifactSet({
   );
   const expectedArtifactName =
     `opencoven-sdk-publication-${source.sourceCommit}-${manifest.version}`;
+  const runtimeManifestPath = resolveArtifactFile(
+    artifactRoot,
+    manifest.source.runtimeManifest.file,
+    'Publication source manifest',
+  );
+  const runtimeManifestStats = lstatSync(runtimeManifestPath);
+  const runtimeManifestBytes = readFileSync(runtimeManifestPath);
+  const runtimeManifestText = runtimeManifestBytes.toString('utf8');
   if (
     manifest.source.repository !== 'OpenCoven/sdk'
     || manifest.source.commit !== source.sourceCommit
     || manifest.source.tree !== source.sourceTree
     || JSON.stringify(manifest.source.npmConfigFiles)
       !== JSON.stringify(source.npmConfigFiles)
+    || runtimeManifestStats.isSymbolicLink()
+    || !runtimeManifestStats.isFile()
+    || manifest.source.runtimeManifest.file
+      !== PUBLICATION_SOURCE_MANIFEST_NAME
+    || manifest.source.runtimeManifest.size
+      !== runtimeManifestBytes.byteLength
+    || manifest.source.runtimeManifest.sha256
+      !== digest(runtimeManifestBytes)
+    || manifest.source.runtimeManifest.runtimeSha256
+      !== source.runtimeManifest.runtimeSha256
+    || manifest.source.runtimeManifest.candidateCommit
+      !== source.runtimeManifest.candidate.commit
+    || manifest.source.runtimeManifest.candidateTree
+      !== source.runtimeManifest.candidate.tree
+    || runtimeManifestText !== source.runtimeManifestText
     || JSON.stringify(manifest.toolchain)
-      !== JSON.stringify(PUBLICATION_TOOLCHAIN)
+      !== JSON.stringify(EXPECTED_PUBLICATION_TOOLCHAIN)
     || JSON.stringify(manifest.publisher)
       !== JSON.stringify(source.publisher)
     || manifest.toolchain.npmVersion !== config.npmCliVersion
@@ -1027,6 +1208,7 @@ function verifyPublicationArtifactSet({
   });
   const expectedFiles = [
     RELEASE_MANIFEST_NAME,
+    PUBLICATION_SOURCE_MANIFEST_NAME,
     ...manifest.packages.map(({ file }) => file),
   ].sort();
   if (
@@ -1089,8 +1271,12 @@ export function createPublicationArtifacts({
   const manifestPath = resolve(artifactRoot, RELEASE_MANIFEST_NAME);
   const committedSource = createCommittedReleaseSource(
     root,
-    source.sourceCommit,
-    { ignoreInstallScripts: true },
+    source.runtimeManifest.candidate.commit,
+    {
+      releaseCommit: source.releaseCommit,
+      version: readiness.version,
+      env,
+    },
   );
 
   try {
@@ -1098,26 +1284,34 @@ export function createPublicationArtifacts({
       throw new Error(`Release manifest already exists: ${manifestPath}`);
     }
     mkdirSync(resolve(artifactRoot, 'tarballs'), { recursive: true });
+    writeFileSync(
+      resolve(artifactRoot, PUBLICATION_SOURCE_MANIFEST_NAME),
+      source.runtimeManifestText,
+      { flag: 'wx' },
+    );
     const packages = packArtifactEntries({
       packageRoot: committedSource.path,
       artifactRoot,
       build,
       version: readiness.version,
       requirePublishable: true,
-      ignoreScripts: true,
-      env: createReleaseProcessEnvironment(),
+      sanitizePublishManifests: true,
+      env: committedSource.processEnvironment,
+      nodePath: committedSource.runtime.nodePath,
+      corepackPath: committedSource.runtime.corepackPath,
     });
     const manifest = {
-      schemaVersion: 5,
+      schemaVersion: 6,
       artifactSet: 'publication-candidate',
       version: readiness.version,
       source: {
         repository: 'OpenCoven/sdk',
         commit: source.sourceCommit,
         tree: source.sourceTree,
+        runtimeManifest: source.runtimeManifestMetadata,
         npmConfigFiles: source.npmConfigFiles,
       },
-      toolchain: { ...PUBLICATION_TOOLCHAIN },
+      toolchain: createPublicationToolchain(committedSource.runtime),
       publisher: source.publisher,
       provenance,
       packages,

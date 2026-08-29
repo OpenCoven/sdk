@@ -11,13 +11,18 @@ not pack, publish, attest, or configure a trusted publisher for it.
 
 ## 1. Release locks and prerequisites
 
-A normal publication requires both independent locks to be open:
+A normal publication requires every independent lock to be open:
 
 1. reviewed repository changes set `publishingEnabled` to `true` in
    `release.config.json`, set the four release package manifests to
    non-private, and leave the exact release workflow, candidate job, npm
    registry, and npm CLI version pinned;
-2. the protected GitHub environment `npm-release` approves the publish job.
+2. #40 authorizes the exact publication candidate bytes through an immutable
+   comment by GitHub user ID `68980965`, whose current repository association
+   and role must remain `MEMBER` and `admin`;
+3. the pending `npm-release` deployment is captured by an attested witness,
+   then the protected `approval-evidence` job produces the attested approval
+   receipt described below.
 
 `release.config.json` deliberately identifies two different artifact sets:
 
@@ -30,20 +35,36 @@ A normal publication requires both independent locks to be open:
   verify-mode producer. No commit or #40 comment is written into a descendant
   configuration commit.
 
-Publication artifacts use schema version 5 from
+Publication artifacts use schema version 6 from
 [`conformance/release-artifact-manifest.schema.json`](conformance/release-artifact-manifest.schema.json).
 The exact release commit produces these bytes before SHIP authorization. The
 manifest carries its commit/tree, the reviewed repository `.npmrc` digest, the
-Node/pnpm/npm pack toolchain, the sterile publisher's exact runtime path,
+conformance candidate commit/tree and canonical publication-source manifest,
+the Node/pnpm/npm pack toolchain, the sterile publisher's exact runtime path,
 size, and SHA-256, the exact workflow commit/ref/run attempt/job/environment,
 the unique commit-derived artifact name, and every tarball filename, size,
 and SHA-256. It contains no security-review claim.
+
+`conformanceEvidence.runtimeManifestSha256` freezes a canonical manifest over
+all public-package sources and fixtures, package build configuration, API
+baselines, workspace dependency manifests and lockfile, `.node-version`,
+`.npmrc`, `pnpm-workspace.yaml`, and `tsconfig.base.json`. Package versions,
+`private`, exact internal `workspace:<version>` ranges, changelogs, Changesets,
+and release configuration are the only release-metadata exceptions. Candidate
+creation verifies the descendant release commit against that digest, clones
+the exact #38 candidate commit, applies only that deterministic metadata
+transform, and builds from the transformed candidate checkout. Any other
+source, dependency, fixture, API-baseline, or build change requires new #38
+evidence and a new #40 review.
 
 After that immutable artifact exists, #40 reviews the raw
 `release-manifest.json` bytes and all four tarballs. The selected comment ID is
 a publish-dispatch input, not a repository change. Publication fetches #40 and
 the exact comment through `gh api`, requires the issue to be closed, completed,
-and locked, and accepts only unedited canonical JSON from CODEOWNER `BunsDev`.
+and locked, and accepts only unedited canonical JSON whose author has immutable
+GitHub user ID `68980965`. The login is informational and may be renamed; the
+comment's `author_association` must be `MEMBER`, and the collaborators API must
+report the same numeric user ID with `admin` permission and role.
 The record binds the exact source commit/tree, raw manifest size/SHA-256,
 ordered package entries, pack toolchain, sterile publisher runtime,
 workflow/run attempt/job ID, environment ID, deployment ID, and GitHub
@@ -70,6 +91,12 @@ trailing newline. Its shape is:
   "packages": [
     "<the four exact ordered filename/size/SHA-256 entries>"
   ],
+  "reviewer": {
+    "authorAssociation": "MEMBER",
+    "id": 68980965,
+    "permission": "admin",
+    "roleName": "admin"
+  },
   "publisher": {
     "path": "scripts/publish-release-artifacts.mjs",
     "sha256": "<publisher-sha256>",
@@ -88,16 +115,33 @@ trailing newline. Its shape is:
     "workflow": ".github/workflows/release.yml",
     "workflowCommit": "<release-commit>"
   },
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "source": {
     "commit": "<release-commit>",
     "repository": "OpenCoven/sdk",
+    "runtimeManifest": {
+      "candidateCommit": "acc38488f00860d246c3c553375634d64806eabb",
+      "candidateTree": "643be6db60736dc8bd7b01873dcd1c14f26d93ef",
+      "file": "publication-source-manifest.json",
+      "runtimeSha256": "1cf387f4f53f456c87a51ab09ab68f7ff7291480f9a7cd3a4fe3bb70f907e56a",
+      "sha256": "<raw-source-manifest-sha256>",
+      "size": "<raw-source-manifest-size>"
+    },
     "tree": "<release-tree>"
   },
   "toolchain": {
+    "corepackTreeSha256": "469b918857ea32351ac6a0737597abc90330dd521005687543dbd6b142536b08",
+    "corepackVersion": "0.35.0",
+    "nodePath": "/opt/hostedtoolcache/node/24.18.1/x64/bin/node",
+    "nodeSha256": "f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a",
+    "nodeSize": 123656816,
     "nodeVersion": "v24.18.1",
+    "npmEntrypointSha256": "8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7",
+    "npmIntegrity": "sha512-Iy5vXZ55m8tIaSCz6bqQf9+W5XbPfoyURsgWLjOkFglqHTep6RDZqRj2sfYGeRyZvGu2HuJWm0lux0rxPQ29lQ==",
+    "npmTarball": "https://registry.npmjs.org/npm/-/npm-11.5.1.tgz",
+    "npmTreeSha256": "dbe97072240cb2048f84faade50f938bdca3ba04efa67719259f5528397f0f09",
     "npmVersion": "11.5.1",
-    "packCommand": "corepack pnpm@10.34.0 pack --ignore-scripts",
+    "packCommand": "sanitize package manifests; node <authenticated-corepack> pnpm@10.34.0 --config.pnpmfile=/dev/null --config.global-pnpmfile=/dev/null pack",
     "pnpmVersion": "pnpm@10.34.0"
   },
   "version": "<version>"
@@ -173,10 +217,25 @@ bytes, then uses the exact clean frozen Cave checkout to re-render Cave
 records. This does not open `publishingEnabled`, change package privacy, create
 a tag, or authorize npm.
 
-Before unlocking, create the dedicated `publication-candidate` environment,
-create and protect the `npm-release` environment, confirm branch protections
-and required checks, confirm npm organization ownership, and complete the
-first-publish/trusted-publisher prerequisites below.
+Before unlocking, create the dedicated `publication-candidate` environment and
+configure the existing `npm-release` environment ID `20778492972` with exactly
+one required user reviewer, GitHub user ID `68980965`; enable
+`prevent_self_review`; disable administrator bypass; and allow protected
+branches only, with no custom branch policy. The verifier compares the
+environment rules' `updated_at` value observed while the deployment is
+pending with the protected job's deployment `created_at`. A current
+environment configuration or later deployment status cannot replace the
+attested pending witness. Confirm branch protections and required checks,
+confirm npm organization ownership, and complete the first-publish/trusted-
+publisher prerequisites below. Until those remote rules are configured
+exactly, publish mode intentionally fails closed.
+
+The `npm-release` approval is consumed by the dedicated `approval-evidence`
+job. The final `publish` job is deliberately unprotected and cannot start
+until that job succeeds; its exact numeric job ID is discovered before the
+approval receipt is written and is included in the attested handoff. Do not
+add `environment: npm-release` to the final publish job: doing so would create
+a second, separately approvable deployment outside the recorded approval.
 
 ## 2. Changesets and fixed versions
 
@@ -232,27 +291,51 @@ never persisted. The publish job requires both the authoritative/artifact
 preflight and repository-verification jobs.
 
 When `publishingEnabled` is opened on the exact non-private release commit,
-verify mode runs the dedicated `publication-candidate` job. It clones that
-exact `HEAD`, installs its frozen dependency lock, builds and packs with
-scripts disabled, creates four tarballs, rejects `private: true`,
-`publishConfig`, and publish lifecycle scripts, and writes the schema-v5
-publication manifest. Candidate creation does not require SHIP. The dedicated
-`publication-candidate` environment creates a deployment identity for the
-exact producer job. Its frozen step graph uploads exactly
+verify mode runs the dedicated `publication-candidate` job. A pinned
+`actions/setup-node` installation is accepted only at the exact hosted-runner
+path and exact Linux x64 executable SHA-256; the bundled Corepack 0.35.0
+54-file tree is independently hashed before use. The job does not execute
+repository pnpm hooks: install uses `--ignore-pnpmfile`, build/pack force
+`pnpmfile=/dev/null`, inherited package-manager and Node hook configuration is
+discarded, and the exact Corepack entrypoint from the authenticated Node
+distribution is invoked by absolute path. The job clones the exact #38
+candidate commit, verifies the frozen runtime manifest, applies only the
+reviewed metadata transform, installs the frozen dependency lock with scripts
+disabled, invokes the exact installed `tsup` 8.5.1 JS entrypoint under the
+authenticated Node rather than a package-script or `.bin` shim, builds and
+then deterministically removes publish lifecycle fields from the temporary
+package manifests before invoking `pnpm pack`. It creates four tarballs,
+rejects `private: true`, `publishConfig`, and any remaining publish lifecycle
+scripts, and writes the schema-v6
+publication manifest plus `publication-source-manifest.json`. Candidate
+creation does not require SHIP. The dedicated `publication-candidate`
+environment creates a deployment identity for the exact producer job. Its
+frozen step graph uploads exactly
 `opencoven-sdk-publication-<commit>-<version>` and then uses its only
-OIDC/attestation-write capability to attest the manifest and four tarballs.
+OIDC/attestation-write capability to attest both manifests and four tarballs.
 Verify mode never publishes.
 
 After #40 reviews those exact bytes, publish mode must run again from the same
-commit and tree. It resolves the immutable comment, verifies the successful
-candidate workflow run, run attempt, numeric job/environment/deployment IDs,
-deployment statuses, and artifact ID. It downloads that prior artifact by
-reviewed run/name, byte-verifies the raw manifest and every tarball, and
-cryptographically verifies all five candidate attestations against the exact
-run attempt. It never rebuilds or repacks. A gzip header, compression-level,
-filename, size, digest, workflow run, job, deployment, environment, artifact,
-commit, tree, or sterile publisher change requires new candidate bytes and a
-new #40 review.
+commit and tree. Start publish mode with the exact #40 comment ID, then wait
+for `approval-witness` to finish and attest `pending-approval.json` before
+approving `approval-evidence`. The witness records the exact run, attempt,
+source, environment ID, rules digest/version, and immutable reviewer ID while
+GitHub still reports a pending deployment. The environment-protected
+`approval-evidence` job verifies that witness attestation, resolves #40 again,
+binds its own job/deployment and start time, and attests
+`protected-approval.json`. The final publish job requires both jobs and rejects
+current environment rules or later POSTed deployment statuses as substitutes
+for those receipts.
+
+Publication then verifies the successful candidate workflow run, run attempt,
+numeric job/environment/deployment IDs, and artifact ID; downloads the prior
+artifact by reviewed run/name; byte-verifies both manifests and every tarball;
+and cryptographically verifies all six candidate attestations plus both
+approval attestations against their exact run attempts. It never rebuilds or
+repacks. A gzip header, compression level, filename, size, digest, workflow
+run, job, deployment, environment, rules version, artifact, commit, tree,
+source-manifest, or sterile publisher change requires new evidence and, where
+candidate bytes change, a new #40 review.
 
 ## 6. First-publish bootstrap
 
@@ -271,8 +354,11 @@ history, or normal release automation.
 ## 7. Configure trusted publishers
 
 For each package, configure npm's trusted publisher to the `OpenCoven/sdk`
-repository and `.github/workflows/release.yml`. Restrict publishing to the
-protected `npm-release` GitHub environment where supported. Confirm all four:
+repository and `.github/workflows/release.yml`. This evidence design leaves
+the final publish job outside a GitHub environment so it can consume the prior
+attested approval without creating a second deployment; therefore configure
+the npm trusted publisher by exact repository and workflow, not by
+`npm-release` environment. Confirm all four:
 
 - `@opencoven/sdk-core`
 - `@opencoven/cave-client`
@@ -281,24 +367,33 @@ protected `npm-release` GitHub environment where supported. Confirm all four:
 
 ## 8. Normal OIDC publication
 
-After bootstrap, normal releases use workflow mode `publish`. The protected
-job has an exact ordered allowlist: pinned checkout/runtime setup, authorization
-resolution, the single reviewed artifact download, byte and attestation
-verification, and the digest-bound sterile publisher. No other action, shell
-command, Node/npm script, artifact download, or conditional step may execute
-with its job-scoped OIDC permission. The sterile publisher obtains short-lived
-OIDC identity and publishes only the previously attested reviewed files. It
-uses pinned npm `11.5.1`, rejects `NPM_TOKEN` and `NODE_AUTH_TOKEN`, and
-discards inherited npm config, proxy, certificate override, lifecycle, and
+After bootstrap, normal releases use workflow mode `publish`. The frozen graph
+downloads the two approval artifacts, resolves authorization, downloads the
+single reviewed publication candidate, verifies all bytes and attestations,
+and invokes the digest-bound sterile publisher. No repository dependency
+installation, rebuild, or repack occurs in the publish job.
+
+The publisher does not use npm from the repository checkout or obtain it
+through pnpm. It downloads only
+`https://registry.npmjs.org/npm/-/npm-11.5.1.tgz` with the pinned SHA-512
+integrity, safely extracts it after byte verification, rejects links and an
+unexpected file list, and verifies the complete 2,293-file CLI tree and
+`bin/npm-cli.js` SHA-256 before use. A fake CLI that reports `11.5.1` is not
+sufficient.
+
+The sterile publisher rejects `NPM_TOKEN` and `NODE_AUTH_TOKEN` and discards
+inherited PATH entries, `GITHUB_PATH`, `GITHUB_ENV`, Node require/import hooks,
+shell init, npm/pnpm config, proxy, certificate override, lifecycle, and
 unrelated GitHub-token inputs. Each tarball is copied byte-for-byte into an
 owner-private temporary directory outside the checkout. npm runs there with
-generated private user/global configs and cache, registry pinned by config and CLI to
-`https://registry.npmjs.org/`, strict certificate validation, no auth token or
-`always-auth`, and `--ignore-scripts`. GitHub's two short-lived OIDC request
-variables, a fixed non-secret `GITHUB_ACTIONS=true` provider marker, and only
-the validated repository/workflow/ref/commit/run/hosted-runner fields required
-for npm's SLSA provenance reach npm. Resolved npm config is checked before the
-first publish. The workflow must never rebuild or repack in the publish job.
+generated private user/global configs and cache, registry pinned by config and
+CLI to `https://registry.npmjs.org/`, strict certificate validation, no auth
+token or `always-auth`, and `--ignore-scripts`. npm version and resolved config
+checks run without OIDC variables. Only each final authenticated `npm publish`
+subprocess receives GitHub's two short-lived OIDC request variables, a fixed
+non-secret `GITHUB_ACTIONS=true` provider marker, and the validated
+repository/workflow/ref/commit/run/hosted-runner fields required for npm
+provenance.
 
 ## 9. Registry and provenance validation
 

@@ -10,7 +10,6 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
-import { createRequire } from 'node:module';
 import { gzipSync } from 'node:zlib';
 
 import { afterEach, describe, expect, test } from 'vitest';
@@ -25,15 +24,40 @@ import {
 import {
   publishReleaseArtifacts,
 } from '../scripts/publish-release-artifacts.mjs';
+import {
+  createPendingApprovalEvidence,
+  createProtectedApprovalReceipt,
+  serializePendingApprovalEvidence,
+  serializeProtectedApprovalReceipt,
+} from '../scripts/github-environment-approval.mjs';
+import {
+  createOwnedTempDirectory,
+} from '../scripts/owned-temp-directory.mjs';
 import { PUBLIC_PACKAGES } from '../scripts/repository-metadata.mjs';
 import { serializeCanonicalJson } from '../scripts/conformance-contract.mjs';
+import {
+  createPublicationSourceManifest,
+  serializePublicationSourceManifest,
+} from '../scripts/publication-source-identity.mjs';
+import {
+  AUTHENTICATED_NPM_CLI_ENTRYPOINT_SHA256,
+  AUTHENTICATED_NPM_CLI_TREE_SHA256,
+  AUTHENTICATED_NPM_TARBALL_INTEGRITY,
+  AUTHENTICATED_NPM_TARBALL_URL,
+  AUTHENTICATED_COREPACK_TREE_SHA256,
+  AUTHENTICATED_COREPACK_VERSION,
+  AUTHENTICATED_NODE_LINUX_X64_EXECUTABLE_SHA256,
+  AUTHENTICATED_NODE_LINUX_X64_PATH,
+  AUTHENTICATED_NODE_LINUX_X64_SIZE,
+} from '../scripts/release-runtime-integrity.mjs';
 
 const workspaceRoot = resolve(import.meta.dirname, '..');
-const require = createRequire(import.meta.url);
 const fixtures: string[] = [];
 const VERSION = '0.1.0';
 const NPM_REGISTRY = 'https://registry.npmjs.org/';
 const NPM_VERSION = '11.5.1';
+const REVIEWER_ID = 68980965;
+const APPROVAL_ENVIRONMENT_ID = '20778492972';
 
 type PublicationAuthorizationOptions = Parameters<
   typeof createRawPublicationAuthorizationRecord
@@ -58,13 +82,21 @@ function createPublicationAuthorizationRecord(
 }
 
 interface PublicationManifest {
-  schemaVersion: 5;
+  schemaVersion: 6;
   artifactSet: 'publication-candidate';
   version: string;
   source: {
     repository: 'OpenCoven/sdk';
     commit: string;
     tree: string;
+    runtimeManifest: {
+      file: 'publication-source-manifest.json';
+      size: number;
+      sha256: string;
+      runtimeSha256: string;
+      candidateCommit: string;
+      candidateTree: string;
+    };
     npmConfigFiles: Array<{
       path: string;
       size: number;
@@ -73,9 +105,18 @@ interface PublicationManifest {
   };
   toolchain: {
     nodeVersion: 'v24.18.1';
+    nodePath: '/opt/hostedtoolcache/node/24.18.1/x64/bin/node';
+    nodeSize: 123656816;
+    nodeSha256: string;
+    corepackVersion: '0.35.0';
+    corepackTreeSha256: string;
     pnpmVersion: 'pnpm@10.34.0';
     npmVersion: '11.5.1';
-    packCommand: 'corepack pnpm@10.34.0 pack --ignore-scripts';
+    npmTarball: 'https://registry.npmjs.org/npm/-/npm-11.5.1.tgz';
+    npmIntegrity: string;
+    npmTreeSha256: string;
+    npmEntrypointSha256: string;
+    packCommand: 'sanitize package manifests; node <authenticated-corepack> pnpm@10.34.0 --config.pnpmfile=/dev/null --config.global-pnpmfile=/dev/null pack';
   };
   publisher: {
     path: 'scripts/publish-release-artifacts.mjs';
@@ -154,7 +195,7 @@ function createReleaseFixture({
   const config = JSON.parse(
     readFileSync(resolve(workspaceRoot, 'release.config.json'), 'utf8'),
   ) as Record<string, unknown>;
-  config.schemaVersion = 5;
+  config.schemaVersion = 6;
   config.publishingEnabled = true;
   config.npmCliVersion = NPM_VERSION;
   config.npmRegistry = NPM_REGISTRY;
@@ -267,14 +308,39 @@ function writePublicationArtifacts(
   const publisherPath = 'scripts/publish-release-artifacts.mjs';
   const publisherBytes = readFileSync(resolve(sourceRoot, publisherPath));
   const artifactName = `opencoven-sdk-publication-${commit}-${VERSION}`;
+  const config = JSON.parse(
+    readFileSync(resolve(sourceRoot, 'release.config.json'), 'utf8'),
+  ) as {
+    conformanceEvidence: {
+      candidateCommit: string;
+    };
+  };
+  const runtimeManifest = createPublicationSourceManifest({
+    root: sourceRoot,
+    commit: config.conformanceEvidence.candidateCommit,
+  });
+  const runtimeManifestText =
+    serializePublicationSourceManifest(runtimeManifest);
+  writeFileSync(
+    resolve(artifactRoot, 'publication-source-manifest.json'),
+    runtimeManifestText,
+  );
   const manifest: PublicationManifest = {
-    schemaVersion: 5,
+    schemaVersion: 6,
     artifactSet: 'publication-candidate',
     version: VERSION,
     source: {
       repository: 'OpenCoven/sdk',
       commit,
       tree,
+      runtimeManifest: {
+        file: 'publication-source-manifest.json',
+        size: Buffer.byteLength(runtimeManifestText, 'utf8'),
+        sha256: sha256(runtimeManifestText),
+        runtimeSha256: runtimeManifest.runtimeSha256,
+        candidateCommit: runtimeManifest.candidate.commit,
+        candidateTree: runtimeManifest.candidate.tree,
+      },
       npmConfigFiles: [
         {
           path: '.npmrc',
@@ -285,9 +351,19 @@ function writePublicationArtifacts(
     },
     toolchain: {
       nodeVersion: 'v24.18.1',
+      nodePath: AUTHENTICATED_NODE_LINUX_X64_PATH,
+      nodeSize: AUTHENTICATED_NODE_LINUX_X64_SIZE,
+      nodeSha256: AUTHENTICATED_NODE_LINUX_X64_EXECUTABLE_SHA256,
+      corepackVersion: AUTHENTICATED_COREPACK_VERSION,
+      corepackTreeSha256: AUTHENTICATED_COREPACK_TREE_SHA256,
       pnpmVersion: 'pnpm@10.34.0',
       npmVersion: NPM_VERSION,
-      packCommand: 'corepack pnpm@10.34.0 pack --ignore-scripts',
+      npmTarball: AUTHENTICATED_NPM_TARBALL_URL,
+      npmIntegrity: AUTHENTICATED_NPM_TARBALL_INTEGRITY,
+      npmTreeSha256: AUTHENTICATED_NPM_CLI_TREE_SHA256,
+      npmEntrypointSha256: AUTHENTICATED_NPM_CLI_ENTRYPOINT_SHA256,
+      packCommand:
+        'sanitize package manifests; node <authenticated-corepack> pnpm@10.34.0 --config.pnpmfile=/dev/null --config.global-pnpmfile=/dev/null pack',
     },
     publisher: {
       path: publisherPath,
@@ -316,7 +392,7 @@ function createGitHubExecute(
   authorization: ReturnType<typeof createPublicationAuthorizationRecord>,
 ) {
   return (command: string, arguments_: string[]): string => {
-    expect(command).toBe('gh');
+    expect(command).toBe('/usr/bin/gh');
     if (
       arguments_[0] === 'attestation'
       && arguments_[1] === 'verify'
@@ -325,13 +401,18 @@ function createGitHubExecute(
       if (path === undefined) {
         throw new Error('Missing mocked attestation verification path');
       }
+      const approvalEvidence =
+        path.endsWith('/pending-approval.json')
+        || path.endsWith('/protected-approval.json');
       return JSON.stringify([
         {
           verificationResult: {
             signature: {
               certificate: {
                 runInvocationURI:
-                  'https://github.com/OpenCoven/sdk/actions/runs/10000/attempts/1',
+                  `https://github.com/OpenCoven/sdk/actions/runs/${
+                    approvalEvidence ? '11000' : '10000'
+                  }/attempts/1`,
                 runnerEnvironment: 'github-hosted',
                 sourceRepositoryURI: 'https://github.com/OpenCoven/sdk',
                 sourceRepositoryDigest: authorization.source.commit,
@@ -369,8 +450,26 @@ function createGitHubExecute(
         body: serializeCanonicalJson(authorization),
         created_at: '2026-08-29T04:00:00Z',
         updated_at: '2026-08-29T04:00:00Z',
-        author_association: 'OWNER',
-        user: { login: 'BunsDev' },
+        author_association: 'MEMBER',
+        user: {
+          id: REVIEWER_ID,
+          login: 'BunsDev',
+          type: 'User',
+        },
+      });
+    }
+    if (
+      endpoint
+        === 'repos/OpenCoven/sdk/collaborators/BunsDev/permission'
+    ) {
+      return JSON.stringify({
+        permission: 'admin',
+        role_name: 'admin',
+        user: {
+          id: REVIEWER_ID,
+          login: 'BunsDev',
+          type: 'User',
+        },
       });
     }
     if (endpoint === 'repos/OpenCoven/sdk/actions/runs/10000') {
@@ -384,6 +483,21 @@ function createGitHubExecute(
         path: authorization.provenance.workflow,
         status: 'completed',
         conclusion: 'success',
+        repository: { full_name: 'OpenCoven/sdk' },
+        head_repository: { full_name: 'OpenCoven/sdk' },
+      });
+    }
+    if (endpoint === 'repos/OpenCoven/sdk/actions/runs/11000') {
+      return JSON.stringify({
+        id: 11000,
+        name: 'release',
+        event: 'workflow_dispatch',
+        run_attempt: 1,
+        head_sha: authorization.source.commit,
+        head_branch: 'main',
+        path: authorization.provenance.workflow,
+        status: 'in_progress',
+        conclusion: null,
         repository: { full_name: 'OpenCoven/sdk' },
         head_repository: { full_name: 'OpenCoven/sdk' },
       });
@@ -412,11 +526,86 @@ function createGitHubExecute(
       });
     }
     if (
+      endpoint
+        === 'repos/OpenCoven/sdk/actions/runs/11000/attempts/1/jobs?per_page=100'
+    ) {
+      return JSON.stringify({
+        total_count: 3,
+        jobs: [
+          {
+            id: 21000,
+            run_id: 11000,
+            run_attempt: 1,
+            head_sha: authorization.source.commit,
+            name: 'approval-witness',
+            started_at: '2026-08-29T16:00:00Z',
+            completed_at: '2026-08-29T16:00:01Z',
+            status: 'completed',
+            conclusion: 'success',
+          },
+          {
+            id: 22000,
+            run_id: 11000,
+            run_attempt: 1,
+            head_sha: authorization.source.commit,
+            name: 'approval-evidence',
+            started_at: '2026-08-29T16:00:02Z',
+            completed_at: '2026-08-29T16:00:03Z',
+            status: 'completed',
+            conclusion: 'success',
+          },
+          {
+            id: 23000,
+            run_id: 11000,
+            run_attempt: 1,
+            head_sha: authorization.source.commit,
+            name: 'publish',
+            started_at: '2026-08-29T16:00:03Z',
+            completed_at: null,
+            status: 'in_progress',
+            conclusion: null,
+          },
+        ],
+      });
+    }
+    if (
       endpoint === 'repos/OpenCoven/sdk/environments/publication-candidate'
     ) {
       return JSON.stringify({
         id: 50000,
         name: 'publication-candidate',
+      });
+    }
+    if (endpoint === 'repos/OpenCoven/sdk/environments/npm-release') {
+      return JSON.stringify({
+        id: Number(APPROVAL_ENVIRONMENT_ID),
+        name: 'npm-release',
+        can_admins_bypass: false,
+        protection_rules: [
+          {
+            type: 'required_reviewers',
+            prevent_self_review: true,
+            reviewers: [
+              {
+                type: 'User',
+                reviewer: {
+                  id: REVIEWER_ID,
+                  login: 'BunsDev',
+                  type: 'User',
+                },
+              },
+            ],
+          },
+          {
+            type: 'branch_policy',
+          },
+        ],
+        deployment_branch_policy: {
+          protected_branches: true,
+          custom_branch_policies: false,
+        },
+        created_at: '2026-08-28T10:00:00Z',
+        updated_at: '2026-08-28T10:00:00Z',
       });
     }
     if (endpoint === 'repos/OpenCoven/sdk/deployments/40000') {
@@ -433,6 +622,7 @@ function createGitHubExecute(
         performed_via_github_app: {
           slug: 'github-actions',
         },
+        created_at: '2026-08-29T15:59:59Z',
       });
     }
     if (
@@ -456,6 +646,20 @@ function createGitHubExecute(
         },
       ]);
     }
+    if (endpoint === 'repos/OpenCoven/sdk/deployments/41000') {
+      return JSON.stringify({
+        id: 41000,
+        sha: authorization.source.commit,
+        ref: 'main',
+        task: 'deploy',
+        environment: 'npm-release',
+        transient_environment: false,
+        performed_via_github_app: {
+          slug: 'github-actions',
+        },
+        created_at: '2026-08-29T15:59:59Z',
+      });
+    }
     if (endpoint === 'repos/OpenCoven/sdk/actions/artifacts/30000') {
       return JSON.stringify({
         id: 30000,
@@ -463,6 +667,17 @@ function createGitHubExecute(
         expired: false,
         workflow_run: {
           id: 10000,
+          head_sha: authorization.source.commit,
+        },
+      });
+    }
+    if (endpoint === 'repos/OpenCoven/sdk/actions/artifacts/31000') {
+      return JSON.stringify({
+        id: 31000,
+        name: 'opencoven-sdk-pending-approval-11000-1',
+        expired: false,
+        workflow_run: {
+          id: 11000,
           head_sha: authorization.source.commit,
         },
       });
@@ -487,6 +702,44 @@ function createGitHubExecute(
         ],
       });
     }
+    if (
+      endpoint
+        === 'repos/OpenCoven/sdk/actions/runs/11000/artifacts?name=opencoven-sdk-pending-approval-11000-1&per_page=100'
+    ) {
+      return JSON.stringify({
+        total_count: 1,
+        artifacts: [
+          {
+            id: 31000,
+            name: 'opencoven-sdk-pending-approval-11000-1',
+            expired: false,
+            workflow_run: {
+              id: 11000,
+              head_sha: authorization.source.commit,
+            },
+          },
+        ],
+      });
+    }
+    if (
+      endpoint
+        === 'repos/OpenCoven/sdk/actions/runs/11000/artifacts?name=opencoven-sdk-protected-approval-11000-1&per_page=100'
+    ) {
+      return JSON.stringify({
+        total_count: 1,
+        artifacts: [
+          {
+            id: 32000,
+            name: 'opencoven-sdk-protected-approval-11000-1',
+            expired: false,
+            workflow_run: {
+              id: 11000,
+              head_sha: authorization.source.commit,
+            },
+          },
+        ],
+      });
+    }
     throw new Error(`Unexpected GitHub endpoint ${endpoint}`);
   };
 }
@@ -495,7 +748,10 @@ function createNpmExecute(publishCalls: Array<{
   arguments_: string[];
   cwd: string;
   env: Record<string, string | undefined>;
-}>) {
+}>, verificationCalls: Array<{
+  arguments_: string[];
+  env: Record<string, string | undefined>;
+}> = []) {
   return (
     command: string,
     arguments_: string[],
@@ -506,11 +762,19 @@ function createNpmExecute(publishCalls: Array<{
       stdio: unknown;
     },
   ): string => {
-    expect(command).toBe(process.execPath);
+    expect(command).toBe(AUTHENTICATED_NODE_LINUX_X64_PATH);
     if (arguments_.at(-1) === '--version') {
+      verificationCalls.push({
+        arguments_: [...arguments_],
+        env: { ...options.env },
+      });
       return `${NPM_VERSION}\n`;
     }
     if (arguments_.includes('config') && arguments_.includes('list')) {
+      verificationCalls.push({
+        arguments_: [...arguments_],
+        env: { ...options.env },
+      });
       expect(
         readFileSync(options.env.NPM_CONFIG_USERCONFIG ?? '', 'utf8'),
       ).toBe(`registry=${NPM_REGISTRY}\n`);
@@ -555,6 +819,7 @@ function publicationEnvironment(
     GITHUB_REF: 'refs/heads/main',
     GITHUB_SHA: git(sourceRoot, ['rev-parse', 'HEAD']),
     GITHUB_JOB: 'publish',
+    PUBLISH_JOB_ID: '23000',
     GITHUB_RUN_ID: '11000',
     GITHUB_RUN_ATTEMPT: '1',
     GITHUB_EVENT_NAME: 'workflow_dispatch',
@@ -565,6 +830,219 @@ function publicationEnvironment(
   };
 }
 
+function writeApprovalArtifacts(
+  sourceRoot: string,
+  securityReview: ReturnType<typeof createPublicationAuthorizationRecord>,
+): {
+  pendingApprovalRoot: string;
+  protectedApprovalRoot: string;
+} {
+  const pendingApprovalRoot = mkdtempSync(
+    resolve(tmpdir(), 'opencoven-pending-approval-'),
+  );
+  const protectedApprovalRoot = mkdtempSync(
+    resolve(tmpdir(), 'opencoven-protected-approval-'),
+  );
+  fixtures.push(pendingApprovalRoot, protectedApprovalRoot);
+  const commit = git(sourceRoot, ['rev-parse', 'HEAD']);
+  const tree = git(sourceRoot, ['rev-parse', 'HEAD^{tree}']);
+  const expected = {
+    environment: 'npm-release',
+    environmentId: APPROVAL_ENVIRONMENT_ID,
+    reviewer: {
+      id: REVIEWER_ID,
+      authorAssociation: 'MEMBER',
+      permission: 'admin',
+      roleName: 'admin',
+    },
+    witnessJob: 'approval-witness',
+    approvalJob: 'approval-evidence',
+    publishJob: 'publish',
+  };
+  const source = {
+    repository: 'OpenCoven/sdk' as const,
+    commit,
+    tree,
+  };
+  const workflow = {
+    path: '.github/workflows/release.yml' as const,
+    commit,
+    ref: 'refs/heads/main' as const,
+    runId: '11000',
+    runAttempt: 1,
+  };
+  const environment = {
+    id: Number(APPROVAL_ENVIRONMENT_ID),
+    name: 'npm-release',
+    can_admins_bypass: false,
+    protection_rules: [
+      {
+        type: 'required_reviewers',
+        prevent_self_review: true,
+        reviewers: [
+          {
+            type: 'User',
+            reviewer: {
+              id: REVIEWER_ID,
+              login: 'BunsDev',
+              type: 'User',
+            },
+          },
+        ],
+      },
+      {
+        type: 'branch_policy',
+      },
+    ],
+    deployment_branch_policy: {
+      protected_branches: true,
+      custom_branch_policies: false,
+    },
+    created_at: '2026-08-28T10:00:00Z',
+    updated_at: '2026-08-28T10:00:00Z',
+  };
+  const pendingEvidence = createPendingApprovalEvidence({
+    source,
+    workflow,
+    witnessJob: {
+      id: '21000',
+      name: 'approval-witness',
+      startedAt: '2026-08-29T16:00:00Z',
+    },
+    environment,
+    pendingDeployments: [
+      {
+        environment: {
+          id: Number(APPROVAL_ENVIRONMENT_ID),
+          name: 'npm-release',
+        },
+        wait_timer: 0,
+        wait_timer_started_at: null,
+        current_user_can_approve: false,
+        reviewers: [
+          {
+            type: 'User',
+            reviewer: {
+              id: REVIEWER_ID,
+              login: 'BunsDev',
+              type: 'User',
+            },
+          },
+        ],
+      },
+    ],
+    observedAt: '2026-08-29T16:00:01Z',
+    expected,
+  });
+  const pendingText = serializePendingApprovalEvidence(pendingEvidence);
+  writeFileSync(
+    resolve(pendingApprovalRoot, 'pending-approval.json'),
+    pendingText,
+  );
+  const receipt = createProtectedApprovalReceipt({
+    pendingEvidence,
+    pendingEvidenceFile: {
+      file: 'pending-approval.json',
+      size: Buffer.byteLength(pendingText, 'utf8'),
+      sha256: sha256(pendingText),
+      artifactId: '31000',
+      artifactName: 'opencoven-sdk-pending-approval-11000-1',
+    },
+    approvalJob: {
+      id: '22000',
+      name: 'approval-evidence',
+      startedAt: '2026-08-29T16:00:02Z',
+    },
+    publishJob: {
+      id: '23000',
+      name: 'publish',
+    },
+    deployment: {
+      id: 41000,
+      sha: commit,
+      ref: 'main',
+      task: 'deploy',
+      environment: 'npm-release',
+      transient_environment: false,
+      performed_via_github_app: {
+        slug: 'github-actions',
+      },
+      created_at: '2026-08-29T15:59:59Z',
+    },
+    environment,
+    securityReview: {
+      commentId: '4001',
+      reviewer: {
+        id: REVIEWER_ID,
+        login: 'BunsDev',
+        authorAssociation: 'MEMBER',
+        permission: 'admin',
+        roleName: 'admin',
+      },
+    },
+    createdAt: '2026-08-29T16:00:03.500Z',
+    expected,
+  });
+  writeFileSync(
+    resolve(protectedApprovalRoot, 'protected-approval.json'),
+    serializeProtectedApprovalReceipt(receipt),
+  );
+  expect(securityReview.reviewer.id).toBe(REVIEWER_ID);
+  return {
+    pendingApprovalRoot,
+    protectedApprovalRoot,
+  };
+}
+
+function testPublicationRuntime() {
+  return {
+    nodePath: AUTHENTICATED_NODE_LINUX_X64_PATH,
+    nodeSize: AUTHENTICATED_NODE_LINUX_X64_SIZE,
+    nodeSha256: AUTHENTICATED_NODE_LINUX_X64_EXECUTABLE_SHA256,
+    nodeVersion: 'v24.18.1',
+    corepackPath: process.execPath,
+    corepackVersion: AUTHENTICATED_COREPACK_VERSION,
+    corepackTreeSha256: AUTHENTICATED_COREPACK_TREE_SHA256,
+  };
+}
+
+function prepareTestNpmCli() {
+  const owned = createOwnedTempDirectory({
+    prefix: 'opencoven-test-npm-cli',
+    childSegments: ['distribution'],
+  });
+  const bin = resolve(owned.path, 'bin');
+  mkdirSync(bin, { recursive: true });
+  const cliPath = resolve(bin, 'npm-cli.js');
+  writeFileSync(cliPath, '#!/usr/bin/env node\n', { mode: 0o755 });
+  return {
+    owned,
+    cliPath,
+    treeSha256: AUTHENTICATED_NPM_CLI_TREE_SHA256,
+  };
+}
+
+function publishTestRelease(
+  options: Parameters<typeof publishReleaseArtifacts>[0] & {
+    authorization: ReturnType<typeof createPublicationAuthorizationRecord>;
+  },
+) {
+  const {
+    authorization,
+    ...publishOptions
+  } = options;
+  const approvalRoots = writeApprovalArtifacts(
+    publishOptions.root ?? workspaceRoot,
+    authorization,
+  );
+  return publishReleaseArtifacts({
+    ...approvalRoots,
+    resolveRuntime: () => testPublicationRuntime(),
+    prepareNpmCli: () => prepareTestNpmCli(),
+    ...publishOptions,
+  });
+}
+
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) {
     rmSync(fixture, { recursive: true, force: true });
@@ -572,6 +1050,127 @@ afterEach(() => {
 });
 
 describe('publication security', { timeout: 30_000 }, () => {
+  test('rejects a recycled reviewer login with the wrong immutable user id', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-recycled-reviewer-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const execute = createGitHubExecute(authorization);
+
+    expect(() =>
+      resolvePublicationSecurityReview({
+        root: sourceRoot,
+        commentId: '4001',
+        execute: (command: string, arguments_: string[]) => {
+          const endpoint = arguments_.at(-1) ?? '';
+          if (endpoint === 'repos/OpenCoven/sdk/issues/comments/4001') {
+            const comment = JSON.parse(
+              execute(command, arguments_),
+            ) as {
+              user: {
+                id: number;
+              };
+            };
+            comment.user.id = REVIEWER_ID + 1;
+            return JSON.stringify(comment);
+          }
+          return execute(command, arguments_);
+        },
+        env: { GH_TOKEN: 'github-token' },
+      } as never),
+    ).toThrow(/immutable reviewer identity/u);
+  });
+
+  test('accepts a reviewer login rename when immutable identity and role match', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-renamed-reviewer-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const execute = createGitHubExecute(authorization);
+
+    expect(() =>
+      resolvePublicationSecurityReview({
+        root: sourceRoot,
+        commentId: '4001',
+        execute: (command: string, arguments_: string[]) => {
+          const endpoint = arguments_.at(-1) ?? '';
+          if (endpoint === 'repos/OpenCoven/sdk/issues/comments/4001') {
+            const comment = JSON.parse(
+              execute(command, arguments_),
+            ) as {
+              user: {
+                id: number;
+                login: string;
+                type: string;
+              };
+            };
+            comment.user.login = 'BunsDevRenamed';
+            return JSON.stringify(comment);
+          }
+          if (
+            endpoint
+              === 'repos/OpenCoven/sdk/collaborators/BunsDevRenamed/permission'
+          ) {
+            return JSON.stringify({
+              permission: 'admin',
+              role_name: 'admin',
+              user: {
+                id: REVIEWER_ID,
+                login: 'BunsDevRenamed',
+                type: 'User',
+              },
+            });
+          }
+          return execute(command, arguments_);
+        },
+        env: { GH_TOKEN: 'github-token' },
+      } as never),
+    ).not.toThrow();
+  });
+
+  test('does not accept mutable deployment statuses as protected approval evidence', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-forged-approval-status-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+
+    expect(() =>
+      publishReleaseArtifacts({
+        root: sourceRoot,
+        artifactRoot,
+        version: VERSION,
+        env: publicationEnvironment(sourceRoot),
+        execute: createNpmExecute([]),
+        githubExecute: createGitHubExecute(authorization),
+        resolveRuntime: () => testPublicationRuntime(),
+      } as never),
+    ).toThrow(/attested protected-environment approval evidence/u);
+  });
+
   test('binds the authorization to the exact candidate environment and deployment', () => {
     const sourceRoot = createReleaseFixture();
     const artifactRoot = mkdtempSync(
@@ -787,7 +1386,8 @@ describe('publication security', { timeout: 30_000 }, () => {
       env: Record<string, string | undefined>;
     }> = [];
 
-    publishReleaseArtifacts({
+    publishTestRelease({
+      authorization,
       root: sourceRoot,
       artifactRoot,
       version: VERSION,
@@ -809,7 +1409,12 @@ describe('publication security', { timeout: 30_000 }, () => {
                 signature: {
                   certificate: {
                     runInvocationURI:
-                      'https://github.com/OpenCoven/sdk/actions/runs/10000/attempts/1',
+                      `https://github.com/OpenCoven/sdk/actions/runs/${
+                        path.endsWith('/pending-approval.json')
+                          || path.endsWith('/protected-approval.json')
+                          ? '11000'
+                          : '10000'
+                      }/attempts/1`,
                     runnerEnvironment: 'github-hosted',
                     sourceRepositoryURI: 'https://github.com/OpenCoven/sdk',
                     sourceRepositoryDigest: authorization.source.commit,
@@ -835,7 +1440,7 @@ describe('publication security', { timeout: 30_000 }, () => {
       },
     } as never);
 
-    expect(attestationCalls).toHaveLength(5);
+    expect(attestationCalls).toHaveLength(8);
     expect(
       attestationCalls.every(
         (arguments_) =>
@@ -900,7 +1505,8 @@ describe('publication security', { timeout: 30_000 }, () => {
     }> = [];
 
     expect(
-      publishReleaseArtifacts({
+      publishTestRelease({
+        authorization,
         root: sourceRoot,
         artifactRoot: authorizedRoot,
         version: VERSION,
@@ -913,7 +1519,8 @@ describe('publication security', { timeout: 30_000 }, () => {
 
     const repackedPublishCalls: typeof publishCalls = [];
     expect(() =>
-      publishReleaseArtifacts({
+      publishTestRelease({
+        authorization,
         root: sourceRoot,
         artifactRoot: repackedRoot,
         version: VERSION,
@@ -950,13 +1557,15 @@ describe('publication security', { timeout: 30_000 }, () => {
       manifest: candidate.manifest as never,
       manifestText: candidate.manifestText,
     });
+
     const publishCalls: Array<{
       arguments_: string[];
       cwd: string;
       env: Record<string, string | undefined>;
     }> = [];
 
-    publishReleaseArtifacts({
+    publishTestRelease({
+      authorization,
       root: sourceRoot,
       artifactRoot,
       version: VERSION,
@@ -980,23 +1589,6 @@ describe('publication security', { timeout: 30_000 }, () => {
     } as never);
 
     expect(publishCalls).toHaveLength(4);
-    const ciInfoPath = require.resolve('ci-info', {
-      paths: [resolve(workspaceRoot, 'node_modules/npm')],
-    });
-    expect(
-      execFileSync(
-        process.execPath,
-        [
-          '-e',
-          'process.stdout.write(String(require(process.argv[1]).GITHUB_ACTIONS))',
-          ciInfoPath,
-        ],
-        {
-          encoding: 'utf8',
-          env: publishCalls[0]?.env,
-        },
-      ),
-    ).toBe('true');
     for (const call of publishCalls) {
       expect(call.cwd.startsWith(sourceRoot)).toBe(false);
       expect(
@@ -1048,8 +1640,58 @@ describe('publication security', { timeout: 30_000 }, () => {
     }
   });
 
-  test('installs the exact reviewed npm CLI without exposing publish credentials', () => {
-    const sourceRoot = createReleaseFixture({ installedNpm: false });
+  test('withholds OIDC request variables until the authenticated npm publish subprocess', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-oidc-boundary-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const publishCalls: Array<{
+      arguments_: string[];
+      cwd: string;
+      env: Record<string, string | undefined>;
+    }> = [];
+    const verificationCalls: Array<{
+      arguments_: string[];
+      env: Record<string, string | undefined>;
+    }> = [];
+
+    publishTestRelease({
+      authorization,
+      root: sourceRoot,
+      artifactRoot,
+      version: VERSION,
+      env: publicationEnvironment(sourceRoot),
+      execute: createNpmExecute(publishCalls, verificationCalls),
+      githubExecute: createGitHubExecute(authorization),
+    } as never);
+
+    expect(verificationCalls).toHaveLength(2);
+    for (const call of verificationCalls) {
+      expect(call.env.ACTIONS_ID_TOKEN_REQUEST_URL).toBeUndefined();
+      expect(call.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN).toBeUndefined();
+    }
+    expect(publishCalls).toHaveLength(4);
+    expect(
+      publishCalls.every(
+        (call) =>
+          call.env.ACTIONS_ID_TOKEN_REQUEST_URL
+            === 'https://vstoken.actions.githubusercontent.com/test'
+          && call.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN
+            === 'short-lived-oidc-request-token',
+      ),
+    ).toBe(true);
+  });
+
+  test('ignores a repository-controlled self-spoofing npm CLI without invoking pnpm', () => {
+    const sourceRoot = createReleaseFixture();
     const artifactRoot = mkdtempSync(
       resolve(tmpdir(), 'opencoven-npm-cli-publication-'),
     );
@@ -1068,8 +1710,10 @@ describe('publication security', { timeout: 30_000 }, () => {
     }> = [];
     const npmExecute = createNpmExecute(publishCalls);
     let installCalls = 0;
+    const npmCliPaths: string[] = [];
 
-    publishReleaseArtifacts({
+    publishTestRelease({
+      authorization,
       root: sourceRoot,
       artifactRoot,
       version: VERSION,
@@ -1088,39 +1732,26 @@ describe('publication security', { timeout: 30_000 }, () => {
           stdio: unknown;
         },
       ) => {
-        if (command === 'pnpm') {
+        if (command === 'pnpm' || arguments_.includes('install')) {
           installCalls += 1;
-          expect(arguments_).toContain('--frozen-lockfile');
-          expect(arguments_).toContain('--ignore-scripts');
-          expect(arguments_).toContain(
-            '--config.registry=https://registry.npmjs.org/',
-          );
-          expect(options.env.GH_TOKEN).toBeUndefined();
-          expect(options.env.HTTPS_PROXY).toBeUndefined();
-          expect(options.env.ACTIONS_ID_TOKEN_REQUEST_URL).toBeUndefined();
-          expect(options.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN).toBeUndefined();
-          expect(options.env.NPM_CONFIG_REGISTRY).toBe(NPM_REGISTRY);
-          const npmRoot = resolve(sourceRoot, 'node_modules/npm');
-          mkdirSync(resolve(npmRoot, 'bin'), { recursive: true });
-          writeFileSync(
-            resolve(npmRoot, 'package.json'),
-            `${JSON.stringify({
-              name: 'npm',
-              version: NPM_VERSION,
-            }, null, 2)}\n`,
-          );
-          writeFileSync(
-            resolve(npmRoot, 'bin/npm-cli.js'),
-            '#!/usr/bin/env node\n',
-          );
-          return '';
+          throw new Error('repository-controlled package manager executed');
+        }
+        const npmCliPath = arguments_[0];
+        if (npmCliPath !== undefined) {
+          npmCliPaths.push(npmCliPath);
         }
         return npmExecute(command, arguments_, options);
       },
       githubExecute: createGitHubExecute(authorization),
     } as never);
 
-    expect(installCalls).toBe(1);
+    expect(installCalls).toBe(0);
+    expect(npmCliPaths.length).toBeGreaterThan(0);
+    expect(
+      npmCliPaths.every(
+        (path) => !path.startsWith(resolve(sourceRoot, 'node_modules/npm')),
+      ),
+    ).toBe(true);
     expect(publishCalls).toHaveLength(4);
   });
 
@@ -1141,7 +1772,8 @@ describe('publication security', { timeout: 30_000 }, () => {
       });
 
       expect(() =>
-        publishReleaseArtifacts({
+        publishTestRelease({
+          authorization,
           root: sourceRoot,
           artifactRoot,
           version: VERSION,
@@ -1172,7 +1804,8 @@ describe('publication security', { timeout: 30_000 }, () => {
     const execute = createNpmExecute([]);
 
     expect(() =>
-      publishReleaseArtifacts({
+      publishTestRelease({
+        authorization,
         root: sourceRoot,
         artifactRoot,
         version: VERSION,
@@ -1221,7 +1854,8 @@ describe('publication security', { timeout: 30_000 }, () => {
       const execute = createNpmExecute([]);
 
       expect(() =>
-        publishReleaseArtifacts({
+        publishTestRelease({
+          authorization,
           root: sourceRoot,
           artifactRoot,
           version: VERSION,
@@ -1276,7 +1910,8 @@ describe('publication security', { timeout: 30_000 }, () => {
     git(sourceRoot, ['add', 'descendant.txt']);
     git(sourceRoot, ['commit', '--quiet', '-m', 'descendant']);
     expect(() =>
-      publishReleaseArtifacts({
+      publishTestRelease({
+        authorization,
         root: sourceRoot,
         artifactRoot,
         version: VERSION,
@@ -1308,7 +1943,8 @@ describe('publication security', { timeout: 30_000 }, () => {
       manifestText: configCandidate.manifestText,
     });
     expect(() =>
-      publishReleaseArtifacts({
+      publishTestRelease({
+        authorization: configAuthorization,
         root: configRoot,
         artifactRoot: configArtifactRoot,
         version: VERSION,
@@ -1316,7 +1952,9 @@ describe('publication security', { timeout: 30_000 }, () => {
         execute: createNpmExecute([]),
         githubExecute: createGitHubExecute(configAuthorization),
       } as never),
-    ).toThrow(/repository npm configuration is not canonical/u);
+    ).toThrow(
+      /repository npm configuration is not canonical|conformance-tested publication source identity/u,
+    );
 
     const descendantConfigRoot = createReleaseFixture();
     const descendantArtifactRoot = mkdtempSync(
@@ -1346,7 +1984,8 @@ describe('publication security', { timeout: 30_000 }, () => {
         manifestText: descendantConfigCandidate.manifestText,
       });
     expect(() =>
-      publishReleaseArtifacts({
+      publishTestRelease({
+        authorization: descendantConfigAuthorization,
         root: descendantConfigRoot,
         artifactRoot: descendantArtifactRoot,
         version: VERSION,
@@ -1356,7 +1995,9 @@ describe('publication security', { timeout: 30_000 }, () => {
           descendantConfigAuthorization,
         ),
       } as never),
-    ).toThrow(/repository npm configuration is not canonical/u);
+    ).toThrow(
+      /repository npm configuration is not canonical|conformance-tested publication source identity/u,
+    );
   });
 
   test('rejects publish lifecycle scripts even when #40 names those bytes', () => {
@@ -1376,7 +2017,8 @@ describe('publication security', { timeout: 30_000 }, () => {
     });
 
     expect(() =>
-      publishReleaseArtifacts({
+      publishTestRelease({
+        authorization,
         root: sourceRoot,
         artifactRoot,
         version: VERSION,

@@ -178,6 +178,10 @@ describe('workflow action pins', () => {
   test('protects publishing with OIDC, attestations, and exact artifact actions', () => {
     expect(releaseWorkflow).toContain('workflow_dispatch:');
     expect(releaseWorkflow).toContain('environment: npm-release');
+    const publishJob = releaseWorkflow.slice(
+      releaseWorkflow.indexOf('\n  publish:\n'),
+    );
+    expect(publishJob).not.toContain('environment: npm-release');
     expect(releaseWorkflow).toContain('id-token: write');
     expect(releaseWorkflow).toContain('attestations: write');
     expect(releaseWorkflow).not.toContain('NPM_TOKEN');
@@ -193,8 +197,8 @@ describe('workflow action pins', () => {
       expect(actionPins(releaseWorkflow).map((pin) => pin.action)).toContain(action);
     }
     expect(releaseWorkflow).toMatch(/^permissions:\n\s{2}contents: read\n/m);
-    expect(releaseWorkflow.match(/id-token: write/g)).toHaveLength(2);
-    expect(releaseWorkflow.match(/attestations: write/g)).toHaveLength(1);
+    expect(releaseWorkflow.match(/id-token: write/g)).toHaveLength(4);
+    expect(releaseWorkflow.match(/attestations: write/g)).toHaveLength(3);
     expect(releaseWorkflow).toContain(
       "if [ -n \"$(git status --porcelain --untracked-files=all)\" ]; then",
     );
@@ -211,6 +215,78 @@ describe('workflow action pins', () => {
     expect(cleanTreeIndex).toBeGreaterThan(-1);
     expect(artifactsIndex).toBeGreaterThan(-1);
     expect(cleanTreeIndex).toBeLessThan(artifactsIndex);
+  });
+
+  test('authenticates protected Node entrypoints and ignores repository package-manager hooks', () => {
+    expect(releaseWorkflow).toContain(
+      'f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a',
+    );
+    expect(releaseWorkflow).toContain(
+      'node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"',
+    );
+    expect(releaseWorkflow).toContain('/usr/bin/sha256sum --check --strict');
+    expect(releaseWorkflow).toContain('/usr/bin/env -i');
+    const releaseBuilder = readFileSync(
+      resolve(root, 'scripts/create-release-artifacts.mjs'),
+      'utf8',
+    );
+    const packageArtifacts = readFileSync(
+      resolve(root, 'scripts/package-artifacts.mjs'),
+      'utf8',
+    );
+    const runtimeIntegrity = readFileSync(
+      resolve(root, 'scripts/release-runtime-integrity.mjs'),
+      'utf8',
+    );
+    expect(releaseBuilder).toContain('protectedPnpmArguments');
+    expect(runtimeIntegrity).toContain("'--ignore-pnpmfile'");
+    expect(packageArtifacts).toContain('--config.pnpmfile=/dev/null');
+    expect(releaseWorkflow).not.toMatch(
+      /publication-candidate:[\s\S]*?uses: pnpm\/action-setup@/u,
+    );
+    expect(releaseWorkflow).not.toMatch(
+      /publish:[\s\S]*?uses: pnpm\/action-setup@/u,
+    );
+  });
+
+  test('requires attested pending and protected approval evidence before publish', () => {
+    expect(releaseWorkflow).toContain('\n  approval-witness:\n');
+    expect(releaseWorkflow).toContain('\n  approval-evidence:\n');
+    expect(releaseWorkflow).toContain(
+      'environment: npm-release',
+    );
+    expect(releaseWorkflow).toContain(
+      'opencoven-sdk-pending-approval-${{ github.run_id }}-${{ github.run_attempt }}',
+    );
+    expect(releaseWorkflow).toContain(
+      'opencoven-sdk-protected-approval-${{ github.run_id }}-${{ github.run_attempt }}',
+    );
+    expect(releaseWorkflow).toContain(
+      'needs: [preflight, repository-verification, approval-witness, approval-evidence]',
+    );
+    expect(releaseWorkflow).toContain(
+      'PUBLISH_JOB_ID: ${{ needs.approval-evidence.outputs.publish-job-id }}',
+    );
+    const publisherStep = releaseWorkflow.slice(
+      releaseWorkflow.indexOf(
+        '      - name: Publish exact reviewed release artifacts\n',
+      ),
+    );
+    expect(publisherStep).toContain(
+      'GITHUB_SERVER_URL="$GITHUB_SERVER_URL"',
+    );
+    expect(publisherStep).toContain('PUBLISH_JOB_ID="$PUBLISH_JOB_ID"');
+    const approvalVerificationStep = releaseWorkflow.slice(
+      releaseWorkflow.indexOf(
+        '      - name: Verify exact reviewed publication bytes\n',
+      ),
+      releaseWorkflow.indexOf(
+        '      - name: Publish exact reviewed release artifacts\n',
+      ),
+    );
+    expect(approvalVerificationStep).toContain(
+      'PUBLISH_JOB_ID="$PUBLISH_JOB_ID"',
+    );
   });
 
   test('never interpolates dispatch inputs directly into release shell scripts', () => {

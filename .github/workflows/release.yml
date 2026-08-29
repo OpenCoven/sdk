@@ -47,11 +47,22 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
-      - name: Require frozen Node runtime
+      - name: Authenticate frozen Node runtime
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        env:
+          BASH_ENV: /dev/null
+          ENV: /dev/null
         run: |
-          expected="v$(cat .node-version)"
-          if [ "$expected" != "v24.18.1" ] || [ "$(node --version)" != "$expected" ]; then
-            echo "Release verification requires exact Node $expected." >&2
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          if [ "$RUNNER_OS" != "Linux" ] || [ "$RUNNER_ARCH" != "X64" ]; then
+            echo "Release verification requires the GitHub-hosted Linux X64 runner." >&2
+            exit 1
+          fi
+          printf '%s  %s\n' \
+            'f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a' \
+            "$node_path" | /usr/bin/sha256sum --check --strict
+          if [ "$("$node_path" --version)" != "v24.18.1" ]; then
+            echo "Release verification requires exact Node v24.18.1." >&2
             exit 1
           fi
       - name: Require main
@@ -61,8 +72,9 @@ jobs:
           exit 1
       - name: Pin reviewed release runtime
         run: |
-          aggregate_record="$(node -e 'const c=require("./release.config.json"); process.stdout.write(c.conformanceEvidence.aggregateRecord ?? "")')"
-          candidate_commit="$(node -e 'const c=require("./release.config.json"); process.stdout.write(c.conformanceEvidence.candidateCommit)')"
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          aggregate_record="$("$node_path" -e 'const c=require("./release.config.json"); process.stdout.write(c.conformanceEvidence.aggregateRecord ?? "")')"
+          candidate_commit="$("$node_path" -e 'const c=require("./release.config.json"); process.stdout.write(c.conformanceEvidence.candidateCommit)')"
           if [ -z "$aggregate_record" ]; then
             echo "release.config.json must name a passing SDK #38 aggregate record" >&2
             exit 1
@@ -73,18 +85,18 @@ jobs:
             exit 1
           fi
           index_record="${aggregate_record%.json}.index.json"
-          git ls-files --error-unmatch \
+          /usr/bin/git ls-files --error-unmatch \
             .npmrc \
             release.config.json \
             "$aggregate_record" \
             "$index_record" >/dev/null
-          git diff --quiet HEAD -- \
+          /usr/bin/git diff --quiet HEAD -- \
             .npmrc \
             release.config.json \
             "$aggregate_record" \
             "$index_record"
-          validator_commit="$(node -e 'const fs=require("node:fs"); const p=process.argv[1]; const v=JSON.parse(fs.readFileSync(p,"utf8")).validator?.commit; if(!/^[0-9a-f]{40}$/.test(v??"")) process.exit(1); process.stdout.write(v)' "$aggregate_record")"
-          git cat-file -e "$validator_commit^{commit}"
+          validator_commit="$("$node_path" -e 'const fs=require("node:fs"); const p=process.argv[1]; const v=JSON.parse(fs.readFileSync(p,"utf8")).validator?.commit; if(!/^[0-9a-f]{40}$/.test(v??"")) process.exit(1); process.stdout.write(v)' "$aggregate_record")"
+          /usr/bin/git cat-file -e "$validator_commit^{commit}"
           runtime_paths=(
             .node-version
             .npmrc
@@ -96,17 +108,21 @@ jobs:
             scripts/conformance-contract.mjs
             scripts/create-release-artifacts.mjs
             scripts/github-conformance-evidence.mjs
+            scripts/github-environment-approval-evidence.mjs
+            scripts/github-environment-approval.mjs
             scripts/github-release-authorization.mjs
             scripts/owned-temp-directory.mjs
             scripts/package-artifacts.mjs
+            scripts/publication-source-identity.mjs
             scripts/publish-release-artifacts.mjs
             scripts/release-readiness.mjs
+            scripts/release-runtime-integrity.mjs
             scripts/repository-metadata.mjs
             scripts/verify-committed-conformance-evidence.mjs
             scripts/verify-release-readiness.mjs
           )
-          git diff --quiet "$validator_commit" HEAD -- "${runtime_paths[@]}"
-          git diff --quiet HEAD -- "${runtime_paths[@]}"
+          /usr/bin/git diff --quiet "$validator_commit" HEAD -- "${runtime_paths[@]}"
+          /usr/bin/git diff --quiet HEAD -- "${runtime_paths[@]}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: OpenCoven/coven-cave
@@ -118,26 +134,50 @@ jobs:
         if: inputs.mode == 'verify'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          node ./scripts/verify-release-readiness.mjs
-          --mode verify
-          --version "$RELEASE_VERSION"
-          --require-conformance-evidence
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP" \
+            TMPDIR="$RUNNER_TEMP" \
+            CI=true \
+            GH_TOKEN="$GH_TOKEN" \
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            GITHUB_SHA="$GITHUB_SHA" \
+            GITHUB_REF="$GITHUB_REF" \
+            OPENCOVEN_CAVE_AUTHORITY_ROOT="$OPENCOVEN_CAVE_AUTHORITY_ROOT" \
+            "$node_path" ./scripts/verify-release-readiness.mjs \
+              --mode verify \
+              --version "$RELEASE_VERSION" \
+              --require-conformance-evidence
       - name: Verify publish gates and release tag
         if: inputs.mode == 'publish'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          node ./scripts/verify-release-readiness.mjs
-          --mode publish
-          --version "$RELEASE_VERSION"
-          --tag "sdk-v$RELEASE_VERSION"
-          --require-tag
-          --require-conformance-evidence
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP" \
+            TMPDIR="$RUNNER_TEMP" \
+            CI=true \
+            GH_TOKEN="$GH_TOKEN" \
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            GITHUB_SHA="$GITHUB_SHA" \
+            GITHUB_REF="$GITHUB_REF" \
+            OPENCOVEN_CAVE_AUTHORITY_ROOT="$OPENCOVEN_CAVE_AUTHORITY_ROOT" \
+            "$node_path" ./scripts/verify-release-readiness.mjs \
+              --mode publish \
+              --version "$RELEASE_VERSION" \
+              --tag "sdk-v$RELEASE_VERSION" \
+              --require-tag \
+              --require-conformance-evidence
       - name: Require clean reviewed tree
         run: |
-          if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
-            git status --short --untracked-files=all
+          if [ -n "$(/usr/bin/git status --porcelain --untracked-files=all)" ]; then
+            /usr/bin/git status --short --untracked-files=all
             echo "Release verification changed the reviewed tree." >&2
             exit 1
           fi
@@ -160,23 +200,76 @@ jobs:
           path: .artifacts/cave-authority
           fetch-depth: 1
           persist-credentials: false
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          version: 10.34.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
-      - name: Require frozen Node runtime
+      - name: Authenticate frozen release runtime
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        env:
+          BASH_ENV: /dev/null
+          ENV: /dev/null
         run: |
-          expected="v$(cat .node-version)"
-          if [ "$expected" != "v24.18.1" ] || [ "$(node --version)" != "$expected" ]; then
-            echo "Repository verification requires exact Node $expected." >&2
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          printf '%s  %s\n' \
+            'f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a' \
+            "$node_path" | /usr/bin/sha256sum --check --strict
+          if [ "$RUNNER_OS" != "Linux" ] || [ "$RUNNER_ARCH" != "X64" ]; then
+            echo "Repository verification requires GitHub-hosted Linux X64." >&2
             exit 1
           fi
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP" \
+            TMPDIR="$RUNNER_TEMP" \
+            RUNNER_OS="$RUNNER_OS" \
+            RUNNER_ARCH="$RUNNER_ARCH" \
+            RUNNER_TOOL_CACHE="$RUNNER_TOOL_CACHE" \
+            OPENCOVEN_AUTHENTICATED_NODE_PATH="$node_path" \
+            "$node_path" --input-type=module --eval \
+              'import { resolveAuthenticatedReleaseRuntime } from "./scripts/release-runtime-integrity.mjs"; resolveAuthenticatedReleaseRuntime({ env: process.env });'
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          corepack_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/lib/node_modules/corepack/dist/corepack.js"
+          mkdir -p "$RUNNER_TEMP/opencoven-repository-home" \
+            "$RUNNER_TEMP/opencoven-repository-tmp" \
+            "$RUNNER_TEMP/opencoven-repository-corepack"
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP/opencoven-repository-home" \
+            TMPDIR="$RUNNER_TEMP/opencoven-repository-tmp" \
+            COREPACK_HOME="$RUNNER_TEMP/opencoven-repository-corepack" \
+            CI=true \
+            "$node_path" "$corepack_path" pnpm@10.34.0 install \
+              --frozen-lockfile \
+              --ignore-scripts \
+              --ignore-pnpmfile \
+              --config.global-pnpmfile=/dev/null
       - name: Verify repository
-        run: corepack pnpm@10.34.0 verify:repository
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          corepack_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/lib/node_modules/corepack/dist/corepack.js"
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP/opencoven-repository-home" \
+            TMPDIR="$RUNNER_TEMP/opencoven-repository-tmp" \
+            COREPACK_HOME="$RUNNER_TEMP/opencoven-repository-corepack" \
+            CI=true \
+            "$node_path" --input-type=module --eval \
+              'import { assertNoReleaseRuntimeShadows } from "./scripts/release-runtime-integrity.mjs"; assertNoReleaseRuntimeShadows(process.cwd());'
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP/opencoven-repository-home" \
+            TMPDIR="$RUNNER_TEMP/opencoven-repository-tmp" \
+            COREPACK_HOME="$RUNNER_TEMP/opencoven-repository-corepack" \
+            CI=true \
+            OPENCOVEN_CAVE_AUTHORITY_ROOT="$OPENCOVEN_CAVE_AUTHORITY_ROOT" \
+            "$node_path" "$corepack_path" pnpm@10.34.0 \
+              --config.pnpmfile=/dev/null \
+              --config.global-pnpmfile=/dev/null \
+              verify:repository
       - name: Require clean reviewed tree
         run: |
           if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
@@ -213,14 +306,22 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          version: 10.34.0
-      - name: Require frozen Node runtime
+      - name: Authenticate frozen Node runtime
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        env:
+          BASH_ENV: /dev/null
+          ENV: /dev/null
         run: |
-          expected="v$(cat .node-version)"
-          if [ "$expected" != "v24.18.1" ] || [ "$(node --version)" != "$expected" ]; then
-            echo "Publication candidates require exact Node $expected." >&2
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          if [ "$RUNNER_OS" != "Linux" ] || [ "$RUNNER_ARCH" != "X64" ]; then
+            echo "Publication candidates require the GitHub-hosted Linux X64 runner." >&2
+            exit 1
+          fi
+          printf '%s  %s\n' \
+            'f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a' \
+            "$node_path" | /usr/bin/sha256sum --check --strict
+          if [ "$("$node_path" --version)" != "v24.18.1" ]; then
+            echo "Publication candidates require exact Node v24.18.1." >&2
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -233,10 +334,41 @@ jobs:
       - name: Create immutable publication candidate
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          node ./scripts/create-release-artifacts.mjs
-          --output .artifacts/publication
-          --version "$RELEASE_VERSION"
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          mkdir -p "$RUNNER_TEMP/opencoven-release-home" \
+            "$RUNNER_TEMP/opencoven-release-tmp" \
+            "$RUNNER_TEMP/opencoven-corepack"
+          /bin/chmod 700 "$RUNNER_TEMP/opencoven-release-home" \
+            "$RUNNER_TEMP/opencoven-release-tmp" \
+            "$RUNNER_TEMP/opencoven-corepack"
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP/opencoven-release-home" \
+            TMPDIR="$RUNNER_TEMP/opencoven-release-tmp" \
+            COREPACK_HOME="$RUNNER_TEMP/opencoven-corepack" \
+            CI=true \
+            GH_TOKEN="$GH_TOKEN" \
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            GITHUB_SHA="$GITHUB_SHA" \
+            GITHUB_WORKFLOW_REF="$GITHUB_WORKFLOW_REF" \
+            GITHUB_WORKFLOW_SHA="$GITHUB_WORKFLOW_SHA" \
+            GITHUB_REF="$GITHUB_REF" \
+            GITHUB_JOB="$GITHUB_JOB" \
+            GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            RUNNER_OS="$RUNNER_OS" \
+            RUNNER_ARCH="$RUNNER_ARCH" \
+            RUNNER_TOOL_CACHE="$RUNNER_TOOL_CACHE" \
+            RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            OPENCOVEN_AUTHENTICATED_NODE_PATH="$node_path" \
+            OPENCOVEN_CAVE_AUTHORITY_ROOT="$OPENCOVEN_CAVE_AUTHORITY_ROOT" \
+            OPENCOVEN_PUBLICATION_ENVIRONMENT="$OPENCOVEN_PUBLICATION_ENVIRONMENT" \
+            OPENCOVEN_PUBLICATION_ARTIFACT_NAME="$OPENCOVEN_PUBLICATION_ARTIFACT_NAME" \
+            "$node_path" ./scripts/create-release-artifacts.mjs \
+              --output .artifacts/publication \
+              --version "$RELEASE_VERSION"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}
@@ -247,17 +379,203 @@ jobs:
         with:
           subject-path: |
             .artifacts/publication/release-manifest.json
+            .artifacts/publication/publication-source-manifest.json
             .artifacts/publication/tarballs/**/*.tgz
 
-  publish:
+  approval-witness:
+    if: inputs.mode == 'publish'
+    needs: [preflight, repository-verification]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      attestations: write
+      contents: read
+      deployments: read
+      id-token: write
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Authenticate frozen Node runtime
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        env:
+          BASH_ENV: /dev/null
+          ENV: /dev/null
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          printf '%s  %s\n' \
+            'f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a' \
+            "$node_path" | /usr/bin/sha256sum --check --strict
+          if [ "$RUNNER_OS" != "Linux" ] || [ "$RUNNER_ARCH" != "X64" ] || [ "$("$node_path" --version)" != "v24.18.1" ]; then
+            echo "Approval evidence requires exact Node v24.18.1 on GitHub-hosted Linux X64." >&2
+            exit 1
+          fi
+      - name: Witness pending protected approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP" \
+            TMPDIR="$RUNNER_TEMP" \
+            CI=true \
+            GH_TOKEN="$GH_TOKEN" \
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            GITHUB_SHA="$GITHUB_SHA" \
+            GITHUB_WORKFLOW_REF="$GITHUB_WORKFLOW_REF" \
+            GITHUB_WORKFLOW_SHA="$GITHUB_WORKFLOW_SHA" \
+            GITHUB_REF="$GITHUB_REF" \
+            GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            RUNNER_OS="$RUNNER_OS" \
+            RUNNER_ARCH="$RUNNER_ARCH" \
+            RUNNER_TOOL_CACHE="$RUNNER_TOOL_CACHE" \
+            OPENCOVEN_AUTHENTICATED_NODE_PATH="$node_path" \
+            "$node_path" ./scripts/github-environment-approval-evidence.mjs \
+              --mode witness \
+              --output "$RUNNER_TEMP/opencoven-pending-approval"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: opencoven-sdk-pending-approval-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/opencoven-pending-approval
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/opencoven-pending-approval/pending-approval.json
+
+  approval-evidence:
     if: inputs.mode == 'publish'
     needs: [preflight, repository-verification]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: npm-release
     env:
+      OPENCOVEN_SECURITY_REVIEW_COMMENT_ID: ${{ inputs.security-review-comment-id }}
+    outputs:
+      publish-job-id: ${{ steps.resolve-publish-job.outputs.publish-job-id }}
+    permissions:
+      actions: read
+      attestations: write
+      contents: read
+      deployments: read
+      id-token: write
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - name: Authenticate frozen Node runtime
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        env:
+          BASH_ENV: /dev/null
+          ENV: /dev/null
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          printf '%s  %s\n' \
+            'f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a' \
+            "$node_path" | /usr/bin/sha256sum --check --strict
+          if [ "$RUNNER_OS" != "Linux" ] || [ "$RUNNER_ARCH" != "X64" ] || [ "$("$node_path" --version)" != "v24.18.1" ]; then
+            echo "Approval evidence requires exact Node v24.18.1 on GitHub-hosted Linux X64." >&2
+            exit 1
+          fi
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: opencoven-sdk-pending-approval-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/opencoven-pending-approval
+      - name: Resolve final publishing job
+        id: resolve-publish-job
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          publish_job_id="$(
+            /usr/bin/gh api \
+              --hostname github.com \
+              --method GET \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+              --jq '[.jobs[] | select(.name == "publish")] | if length == 1 then .[0].id else error("expected exactly one publish job") end'
+          )"
+          printf 'publish-job-id=%s\n' "$publish_job_id" >> "$GITHUB_OUTPUT"
+      - name: Resolve immutable security review
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          mkdir -p "$RUNNER_TEMP/opencoven-approval-input"
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP" \
+            TMPDIR="$RUNNER_TEMP" \
+            CI=true \
+            GH_TOKEN="$GH_TOKEN" \
+            "$node_path" ./scripts/github-release-authorization.mjs \
+              --comment-id "$OPENCOVEN_SECURITY_REVIEW_COMMENT_ID" \
+              > "$RUNNER_TEMP/opencoven-approval-input/security-review.json"
+      - name: Create protected approval receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP" \
+            TMPDIR="$RUNNER_TEMP" \
+            CI=true \
+            GH_TOKEN="$GH_TOKEN" \
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            GITHUB_SHA="$GITHUB_SHA" \
+            GITHUB_WORKFLOW_REF="$GITHUB_WORKFLOW_REF" \
+            GITHUB_WORKFLOW_SHA="$GITHUB_WORKFLOW_SHA" \
+            GITHUB_REF="$GITHUB_REF" \
+            GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            RUNNER_OS="$RUNNER_OS" \
+            RUNNER_ARCH="$RUNNER_ARCH" \
+            RUNNER_TOOL_CACHE="$RUNNER_TOOL_CACHE" \
+            OPENCOVEN_AUTHENTICATED_NODE_PATH="$node_path" \
+            PUBLISH_JOB_ID="${{ steps.resolve-publish-job.outputs.publish-job-id }}" \
+            "$node_path" ./scripts/github-environment-approval-evidence.mjs \
+              --mode receipt \
+              --pending-root "$RUNNER_TEMP/opencoven-pending-approval" \
+              --security-review "$RUNNER_TEMP/opencoven-approval-input/security-review.json" \
+              --output "$RUNNER_TEMP/opencoven-protected-approval"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: opencoven-sdk-protected-approval-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/opencoven-protected-approval
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/opencoven-protected-approval/protected-approval.json
+
+  publish:
+    if: inputs.mode == 'publish'
+    needs: [preflight, repository-verification, approval-witness, approval-evidence]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
       RELEASE_VERSION: ${{ inputs.version }}
       OPENCOVEN_SECURITY_REVIEW_COMMENT_ID: ${{ inputs.security-review-comment-id }}
+      PUBLISH_JOB_ID: ${{ needs.approval-evidence.outputs.publish-job-id }}
     permissions:
       actions: read
       attestations: read
@@ -274,23 +592,44 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          version: 10.34.0
-      - name: Require frozen Node runtime
+      - name: Authenticate frozen Node runtime
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        env:
+          BASH_ENV: /dev/null
+          ENV: /dev/null
         run: |
-          expected="v$(cat .node-version)"
-          if [ "$expected" != "v24.18.1" ] || [ "$(node --version)" != "$expected" ]; then
-            echo "Publication requires exact Node $expected." >&2
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          printf '%s  %s\n' \
+            'f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a' \
+            "$node_path" | /usr/bin/sha256sum --check --strict
+          if [ "$RUNNER_OS" != "Linux" ] || [ "$RUNNER_ARCH" != "X64" ] || [ "$("$node_path" --version)" != "v24.18.1" ]; then
+            echo "Publication requires exact Node v24.18.1 on GitHub-hosted Linux X64." >&2
             exit 1
           fi
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: opencoven-sdk-pending-approval-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/opencoven-pending-approval
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: opencoven-sdk-protected-approval-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/opencoven-protected-approval
       - name: Resolve exact publication authorization
         id: authorization
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          node ./scripts/github-release-authorization.mjs
-          --github-output "$GITHUB_OUTPUT"
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP" \
+            TMPDIR="$RUNNER_TEMP" \
+            CI=true \
+            GH_TOKEN="$GH_TOKEN" \
+            OPENCOVEN_SECURITY_REVIEW_COMMENT_ID="$OPENCOVEN_SECURITY_REVIEW_COMMENT_ID" \
+            "$node_path" ./scripts/github-release-authorization.mjs \
+              --github-output "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ steps.authorization.outputs.artifact-name }}
@@ -301,14 +640,92 @@ jobs:
       - name: Verify exact reviewed publication bytes
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          node ./scripts/github-release-authorization.mjs
-          --artifact-root .artifacts/publication
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          mkdir -p "$RUNNER_TEMP/opencoven-approval-input"
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP" \
+            TMPDIR="$RUNNER_TEMP" \
+            CI=true \
+            GH_TOKEN="$GH_TOKEN" \
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            GITHUB_SERVER_URL="$GITHUB_SERVER_URL" \
+            GITHUB_SHA="$GITHUB_SHA" \
+            GITHUB_WORKFLOW_REF="$GITHUB_WORKFLOW_REF" \
+            GITHUB_WORKFLOW_SHA="$GITHUB_WORKFLOW_SHA" \
+            GITHUB_REF="$GITHUB_REF" \
+            GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            RUNNER_OS="$RUNNER_OS" \
+            RUNNER_ARCH="$RUNNER_ARCH" \
+            RUNNER_TOOL_CACHE="$RUNNER_TOOL_CACHE" \
+            OPENCOVEN_AUTHENTICATED_NODE_PATH="$node_path" \
+            OPENCOVEN_SECURITY_REVIEW_COMMENT_ID="$OPENCOVEN_SECURITY_REVIEW_COMMENT_ID" \
+            "$node_path" ./scripts/github-release-authorization.mjs \
+              --artifact-root .artifacts/publication \
+              > "$RUNNER_TEMP/opencoven-approval-input/security-review.json"
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP" \
+            TMPDIR="$RUNNER_TEMP" \
+            CI=true \
+            GH_TOKEN="$GH_TOKEN" \
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            GITHUB_SHA="$GITHUB_SHA" \
+            GITHUB_WORKFLOW_REF="$GITHUB_WORKFLOW_REF" \
+            GITHUB_WORKFLOW_SHA="$GITHUB_WORKFLOW_SHA" \
+            GITHUB_REF="$GITHUB_REF" \
+            GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            RUNNER_OS="$RUNNER_OS" \
+            RUNNER_ARCH="$RUNNER_ARCH" \
+            RUNNER_TOOL_CACHE="$RUNNER_TOOL_CACHE" \
+            OPENCOVEN_AUTHENTICATED_NODE_PATH="$node_path" \
+            PUBLISH_JOB_ID="$PUBLISH_JOB_ID" \
+            "$node_path" ./scripts/github-environment-approval-evidence.mjs \
+              --mode verify \
+              --pending-root "$RUNNER_TEMP/opencoven-pending-approval" \
+              --approval-root "$RUNNER_TEMP/opencoven-protected-approval" \
+              --security-review "$RUNNER_TEMP/opencoven-approval-input/security-review.json"
       - name: Publish exact reviewed release artifacts
         env:
           GH_TOKEN: ${{ github.token }}
           OPENCOVEN_RELEASE_AUTHORIZATION: publish
-        run: >-
-          node ./scripts/publish-release-artifacts.mjs
-          --artifact-root .artifacts/publication
-          --version "$RELEASE_VERSION"
+        shell: /bin/bash --noprofile --norc -euo pipefail {0}
+        run: |
+          node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
+          /usr/bin/env -i \
+            PATH="${node_path%/node}:/usr/bin:/bin" \
+            HOME="$RUNNER_TEMP" \
+            TMPDIR="$RUNNER_TEMP" \
+            CI=true \
+            GH_TOKEN="$GH_TOKEN" \
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            GITHUB_SHA="$GITHUB_SHA" \
+            GITHUB_WORKFLOW_REF="$GITHUB_WORKFLOW_REF" \
+            GITHUB_WORKFLOW_SHA="$GITHUB_WORKFLOW_SHA" \
+            GITHUB_REF="$GITHUB_REF" \
+            GITHUB_JOB="$GITHUB_JOB" \
+            GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            GITHUB_SERVER_URL="$GITHUB_SERVER_URL" \
+            GITHUB_EVENT_NAME="$GITHUB_EVENT_NAME" \
+            GITHUB_REPOSITORY_ID="$GITHUB_REPOSITORY_ID" \
+            GITHUB_REPOSITORY_OWNER_ID="$GITHUB_REPOSITORY_OWNER_ID" \
+            RUNNER_OS="$RUNNER_OS" \
+            RUNNER_ARCH="$RUNNER_ARCH" \
+            RUNNER_TOOL_CACHE="$RUNNER_TOOL_CACHE" \
+            RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            OPENCOVEN_AUTHENTICATED_NODE_PATH="$node_path" \
+            OPENCOVEN_RELEASE_AUTHORIZATION="$OPENCOVEN_RELEASE_AUTHORIZATION" \
+            OPENCOVEN_SECURITY_REVIEW_COMMENT_ID="$OPENCOVEN_SECURITY_REVIEW_COMMENT_ID" \
+            PUBLISH_JOB_ID="$PUBLISH_JOB_ID" \
+            ACTIONS_ID_TOKEN_REQUEST_URL="$ACTIONS_ID_TOKEN_REQUEST_URL" \
+            ACTIONS_ID_TOKEN_REQUEST_TOKEN="$ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$node_path" ./scripts/publish-release-artifacts.mjs \
+              --artifact-root .artifacts/publication \
+              --pending-approval-root "$RUNNER_TEMP/opencoven-pending-approval" \
+              --protected-approval-root "$RUNNER_TEMP/opencoven-protected-approval" \
+              --version "$RELEASE_VERSION"

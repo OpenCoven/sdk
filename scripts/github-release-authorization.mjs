@@ -23,20 +23,29 @@ const MAX_GITHUB_RESPONSE_BYTES = 1_048_576;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const GIT_OID_PATTERN = /^[0-9a-f]{40}$/u;
 const POSITIVE_ID_PATTERN = /^[1-9]\d*$/u;
+const REVIEWER_ID = 68980965;
+const REVIEWER_AUTHORIZATION = Object.freeze({
+  id: REVIEWER_ID,
+  authorAssociation: 'MEMBER',
+  permission: 'admin',
+  roleName: 'admin',
+});
 
-function authorizationGitEnvironment() {
-  const environment = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (!key.toUpperCase().startsWith('GIT_') && value !== undefined) {
-      environment[key] = value;
-    }
-  }
-  environment.GIT_CONFIG_GLOBAL = devNull;
-  environment.GIT_CONFIG_NOSYSTEM = '1';
-  environment.GIT_NO_REPLACE_OBJECTS = '1';
-  environment.GIT_OPTIONAL_LOCKS = '0';
-  environment.GIT_TERMINAL_PROMPT = '0';
-  return environment;
+function authorizationGitEnvironment(source = process.env) {
+  return {
+    PATH: '/usr/bin:/bin',
+    HOME: source.HOME ?? source.RUNNER_TEMP ?? '/tmp',
+    TMPDIR: source.TMPDIR ?? source.RUNNER_TEMP ?? '/tmp',
+    GH_HOST: 'github.com',
+    ...(typeof source.GH_TOKEN === 'string'
+      ? { GH_TOKEN: source.GH_TOKEN }
+      : {}),
+    GIT_CONFIG_GLOBAL: devNull,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_NO_REPLACE_OBJECTS: '1',
+    GIT_OPTIONAL_LOCKS: '0',
+    GIT_TERMINAL_PROMPT: '0',
+  };
 }
 
 function isRecord(value) {
@@ -80,7 +89,7 @@ function parseGitHubJson(text, label) {
 function runGitHubApi(execute, endpoint, env) {
   return parseGitHubJson(
     execute(
-      'gh',
+      '/usr/bin/gh',
       [
         'api',
         '--hostname',
@@ -91,7 +100,7 @@ function runGitHubApi(execute, endpoint, env) {
       ],
       {
         encoding: 'utf8',
-        env,
+        env: authorizationGitEnvironment(env),
         maxBuffer: MAX_GITHUB_RESPONSE_BYTES,
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: 30_000,
@@ -110,7 +119,7 @@ function verifyCandidateAttestation(
   env,
 ) {
   const output = execute(
-    'gh',
+    '/usr/bin/gh',
     [
       'attestation',
       'verify',
@@ -135,7 +144,7 @@ function verifyCandidateAttestation(
     ],
     {
       encoding: 'utf8',
-      env,
+      env: authorizationGitEnvironment(env),
       maxBuffer: MAX_GITHUB_RESPONSE_BYTES,
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 30_000,
@@ -241,7 +250,7 @@ export function createPublicationAuthorizationRecord({
     || typeof jobId !== 'string'
     || !POSITIVE_ID_PATTERN.test(jobId)
     || !isRecord(manifest)
-    || manifest.schemaVersion !== 5
+    || manifest.schemaVersion !== 6
     || manifest.artifactSet !== 'publication-candidate'
     || typeof manifestText !== 'string'
   ) {
@@ -249,12 +258,26 @@ export function createPublicationAuthorizationRecord({
   }
   assertExactFields(
     manifest.source,
-    ['repository', 'commit', 'tree', 'npmConfigFiles'],
+    ['repository', 'commit', 'tree', 'runtimeManifest', 'npmConfigFiles'],
     'Publication candidate source',
   );
   assertExactFields(
     manifest.toolchain,
-    ['nodeVersion', 'pnpmVersion', 'npmVersion', 'packCommand'],
+    [
+      'nodeVersion',
+      'nodePath',
+      'nodeSize',
+      'nodeSha256',
+      'corepackVersion',
+      'corepackTreeSha256',
+      'pnpmVersion',
+      'npmVersion',
+      'npmTarball',
+      'npmIntegrity',
+      'npmTreeSha256',
+      'npmEntrypointSha256',
+      'packCommand',
+    ],
     'Publication candidate toolchain',
   );
   assertExactFields(
@@ -278,15 +301,19 @@ export function createPublicationAuthorizationRecord({
     'Publication candidate provenance',
   );
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     kind: 'opencoven-sdk-publication-security-review',
     issue: 'OpenCoven/sdk#40',
     disposition: 'ship',
+    reviewer: { ...REVIEWER_AUTHORIZATION },
     version: manifest.version,
     source: {
       repository: manifest.source.repository,
       commit: manifest.source.commit,
       tree: manifest.source.tree,
+      runtimeManifest: {
+        ...manifest.source.runtimeManifest,
+      },
     },
     manifest: {
       file: 'release-manifest.json',
@@ -296,8 +323,17 @@ export function createPublicationAuthorizationRecord({
     packages: canonicalPackageEntries(manifest.packages),
     toolchain: {
       nodeVersion: manifest.toolchain.nodeVersion,
+      nodePath: manifest.toolchain.nodePath,
+      nodeSize: manifest.toolchain.nodeSize,
+      nodeSha256: manifest.toolchain.nodeSha256,
+      corepackVersion: manifest.toolchain.corepackVersion,
+      corepackTreeSha256: manifest.toolchain.corepackTreeSha256,
       pnpmVersion: manifest.toolchain.pnpmVersion,
       npmVersion: manifest.toolchain.npmVersion,
+      npmTarball: manifest.toolchain.npmTarball,
+      npmIntegrity: manifest.toolchain.npmIntegrity,
+      npmTreeSha256: manifest.toolchain.npmTreeSha256,
+      npmEntrypointSha256: manifest.toolchain.npmEntrypointSha256,
       packCommand: manifest.toolchain.packCommand,
     },
     publisher: {
@@ -346,6 +382,7 @@ function parseAuthorizationBody(text) {
       'kind',
       'issue',
       'disposition',
+      'reviewer',
       'version',
       'source',
       'manifest',
@@ -358,9 +395,26 @@ function parseAuthorizationBody(text) {
     'Publication authorization',
   );
   assertExactFields(
+    value.reviewer,
+    ['id', 'authorAssociation', 'permission', 'roleName'],
+    'Publication authorization reviewer',
+  );
+  assertExactFields(
     value.source,
-    ['repository', 'commit', 'tree'],
+    ['repository', 'commit', 'tree', 'runtimeManifest'],
     'Publication authorization source',
+  );
+  assertExactFields(
+    value.source.runtimeManifest,
+    [
+      'file',
+      'size',
+      'sha256',
+      'runtimeSha256',
+      'candidateCommit',
+      'candidateTree',
+    ],
+    'Publication authorization source.runtimeManifest',
   );
   assertExactFields(
     value.manifest,
@@ -369,7 +423,21 @@ function parseAuthorizationBody(text) {
   );
   assertExactFields(
     value.toolchain,
-    ['nodeVersion', 'pnpmVersion', 'npmVersion', 'packCommand'],
+    [
+      'nodeVersion',
+      'nodePath',
+      'nodeSize',
+      'nodeSha256',
+      'corepackVersion',
+      'corepackTreeSha256',
+      'pnpmVersion',
+      'npmVersion',
+      'npmTarball',
+      'npmIntegrity',
+      'npmTreeSha256',
+      'npmEntrypointSha256',
+      'packCommand',
+    ],
     'Publication authorization toolchain',
   );
   assertExactFields(
@@ -401,26 +469,61 @@ function parseAuthorizationBody(text) {
   );
   const packages = canonicalPackageEntries(value.packages);
   if (
-    value.schemaVersion !== 4
+    value.schemaVersion !== 5
     || value.kind !== 'opencoven-sdk-publication-security-review'
     || value.issue !== 'OpenCoven/sdk#40'
     || value.disposition !== 'ship'
+    || value.reviewer.id !== REVIEWER_AUTHORIZATION.id
+    || value.reviewer.authorAssociation
+      !== REVIEWER_AUTHORIZATION.authorAssociation
+    || value.reviewer.permission !== REVIEWER_AUTHORIZATION.permission
+    || value.reviewer.roleName !== REVIEWER_AUTHORIZATION.roleName
     || typeof value.version !== 'string'
     || value.source.repository !== 'OpenCoven/sdk'
     || typeof value.source.commit !== 'string'
     || !GIT_OID_PATTERN.test(value.source.commit)
     || typeof value.source.tree !== 'string'
     || !GIT_OID_PATTERN.test(value.source.tree)
+    || value.source.runtimeManifest.file
+      !== 'publication-source-manifest.json'
+    || !Number.isSafeInteger(value.source.runtimeManifest.size)
+    || value.source.runtimeManifest.size <= 0
+    || typeof value.source.runtimeManifest.sha256 !== 'string'
+    || !SHA256_PATTERN.test(value.source.runtimeManifest.sha256)
+    || typeof value.source.runtimeManifest.runtimeSha256 !== 'string'
+    || !SHA256_PATTERN.test(value.source.runtimeManifest.runtimeSha256)
+    || typeof value.source.runtimeManifest.candidateCommit !== 'string'
+    || !GIT_OID_PATTERN.test(
+      value.source.runtimeManifest.candidateCommit,
+    )
+    || typeof value.source.runtimeManifest.candidateTree !== 'string'
+    || !GIT_OID_PATTERN.test(value.source.runtimeManifest.candidateTree)
     || value.manifest.file !== 'release-manifest.json'
     || !Number.isSafeInteger(value.manifest.size)
     || value.manifest.size <= 0
     || typeof value.manifest.sha256 !== 'string'
     || !SHA256_PATTERN.test(value.manifest.sha256)
     || value.toolchain.nodeVersion !== 'v24.18.1'
+    || value.toolchain.nodePath
+      !== '/opt/hostedtoolcache/node/24.18.1/x64/bin/node'
+    || value.toolchain.nodeSize !== 123656816
+    || value.toolchain.nodeSha256
+      !== 'f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a'
+    || value.toolchain.corepackVersion !== '0.35.0'
+    || value.toolchain.corepackTreeSha256
+      !== '469b918857ea32351ac6a0737597abc90330dd521005687543dbd6b142536b08'
     || value.toolchain.pnpmVersion !== 'pnpm@10.34.0'
     || value.toolchain.npmVersion !== '11.5.1'
+    || value.toolchain.npmTarball
+      !== 'https://registry.npmjs.org/npm/-/npm-11.5.1.tgz'
+    || value.toolchain.npmIntegrity
+      !== 'sha512-Iy5vXZ55m8tIaSCz6bqQf9+W5XbPfoyURsgWLjOkFglqHTep6RDZqRj2sfYGeRyZvGu2HuJWm0lux0rxPQ29lQ=='
+    || value.toolchain.npmTreeSha256
+      !== 'dbe97072240cb2048f84faade50f938bdca3ba04efa67719259f5528397f0f09'
+    || value.toolchain.npmEntrypointSha256
+      !== '8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7'
     || value.toolchain.packCommand
-      !== 'corepack pnpm@10.34.0 pack --ignore-scripts'
+      !== 'sanitize package manifests; node <authenticated-corepack> pnpm@10.34.0 --config.pnpmfile=/dev/null --config.global-pnpmfile=/dev/null pack'
     || value.publisher.path !== 'scripts/publish-release-artifacts.mjs'
     || !Number.isSafeInteger(value.publisher.size)
     || value.publisher.size <= 0
@@ -589,6 +692,7 @@ export function resolvePublicationSecurityReview({
   root = process.cwd(),
   commentId,
   allowedArtifactRoot,
+  allowedArtifactRoots,
   execute = execFileSync,
   env = process.env,
 } = {}) {
@@ -605,7 +709,7 @@ export function resolvePublicationSecurityReview({
   validateReleaseWorkflow(root, config);
   const checkout = inspectReleaseRepository(root);
   const status = execFileSync(
-    'git',
+    '/usr/bin/git',
     [
       '-c',
       'core.excludesFile=',
@@ -629,26 +733,35 @@ export function resolvePublicationSecurityReview({
       stdio: ['ignore', 'pipe', 'ignore'],
     },
   );
-  const allowedRelativeRoot =
-    typeof allowedArtifactRoot === 'string'
-      ? relative(checkout.root, resolve(allowedArtifactRoot))
-      : null;
-  const allowedPrefix =
-    allowedRelativeRoot !== null
-    && allowedRelativeRoot.length > 0
-    && allowedRelativeRoot !== '..'
-    && !allowedRelativeRoot.startsWith(`..${sep}`)
-      ? `${allowedRelativeRoot.split(sep).join('/')}/`
-      : null;
+  const allowedRoots = [
+    ...(typeof allowedArtifactRoot === 'string'
+      ? [allowedArtifactRoot]
+      : []),
+    ...(Array.isArray(allowedArtifactRoots)
+      ? allowedArtifactRoots.filter((path) => typeof path === 'string')
+      : []),
+  ];
+  const allowedPaths = allowedRoots
+    .map((path) => relative(checkout.root, resolve(path)))
+    .filter(
+      (path) =>
+        path.length > 0
+        && path !== '..'
+        && !path.startsWith(`..${sep}`),
+    )
+    .map((path) => path.split(sep).join('/'));
   const unexpectedStatus = status
     .split('\n')
     .filter((line) => line.length > 0)
     .filter((line) => {
-      if (!line.startsWith('?? ') || allowedPrefix === null) {
+      if (!line.startsWith('?? ')) {
         return true;
       }
       const path = line.slice(3).replaceAll('\\', '/');
-      return path !== allowedRelativeRoot && !path.startsWith(allowedPrefix);
+      return !allowedPaths.some(
+        (allowedPath) =>
+          path === allowedPath || path.startsWith(`${allowedPath}/`),
+      );
     });
   if (unexpectedStatus.length !== 0) {
     throw new Error(
@@ -683,12 +796,34 @@ export function resolvePublicationSecurityReview({
       !== 'https://api.github.com/repos/OpenCoven/sdk/issues/40'
     || typeof comment.body !== 'string'
     || comment.created_at !== comment.updated_at
-    || !['OWNER', 'MEMBER'].includes(comment.author_association)
+    || comment.author_association
+      !== config.protectedApproval.reviewer.authorAssociation
     || !isRecord(comment.user)
-    || comment.user.login !== 'BunsDev'
+    || comment.user.id !== config.protectedApproval.reviewer.id
+    || comment.user.type !== 'User'
+    || typeof comment.user.login !== 'string'
+    || comment.user.login.length === 0
   ) {
     throw new Error(
-      'GitHub security review comment is not an immutable CODEOWNER authorization',
+      'GitHub security review comment does not match the immutable reviewer identity',
+    );
+  }
+  const permission = runGitHubApi(
+    execute,
+    `repos/OpenCoven/sdk/collaborators/${encodeURIComponent(comment.user.login)}/permission`,
+    env,
+  );
+  if (
+    !isRecord(permission)
+    || permission.permission !== config.protectedApproval.reviewer.permission
+    || permission.role_name !== config.protectedApproval.reviewer.roleName
+    || !isRecord(permission.user)
+    || permission.user.id !== config.protectedApproval.reviewer.id
+    || permission.user.login !== comment.user.login
+    || permission.user.type !== 'User'
+  ) {
+    throw new Error(
+      'GitHub security review reviewer does not have the exact required repository role',
     );
   }
   const authorization = parseAuthorizationBody(comment.body);
@@ -707,6 +842,14 @@ export function resolvePublicationSecurityReview({
     || authorization.provenance.environment
       !== config.publicationCandidate.environment
     || authorization.toolchain.npmVersion !== config.npmCliVersion
+    || authorization.reviewer.id
+      !== config.protectedApproval.reviewer.id
+    || authorization.reviewer.authorAssociation
+      !== config.protectedApproval.reviewer.authorAssociation
+    || authorization.reviewer.permission
+      !== config.protectedApproval.reviewer.permission
+    || authorization.reviewer.roleName
+      !== config.protectedApproval.reviewer.roleName
   ) {
     throw new Error(
       'GitHub security review authorization does not match release.config.json',
@@ -787,7 +930,10 @@ export function resolvePublicationSecurityReview({
   return {
     ...authorization,
     commentId,
-    reviewer: 'BunsDev',
+    reviewer: {
+      ...authorization.reviewer,
+      login: comment.user.login,
+    },
   };
 }
 
@@ -795,6 +941,7 @@ export function verifyPublicationSecurityReview({
   root = process.cwd(),
   artifactRoot,
   commentId,
+  allowedArtifactRoots,
   execute = execFileSync,
   env = process.env,
 } = {}) {
@@ -802,6 +949,7 @@ export function verifyPublicationSecurityReview({
     root,
     commentId,
     allowedArtifactRoot: artifactRoot,
+    allowedArtifactRoots,
     execute,
     env,
   });
@@ -838,6 +986,13 @@ export function verifyPublicationSecurityReview({
       path: resolve(artifactRoot, 'release-manifest.json'),
       sha256: authorization.manifest.sha256,
     },
+    {
+      path: resolve(
+        artifactRoot,
+        authorization.source.runtimeManifest.file,
+      ),
+      sha256: authorization.source.runtimeManifest.sha256,
+    },
     ...authorization.packages.map((entry) => ({
       path: resolve(artifactRoot, entry.file),
       sha256: entry.sha256,
@@ -864,6 +1019,12 @@ export function verifyPublicationSecurityReview({
     kind: authorization.kind,
     issue: authorization.issue,
     disposition: authorization.disposition,
+    reviewer: {
+      id: authorization.reviewer.id,
+      authorAssociation: authorization.reviewer.authorAssociation,
+      permission: authorization.reviewer.permission,
+      roleName: authorization.reviewer.roleName,
+    },
     version: authorization.version,
     source: authorization.source,
     manifest: authorization.manifest,

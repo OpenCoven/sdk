@@ -1,5 +1,14 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
@@ -18,7 +27,20 @@ export function run(command, args, cwd, options = {}) {
 }
 
 export function runPnpm(args, cwd, options = {}) {
-  return run('corepack', ['pnpm@10.34.0', ...args], cwd, options);
+  const command = options.nodePath ?? 'corepack';
+  const pnpmArguments = [
+    'pnpm@10.34.0',
+    '--config.pnpmfile=/dev/null',
+    '--config.global-pnpmfile=/dev/null',
+    ...args,
+  ];
+  const commandArguments = options.corepackPath === undefined
+    ? pnpmArguments
+    : [
+        options.corepackPath,
+        ...pnpmArguments,
+      ];
+  return run(command, commandArguments, cwd, options);
 }
 
 export function isolatedInstallArgs({ offline = true, workspace = false } = {}) {
@@ -36,6 +58,7 @@ export function isolatedInstallArgs({ offline = true, workspace = false } = {}) 
     // asserting pass may not reach it at all.
     offline ? '--offline' : '--prefer-offline',
     '--ignore-scripts',
+    '--ignore-pnpmfile',
   ];
 }
 
@@ -55,8 +78,21 @@ function removeInstalledModuleTrees(directory) {
 }
 
 function runPnpmAsync(args, cwd, options = {}) {
+  const command = options.nodePath ?? 'corepack';
+  const pnpmArguments = [
+    'pnpm@10.34.0',
+    '--config.pnpmfile=/dev/null',
+    '--config.global-pnpmfile=/dev/null',
+    ...args,
+  ];
+  const commandArguments = options.corepackPath === undefined
+    ? pnpmArguments
+    : [
+        options.corepackPath,
+        ...pnpmArguments,
+      ];
   return new Promise((resolvePromise, reject) => {
-    const child = spawn('corepack', ['pnpm@10.34.0', ...args], {
+    const child = spawn(command, commandArguments, {
       cwd,
       stdio: options.stdio ?? 'inherit',
       env: options.env,
@@ -193,26 +229,155 @@ export function assertPackedPackagesExcludeSources(installRoot) {
 }
 
 export function buildPublicPackages(root, options = {}) {
-  runPnpm(
-    [
-      '--recursive',
-      ...PUBLIC_PACKAGES.flatMap(({ packageName }) => ['--filter', packageName]),
-      'build',
-    ],
-    root,
-    options,
+  for (const packageMetadata of PUBLIC_PACKAGES) {
+    const invocation = createPublicPackageBuildInvocation({
+      root,
+      packageMetadata,
+      nodePath: options.nodePath ?? process.execPath,
+    });
+    run(
+      invocation.command,
+      invocation.args,
+      invocation.cwd,
+      options,
+    );
+  }
+}
+
+export function createPublicPackageBuildInvocation({
+  root,
+  packageMetadata,
+  nodePath,
+}) {
+  if (
+    !PUBLIC_PACKAGES.some(
+      (entry) =>
+        entry.packageName === packageMetadata?.packageName
+        && entry.workspaceDirectory === packageMetadata?.workspaceDirectory
+        && entry.manifestPath === packageMetadata?.manifestPath,
+    )
+  ) {
+    throw new Error('Public package build metadata is not canonical');
+  }
+  if (typeof nodePath !== 'string' || nodePath.length === 0) {
+    throw new Error('Public package build requires an exact Node path');
+  }
+  const packageRoot = resolve(root, 'packages', packageMetadata.workspaceDirectory);
+  const packageManifest = JSON.parse(
+    readFileSync(resolve(root, packageMetadata.manifestPath), 'utf8'),
   );
+  if (packageManifest.scripts?.build !== 'tsup --config tsup.config.ts') {
+    throw new Error(
+      `${packageMetadata.packageName} build script must be exactly tsup --config tsup.config.ts`,
+    );
+  }
+  const canonicalRoot = realpathSync(root);
+  const tsupRoot = realpathSync(resolve(canonicalRoot, 'node_modules/tsup'));
+  const pnpmStorePrefix = resolve(canonicalRoot, 'node_modules/.pnpm');
+  if (
+    tsupRoot === pnpmStorePrefix
+    || !tsupRoot.startsWith(`${pnpmStorePrefix}/`)
+  ) {
+    throw new Error('Reviewed tsup CLI must resolve inside the frozen pnpm store');
+  }
+  const tsupManifestPath = resolve(tsupRoot, 'package.json');
+  const tsupCliPath = resolve(tsupRoot, 'dist/cli-default.js');
+  for (const [path, label] of [
+    [tsupManifestPath, 'Reviewed tsup package manifest'],
+    [tsupCliPath, 'Reviewed tsup CLI entrypoint'],
+  ]) {
+    const stats = lstatSync(path);
+    if (stats.isSymbolicLink() || !stats.isFile()) {
+      throw new Error(`${label} must be a regular file`);
+    }
+  }
+  const tsupManifest = JSON.parse(readFileSync(tsupManifestPath, 'utf8'));
+  if (
+    tsupManifest.name !== 'tsup'
+    || tsupManifest.version !== '8.5.1'
+    || tsupManifest.bin?.tsup !== 'dist/cli-default.js'
+  ) {
+    throw new Error('Reviewed tsup CLI must be exactly tsup 8.5.1');
+  }
+  return {
+    command: nodePath,
+    args: [
+      tsupCliPath,
+      '--config',
+      'tsup.config.ts',
+    ],
+    cwd: packageRoot,
+  };
+}
+
+const PUBLISH_LIFECYCLE_SCRIPTS = Object.freeze([
+  'prepublish',
+  'prepare',
+  'prepublishOnly',
+  'prepack',
+  'postpack',
+  'publish',
+  'postpublish',
+]);
+
+export function createPublishSafePackageManifest(manifest, packageName) {
+  if (
+    typeof manifest !== 'object'
+    || manifest === null
+    || Array.isArray(manifest)
+    || manifest.name !== packageName
+    || manifest.private !== false
+    || manifest.publishConfig !== undefined
+  ) {
+    throw new Error(
+      `${packageName} source manifest is not safe for publication packing`,
+    );
+  }
+  const result = structuredClone(manifest);
+  if (result.scripts !== undefined) {
+    if (
+      typeof result.scripts !== 'object'
+      || result.scripts === null
+      || Array.isArray(result.scripts)
+    ) {
+      throw new Error(`${packageName} scripts must be an object`);
+    }
+    for (const script of PUBLISH_LIFECYCLE_SCRIPTS) {
+      delete result.scripts[script];
+    }
+    if (Object.keys(result.scripts).length === 0) {
+      delete result.scripts;
+    }
+  }
+  return result;
+}
+
+function preparePublicPackageManifestsForPacking(root) {
+  for (const { packageName, manifestPath } of PUBLIC_PACKAGES) {
+    const path = resolve(root, manifestPath);
+    const manifest = JSON.parse(readFileSync(path, 'utf8'));
+    const safeManifest = createPublishSafePackageManifest(
+      manifest,
+      packageName,
+    );
+    writeFileSync(path, `${JSON.stringify(safeManifest, null, 2)}\n`);
+  }
 }
 
 export function packPublicPackages({
   root,
   destinationRoot,
   build = true,
-  ignoreScripts = false,
+  sanitizePublishManifests = false,
   env,
+  nodePath,
+  corepackPath,
 }) {
   if (build) {
-    buildPublicPackages(root, { env });
+    buildPublicPackages(root, { env, nodePath, corepackPath });
+  }
+  if (sanitizePublishManifests) {
+    preparePublicPackageManifestsForPacking(root);
   }
 
   const tarballs = {};
@@ -223,12 +388,11 @@ export function packPublicPackages({
     runPnpm(
       [
         'pack',
-        ...(ignoreScripts ? ['--ignore-scripts'] : []),
         '--pack-destination',
         destination,
       ],
       resolve(root, 'packages', workspaceDirectory),
-      { env },
+      { env, nodePath, corepackPath },
     );
     tarballs[workspaceDirectory] = findTarball(destination);
     assertCanonicalRepository(

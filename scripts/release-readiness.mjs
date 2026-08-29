@@ -15,6 +15,12 @@ import {
   parseFrozenConformanceLock,
   validateFrozenConformanceBindings,
 } from './conformance-contract.mjs';
+import {
+  AUTHENTICATED_NPM_CLI_ENTRYPOINT_SHA256,
+  AUTHENTICATED_NPM_CLI_TREE_SHA256,
+  AUTHENTICATED_NPM_TARBALL_INTEGRITY,
+  AUTHENTICATED_NPM_TARBALL_URL,
+} from './release-runtime-integrity.mjs';
 
 const CONFIG_FIELDS = Object.freeze([
   'schemaVersion',
@@ -24,11 +30,13 @@ const CONFIG_FIELDS = Object.freeze([
   'npmDistTag',
   'npmCliVersion',
   'npmRegistry',
+  'npmCliDistribution',
   'githubEnvironment',
   'supportedNode',
   'nativeConformancePlatforms',
   'conformanceEvidence',
   'publicationCandidate',
+  'protectedApproval',
   'packages',
 ]);
 const NODE_ENGINE = '>=24.18.0 <25';
@@ -37,22 +45,22 @@ const NODE_VERSION_PATH = '.node-version';
 const RELEASE_WORKFLOW_PATH = '.github/workflows/release.yml';
 const ATTEST_BUILD_PROVENANCE_ACTION =
   'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8';
-const CHECKOUT_ACTION =
-  'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1';
-const DOWNLOAD_ARTIFACT_ACTION =
-  'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c';
-const PNPM_SETUP_ACTION =
-  'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86';
 const PUBLICATION_ARTIFACT_NAME =
   'opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}';
-const SETUP_NODE_ACTION =
-  'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020';
 const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
 const PREFLIGHT_JOB_SHA256 =
-  'cde772cd2f6ca89c57641e5235e92cdb3e0841e0fd5a2684db5221b331590f98';
+  '21d32a601686c82a6171df0f6284ed98a705435479c82c08cd75d63c24a1618d';
 const REPOSITORY_VERIFICATION_JOB_SHA256 =
-  '5c1514f846d97b73ef3e32aa82717e587010a8111942c3971c8a5f9930dd963c';
+  '271cda1603d40f9b2a7c4baf5c910e5fdd030a4a5d9218cd5c957246aecc2697';
+const PUBLICATION_CANDIDATE_JOB_SHA256 =
+  '3879c961f1a80ef1263baf5bc497adad611c966f14beb92fe7460abfc6e51497';
+const APPROVAL_WITNESS_JOB_SHA256 =
+  'f84d52dc6c640d6221be2be533dfbdaba032a11c34e106960cebbab1ccbffb1b';
+const APPROVAL_EVIDENCE_JOB_SHA256 =
+  '0f4d8cfca7ed4eda4ca315518f4da5d2bd2a9ea09f7cec0c4ceb4b6604eef1dd';
+const PUBLISH_JOB_SHA256 =
+  '5ae50754711ba4a5eb9f895100ad64a9bdb626fa7330c6b5cc35b0d3b28b8296';
 const EXPECTED_RELEASE_CONTROLS = Object.freeze({
   name: 'release',
   on: {
@@ -86,194 +94,6 @@ const EXPECTED_RELEASE_CONTROLS = Object.freeze({
     'cancel-in-progress': false,
   },
 });
-const EXPECTED_CANDIDATE_JOB = Object.freeze({
-  if: "inputs.mode == 'verify'",
-  needs: ['preflight', 'repository-verification'],
-  name: 'publication-candidate',
-  'runs-on': 'ubuntu-latest',
-  'timeout-minutes': 20,
-  environment: 'publication-candidate',
-  permissions: {
-    actions: 'read',
-    attestations: 'write',
-    contents: 'read',
-    deployments: 'read',
-    'id-token': 'write',
-    issues: 'read',
-  },
-  env: {
-    RELEASE_VERSION: '${{ inputs.version }}',
-    OPENCOVEN_CAVE_AUTHORITY_ROOT:
-      '${{ github.workspace }}/.artifacts/cave-authority',
-    OPENCOVEN_PUBLICATION_ENVIRONMENT: 'publication-candidate',
-    OPENCOVEN_PUBLICATION_ARTIFACT_NAME: PUBLICATION_ARTIFACT_NAME,
-  },
-  steps: [
-    {
-      uses: CHECKOUT_ACTION,
-      with: {
-        'fetch-depth': 0,
-        'persist-credentials': false,
-        ref: '${{ github.sha }}',
-      },
-    },
-    {
-      uses: SETUP_NODE_ACTION,
-      with: {
-        'node-version-file': '.node-version',
-      },
-    },
-    {
-      uses: PNPM_SETUP_ACTION,
-      with: {
-        version: '10.34.0',
-      },
-    },
-    {
-      name: 'Require frozen Node runtime',
-      run: [
-        'expected="v$(cat .node-version)"',
-        'if [ "$expected" != "v24.18.1" ] || [ "$(node --version)" != "$expected" ]; then',
-        '  echo "Publication candidates require exact Node $expected." >&2',
-        '  exit 1',
-        'fi',
-        '',
-      ].join('\n'),
-    },
-    {
-      uses: CHECKOUT_ACTION,
-      with: {
-        repository: 'OpenCoven/coven-cave',
-        ref: '2a0ff9237e94e652e477b22f60fd6d721b9e6451',
-        path: '.artifacts/cave-authority',
-        'fetch-depth': 1,
-        'persist-credentials': false,
-      },
-    },
-    {
-      name: 'Create immutable publication candidate',
-      env: {
-        GH_TOKEN: '${{ github.token }}',
-      },
-      run:
-        'node ./scripts/create-release-artifacts.mjs '
-        + '--output .artifacts/publication '
-        + '--version "$RELEASE_VERSION"',
-    },
-    {
-      uses: UPLOAD_ARTIFACT_ACTION,
-      with: {
-        name: PUBLICATION_ARTIFACT_NAME,
-        path: '.artifacts/publication',
-        'if-no-files-found': 'error',
-        'retention-days': 30,
-      },
-    },
-    {
-      uses: ATTEST_BUILD_PROVENANCE_ACTION,
-      with: {
-        'subject-path': [
-          '.artifacts/publication/release-manifest.json',
-          '.artifacts/publication/tarballs/**/*.tgz',
-          '',
-        ].join('\n'),
-      },
-    },
-  ],
-});
-const EXPECTED_PUBLISH_JOB = Object.freeze({
-  if: "inputs.mode == 'publish'",
-  needs: ['preflight', 'repository-verification'],
-  'runs-on': 'ubuntu-latest',
-  'timeout-minutes': 10,
-  environment: 'npm-release',
-  env: {
-    RELEASE_VERSION: '${{ inputs.version }}',
-    OPENCOVEN_SECURITY_REVIEW_COMMENT_ID:
-      '${{ inputs.security-review-comment-id }}',
-  },
-  permissions: {
-    actions: 'read',
-    attestations: 'read',
-    contents: 'read',
-    deployments: 'read',
-    'id-token': 'write',
-    issues: 'read',
-  },
-  steps: [
-    {
-      uses: CHECKOUT_ACTION,
-      with: {
-        'fetch-depth': 0,
-        'persist-credentials': false,
-        ref: '${{ github.sha }}',
-      },
-    },
-    {
-      uses: SETUP_NODE_ACTION,
-      with: {
-        'node-version-file': '.node-version',
-      },
-    },
-    {
-      uses: PNPM_SETUP_ACTION,
-      with: {
-        version: '10.34.0',
-      },
-    },
-    {
-      name: 'Require frozen Node runtime',
-      run: [
-        'expected="v$(cat .node-version)"',
-        'if [ "$expected" != "v24.18.1" ] || [ "$(node --version)" != "$expected" ]; then',
-        '  echo "Publication requires exact Node $expected." >&2',
-        '  exit 1',
-        'fi',
-        '',
-      ].join('\n'),
-    },
-    {
-      name: 'Resolve exact publication authorization',
-      id: 'authorization',
-      env: {
-        GH_TOKEN: '${{ github.token }}',
-      },
-      run:
-        'node ./scripts/github-release-authorization.mjs '
-        + '--github-output "$GITHUB_OUTPUT"',
-    },
-    {
-      uses: DOWNLOAD_ARTIFACT_ACTION,
-      with: {
-        name: '${{ steps.authorization.outputs.artifact-name }}',
-        path: '.artifacts/publication',
-        'github-token': '${{ github.token }}',
-        repository: 'OpenCoven/sdk',
-        'run-id': '${{ steps.authorization.outputs.run-id }}',
-      },
-    },
-    {
-      name: 'Verify exact reviewed publication bytes',
-      env: {
-        GH_TOKEN: '${{ github.token }}',
-      },
-      run:
-        'node ./scripts/github-release-authorization.mjs '
-        + '--artifact-root .artifacts/publication',
-    },
-    {
-      name: 'Publish exact reviewed release artifacts',
-      env: {
-        GH_TOKEN: '${{ github.token }}',
-        OPENCOVEN_RELEASE_AUTHORIZATION: 'publish',
-      },
-      run:
-        'node ./scripts/publish-release-artifacts.mjs '
-        + '--artifact-root .artifacts/publication '
-        + '--version "$RELEASE_VERSION"',
-    },
-  ],
-});
 const SUPPORTED_PLATFORMS = Object.freeze([
   'darwin-arm64',
   'linux-x64',
@@ -300,11 +120,15 @@ const VALIDATOR_RUNTIME_PATHS = Object.freeze([
   'scripts/conformance-contract.mjs',
   'scripts/create-release-artifacts.mjs',
   'scripts/github-conformance-evidence.mjs',
+  'scripts/github-environment-approval-evidence.mjs',
+  'scripts/github-environment-approval.mjs',
   'scripts/github-release-authorization.mjs',
   'scripts/owned-temp-directory.mjs',
   'scripts/package-artifacts.mjs',
+  'scripts/publication-source-identity.mjs',
   'scripts/publish-release-artifacts.mjs',
   'scripts/release-readiness.mjs',
+  'scripts/release-runtime-integrity.mjs',
   'scripts/repository-metadata.mjs',
   CONFORMANCE_VERIFIER_PATH,
   'scripts/verify-release-readiness.mjs',
@@ -695,8 +519,8 @@ function readManifest(root, packageMetadata) {
 }
 
 function validateConfigValues(config) {
-  if (config.schemaVersion !== 5) {
-    throw new Error('release.config.json schemaVersion must be 5');
+  if (config.schemaVersion !== 6) {
+    throw new Error('release.config.json schemaVersion must be 6');
   }
   if (typeof config.publishingEnabled !== 'boolean') {
     throw new Error('release.config.json publishingEnabled must be a boolean');
@@ -716,6 +540,24 @@ function validateConfigValues(config) {
   if (config.npmRegistry !== 'https://registry.npmjs.org/') {
     throw new Error(
       'release.config.json npmRegistry must be https://registry.npmjs.org/',
+    );
+  }
+  assertExactFields(
+    config.npmCliDistribution,
+    ['tarball', 'integrity', 'treeSha256', 'entrypointSha256'],
+    'release.config.json npmCliDistribution',
+  );
+  if (
+    config.npmCliDistribution.tarball !== AUTHENTICATED_NPM_TARBALL_URL
+    || config.npmCliDistribution.integrity
+      !== AUTHENTICATED_NPM_TARBALL_INTEGRITY
+    || config.npmCliDistribution.treeSha256
+      !== AUTHENTICATED_NPM_CLI_TREE_SHA256
+    || config.npmCliDistribution.entrypointSha256
+      !== AUTHENTICATED_NPM_CLI_ENTRYPOINT_SHA256
+  ) {
+    throw new Error(
+      'release.config.json npmCliDistribution must bind the authenticated npm 11.5.1 distribution',
     );
   }
   if (config.githubEnvironment !== 'npm-release') {
@@ -738,7 +580,13 @@ function validateConfigValues(config) {
 
   assertExactFields(
     config.conformanceEvidence,
-    ['issue', 'artifactSet', 'candidateCommit', 'aggregateRecord'],
+    [
+      'issue',
+      'artifactSet',
+      'candidateCommit',
+      'runtimeManifestSha256',
+      'aggregateRecord',
+    ],
     'release.config.json conformanceEvidence',
   );
   if (
@@ -746,6 +594,8 @@ function validateConfigValues(config) {
     || config.conformanceEvidence.artifactSet !== 'conformance-candidate'
     || config.conformanceEvidence.candidateCommit
       !== 'acc38488f00860d246c3c553375634d64806eabb'
+    || config.conformanceEvidence.runtimeManifestSha256
+      !== '1cf387f4f53f456c87a51ab09ab68f7ff7291480f9a7cd3a4fe3bb70f907e56a'
     || (
       config.conformanceEvidence.aggregateRecord !== null
       && typeof config.conformanceEvidence.aggregateRecord !== 'string'
@@ -753,6 +603,39 @@ function validateConfigValues(config) {
   ) {
     throw new Error(
       'release.config.json conformanceEvidence must bind SDK #38 to the frozen candidate',
+    );
+  }
+
+  assertExactFields(
+    config.protectedApproval,
+    [
+      'environment',
+      'environmentId',
+      'witnessJob',
+      'approvalJob',
+      'publishJob',
+      'reviewer',
+    ],
+    'release.config.json protectedApproval',
+  );
+  assertExactFields(
+    config.protectedApproval.reviewer,
+    ['id', 'authorAssociation', 'permission', 'roleName'],
+    'release.config.json protectedApproval.reviewer',
+  );
+  if (
+    config.protectedApproval.environment !== config.githubEnvironment
+    || config.protectedApproval.environmentId !== '20778492972'
+    || config.protectedApproval.witnessJob !== 'approval-witness'
+    || config.protectedApproval.approvalJob !== 'approval-evidence'
+    || config.protectedApproval.publishJob !== 'publish'
+    || config.protectedApproval.reviewer.id !== 68980965
+    || config.protectedApproval.reviewer.authorAssociation !== 'MEMBER'
+    || config.protectedApproval.reviewer.permission !== 'admin'
+    || config.protectedApproval.reviewer.roleName !== 'admin'
+  ) {
+    throw new Error(
+      'release.config.json protectedApproval must bind the exact protected environment and immutable reviewer identity',
     );
   }
 
@@ -1595,8 +1478,8 @@ export function validateReleaseWorkflow(root, config) {
     );
   }
   if (
-    JSON.stringify(structuredCandidateJob)
-      !== JSON.stringify(EXPECTED_CANDIDATE_JOB)
+    structuredWorkflowDigest(structuredCandidateJob)
+      !== PUBLICATION_CANDIDATE_JOB_SHA256
   ) {
     throw new Error(
       'Release workflow publication-candidate job must use only the exact reviewed ordered steps',
@@ -1607,6 +1490,37 @@ export function validateReleaseWorkflow(root, config) {
     structuredWorkflow,
     'publish',
   );
+  const approvalWitnessJob = readWorkflowJob(
+    workflow,
+    config.protectedApproval.witnessJob,
+  );
+  const structuredApprovalWitnessJob = readStructuredWorkflowJob(
+    structuredWorkflow,
+    config.protectedApproval.witnessJob,
+  );
+  const approvalEvidenceJob = readWorkflowJob(
+    workflow,
+    config.protectedApproval.approvalJob,
+  );
+  const structuredApprovalEvidenceJob = readStructuredWorkflowJob(
+    structuredWorkflow,
+    config.protectedApproval.approvalJob,
+  );
+  if (
+    readWorkflowJobScalar(approvalWitnessJob, 'if') !== "inputs.mode == 'publish'"
+    || readWorkflowJobScalar(approvalWitnessJob, 'needs')
+      !== '[preflight, repository-verification]'
+    || readWorkflowJobScalar(approvalEvidenceJob, 'if')
+      !== "inputs.mode == 'publish'"
+    || readWorkflowJobScalar(approvalEvidenceJob, 'needs')
+      !== '[preflight, repository-verification]'
+    || readWorkflowJobScalar(approvalEvidenceJob, 'environment')
+      !== config.protectedApproval.environment
+  ) {
+    throw new Error(
+      'Release workflow must create pending and protected approval evidence before publication',
+    );
+  }
   const jobsSource = workflow.slice(workflow.indexOf('\njobs:\n') + 7);
   const workflowJobIds = [
     ...jobsSource.matchAll(/^ {2}([A-Za-z0-9_-]+):\s*(?:#.*)?$/gmu),
@@ -1617,6 +1531,8 @@ export function validateReleaseWorkflow(root, config) {
         'preflight',
         'repository-verification',
         'publication-candidate',
+        'approval-witness',
+        'approval-evidence',
         'publish',
       ])
   ) {
@@ -1624,8 +1540,11 @@ export function validateReleaseWorkflow(root, config) {
   }
   const expectedStepCounts = {
     preflight: 9,
-    'repository-verification': 8,
-    'publication-candidate': 8,
+    'repository-verification': 7,
+    'publication-candidate': 7,
+    'approval-witness': 6,
+    'approval-evidence': 9,
+    publish: 9,
   };
   if (
     Object.entries(expectedStepCounts).some(([jobName, stepCount]) =>
@@ -1649,12 +1568,22 @@ export function validateReleaseWorkflow(root, config) {
       'Release workflow must use the exact frozen release job and step graph',
     );
   }
+  if (
+    structuredWorkflowDigest(structuredApprovalWitnessJob)
+      !== APPROVAL_WITNESS_JOB_SHA256
+    || structuredWorkflowDigest(structuredApprovalEvidenceJob)
+      !== APPROVAL_EVIDENCE_JOB_SHA256
+  ) {
+    throw new Error(
+      'Release workflow approval jobs must use only the exact reviewed ordered steps',
+    );
+  }
   const candidateUploadCount = candidateJob.filter((line) =>
     line.includes('actions/upload-artifact@'),
   ).length;
   const totalUploadCount =
     workflow.match(/actions\/upload-artifact@[0-9a-f]{40}/gu)?.length ?? 0;
-  if (candidateUploadCount !== 1 || totalUploadCount !== 1) {
+  if (candidateUploadCount !== 1 || totalUploadCount !== 3) {
     throw new Error(
       'Release workflow must contain exactly one publication candidate upload',
     );
@@ -1663,31 +1592,37 @@ export function validateReleaseWorkflow(root, config) {
     ['preflight', preflightJob],
     ['repository-verification', repositoryVerificationJob],
     ['publication-candidate', candidateJob],
+    ['approval-witness', approvalWitnessJob],
+    ['approval-evidence', approvalEvidenceJob],
+    ['publish', publishJob],
   ].filter(([, lines]) =>
     lines.some((line) => line.includes('actions/upload-artifact@')),
   );
   if (
-    uploadArtifactOwners.length !== 1
-    || uploadArtifactOwners[0][0] !== 'publication-candidate'
+    JSON.stringify(uploadArtifactOwners.map(([name]) => name))
+      !== JSON.stringify([
+        'publication-candidate',
+        'approval-witness',
+        'approval-evidence',
+      ])
   ) {
     throw new Error(
-      'Only the publication-candidate job may upload publication artifact bytes',
+      'Only the candidate and approval-evidence jobs may upload release evidence',
     );
   }
   if (
-    readWorkflowJobScalar(publishJob, 'environment')
-      !== config.githubEnvironment
+    structuredPublishJob.environment !== undefined
   ) {
     throw new Error(
-      `Release workflow publish job must use environment ${config.githubEnvironment}`,
+      'Release workflow publish job must consume the attested protected approval without creating a second environment deployment',
     );
   }
   if (
     readWorkflowJobScalar(publishJob, 'needs')
-      !== '[preflight, repository-verification]'
+      !== '[preflight, repository-verification, approval-witness, approval-evidence]'
   ) {
     throw new Error(
-      'Release workflow publish job must require preflight and repository-verification',
+      'Release workflow publish job must require verification and both approval-evidence jobs',
     );
   }
   const permissions = readWorkflowJobMapping(publishJob, 'permissions');
@@ -1716,17 +1651,25 @@ export function validateReleaseWorkflow(root, config) {
   const publishAttestationCount = publishJob.filter((line) =>
     line.includes('actions/attest-build-provenance@'),
   ).length;
+  const approvalWitnessAttestationCount = approvalWitnessJob.filter((line) =>
+    line.includes('actions/attest-build-provenance@'),
+  ).length;
+  const approvalEvidenceAttestationCount = approvalEvidenceJob.filter((line) =>
+    line.includes('actions/attest-build-provenance@'),
+  ).length;
   const totalAttestationCount =
     workflow.match(
       /actions\/attest-build-provenance@[0-9a-f]{40}/gu,
     )?.length ?? 0;
   if (
     candidateAttestationCount !== 1
+    || approvalWitnessAttestationCount !== 1
+    || approvalEvidenceAttestationCount !== 1
     || publishAttestationCount !== 0
-    || totalAttestationCount !== 1
+    || totalAttestationCount !== 3
   ) {
     throw new Error(
-      'Release workflow must attest only the protected candidate bytes',
+      'Release workflow must attest only candidate and approval evidence bytes',
     );
   }
   for (const stepName of [
@@ -1762,8 +1705,8 @@ export function validateReleaseWorkflow(root, config) {
     );
   }
   if (
-    JSON.stringify(structuredPublishJob)
-      !== JSON.stringify(EXPECTED_PUBLISH_JOB)
+    structuredWorkflowDigest(structuredPublishJob)
+      !== PUBLISH_JOB_SHA256
   ) {
     throw new Error(
       'Release workflow publish job must use only the exact reviewed ordered steps',

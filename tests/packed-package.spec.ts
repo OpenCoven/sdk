@@ -32,6 +32,8 @@ import {
   readPackedPackageManifest,
 } from '../scripts/repository-metadata.mjs';
 import {
+  createPublishSafePackageManifest,
+  createPublicPackageBuildInvocation,
   installIsolatedConsumersOfflineAfterWarming,
   installIsolatedOfflineAfterWarming,
   isolatedInstallArgs,
@@ -174,6 +176,74 @@ describe('packed public packages', () => {
 
   test('exposes the managed native Cave factory from package roots', () => {
     expect(createManagedCaveClient).toBeTypeOf('function');
+  });
+
+  test('builds public packages with the authenticated Node and exact tsup entrypoint', () => {
+    const invocation = createPublicPackageBuildInvocation({
+      root,
+      packageMetadata: PUBLIC_PACKAGES[0]!,
+      nodePath: '/opt/hostedtoolcache/node/24.18.1/x64/bin/node',
+    });
+
+    expect(invocation.command).toBe(
+      '/opt/hostedtoolcache/node/24.18.1/x64/bin/node',
+    );
+    expect(invocation.args[0]).toMatch(
+      /node_modules\/tsup\/dist\/cli-default\.js$/u,
+    );
+    expect(invocation.args[0]).not.toContain('node_modules/.bin');
+    expect(invocation.args.slice(1)).toEqual([
+      '--config',
+      'tsup.config.ts',
+    ]);
+    expect(invocation.cwd).toBe(resolve(root, 'packages/core'));
+  });
+
+  test('removes publish lifecycle hooks before invoking pnpm pack', () => {
+    const artifactContext = createOwnedTempDirectory({
+      prefix: 'opencoven-publish-safe-pack-spec',
+      childSegments: ['package', 'tarballs'],
+    });
+    const packageRoot = resolve(artifactContext.rootPath, 'package');
+    const tarballRoot = resolve(artifactContext.rootPath, 'tarballs');
+    const manifest = createPublishSafePackageManifest(
+      {
+        name: '@opencoven/sdk-core',
+        version: '0.1.0',
+        private: false,
+        scripts: {
+          build: 'tsup --config tsup.config.ts',
+          prepack:
+            'node -e "require(\'node:fs\').writeFileSync(\'prepack-ran\',\'yes\')"',
+          prepublishOnly: 'node require-release-authorization.mjs',
+          postpublish: 'node exfiltrate.mjs',
+        },
+      },
+      '@opencoven/sdk-core',
+    );
+
+    expect(manifest.scripts).toEqual({
+      build: 'tsup --config tsup.config.ts',
+    });
+    writeFileSync(
+      resolve(packageRoot, 'package.json'),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+    packageArtifactHelpers.runPnpm(
+      ['pack', '--pack-destination', tarballRoot],
+      packageRoot,
+    );
+    expect(existsSync(resolve(packageRoot, 'prepack-ran'))).toBe(false);
+    const packedManifest = JSON.parse(
+      readTarballFile(
+        packageArtifactHelpers.findTarball(tarballRoot),
+        'package.json',
+      ),
+    ) as { scripts?: Record<string, string> };
+    expect(packedManifest.scripts).toEqual({
+      build: 'tsup --config tsup.config.ts',
+    });
+    cleanupOwnedTempRoot(artifactContext);
   });
 
   test('warms isolated installs before enforcing offline resolution', () => {
