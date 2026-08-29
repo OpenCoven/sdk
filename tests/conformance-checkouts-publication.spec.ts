@@ -80,6 +80,23 @@ function createPrivateDirectory(prefix: string): string {
   return realpathSync(root);
 }
 
+function findPublicationTemporaryPath(outputRoot: string): string {
+  const rootTemporary = readdirSync(outputRoot).find((name) =>
+    name.endsWith('.tmp'),
+  );
+  if (rootTemporary !== undefined) {
+    return resolve(outputRoot, rootTemporary);
+  }
+  const legacyStagingRoot = resolve(outputRoot, '.publication-staging');
+  const stagingTemporary = readdirSync(legacyStagingRoot).find((name) =>
+    name.endsWith('.tmp'),
+  );
+  if (stagingTemporary === undefined) {
+    throw new Error('Expected a publication temporary file.');
+  }
+  return resolve(legacyStagingRoot, stagingTemporary);
+}
+
 afterEach(() => {
   for (const root of roots.splice(0)) {
     rmSync(root, { force: true, recursive: true });
@@ -413,6 +430,140 @@ describe('conformance evidence publication', () => {
     ).toEqual([]);
   });
 
+  test('rejects a same-inode rewrite before publication', () => {
+    const outputRoot = createPrivateDirectory(
+      'opencoven-conformance-pre-link-rewrite-',
+    );
+    const publishEvidenceAtomically = requiredFunction(
+      'publishEvidenceAtomically',
+    );
+
+    expect(() =>
+      publishEvidenceAtomically(
+        outputRoot as never,
+        'evidence.json' as never,
+        '{"reviewed":true}\n' as never,
+        {
+          beforeLink() {
+            writeFileSync(
+              findPublicationTemporaryPath(outputRoot),
+              '{"forged":true}\n',
+            );
+          },
+        } as never,
+      ),
+    ).toThrow('Prepared evidence content changed before publication');
+    expect(existsSync(resolve(outputRoot, 'evidence.json'))).toBe(false);
+  });
+
+  test('rolls back a forged destination after the prepared path is replaced', () => {
+    const outputRoot = createPrivateDirectory(
+      'opencoven-conformance-path-replacement-',
+    );
+    const publishEvidenceAtomically = requiredFunction(
+      'publishEvidenceAtomically',
+    );
+
+    expect(() =>
+      publishEvidenceAtomically(
+        outputRoot as never,
+        'evidence.json' as never,
+        '{"reviewed":true}\n' as never,
+        {
+          afterPreparedVerifyBeforeLink() {
+            const temporaryPath = findPublicationTemporaryPath(outputRoot);
+            renameSync(temporaryPath, `${temporaryPath}.displaced`);
+            writeFileSync(temporaryPath, '{"forged":true}\n', {
+              flag: 'wx',
+              mode: 0o600,
+            });
+          },
+        } as never,
+      ),
+    ).toThrow('Prepared evidence path no longer names the prepared descriptor');
+    expect(existsSync(resolve(outputRoot, 'evidence.json'))).toBe(false);
+  });
+
+  test('does not expose a same-inode rewrite after the final pre-link hook', () => {
+    const outputRoot = createPrivateDirectory(
+      'opencoven-conformance-final-pre-link-rewrite-',
+    );
+    const publishEvidenceAtomically = requiredFunction(
+      'publishEvidenceAtomically',
+    );
+
+    expect(() =>
+      publishEvidenceAtomically(
+        outputRoot as never,
+        'evidence.json' as never,
+        '{"reviewed":true}\n' as never,
+        {
+          afterPreparedVerifyBeforeLink() {
+            const temporaryPath = findPublicationTemporaryPath(outputRoot);
+            chmodSync(temporaryPath, 0o600);
+            writeFileSync(temporaryPath, '{"forged":true}\n');
+            expect(existsSync(resolve(outputRoot, 'evidence.json'))).toBe(
+              false,
+            );
+          },
+        } as never,
+      ),
+    ).toThrow('Prepared evidence content changed before publication');
+    expect(existsSync(resolve(outputRoot, 'evidence.json'))).toBe(false);
+  });
+
+  test('rejects a same-inode rewrite after linking the destination', () => {
+    const outputRoot = createPrivateDirectory(
+      'opencoven-conformance-post-link-rewrite-',
+    );
+    const publishEvidenceAtomically = requiredFunction(
+      'publishEvidenceAtomically',
+    );
+
+    expect(() =>
+      publishEvidenceAtomically(
+        outputRoot as never,
+        'evidence.json' as never,
+        '{"reviewed":true}\n' as never,
+        {
+          afterLinkBeforeVerify() {
+            chmodSync(resolve(outputRoot, 'evidence.json'), 0o600);
+            writeFileSync(
+              resolve(outputRoot, 'evidence.json'),
+              '{"forged":true}\n',
+            );
+          },
+        } as never,
+      ),
+    ).toThrow('Published evidence content changed during publication');
+    expect(existsSync(resolve(outputRoot, 'evidence.json'))).toBe(false);
+  });
+
+  test('rejects a same-inode rewrite after removing the temporary link', () => {
+    const outputRoot = createPrivateDirectory(
+      'opencoven-conformance-final-rewrite-',
+    );
+    const publishEvidenceAtomically = requiredFunction(
+      'publishEvidenceAtomically',
+    );
+
+    expect(() =>
+      publishEvidenceAtomically(
+        outputRoot as never,
+        'evidence.json' as never,
+        '{"reviewed":true}\n' as never,
+        {
+          afterTempUnlinkBeforeFinalVerify() {
+            const outputPath = resolve(outputRoot, 'evidence.json');
+            chmodSync(outputPath, 0o600);
+            writeFileSync(outputPath, '{"forged":true}\n');
+          },
+        } as never,
+      ),
+    ).toThrow('Published evidence content changed during publication');
+    expect(existsSync(resolve(outputRoot, 'evidence.json'))).toBe(false);
+  });
+
   test('allows exactly one simultaneous CLI publisher to create the destination', async () => {
     const outputRoot = createPrivateDirectory(
       'opencoven-conformance-simultaneous-',
@@ -440,7 +591,13 @@ describe('conformance evidence publication', () => {
           );
           process.exit(0);
         } catch (error) {
-          if (error instanceof Error && error.message.includes('Refusing to overwrite')) {
+          if (
+            error instanceof Error
+            && (
+              error.message.includes('Refusing to overwrite')
+              || error.message.includes('publication lock')
+            )
+          ) {
             process.exit(2);
           }
           throw error;
@@ -500,7 +657,6 @@ describe('conformance evidence publication', () => {
       ),
     ).toThrow('injected durability failure');
     expect(existsSync(resolve(outputRoot, 'evidence.json'))).toBe(false);
-    expect(readdirSync(outputRoot)).toEqual(['.publication-staging']);
-    expect(readdirSync(resolve(outputRoot, '.publication-staging'))).toEqual([]);
+    expect(readdirSync(outputRoot)).toEqual([]);
   });
 });

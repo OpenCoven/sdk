@@ -206,5 +206,22 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(resultsReadme).toContain('There is no passing record yet.');
+
+    const workflowDocument = readFileSync(
+      resolve(
+        workspaceRoot,
+        'docs/workflows/client-v1-cross-repository-conformance.md',
+      ),
+      'utf8',
+    );
+    expect(workflowDocument).toContain(
+      'dbbcf3a71155730f0e707e181ef3ca7e770c719f',
+    );
+    expect(workflowDocument).toMatch(
+      /has no schema-v2 platform\s+evidence producer/u,
+    );
+    expect(workflowDocument).not.toContain(
+      'test:phase1-conformance --',
+    );
   });
 });

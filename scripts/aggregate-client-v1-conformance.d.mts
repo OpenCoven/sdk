@@ -73,9 +73,12 @@ export function publishEvidenceAtomically(
   bytes: string,
   options?: {
     platform?: NodeJS.Platform;
+    afterTempFsyncBeforeCommit?: () => void;
     beforeLink?: () => void;
+    afterPreparedVerifyBeforeLink?: () => void;
     afterLinkBeforeVerify?: () => void;
     afterLink?: () => void;
+    afterTempUnlinkBeforeFinalVerify?: () => void;
   },
 ): string;
 

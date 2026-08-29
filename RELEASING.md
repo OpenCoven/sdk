@@ -24,29 +24,58 @@ release-gate matrix is narrower than the published package Node runtime
 support and does not by itself authorize release; #38 still requires one
 passing evidence record for each target.
 
-After the native consumer has produced those three records, validate and
-combine them with `corepack pnpm@10.34.0 conformance:aggregate -- ...` as
-documented in
+The frozen Chat commit
+`dbbcf3a71155730f0e707e181ef3ca7e770c719f` has no schema-v2 platform
+evidence producer. It contains only the older contract canary, so there is no
+truth-preserving adapter for the required platform, Cave, SDK, Chat, isolation,
+scan, and protected-job claims. Aggregation and release readiness intentionally
+fail closed until a reviewed lock update names an existing exact compatible
+producer commit and protected workflow, as documented in
 [`docs/workflows/client-v1-cross-repository-conformance.md`](docs/workflows/client-v1-cross-repository-conformance.md).
-The SDK command imports Cave's exact locked committed assertion engine and
-validates already-completed evidence; it does not execute a platform journey
-or change release state.
 
-Before advancing this candidate, review the canonical aggregate, copy its exact
-bytes to
+Before advancing this candidate after that blocker is resolved, review the
+canonical aggregate, copy its exact bytes to
 `docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json`,
-and set `release.config.json` `conformanceEvidence.aggregateRecord` to that
-relative path in the same reviewed change. Confirm the three input records came
-from the named protected platform jobs; the deterministic parser validates
-their contents but does not authenticate arbitrary local JSON. Then run:
+and add the sibling reviewed evidence index
+`docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.index.json`.
+The reviewed evidence index must bind the aggregate and three primary record
+digests to exact protected run/job IDs, artifact digests, GitHub artifact
+attestation subject digests, and attestation-bundle digests. Reviewers must
+download each named protected artifact, run GitHub artifact attestation
+verification against `OpenCoven/chat`, and confirm all indexed digests before
+setting `release.config.json` `conformanceEvidence.aggregateRecord` in the same
+reviewed change, using:
 
 ```bash
-corepack pnpm@10.34.0 verify:release --require-conformance-evidence
+gh attestation verify <artifact> \
+  --repo OpenCoven/chat \
+  --signer-workflow OpenCoven/chat/<locked-workflow-path> \
+  --signer-digest <locked-producer-commit> \
+  --source-digest <locked-producer-commit> \
+  --predicate-type https://slsa.dev/provenance/v1 \
+  --deny-self-hosted-runners \
+  --bundle <attestation-bundle> \
+  --format json
 ```
 
-The current value remains `null`, so candidate advancement is intentionally
-blocked until a real named three-platform aggregate exists. This does not open
-`publishingEnabled`, change package privacy, create a tag, or authorize npm.
+The reviewed index records the exact artifact, subject, and bundle digests
+accepted by that command. The local validator checks those committed bindings;
+the cryptographic GitHub verification is the required human review step.
+
+Then run:
+
+```bash
+corepack pnpm@10.34.0 verify:release
+```
+
+The CLI requires named evidence even when no flag is supplied. The current
+value remains `null`, so candidate advancement fails specifically for missing
+evidence. A configured record must be a committed, clean regular file at the
+exact candidate path with its committed sibling index. Release readiness
+revalidates exact lock, schema, registry, validator, candidate, and primary
+record bytes, then uses the exact clean frozen Cave checkout to re-render Cave
+records. This does not open `publishingEnabled`, change package privacy, create
+a tag, or authorize npm.
 
 Before unlocking, create and protect the `npm-release` environment, confirm
 branch protections and required checks, confirm npm organization ownership,
@@ -91,9 +120,20 @@ the exact checked-out `HEAD`.
 ## 5. Verify-mode workflow
 
 Run `.github/workflows/release.yml` from `main` with mode `verify` and the
-exact fixed version. It performs canonical verification, validates the tag,
-creates four tarballs plus `release-manifest.json`, verifies every digest, and
-uploads the immutable workflow artifact. Verify mode never publishes.
+exact fixed version. Both verify and publish preflight require named evidence;
+before any repository-controlled dependency installation, the workflow checks
+that the aggregate/index are tracked and clean and that the workflow, verifier,
+builder, publisher, package lock, and their runtime dependencies are byte-equal
+to the recorded validator commit. It then checks out the exact frozen Cave
+authority, performs canonical verification, validates the tag, clones the
+frozen SDK candidate commit into an owned detached source root, installs with
+the frozen lock, and builds and packs from that committed clone. It creates four tarballs
+plus `release-manifest.json` and requires them to match the frozen
+sizes and digests. The publish job performs the same runtime pin without running
+`pnpm install` and rechecks downloaded artifacts against the frozen candidate
+before npm. Direct canonical artifact creation also requires named evidence;
+unit/package verification opts out explicitly without becoming a release
+path. Verify mode never publishes.
 
 ## 6. First-publish bootstrap
 

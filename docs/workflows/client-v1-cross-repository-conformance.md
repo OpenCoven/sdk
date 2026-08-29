@@ -6,8 +6,8 @@ store, publish packages, or claim that conformance has passed.
 
 The contract validates record contents and committed source identities; it is
 not a signature service for arbitrary local JSON. Release operators must admit
-records only from the named protected platform jobs and review those job/artifact
-identities before retaining the aggregate.
+records only from the named protected platform jobs and review those
+job/artifact identities before retaining the aggregate and its evidence index.
 
 Chat's separate native harness must later produce one observed record for each
 platform, in this exact matrix and order:
@@ -20,7 +20,13 @@ Aggregation runs only on a Darwin or Linux coordinator. Windows remains a
 required record platform, but Node does not expose the directory-relative
 publication primitives needed to support the aggregator safely on Windows.
 
-There is no passing aggregate in this repository yet.
+There is no passing aggregate in this repository yet. The exact frozen Chat
+commit `dbbcf3a71155730f0e707e181ef3ca7e770c719f` has no schema-v2 platform
+evidence producer, no `scripts/phase1-conformance.mjs`, and no
+`test:phase1-conformance` package script. The lock records that external
+blocker, and both aggregation and release readiness fail closed until a
+reviewed lock update names an exact compatible producer commit and protected
+workflow.
 
 ## Frozen reviewed inputs
 
@@ -39,8 +45,18 @@ is the single machine-readable artifact and source lock. It freezes:
 - Cave's assertion engine, source fixture, and HPKE vector file metadata;
 - Chat's consumer lock and vendored SDK package metadata;
 - Node, pnpm, Rust, and Tauri versions;
-- harness and scanner names and versions; and
-- the assertion-registry path, size, and SHA-256.
+- scanner names and versions;
+- the exact ordered platform matrix;
+- the immutable schema identity, path, version, size, and SHA-256;
+- the assertion-registry path, size, and SHA-256; and
+- the frozen Chat package manifest and available contract-canary bytes that
+  prove the frozen commit cannot produce this schema.
+
+The schema identity is
+`urn:opencoven:schema:client-v1-cross-repository-platform-evidence:2`, not a
+mutable branch URL. The schema embeds the exact assertion-registry metadata.
+Runtime validation checks lock bytes to schema bytes, then the schema binding
+to the exact registry bytes and ordered matrix.
 
 The validator commit is deliberately **not** the package candidate commit. Each
 platform record identifies the later SDK validator commit and tree separately.
@@ -51,46 +67,22 @@ contains the complete frozen assertion registry. Its Cave list was imported
 once from the exact locked Cave engine with TTL and authority-takeover enabled.
 Runtime aggregation does not ask the engine to select IDs dynamically.
 
-## Platform harness production interface
+## Platform producer compatibility blocker
 
-The native producer remains Chat-owned. Its implementation may evolve in a
-separate Chat commit, but a compatible invocation must receive these six clean
-Git checkouts:
+The frozen Chat source contains only `scripts/contract-canary.mjs`, invoked by
+`test:contract-canary`. That command accepts SDK and Cave roots and verifies a
+contract canary; it does not accept the six documented conformance checkouts
+and does not emit the schema-v2 platform record below. There are therefore no
+legacy platform records with enough independently verifiable information to
+adapt without inventing Cave, SDK, Chat, isolation, scan, environment, or
+protected-job claims.
 
-| Checkout | Required identity |
-| --- | --- |
-| SDK candidate | Frozen candidate commit and tree from the lock |
-| SDK validator | The later committed validator/schema/registry/lock checkout |
-| Cave | Frozen Cave commit and tree from the lock |
-| Coven | Frozen Coven commit and tree from the lock |
-| Chat production source | Frozen Chat commit and tree from the lock |
-| Chat harness | Exact harness commit and tree named by the produced records |
-
-Before running any authority bytes, the producer must validate each checkout's
-Git top level, canonical GitHub repository identity, exact `HEAD`, exact
-`HEAD^{tree}`, and the absence of staged, unstaged, and untracked files. It must
-also reject ignored untracked files; use fresh detached aggregation checkouts,
-not build worktrees containing ignored dependency or output directories. It
-must not use workspace links or source-checkout package imports. The SDK
-packages come only from the four locked Chat vendor paths.
-
-A Chat invocation is expected to follow this interface, with operator-specific
-paths supplied at runtime and never retained:
-
-```bash
-corepack pnpm@10.34.0 test:phase1-conformance -- \
-  --chat-root <clean-chat-source-checkout> \
-  --chat-harness-root <clean-chat-harness-checkout> \
-  --sdk-root <clean-sdk-candidate-checkout> \
-  --sdk-evidence-root <clean-sdk-validator-checkout> \
-  --cave-root <clean-cave-checkout> \
-  --coven-root <clean-coven-checkout>
-```
-
-The producer writes one JSON record outside all source checkouts. It must run
-the exact committed Cave engine bytes, not the mutable working-tree file. It
-must fail without retaining a record if any assertion, cleanup proof, checkout
-proof, artifact proof, or scan fails.
+This SDK intentionally provides no schema-v1-to-v2 upcast. A future compatible
+producer requires a reviewed lock change that names an existing exact Chat
+commit and tree, committed package manifest and harness bytes, record schema
+version 2, and the exact protected workflow path, job, and environment. Until
+then, `conformance:aggregate` reports the frozen producer blocker before
+accepting records.
 
 ## Exact platform record
 
@@ -151,9 +143,10 @@ The validator normalizes keys across case and punctuation before rejecting
 pairing secrets, bearer/token/password/credential/private-key/API-key fields;
 prompt/message/content/attachment/command-output/private-cause fields;
 headers, URLs, socket or pipe handles; and raw diagnostics. It also rejects
-Unix private/home-like absolute paths (including `/mnt`, `/private`, and
-`/var`), Windows drive/UNC/device paths, named pipes, abstract Unix sockets,
-URLs, and email-shaped operator identifiers.
+all absolute POSIX paths, Windows drive/UNC/device paths, named pipes,
+abstract Unix sockets, `file:` and network URLs, and email-shaped operator
+identifiers. These values are rejected after punctuation as well as at string
+boundaries, including inside Cave detail and finding text.
 
 Approved UUID invocation IDs, 32-hex opaque root IDs, SHA-256 values, versions,
 diagnostic IDs, repository slugs, relative locked artifact paths, and public
@@ -161,58 +154,82 @@ Client v1 API routes remain allowed.
 
 ## Aggregate three completed records
 
-Run from the exact clean SDK validator checkout:
-
-```bash
-corepack pnpm@10.34.0 conformance:aggregate -- \
-  --candidate-root <clean-sdk-candidate-checkout> \
-  --cave-root <clean-cave-checkout> \
-  --coven-root <clean-coven-checkout> \
-  --chat-root <clean-chat-source-checkout> \
-  --harness-root <clean-chat-harness-checkout> \
-  --record <darwin-record.json> \
-  --record <linux-record.json> \
-  --record <windows-record.json> \
-  --out acc38488f00860d246c3c553375634d64806eabb.json
-```
-
-`--out` is a filename, not a path. The CLI publishes only under the fixed
-owner-private root:
+Aggregation becomes available only after the frozen lock names a compatible
+producer. It then requires the exact clean candidate, Cave, Coven, Chat source,
+and Chat producer checkouts plus one protected-job record for every platform
+in locked order. `--out` remains a filename, not a path, and publication is
+restricted to the fixed owner-private root:
 
 ```text
 .artifacts/client-v1-cross-repository-results/
 ```
 
-The destination must not exist. The CLI prepares and `fsync`s complete UTF-8
-bytes, uses an owner-private staging directory inside the output root and a
-unique per-process temporary file, anchors publication operations to the
-validated output directory, and hard-links the complete file into place.
-The hard link's no-overwrite `EEXIST` result serializes concurrent creators
-without a persistent stale lock. The CLI verifies the output inode and parent
-identity before and after publication and `fsync`s both directories. Symlink
-roots, unsafe ownership or permissions, parent replacement, an existing
-destination, and concurrent creators fail closed. Rollback removes only files
-whose inode matches the CLI's exact temporary file.
+The destination must not exist. The CLI holds an exclusive owner-private
+directory lock, creates the temporary file directly in the fixed evidence
+directory, and keeps its descriptor open from the initial write through final
+publication verification. It verifies exact bytes through that descriptor
+before linking, opens the destination without following symlinks, verifies
+descriptor identity and bytes on both names, removes the temporary name,
+requires one remaining link, verifies the bytes again, and `fsync`s the file
+and directory. Same-inode rewrites, temporary-path replacement, output-root or
+lock replacement, unexpected aliases, concurrent creators, and durability
+failures trigger exact-inode rollback and fail closed.
 
 Aggregate JSON is recursively key-sorted, two-space indented UTF-8 with LF
 line endings and exactly one trailing newline. Arrays retain their contractual
 order. Platform input order and object key order therefore cannot change the
 published bytes.
 
-After human review, copy the exact aggregate bytes into:
+After protected-job and human review, copy the exact aggregate bytes into:
 
 ```text
 docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json
 ```
 
-and set `release.config.json` `conformanceEvidence.aggregateRecord` to that
-relative filename in the same reviewed change. Do not set it before a real
-three-platform aggregate exists. Release readiness reparses the complete
-canonical aggregate, revalidates every embedded platform record against the
-lock, registry, and schema loaded from the aggregate's recorded validator
-commit, recomputes assertion totals, binds the candidate back to
-`release.config.json`, and verifies the recorded validator tree, contract, and
-schema bytes from Git history.
+Create the sibling reviewed evidence index:
+
+```text
+docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.index.json
+```
+
+The index binds the committed aggregate digest, each canonical primary
+platform-record digest, the exact producer commit/harness/workflow identity,
+protected run/job IDs, artifact digest, attestation subject digest, and
+attestation-bundle digest. It also freezes the SLSA predicate, signer workflow,
+signer digest, source digest, and the prohibition on self-hosted runners.
+
+For each platform, reviewers must download the named protected-job artifact
+and bundle and run the equivalent of:
+
+```bash
+gh attestation verify <artifact> \
+  --repo OpenCoven/chat \
+  --signer-workflow OpenCoven/chat/<locked-workflow-path> \
+  --signer-digest <locked-producer-commit> \
+  --source-digest <locked-producer-commit> \
+  --predicate-type https://slsa.dev/provenance/v1 \
+  --deny-self-hosted-runners \
+  --bundle <attestation-bundle> \
+  --format json
+```
+
+Reviewers then verify the downloaded artifact digest and attestation-bundle
+digest, extract the canonical record, and verify its digest against the index.
+The local validator deliberately does not turn self-asserted run IDs into a
+network trust oracle; the cryptographic GitHub verification and review are the
+admission step required by the committed index. Only then may the aggregate,
+index, and
+`release.config.json` `conformanceEvidence.aggregateRecord` change be reviewed
+together.
+
+Release readiness reads only committed regular files at `HEAD`, rejects any
+working-tree drift, requires the exact sibling evidence index, revalidates the
+lock-schema-registry chain, and checks validator/candidate ancestry and bytes
+from Git history. The release workflow checks out the exact frozen Cave source
+and supplies it through `OPENCOVEN_CAVE_AUTHORITY_ROOT`; the verifier executes
+the exact committed Cave engine bytes and re-renders every Cave record rather
+than trusting aggregate-copied summaries, findings, scan labels, isolation
+labels, or harness claims.
 
 Run the focused validator suite with:
 

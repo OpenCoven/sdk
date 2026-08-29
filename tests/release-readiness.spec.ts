@@ -1,3 +1,4 @@
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   cpSync,
   mkdtempSync,
@@ -16,6 +17,7 @@ import {
   readReleaseConfig,
   validateReleaseReadiness,
 } from '../scripts/release-readiness.mjs';
+import * as releaseReadinessModule from '../scripts/release-readiness.mjs';
 import type {
   NativeConformancePlatforms,
   ReleaseConfig,
@@ -108,6 +110,21 @@ const EXTRA_PLATFORM_MATRIX: MutableReleaseConfig['nativeConformancePlatforms'] 
   'win32-x64',
   'linux-arm64',
 ];
+const VALIDATOR_RUNTIME_PATHS = [
+  '.github/workflows/release.yml',
+  'package.json',
+  'pnpm-lock.yaml',
+  'scripts/aggregate-client-v1-conformance.mjs',
+  'scripts/conformance-contract.mjs',
+  'scripts/create-release-artifacts.mjs',
+  'scripts/owned-temp-directory.mjs',
+  'scripts/package-artifacts.mjs',
+  'scripts/publish-release-artifacts.mjs',
+  'scripts/release-readiness.mjs',
+  'scripts/repository-metadata.mjs',
+  'scripts/verify-committed-conformance-evidence.mjs',
+  'scripts/verify-release-readiness.mjs',
+] as const;
 
 function createReleaseFixture(): string {
   const fixture = mkdtempSync(resolve(tmpdir(), 'opencoven-release-readiness-'));
@@ -160,6 +177,33 @@ function updateJson<T extends object>(path: string, update: (value: T) => void):
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function git(root: string, args: string[]): string {
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'commit.gpgsign',
+      GIT_CONFIG_VALUE_0: 'false',
+    },
+  }).trim();
+}
+
+function initializeReleaseFixtureRepository(root: string): void {
+  git(root, ['init', '--quiet']);
+  git(root, ['config', 'user.name', 'Release Readiness Test']);
+  git(root, ['config', 'user.email', 'release-readiness@example.invalid']);
+  git(root, [
+    'remote',
+    'add',
+    'origin',
+    'https://github.com/OpenCoven/sdk.git',
+  ]);
+  git(root, ['add', '.']);
+  git(root, ['commit', '--quiet', '-m', 'fixture']);
+}
+
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) {
     rmSync(fixture, { recursive: true, force: true });
@@ -167,6 +211,51 @@ afterEach(() => {
 });
 
 describe('release readiness contract', () => {
+  test('requires conformance evidence even when the CLI flag is omitted', () => {
+    const result = spawnSync(
+      process.execPath,
+      ['./scripts/verify-release-readiness.mjs'],
+      {
+        cwd: workspaceRoot,
+        encoding: 'utf8',
+      },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain(
+      'release.config.json must name a passing SDK #38 aggregate record',
+    );
+  });
+
+  test('wires the non-optional evidence gate into every canonical release path', () => {
+    const manifest = JSON.parse(
+      readFileSync(resolve(workspaceRoot, 'package.json'), 'utf8'),
+    ) as { scripts: Record<string, string> };
+    const workflow = readFileSync(
+      resolve(workspaceRoot, '.github/workflows/release.yml'),
+      'utf8',
+    );
+
+    expect(manifest.scripts['verify:release']).toBe(
+      'node ./scripts/verify-release-readiness.mjs --require-conformance-evidence',
+    );
+    expect(manifest.scripts.verify).toContain('verify:release');
+    expect(workflow).toContain('run: corepack pnpm@10.34.0 verify');
+    expect(
+      workflow.match(/--require-conformance-evidence/gu),
+    ).toHaveLength(2);
+    const publishJobIndex = workflow.indexOf('\n  publish:\n');
+    expect(publishJobIndex).toBeGreaterThan(0);
+    const preflightJob = workflow.slice(0, publishJobIndex);
+    const publishJob = workflow.slice(publishJobIndex);
+    expect(
+      preflightJob.indexOf('name: Pin reviewed release runtime'),
+    ).toBeLessThan(preflightJob.indexOf('name: Install dependencies'));
+    expect(publishJob).toContain('name: Pin reviewed release runtime');
+    expect(publishJob).not.toContain('name: Install dependencies');
+  });
+
   test('blocks candidate advancement until a named passing aggregate exists', () => {
     const config = readReleaseConfig(workspaceRoot);
     expect(config.conformanceEvidence).toEqual({
@@ -180,39 +269,23 @@ describe('release readiness contract', () => {
         requireConformanceEvidence: true,
       }),
     ).toThrow('release.config.json must name a passing SDK #38 aggregate record');
+  });
 
+  test('rejects a fabricated untracked aggregate at the configured path', () => {
     const fixture = createReleaseFixture();
     const recordPath =
       'docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json';
+    updateJson<MutableReleaseConfig>(
+      resolve(fixture, 'release.config.json'),
+      (config) => {
+        config.conformanceEvidence.aggregateRecord = recordPath;
+      },
+    );
+    initializeReleaseFixtureRepository(fixture);
     mkdirSync(resolve(fixture, dirname(recordPath)), { recursive: true });
     writeFileSync(
       resolve(fixture, recordPath),
-      `${JSON.stringify(
-        {
-          schemaVersion: 2,
-          issue: 'OpenCoven/sdk#38',
-          kind: 'client-v1-cross-repository-conformance',
-          canonicalPlatforms: SUPPORTED_PLATFORMS,
-          candidate: {
-            provenance: {
-              repository: 'OpenCoven/sdk',
-              commit: 'acc38488f00860d246c3c553375634d64806eabb',
-              tree: '643be6db60736dc8bd7b01873dcd1c14f26d93ef',
-            },
-          },
-          summary: {
-            status: 'passed',
-          },
-        },
-        null,
-        2,
-      )}\n`,
-    );
-    updateJson<MutableReleaseConfig>(
-      resolve(fixture, 'release.config.json'),
-      (fixtureConfig) => {
-        fixtureConfig.conformanceEvidence.aggregateRecord = recordPath;
-      },
+      '{"summary":{"status":"passed"}}\n',
     );
 
     expect(() =>
@@ -221,7 +294,146 @@ describe('release readiness contract', () => {
         requireConformanceEvidence: true,
       }),
     ).toThrow(
-      'release.config.json conformance evidence record is not a complete canonical aggregate',
+      'release.config.json conformance evidence record must be a committed tracked regular file',
+    );
+  });
+
+  test('rejects working-tree drift in a configured committed aggregate', () => {
+    const fixture = createReleaseFixture();
+    const recordPath =
+      'docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json';
+    mkdirSync(resolve(fixture, dirname(recordPath)), { recursive: true });
+    writeFileSync(resolve(fixture, recordPath), '{}\n');
+    updateJson<MutableReleaseConfig>(
+      resolve(fixture, 'release.config.json'),
+      (config) => {
+        config.conformanceEvidence.aggregateRecord = recordPath;
+      },
+    );
+    initializeReleaseFixtureRepository(fixture);
+    writeFileSync(
+      resolve(fixture, recordPath),
+      '{"summary":{"status":"passed"}}\n',
+    );
+
+    expect(() =>
+      validateReleaseReadiness({
+        root: fixture,
+        requireConformanceEvidence: true,
+      }),
+    ).toThrow(
+      'release.config.json conformance evidence record must match its committed bytes',
+    );
+  });
+
+  test('keeps explicit non-release verification usable after evidence is configured', () => {
+    const fixture = createReleaseFixture();
+    const recordPath =
+      'docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json';
+    updateJson<MutableReleaseConfig>(
+      resolve(fixture, 'release.config.json'),
+      (config) => {
+        config.conformanceEvidence.aggregateRecord = recordPath;
+      },
+    );
+
+    expect(
+      validateReleaseReadiness({
+        root: fixture,
+        requireConformanceEvidence: false,
+      }),
+    ).toEqual({
+      version: '0.1.0',
+      publishingEnabled: false,
+      packages: PUBLIC_PACKAGES.map(({ packageName }) => packageName),
+      conformanceEvidenceRecord: null,
+    });
+  });
+
+  test('requires every verifier runtime dependency to match the recorded validator commit', () => {
+    const fixture = createReleaseFixture();
+    for (const path of VALIDATOR_RUNTIME_PATHS) {
+      mkdirSync(resolve(fixture, dirname(path)), { recursive: true });
+      cpSync(resolve(workspaceRoot, path), resolve(fixture, path));
+    }
+    initializeReleaseFixtureRepository(fixture);
+    const validatorCommit = git(fixture, ['rev-parse', 'HEAD']);
+    writeFileSync(
+      resolve(fixture, 'scripts/conformance-contract.mjs'),
+      'export const drifted = true;\n',
+    );
+    git(fixture, ['add', 'scripts/conformance-contract.mjs']);
+    git(fixture, ['commit', '--quiet', '-m', 'drift verifier']);
+    const releaseCommit = git(fixture, ['rev-parse', 'HEAD']);
+    const validateValidatorRuntimeFiles = (
+      releaseReadinessModule as unknown as Record<string, unknown>
+    ).validateValidatorRuntimeFiles;
+
+    expect(
+      validateValidatorRuntimeFiles,
+      'validateValidatorRuntimeFiles must be exported',
+    ).toBeTypeOf('function');
+    expect(() =>
+      (
+        validateValidatorRuntimeFiles as (
+          root: string,
+          validatorCommit: string,
+          releaseCommit: string,
+        ) => void
+      )(fixture, validatorCommit, releaseCommit),
+    ).toThrow(
+      'Validator runtime file scripts/conformance-contract.mjs differs from the recorded validator commit',
+    );
+  });
+
+  test('rejects uncommitted verifier runtime drift before executing it', () => {
+    const fixture = createReleaseFixture();
+    for (const path of VALIDATOR_RUNTIME_PATHS) {
+      mkdirSync(resolve(fixture, dirname(path)), { recursive: true });
+      cpSync(resolve(workspaceRoot, path), resolve(fixture, path));
+    }
+    initializeReleaseFixtureRepository(fixture);
+    const commit = git(fixture, ['rev-parse', 'HEAD']);
+    writeFileSync(
+      resolve(fixture, 'scripts/conformance-contract.mjs'),
+      'export const worktreeDrift = true;\n',
+    );
+
+    expect(() =>
+      releaseReadinessModule.validateValidatorRuntimeFiles(
+        fixture,
+        commit,
+        commit,
+      ),
+    ).toThrow(
+      'Validator runtime file scripts/conformance-contract.mjs does not match the release commit working tree',
+    );
+  });
+
+  test('pins release artifact and workflow entrypoints to the validator commit', () => {
+    const fixture = createReleaseFixture();
+    for (const path of VALIDATOR_RUNTIME_PATHS) {
+      mkdirSync(resolve(fixture, dirname(path)), { recursive: true });
+      cpSync(resolve(workspaceRoot, path), resolve(fixture, path));
+    }
+    initializeReleaseFixtureRepository(fixture);
+    const validatorCommit = git(fixture, ['rev-parse', 'HEAD']);
+    writeFileSync(
+      resolve(fixture, 'scripts/create-release-artifacts.mjs'),
+      'export const substitutedBuilder = true;\n',
+    );
+    git(fixture, ['add', 'scripts/create-release-artifacts.mjs']);
+    git(fixture, ['commit', '--quiet', '-m', 'substitute release builder']);
+    const releaseCommit = git(fixture, ['rev-parse', 'HEAD']);
+
+    expect(() =>
+      releaseReadinessModule.validateValidatorRuntimeFiles(
+        fixture,
+        validatorCommit,
+        releaseCommit,
+      ),
+    ).toThrow(
+      'Validator runtime file scripts/create-release-artifacts.mjs differs from the recorded validator commit',
     );
   });
 
@@ -236,7 +448,7 @@ describe('release readiness contract', () => {
         version: '0.1.0',
         tag: 'sdk-v0.1.0',
       }),
-    ).toThrow('Release publishing is disabled by release.config.json');
+    ).toThrow('release.config.json must name a passing SDK #38 aggregate record');
   });
 
   test('requires fixed versions and exact internal ranges', () => {
@@ -487,7 +699,7 @@ describe('release readiness contract', () => {
           throw new Error('must not execute while locked');
         },
       }),
-    ).toThrow('Release publishing is disabled by release.config.json');
+    ).toThrow('release.config.json must name a passing SDK #38 aggregate record');
   });
 
   test('requires the release workflow identity and a tag on HEAD', () => {
@@ -515,6 +727,42 @@ describe('release readiness contract', () => {
       'environment: unprotected-release',
     );
     writeFileSync(workflowPath, workflow);
+
+    expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
+      'Release workflow publish job must use environment npm-release',
+    );
+  });
+
+  test('does not accept publish protections copied into a run block', () => {
+    const fixture = createReleaseFixture();
+    const workflowPath = resolve(fixture, '.github/workflows/release.yml');
+    const original = readFileSync(workflowPath, 'utf8');
+    const publishMarker = '\n  publish:\n';
+    const publishIndex = original.indexOf(publishMarker);
+    expect(publishIndex).toBeGreaterThan(0);
+    const workflow = `${original.slice(0, publishIndex)}${publishMarker}${[
+      "    if: inputs.mode == 'publish'",
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      '      - name: Decoy publish protections',
+      '        run: |',
+      '          echo "needs: preflight"',
+      '          echo "environment: npm-release"',
+      '          echo "contents: read"',
+      '          echo "id-token: write"',
+      '          echo "attestations: write"',
+      '',
+    ].join('\n')}`;
+    writeFileSync(workflowPath, workflow);
+    expect(
+      [
+        'needs: preflight',
+        'environment: npm-release',
+        'contents: read',
+        'id-token: write',
+        'attestations: write',
+      ].every((value) => workflow.includes(value)),
+    ).toBe(true);
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
       'Release workflow publish job must use environment npm-release',

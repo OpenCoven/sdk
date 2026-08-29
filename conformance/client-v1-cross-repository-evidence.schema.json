@@ -1,8 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/OpenCoven/sdk/blob/main/conformance/client-v1-cross-repository-evidence.schema.json",
+  "$id": "urn:opencoven:schema:client-v1-cross-repository-platform-evidence:2",
   "title": "OpenCoven Client v1 cross-repository platform evidence",
   "description": "A single observed native-platform record for the frozen SDK 0.1 read-only conformance journey. Exact artifact and source values are supplied by client-v1-cross-repository-lock.json and enforced by the executable validator.",
+  "x-opencoven-frozen-contract": {
+    "schemaVersion": 2,
+    "platformMatrix": [
+      "darwin-arm64",
+      "linux-x64",
+      "win32-x64"
+    ],
+    "assertionRegistry": {
+      "path": "conformance/client-v1-cross-repository-assertions.json",
+      "size": 10715,
+      "sha256": "f88c4f79a35cea5c4d190ce1af5d8d28633f6c6d197f91c708470e48bd37491c"
+    }
+  },
   "type": "object",
   "additionalProperties": false,
   "required": [

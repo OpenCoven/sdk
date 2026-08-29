@@ -22,6 +22,36 @@ const schemaPath = resolve(
   'conformance/client-v1-cross-repository-evidence.schema.json',
 );
 const PLATFORMS = ['darwin-arm64', 'linux-x64', 'win32-x64'] as const;
+const TEST_COMPATIBLE_PRODUCER = {
+  status: 'compatible',
+  repository: 'OpenCoven/chat',
+  commit: 'f'.repeat(40),
+  tree: 'c'.repeat(40),
+  packageManifest: {
+    path: 'package.json',
+    size: 3_500,
+    sha256: '1'.repeat(64),
+  },
+  harness: {
+    path: 'scripts/phase1-conformance.mjs',
+    version: '0.1.0',
+    size: 120_000,
+    sha256: '2'.repeat(64),
+  },
+  command: 'test:phase1-conformance',
+  recordSchemaVersion: 2,
+  workflow: {
+    path: '.github/workflows/client-v1-conformance.yml',
+    job: 'platform-conformance',
+    environment: 'client-v1-conformance',
+    signerWorkflow:
+      'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
+    signerDigest: 'f'.repeat(40),
+    sourceDigest: 'f'.repeat(40),
+    predicateType: 'https://slsa.dev/provenance/v1',
+    denySelfHostedRunners: true,
+  },
+} as const;
 
 function sha256(bytes: string | Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -45,6 +75,15 @@ function readRegistry(): Record<string, unknown> {
     string,
     unknown
   >;
+}
+
+function createCompatibleLock(
+  lock: Record<string, unknown> = readLock(),
+): Record<string, unknown> {
+  return {
+    ...structuredClone(lock),
+    evidenceProducer: structuredClone(TEST_COMPATIBLE_PRODUCER),
+  };
 }
 
 function reverseObjectKeys(value: unknown): unknown {
@@ -181,6 +220,7 @@ function createPlatformEvidence(
   lock: Record<string, unknown>,
   registry: Record<string, unknown>,
 ) {
+  lock = createCompatibleLock(lock);
   const candidate = lock.candidate as {
     repository: string;
     commit: string;
@@ -217,10 +257,22 @@ function createPlatformEvidence(
     rustVersion: string;
     tauriVersion: string;
   };
-  const harnessContract = lock.harness as {
-    name: string;
+  const producer =
+    (
+      lock.evidenceProducer as
+        | typeof TEST_COMPATIBLE_PRODUCER
+        | { status?: string }
+    ).status === 'compatible'
+      ? (lock.evidenceProducer as typeof TEST_COMPATIBLE_PRODUCER)
+      : TEST_COMPATIBLE_PRODUCER;
+  const evidenceSchema = lock.evidenceSchema as {
+    path: string;
+    size: number;
+    sha256: string;
+  };
+  const harnessContract = producer.harness as {
+    path: string;
     version: string;
-    repository: string;
   };
   const scanners = lock.scanners as {
     redaction: { name: string; version: string };
@@ -252,7 +304,10 @@ function createPlatformEvidence(
     platform === 'win32-x64'
       ? 'windows-named-pipe-client-identity'
       : 'unix-peer-credentials';
-  const lockBytes = readFileSync(lockPath);
+  const lockBytes = Buffer.from(
+    contract.serializeCanonicalJson(lock),
+    'utf8',
+  );
   const registryBytes = readFileSync(registryPath);
   const caveRecord = caveEngine.renderConformanceRecord(caveAssertions, {
     ranAt: startedAt,
@@ -314,9 +369,9 @@ function createPlatformEvidence(
           sha256: 'a'.repeat(64),
         },
         schema: {
-          path: 'conformance/client-v1-cross-repository-evidence.schema.json',
-          size: 16_384,
-          sha256: 'b'.repeat(64),
+          path: evidenceSchema.path,
+          size: evidenceSchema.size,
+          sha256: evidenceSchema.sha256,
         },
       },
       cave: {
@@ -336,11 +391,11 @@ function createPlatformEvidence(
       },
     },
     harness: {
-      name: harnessContract.name,
+      name: harnessContract.path,
       version: harnessContract.version,
-      repository: harnessContract.repository,
-      commit: 'f'.repeat(40),
-      tree: 'c'.repeat(40),
+      repository: producer.repository,
+      commit: producer.commit,
+      tree: producer.tree,
       invocationId: '123e4567-e89b-42d3-a456-426614174000',
     },
     artifacts: {
@@ -425,10 +480,13 @@ function createPlatformEvidence(
 }
 
 function aggregate(records: Array<Record<string, unknown>>) {
-  const lock = readLock();
+  const lock = createCompatibleLock();
   const registry = readRegistry();
   const caveEngine = createCaveEngine(registry);
-  const lockBytes = readFileSync(lockPath);
+  const lockBytes = Buffer.from(
+    contract.serializeCanonicalJson(lock),
+    'utf8',
+  );
   const registryBytes = readFileSync(registryPath);
   const sources = lock.sources as {
     cave: { files: Array<{ path: string; sha256: string }> };
@@ -610,6 +668,115 @@ describe('unresolved SDK #38 conformance gaps', () => {
       expect(bytes.byteLength).toBe(expected.size);
       expect(sha256(bytes)).toBe(expected.sha256);
     }
+  });
+
+  test('binds the ordered platform matrix and immutable schema bytes through the lock', () => {
+    const lock = readLock() as {
+      schemaVersion: number;
+      platformMatrix: string[];
+      evidenceSchema: {
+        identity: string;
+        path: string;
+        version: number;
+        size: number;
+        sha256: string;
+      };
+      assertionRegistry: {
+        path: string;
+        size: number;
+        sha256: string;
+      };
+    };
+    const schemaText = readFileSync(schemaPath, 'utf8');
+    const registryText = readFileSync(registryPath, 'utf8');
+    const schema = JSON.parse(schemaText) as {
+      $id?: string;
+      'x-opencoven-frozen-contract'?: {
+        assertionRegistry?: Record<string, unknown>;
+        platformMatrix?: string[];
+        schemaVersion?: number;
+      };
+    };
+    const validateFrozenConformanceBindings = requiredFunction(
+      'validateFrozenConformanceBindings',
+    );
+
+    expect(lock.schemaVersion).toBe(2);
+    expect(lock.platformMatrix).toEqual(PLATFORMS);
+    expect(lock.evidenceSchema).toEqual({
+      identity:
+        'urn:opencoven:schema:client-v1-cross-repository-platform-evidence:2',
+      path: 'conformance/client-v1-cross-repository-evidence.schema.json',
+      version: 2,
+      size: Buffer.byteLength(schemaText, 'utf8'),
+      sha256: sha256(schemaText),
+    });
+    expect(schema.$id).toBe(lock.evidenceSchema.identity);
+    expect(schema['x-opencoven-frozen-contract']).toEqual({
+      schemaVersion: 2,
+      platformMatrix: PLATFORMS,
+      assertionRegistry: lock.assertionRegistry,
+    });
+    expect(() =>
+      validateFrozenConformanceBindings(
+        lock as never,
+        schemaText as never,
+        registryText as never,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      validateFrozenConformanceBindings(
+        lock as never,
+        schemaText.replace(
+          'OpenCoven Client v1 cross-repository platform evidence',
+          'drifted evidence schema',
+        ) as never,
+        registryText as never,
+      ),
+    ).toThrow('Evidence schema bytes do not match the frozen lock');
+    expect(() =>
+      validateFrozenConformanceBindings(
+        lock as never,
+        schemaText as never,
+        `${registryText} ` as never,
+      ),
+    ).toThrow('Assertion registry bytes do not match the frozen lock');
+  });
+
+  test('fails closed because the frozen Chat commit has no schema-v2 producer', () => {
+    const lock = readLock() as {
+      evidenceProducer: Record<string, unknown>;
+    };
+    const assertEvidenceProducerCompatibility = requiredFunction(
+      'assertEvidenceProducerCompatibility',
+    );
+
+    expect(lock.evidenceProducer).toEqual({
+      status: 'blocked',
+      blockerId: 'frozen-chat-commit-has-no-platform-evidence-producer',
+      repository: 'OpenCoven/chat',
+      commit: 'dbbcf3a71155730f0e707e181ef3ca7e770c719f',
+      tree: '85ce03bfa8ec1a8e5002821eee3147cd73a59e25',
+      packageManifest: {
+        path: 'package.json',
+        size: 3_202,
+        sha256:
+          'dff8b65c3643b04c9cb85dccfd9035f90046b1f047b84c0a563a6bce6880e17f',
+      },
+      availableHarness: {
+        path: 'scripts/contract-canary.mjs',
+        size: 36_293,
+        sha256:
+          '1118d1999874b6a5a6fcf48355fe2a30c66b6142e178ff759569982bab4696f4',
+      },
+      availableCommand: 'test:contract-canary',
+      requiredRecordSchemaVersion: 2,
+    });
+    expect(() =>
+      assertEvidenceProducerCompatibility(lock as never),
+    ).toThrow(
+      'Frozen Chat commit dbbcf3a71155730f0e707e181ef3ca7e770c719f has no schema-v2 platform evidence producer',
+    );
   });
 
   test('freezes every Cave assertion and the complete exclusion set', () => {
@@ -931,6 +1098,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
     const parseAggregatedConformanceEvidence = requiredFunction(
       'parseAggregatedConformanceEvidence',
     );
+    const caveEngine = createCaveEngine(registry);
     const canonical = serializeCanonicalJson(
       aggregate(records) as never,
     ) as string;
@@ -939,6 +1107,12 @@ describe('unresolved SDK #38 conformance gaps', () => {
       parseAggregatedConformanceEvidence(
         canonical as never,
         'aggregate.json' as never,
+        {
+          caveEngine,
+          frozenLockText: contract.serializeCanonicalJson(
+            createCompatibleLock(),
+          ),
+        } as never,
       ),
     ).toEqual(JSON.parse(canonical));
     expect(() =>
@@ -959,8 +1133,195 @@ describe('unresolved SDK #38 conformance gaps', () => {
           } as never,
         ) as never,
         'forged.json' as never,
+        {
+          caveEngine,
+          frozenLockText: contract.serializeCanonicalJson(
+            createCompatibleLock(),
+          ),
+        } as never,
       ),
     ).toThrow(/missing required field/u);
+
+    const copiedClaim = JSON.parse(canonical) as {
+      platforms: Array<{
+        caveRecord: {
+          findings: Array<{ says: string }>;
+        };
+      }>;
+    };
+    const finding = copiedClaim.platforms[0]?.caveRecord.findings[0];
+    if (finding === undefined) {
+      throw new Error('Expected a Cave finding fixture.');
+    }
+    finding.says = 'fabricated aggregate-copied claim';
+    expect(() =>
+      parseAggregatedConformanceEvidence(
+        serializeCanonicalJson(copiedClaim as never) as never,
+        'copied-claim.json' as never,
+        {
+          caveEngine,
+          frozenLockText: contract.serializeCanonicalJson(
+            createCompatibleLock(),
+          ),
+        } as never,
+      ),
+    ).toThrow(/Cave record does not match the authoritative renderer/u);
+  });
+
+  test('binds reviewed protected-job attestations to each primary platform record', () => {
+    const lock = readLock();
+    const registry = readRegistry();
+    const records = PLATFORMS.map((platform) =>
+      createPlatformEvidence(platform, lock, registry),
+    );
+    const aggregateRecord = aggregate(records) as unknown as {
+      candidate: { provenance: Record<string, unknown> };
+      platforms: Array<Record<string, unknown> & { platform: string }>;
+      validator: {
+        repository: string;
+        commit: string;
+        tree: string;
+      };
+    };
+    const aggregateText = contract.serializeCanonicalJson(aggregateRecord);
+    const aggregatePath =
+      'docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json';
+    const compatibleLock = createCompatibleLock(lock);
+    const index = {
+      schemaVersion: 1,
+      issue: 'OpenCoven/sdk#38',
+      kind: 'client-v1-cross-repository-evidence-index',
+      candidate: aggregateRecord.candidate.provenance,
+      validator: {
+        repository: aggregateRecord.validator.repository,
+        commit: aggregateRecord.validator.commit,
+        tree: aggregateRecord.validator.tree,
+      },
+      aggregate: {
+        path: aggregatePath,
+        size: Buffer.byteLength(aggregateText, 'utf8'),
+        sha256: sha256(aggregateText),
+      },
+      producer: {
+        repository: 'OpenCoven/chat',
+        commit: 'f'.repeat(40),
+        tree: 'c'.repeat(40),
+        harness: {
+          path: 'scripts/phase1-conformance.mjs',
+          version: '0.1.0',
+          size: 120_000,
+          sha256: '2'.repeat(64),
+        },
+        workflow: {
+          path: '.github/workflows/client-v1-conformance.yml',
+          job: 'platform-conformance',
+          environment: 'client-v1-conformance',
+          signerWorkflow:
+            'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
+          signerDigest: 'f'.repeat(40),
+          sourceDigest: 'f'.repeat(40),
+          predicateType: 'https://slsa.dev/provenance/v1',
+          denySelfHostedRunners: true,
+        },
+      },
+      platforms: aggregateRecord.platforms.map((record, index_) => {
+        const recordText = contract.serializeCanonicalJson(record);
+        const artifactSha256 = `${index_ + 7}`.repeat(64);
+        return {
+          platform: record.platform,
+          record: {
+            size: Buffer.byteLength(recordText, 'utf8'),
+            sha256: sha256(recordText),
+          },
+          protectedJob: {
+            runId: String(10_000 + index_),
+            runAttempt: 1,
+            jobId: String(20_000 + index_),
+            artifactName: `client-v1-conformance-${record.platform}`,
+            artifactSha256,
+            attestationSubjectSha256: artifactSha256,
+            attestationBundleSha256: `${index_ + 3}`.repeat(64),
+          },
+        };
+      }),
+    };
+    const parseReviewedEvidenceIndex = requiredFunction(
+      'parseReviewedEvidenceIndex',
+    );
+
+    expect(
+      parseReviewedEvidenceIndex(
+        contract.serializeCanonicalJson(index) as never,
+        'evidence index' as never,
+        {
+          frozenLock: compatibleLock,
+          aggregate: aggregateRecord,
+          aggregatePath,
+          aggregateText,
+        } as never,
+      ),
+    ).toEqual(index);
+
+    const fabricated = structuredClone(index);
+    fabricated.platforms[0]!.record.sha256 = 'f'.repeat(64);
+    expect(() =>
+      parseReviewedEvidenceIndex(
+        contract.serializeCanonicalJson(fabricated) as never,
+        'fabricated evidence index' as never,
+        {
+          frozenLock: compatibleLock,
+          aggregate: aggregateRecord,
+          aggregatePath,
+          aggregateText,
+        } as never,
+      ),
+    ).toThrow(
+      'fabricated evidence index darwin-arm64 record digest does not match the primary record',
+    );
+
+    const substitutedArtifact = structuredClone(index);
+    substitutedArtifact.platforms[1]!.protectedJob.artifactName =
+      'client-v1-conformance-darwin-arm64';
+    expect(() =>
+      parseReviewedEvidenceIndex(
+        contract.serializeCanonicalJson(substitutedArtifact) as never,
+        'substituted artifact index' as never,
+        {
+          frozenLock: compatibleLock,
+          aggregate: aggregateRecord,
+          aggregatePath,
+          aggregateText,
+        } as never,
+      ),
+    ).toThrow(
+      'substituted artifact index linux-x64 artifact name does not match its platform',
+    );
+
+    const duplicateJob = structuredClone(index);
+    duplicateJob.platforms[1]!.protectedJob = structuredClone(
+      duplicateJob.platforms[0]!.protectedJob,
+    );
+    duplicateJob.platforms[1]!.protectedJob.artifactName =
+      'client-v1-conformance-linux-x64';
+    duplicateJob.platforms[1]!.protectedJob.artifactSha256 = '8'.repeat(64);
+    duplicateJob.platforms[1]!.protectedJob.attestationSubjectSha256 =
+      '8'.repeat(64);
+    duplicateJob.platforms[1]!.protectedJob.attestationBundleSha256 =
+      '9'.repeat(64);
+    expect(() =>
+      parseReviewedEvidenceIndex(
+        contract.serializeCanonicalJson(duplicateJob) as never,
+        'duplicate protected job index' as never,
+        {
+          frozenLock: compatibleLock,
+          aggregate: aggregateRecord,
+          aggregatePath,
+          aggregateText,
+        } as never,
+      ),
+    ).toThrow(
+      'duplicate protected job index protected job provenance must be unique per platform',
+    );
   });
 
   test.each([
@@ -986,6 +1347,15 @@ describe('unresolved SDK #38 conformance gaps', () => {
   });
 
   test.each([
+    '/operator/private.json',
+    '//server/share/private.json',
+    'file:/operator/private.json',
+    'file:C:\\operator\\private.json',
+    '@name',
+    '\\\\server\\pipe\\opencoven-private',
+    '\\\\?\\GLOBALROOT\\Device\\HarddiskVolume1\\private.json',
+    '\\\\.\\PhysicalDrive0',
+    '//./pipe/opencoven-private',
     '/Users/operator/private.json',
     '/home/operator/private.json',
     '/mnt/c/Users/operator/private.json',
@@ -1009,6 +1379,29 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(() => contract.scanConformanceEvidence({ detail: value })).toThrow();
   });
 
+  test.each([
+    '/operator/private.json',
+    '//server/share/private.json',
+    'file:/operator/private.json',
+    '@name',
+    '\\\\server\\pipe\\opencoven-private',
+    'path=/operator/private.json',
+    'uri:file:/operator/private.json',
+    'pipe=\\\\server\\pipe\\opencoven-private',
+    'socket=@name',
+    'device,\\\\.\\PhysicalDrive0',
+    'home:[~/private.json]',
+  ])('rejects private value %s inside Cave text fields', (value) => {
+    expect(() =>
+      contract.scanConformanceEvidence({
+        caveRecord: {
+          assertions: [{ detail: `observed ${value}` }],
+          findings: [{ says: `measured ${value}` }],
+        },
+      }),
+    ).toThrow();
+  });
+
   test('allows schema-approved opaque identifiers, digests, versions, and API routes', () => {
     expect(() =>
       contract.scanConformanceEvidence({
@@ -1016,9 +1409,19 @@ describe('unresolved SDK #38 conformance gaps', () => {
         opaqueId: '0123456789abcdef0123456789abcdef',
         sha256: 'a'.repeat(64),
         nodeVersion: 'v24.18.1',
-        detail: '/api/client/v1/health',
+        caveRecord: {
+          assertions: [{ detail: '/api/client/v1/health' }],
+        },
+        artifacts: {
+          sdkPackages: [{ packageName: '@opencoven/sdk' }],
+        },
         diagnosticId: 'phase1.assertion.passed',
       }),
     ).not.toThrow();
+    expect(() =>
+      contract.scanConformanceEvidence({
+        detail: '/api/client/v1/health',
+      }),
+    ).toThrow();
   });
 });

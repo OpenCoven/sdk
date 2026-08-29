@@ -16,6 +16,10 @@ const DEFAULT_SCHEMA_PATH = resolve(
   repositoryRoot,
   'conformance/client-v1-cross-repository-evidence.schema.json',
 );
+const EVIDENCE_SCHEMA_ID =
+  'urn:opencoven:schema:client-v1-cross-repository-platform-evidence:2';
+const EVIDENCE_SCHEMA_PATH =
+  'conformance/client-v1-cross-repository-evidence.schema.json';
 const MAX_EVIDENCE_BYTES = 1_048_576;
 const MAX_STRING_BYTES = 16_384;
 const MAX_JSON_DEPTH = 32;
@@ -144,13 +148,14 @@ const SECRET_PATTERNS = Object.freeze([
   /(?:^|[^A-Za-z0-9_-])[A-Za-z0-9_-]{43}(?:$|[^A-Za-z0-9_-])/u,
 ]);
 const PRIVATE_VALUE_PATTERNS = Object.freeze([
-  /(?:^|[\s"'(])\/(?:Users|home|root|mnt|media|private|tmp|var|run|dev|etc|opt|srv|usr|Volumes|Library|System|Applications|workspace|builds|github)(?:\/|$)/u,
-  /(?:^|[\s"'(])~\//u,
-  /(?:^|[\s"'(])[A-Za-z]:[\\/]/u,
-  /(?:^|[\s"'(])\\\\(?:[^\\\s]+\\[^\\\s]+|[.?]\\)/u,
-  /(?:^|[\s"'(])\\\\[.?]\\pipe\\/iu,
-  /(?:^|[\s"'(])(?:npipe|pipe):\/\//iu,
-  /^@[A-Za-z0-9._-]*(?:socket|sock|pipe)[A-Za-z0-9._-]*$/iu,
+  /(?:^|[^A-Za-z0-9])\/{1,2}[^\s"'()]*/u,
+  /(?:^|[^A-Za-z0-9])~\//u,
+  /(?:^|[^A-Za-z0-9])[A-Za-z]:[\\/]/u,
+  /(?:^|[^A-Za-z0-9])\\\\/u,
+  /(?:^|[^A-Za-z0-9])\\\?\?\\/u,
+  /(?:^|[^A-Za-z0-9])(?:npipe|pipe):/iu,
+  /(?:^|[^A-Za-z0-9])file:/iu,
+  /(?:^|[^A-Za-z0-9])@[A-Za-z0-9._-]+(?:$|[^A-Za-z0-9._-])/u,
   /\b[a-z][a-z0-9+.-]*:\/\/[^\s]+/iu,
   /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu,
   /\b(?:user(?:name)?|operator|hostname|computername|machineid)\s*[:=]\s*\S+/iu,
@@ -528,27 +533,266 @@ function expectFixedPathFiles(value, paths, label) {
   );
 }
 
+function expectEvidenceSchemaMetadata(value, label) {
+  const object = expectExactObject(
+    value,
+    ['identity', 'path', 'version', 'size', 'sha256'],
+    label,
+  );
+  const metadata = {
+    identity: expectString(object.identity, `${label}.identity`, {
+      maxBytes: 128,
+    }),
+    path: expectRelativePath(object.path, `${label}.path`),
+    version: expectInteger(object.version, `${label}.version`, {
+      minimum: 1,
+      maximum: 1_000,
+    }),
+    size: expectInteger(object.size, `${label}.size`, {
+      minimum: 1,
+      maximum: MAX_EVIDENCE_BYTES,
+    }),
+    sha256: expectSha256(object.sha256, `${label}.sha256`),
+  };
+  if (
+    metadata.identity !== EVIDENCE_SCHEMA_ID
+    || metadata.path !== EVIDENCE_SCHEMA_PATH
+    || metadata.version !== 2
+  ) {
+    throw new Error(`${label} must identify the immutable schema-v2 contract`);
+  }
+  return metadata;
+}
+
+function expectEvidenceProducer(value, label) {
+  if (!isPlainObject(value)) {
+    throw new Error(`${label} must be a JSON object`);
+  }
+  if (value.status === 'blocked') {
+    const object = expectExactObject(
+      value,
+      [
+        'status',
+        'blockerId',
+        'repository',
+        'commit',
+        'tree',
+        'packageManifest',
+        'availableHarness',
+        'availableCommand',
+        'requiredRecordSchemaVersion',
+      ],
+      label,
+    );
+    const producer = {
+      status: 'blocked',
+      blockerId: expectString(object.blockerId, `${label}.blockerId`, {
+        pattern: IDENTIFIER_PATTERN,
+        maxBytes: 192,
+      }),
+      repository: expectRepository(
+        object.repository,
+        `${label}.repository`,
+      ),
+      commit: expectGitOid(object.commit, `${label}.commit`),
+      tree: expectGitOid(object.tree, `${label}.tree`),
+      packageManifest: expectFileMetadata(
+        object.packageManifest,
+        `${label}.packageManifest`,
+        'package.json',
+      ),
+      availableHarness: expectFileMetadata(
+        object.availableHarness,
+        `${label}.availableHarness`,
+        'scripts/contract-canary.mjs',
+      ),
+      availableCommand: expectString(
+        object.availableCommand,
+        `${label}.availableCommand`,
+        { maxBytes: 64 },
+      ),
+      requiredRecordSchemaVersion: expectInteger(
+        object.requiredRecordSchemaVersion,
+        `${label}.requiredRecordSchemaVersion`,
+        { minimum: 1, maximum: 1_000 },
+      ),
+    };
+    if (
+      producer.blockerId
+        !== 'frozen-chat-commit-has-no-platform-evidence-producer'
+      || producer.repository !== 'OpenCoven/chat'
+      || producer.availableCommand !== 'test:contract-canary'
+      || producer.requiredRecordSchemaVersion !== 2
+    ) {
+      throw new Error(`${label} does not describe the reviewed Chat blocker`);
+    }
+    return producer;
+  }
+  if (value.status === 'compatible') {
+    const object = expectExactObject(
+      value,
+      [
+        'status',
+        'repository',
+        'commit',
+        'tree',
+        'packageManifest',
+        'harness',
+        'command',
+        'recordSchemaVersion',
+        'workflow',
+      ],
+      label,
+    );
+    const workflow = expectExactObject(
+      object.workflow,
+      [
+        'path',
+        'job',
+        'environment',
+        'signerWorkflow',
+        'signerDigest',
+        'sourceDigest',
+        'predicateType',
+        'denySelfHostedRunners',
+      ],
+      `${label}.workflow`,
+    );
+    const producer = {
+      status: 'compatible',
+      repository: expectRepository(
+        object.repository,
+        `${label}.repository`,
+      ),
+      commit: expectGitOid(object.commit, `${label}.commit`),
+      tree: expectGitOid(object.tree, `${label}.tree`),
+      packageManifest: expectFileMetadata(
+        object.packageManifest,
+        `${label}.packageManifest`,
+        'package.json',
+      ),
+      harness: (() => {
+        const harness = expectExactObject(
+          object.harness,
+          ['path', 'version', 'size', 'sha256'],
+          `${label}.harness`,
+        );
+        return {
+          path: expectRelativePath(
+            harness.path,
+            `${label}.harness.path`,
+          ),
+          version: expectString(
+            harness.version,
+            `${label}.harness.version`,
+            { maxBytes: 32 },
+          ),
+          size: expectInteger(harness.size, `${label}.harness.size`, {
+            minimum: 1,
+            maximum: 16_777_216,
+          }),
+          sha256: expectSha256(
+            harness.sha256,
+            `${label}.harness.sha256`,
+          ),
+        };
+      })(),
+      command: expectString(object.command, `${label}.command`, {
+        maxBytes: 64,
+      }),
+      recordSchemaVersion: expectInteger(
+        object.recordSchemaVersion,
+        `${label}.recordSchemaVersion`,
+        { minimum: 1, maximum: 1_000 },
+      ),
+      workflow: {
+        path: expectRelativePath(
+          workflow.path,
+          `${label}.workflow.path`,
+        ),
+        job: expectString(workflow.job, `${label}.workflow.job`, {
+          pattern: IDENTIFIER_PATTERN,
+          maxBytes: 64,
+        }),
+        environment: expectString(
+          workflow.environment,
+          `${label}.workflow.environment`,
+          { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+        ),
+        signerWorkflow: expectString(
+          workflow.signerWorkflow,
+          `${label}.workflow.signerWorkflow`,
+          { maxBytes: 256 },
+        ),
+        signerDigest: expectGitOid(
+          workflow.signerDigest,
+          `${label}.workflow.signerDigest`,
+        ),
+        sourceDigest: expectGitOid(
+          workflow.sourceDigest,
+          `${label}.workflow.sourceDigest`,
+        ),
+        predicateType: expectString(
+          workflow.predicateType,
+          `${label}.workflow.predicateType`,
+          { maxBytes: 128 },
+        ),
+        denySelfHostedRunners: expectBoolean(
+          workflow.denySelfHostedRunners,
+          `${label}.workflow.denySelfHostedRunners`,
+        ),
+      },
+    };
+    if (
+      producer.repository !== 'OpenCoven/chat'
+      || producer.command !== 'test:phase1-conformance'
+      || producer.recordSchemaVersion !== 2
+      || producer.harness.path !== 'scripts/phase1-conformance.mjs'
+      || producer.workflow.signerWorkflow
+        !== `${producer.repository}/${producer.workflow.path}`
+      || producer.workflow.signerDigest !== producer.commit
+      || producer.workflow.sourceDigest !== producer.commit
+      || producer.workflow.predicateType
+        !== 'https://slsa.dev/provenance/v1'
+      || producer.workflow.denySelfHostedRunners !== true
+    ) {
+      throw new Error(`${label} does not identify a schema-v2 Chat producer`);
+    }
+    return producer;
+  }
+  throw new Error(`${label}.status must be blocked or compatible`);
+}
+
 function validateFrozenConformanceLock(value, label) {
   const object = expectExactObject(
     value,
     [
       'schemaVersion',
       'issue',
+      'platformMatrix',
+      'evidenceSchema',
       'candidate',
       'sources',
+      'evidenceProducer',
       'toolchain',
-      'harness',
       'scanners',
       'assertionRegistry',
     ],
     label,
   );
-  if (object.schemaVersion !== 1) {
-    throw new Error(`${label}.schemaVersion must be 1`);
+  if (object.schemaVersion !== 2) {
+    throw new Error(`${label}.schemaVersion must be 2`);
   }
   if (object.issue !== 'OpenCoven/sdk#38') {
     throw new Error(`${label}.issue must be "OpenCoven/sdk#38"`);
   }
+  if (!equalJson(object.platformMatrix, CANONICAL_PLATFORMS)) {
+    throw new Error(`${label}.platformMatrix must use the canonical platform order`);
+  }
+  const evidenceSchema = expectEvidenceSchemaMetadata(
+    object.evidenceSchema,
+    `${label}.evidenceSchema`,
+  );
   const candidateObject = expectExactObject(
     object.candidate,
     [
@@ -701,6 +945,22 @@ function validateFrozenConformanceLock(value, label) {
       throw new Error(`${label} Chat vendor metadata must match frozen SDK packages`);
     }
   }
+  const evidenceProducer = expectEvidenceProducer(
+    object.evidenceProducer,
+    `${label}.evidenceProducer`,
+  );
+  if (
+    evidenceProducer.status === 'blocked'
+    && (
+      evidenceProducer.repository !== chat.repository
+      || evidenceProducer.commit !== chat.commit
+      || evidenceProducer.tree !== chat.tree
+    )
+  ) {
+    throw new Error(
+      `${label}.evidenceProducer blocker must match the frozen Chat source`,
+    );
+  }
 
   const toolchainObject = expectExactObject(
     object.toolchain,
@@ -729,26 +989,6 @@ function validateFrozenConformanceLock(value, label) {
       { pattern: /^\d+\.\d+\.\d+$/u, maxBytes: 32 },
     ),
   };
-  const harnessObject = expectExactObject(
-    object.harness,
-    ['name', 'version', 'repository'],
-    `${label}.harness`,
-  );
-  const harness = {
-    name: expectRelativePath(harnessObject.name, `${label}.harness.name`),
-    version: expectString(
-      harnessObject.version,
-      `${label}.harness.version`,
-      { maxBytes: 32 },
-    ),
-    repository: expectRepository(
-      harnessObject.repository,
-      `${label}.harness.repository`,
-    ),
-  };
-  if (harness.repository !== 'OpenCoven/chat') {
-    throw new Error(`${label}.harness.repository must be OpenCoven/chat`);
-  }
   const scannersObject = expectExactObject(
     object.scanners,
     ['redaction', 'retainedEvidence'],
@@ -783,12 +1023,14 @@ function validateFrozenConformanceLock(value, label) {
     'conformance/client-v1-cross-repository-assertions.json',
   );
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     issue: 'OpenCoven/sdk#38',
+    platformMatrix: [...CANONICAL_PLATFORMS],
+    evidenceSchema,
     candidate,
     sources: { cave, coven, chat },
+    evidenceProducer,
     toolchain,
-    harness,
     scanners,
     assertionRegistry,
   };
@@ -813,6 +1055,90 @@ export function readFrozenConformanceLock(path = DEFAULT_LOCK_PATH) {
       cause: error,
     });
   }
+}
+
+export function validateFrozenConformanceBindings(
+  lockValue,
+  schemaText,
+  assertionRegistryText,
+) {
+  const lock = validateFrozenConformanceLock(
+    lockValue,
+    'frozen conformance lock',
+  );
+  if (typeof schemaText !== 'string') {
+    throw new Error('Evidence schema bytes must be supplied as UTF-8 text');
+  }
+  if (typeof assertionRegistryText !== 'string') {
+    throw new Error('Assertion registry bytes must be supplied as UTF-8 text');
+  }
+  if (
+    Buffer.byteLength(schemaText, 'utf8') !== lock.evidenceSchema.size
+    || sha256(schemaText) !== lock.evidenceSchema.sha256
+  ) {
+    throw new Error('Evidence schema bytes do not match the frozen lock');
+  }
+  if (
+    Buffer.byteLength(assertionRegistryText, 'utf8')
+      !== lock.assertionRegistry.size
+    || sha256(assertionRegistryText) !== lock.assertionRegistry.sha256
+  ) {
+    throw new Error('Assertion registry bytes do not match the frozen lock');
+  }
+  const schema = parseJsonText(
+    schemaText,
+    'frozen platform evidence JSON Schema',
+  );
+  if (!isPlainObject(schema) || schema.$id !== lock.evidenceSchema.identity) {
+    throw new Error('Evidence schema identity does not match the frozen lock');
+  }
+  const binding = expectExactObject(
+    schema['x-opencoven-frozen-contract'],
+    ['schemaVersion', 'platformMatrix', 'assertionRegistry'],
+    'Evidence schema frozen contract binding',
+  );
+  if (
+    binding.schemaVersion !== lock.evidenceSchema.version
+    || !equalJson(binding.platformMatrix, lock.platformMatrix)
+    || !equalJson(binding.assertionRegistry, lock.assertionRegistry)
+  ) {
+    throw new Error(
+      'Evidence schema frozen contract binding does not match the frozen lock',
+    );
+  }
+  const schemaProperties = isPlainObject(schema.properties)
+    ? schema.properties
+    : null;
+  const platformSchema =
+    schemaProperties !== null && isPlainObject(schemaProperties.platform)
+      ? schemaProperties.platform
+      : null;
+  if (
+    platformSchema === null
+    || !equalJson(platformSchema.enum, lock.platformMatrix)
+  ) {
+    throw new Error(
+      'Evidence schema platform enum does not match the frozen lock',
+    );
+  }
+  const registry = parseAssertionRegistry(
+    assertionRegistryText,
+    'frozen assertion registry',
+  );
+  return { lock, schema, registry };
+}
+
+export function assertEvidenceProducerCompatibility(lockValue) {
+  const lock = validateFrozenConformanceLock(
+    lockValue,
+    'frozen conformance lock',
+  );
+  if (lock.evidenceProducer.status !== 'compatible') {
+    throw new Error(
+      `Frozen Chat commit ${lock.evidenceProducer.commit} has no schema-v2 platform evidence producer`,
+    );
+  }
+  return lock.evidenceProducer;
 }
 
 function validateAssertionIds(ids, label, pattern = IDENTIFIER_PATTERN) {
@@ -1793,6 +2119,26 @@ function isForbiddenEvidenceKey(key) {
   return FORBIDDEN_KEY_PARTS.some((part) => normalized.includes(part));
 }
 
+function isExplicitlySafeEvidenceValue(path, value) {
+  if (
+    /^evidence(?:\.platforms\[\d+\])?\.caveRecord\.assertions\[\d+\]\.detail$/u.test(
+      path,
+    )
+    && /^\/api\/client\/v1(?:\/[A-Za-z0-9._~:@%+-]+)*$/u.test(value)
+  ) {
+    return true;
+  }
+  if (
+    /^evidence(?:(?:\.platforms\[\d+\])?\.artifacts\.(?:sdkPackages|chatVendorFiles)|\.candidate\.sdkPackages)\[\d+\]\.packageName$/u.test(
+      path,
+    )
+    && SDK_PACKAGE_NAMES.includes(value)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function scanConformanceEvidence(value) {
   let nodes = 0;
   const visit = (entry, path, depth) => {
@@ -1811,8 +2157,11 @@ export function scanConformanceEvidence(value) {
         throw new Error(`${path} contains a possible secret`);
       }
       if (
-        entry.includes('\0')
-        || PRIVATE_VALUE_PATTERNS.some((pattern) => pattern.test(entry))
+        !isExplicitlySafeEvidenceValue(path, entry)
+        && (
+          entry.includes('\0')
+          || PRIVATE_VALUE_PATTERNS.some((pattern) => pattern.test(entry))
+        )
       ) {
         throw new Error(`${path} contains a private path, handle, URL, or operator identifier`);
       }
@@ -2111,6 +2460,7 @@ function validateRecordAgainstFrozenLock(
   assertionRegistrySha256,
 ) {
   const { platform } = record;
+  const evidenceProducer = assertEvidenceProducerCompatibility(lock);
   if (
     record.provenance.validator.commit === record.provenance.candidate.commit
     || record.provenance.validator.tree === record.provenance.candidate.tree
@@ -2161,11 +2511,24 @@ function validateRecordAgainstFrozenLock(
     throw new Error(`${platform} toolchain does not match the frozen lock`);
   }
   if (
-    record.harness.name !== lock.harness.name
-    || record.harness.version !== lock.harness.version
-    || record.harness.repository !== lock.harness.repository
+    record.harness.name !== evidenceProducer.harness.path
+    || record.harness.version !== evidenceProducer.harness.version
+    || record.harness.repository !== evidenceProducer.repository
+    || record.harness.commit !== evidenceProducer.commit
+    || record.harness.tree !== evidenceProducer.tree
   ) {
     throw new Error(`${platform} harness contract does not match the frozen lock`);
+  }
+  if (
+    !equalJson(record.provenance.validator.schema, {
+      path: lock.evidenceSchema.path,
+      size: lock.evidenceSchema.size,
+      sha256: lock.evidenceSchema.sha256,
+    })
+  ) {
+    throw new Error(
+      `${platform} validator schema metadata does not match the frozen lock`,
+    );
   }
   if (
     record.scans.redaction.status !== 'passed'
@@ -2460,7 +2823,8 @@ export function parseAggregatedConformanceEvidence(
   {
     frozenLockText = readFileSync(DEFAULT_LOCK_PATH, 'utf8'),
     assertionRegistryText = readFileSync(DEFAULT_REGISTRY_PATH, 'utf8'),
-    schema = readDefaultSchema(),
+    schemaText = readFileSync(DEFAULT_SCHEMA_PATH, 'utf8'),
+    caveEngine,
   } = {},
 ) {
   const parsed = parseJsonText(text, source);
@@ -2499,10 +2863,14 @@ export function parseAggregatedConformanceEvidence(
     frozenLockText,
     `${source} frozen conformance lock`,
   );
-  const registry = parseAssertionRegistry(
+  const bindings = validateFrozenConformanceBindings(
+    lock,
+    schemaText,
     assertionRegistryText,
-    `${source} assertion registry`,
   );
+  const registry = bindings.registry;
+  const schema = bindings.schema;
+  validateEngine(caveEngine);
   const frozenLockMetadata = {
     path: 'conformance/client-v1-cross-repository-lock.json',
     size: Buffer.byteLength(frozenLockText, 'utf8'),
@@ -2581,10 +2949,13 @@ export function parseAggregatedConformanceEvidence(
     authoritiesObject.harness,
     `${source}.authorities.harness`,
   );
+  const evidenceProducer = assertEvidenceProducerCompatibility(lock);
   if (
-    aggregateHarness.name !== lock.harness.name
-    || aggregateHarness.version !== lock.harness.version
-    || aggregateHarness.repository !== lock.harness.repository
+    aggregateHarness.name !== evidenceProducer.harness.path
+    || aggregateHarness.version !== evidenceProducer.harness.version
+    || aggregateHarness.repository !== evidenceProducer.repository
+    || aggregateHarness.commit !== evidenceProducer.commit
+    || aggregateHarness.tree !== evidenceProducer.tree
   ) {
     throw new Error(`${source}.authorities.harness does not match the frozen harness contract`);
   }
@@ -2652,11 +3023,11 @@ export function parseAggregatedConformanceEvidence(
     ) {
       throw new Error(`${source} platform harness provenance differs`);
     }
-    validateStoredAssertionResults(
-      record.caveRecord.assertions,
+    caveAssertions += validateCaveRecord(
+      record,
+      caveEngine,
       registry.assertions.cave,
-      `${source} ${record.platform} Cave`,
-    );
+    ).passed;
     validateStoredAssertionResults(
       record.sdkAssertions,
       registry.assertions.sdk,
@@ -2670,17 +3041,7 @@ export function parseAggregatedConformanceEvidence(
       ],
       `${source} ${record.platform} Chat`,
     );
-    if (
-      record.caveRecord.summary.total !== record.caveRecord.assertions.length
-      || record.caveRecord.summary.passed !== record.caveRecord.assertions.length
-      || record.caveRecord.summary.failed !== 0
-      || record.caveRecord.summary.skipped !== 0
-      || record.caveRecord.summary.status !== 'passed'
-    ) {
-      throw new Error(`${source} ${record.platform} Cave summary is not a complete pass`);
-    }
     validateIsolation(record);
-    caveAssertions += record.caveRecord.assertions.length;
     sdkAssertions += record.sdkAssertions.length;
     chatAssertions += record.chatAssertions.length;
   }
@@ -2698,4 +3059,345 @@ export function parseAggregatedConformanceEvidence(
   }
   scanConformanceEvidence(parsed);
   return canonicalize(parsed);
+}
+
+export function parseReviewedEvidenceIndex(
+  text,
+  source = 'reviewed evidence index',
+  {
+    frozenLock,
+    aggregate,
+    aggregatePath,
+    aggregateText,
+  } = {},
+) {
+  const parsed = parseJsonText(text, source);
+  if (serializeCanonicalJson(parsed) !== text) {
+    throw new Error(
+      `${source} must use canonical UTF-8 JSON with LF and one trailing newline`,
+    );
+  }
+  const lock = validateFrozenConformanceLock(
+    frozenLock,
+    `${source} frozen conformance lock`,
+  );
+  const producer = assertEvidenceProducerCompatibility(lock);
+  if (!isPlainObject(aggregate)) {
+    throw new Error(`${source} aggregate must be a parsed canonical aggregate`);
+  }
+  if (typeof aggregatePath !== 'string') {
+    throw new Error(`${source} aggregate path must be supplied`);
+  }
+  if (typeof aggregateText !== 'string') {
+    throw new Error(`${source} aggregate bytes must be supplied`);
+  }
+  const object = expectExactObject(
+    parsed,
+    [
+      'schemaVersion',
+      'issue',
+      'kind',
+      'candidate',
+      'validator',
+      'aggregate',
+      'producer',
+      'platforms',
+    ],
+    source,
+  );
+  if (
+    object.schemaVersion !== 1
+    || object.issue !== 'OpenCoven/sdk#38'
+    || object.kind !== 'client-v1-cross-repository-evidence-index'
+  ) {
+    throw new Error(`${source} does not identify the reviewed evidence index`);
+  }
+  const candidate = expectIdentity(
+    object.candidate,
+    `${source}.candidate`,
+    'OpenCoven/sdk',
+  );
+  if (
+    !equalJson(candidate, aggregate.candidate?.provenance)
+    || !equalJson(candidate, {
+      repository: lock.candidate.repository,
+      commit: lock.candidate.commit,
+      tree: lock.candidate.tree,
+    })
+  ) {
+    throw new Error(`${source}.candidate does not match the frozen candidate`);
+  }
+  const validator = expectIdentity(
+    object.validator,
+    `${source}.validator`,
+    'OpenCoven/sdk',
+  );
+  if (
+    !equalJson(validator, {
+      repository: aggregate.validator?.repository,
+      commit: aggregate.validator?.commit,
+      tree: aggregate.validator?.tree,
+    })
+  ) {
+    throw new Error(`${source}.validator does not match the aggregate validator`);
+  }
+  const aggregateMetadata = expectFileMetadata(
+    object.aggregate,
+    `${source}.aggregate`,
+    aggregatePath,
+  );
+  if (
+    aggregateMetadata.size !== Buffer.byteLength(aggregateText, 'utf8')
+    || aggregateMetadata.sha256 !== sha256(aggregateText)
+  ) {
+    throw new Error(`${source} aggregate digest does not match the committed aggregate`);
+  }
+  const producerObject = expectExactObject(
+    object.producer,
+    ['repository', 'commit', 'tree', 'harness', 'workflow'],
+    `${source}.producer`,
+  );
+  const producerHarness = expectExactObject(
+    producerObject.harness,
+    ['path', 'version', 'size', 'sha256'],
+    `${source}.producer.harness`,
+  );
+  const producerWorkflow = expectExactObject(
+    producerObject.workflow,
+    [
+      'path',
+      'job',
+      'environment',
+      'signerWorkflow',
+      'signerDigest',
+      'sourceDigest',
+      'predicateType',
+      'denySelfHostedRunners',
+    ],
+    `${source}.producer.workflow`,
+  );
+  const indexedProducer = {
+    repository: expectRepository(
+      producerObject.repository,
+      `${source}.producer.repository`,
+    ),
+    commit: expectGitOid(
+      producerObject.commit,
+      `${source}.producer.commit`,
+    ),
+    tree: expectGitOid(producerObject.tree, `${source}.producer.tree`),
+    harness: {
+      path: expectRelativePath(
+        producerHarness.path,
+        `${source}.producer.harness.path`,
+      ),
+      version: expectString(
+        producerHarness.version,
+        `${source}.producer.harness.version`,
+        { maxBytes: 32 },
+      ),
+      size: expectInteger(
+        producerHarness.size,
+        `${source}.producer.harness.size`,
+        { minimum: 1, maximum: 16_777_216 },
+      ),
+      sha256: expectSha256(
+        producerHarness.sha256,
+        `${source}.producer.harness.sha256`,
+      ),
+    },
+    workflow: {
+      path: expectRelativePath(
+        producerWorkflow.path,
+        `${source}.producer.workflow.path`,
+      ),
+      job: expectString(
+        producerWorkflow.job,
+        `${source}.producer.workflow.job`,
+        { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+      ),
+      environment: expectString(
+        producerWorkflow.environment,
+        `${source}.producer.workflow.environment`,
+        { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+      ),
+      signerWorkflow: expectString(
+        producerWorkflow.signerWorkflow,
+        `${source}.producer.workflow.signerWorkflow`,
+        { maxBytes: 256 },
+      ),
+      signerDigest: expectGitOid(
+        producerWorkflow.signerDigest,
+        `${source}.producer.workflow.signerDigest`,
+      ),
+      sourceDigest: expectGitOid(
+        producerWorkflow.sourceDigest,
+        `${source}.producer.workflow.sourceDigest`,
+      ),
+      predicateType: expectString(
+        producerWorkflow.predicateType,
+        `${source}.producer.workflow.predicateType`,
+        { maxBytes: 128 },
+      ),
+      denySelfHostedRunners: expectBoolean(
+        producerWorkflow.denySelfHostedRunners,
+        `${source}.producer.workflow.denySelfHostedRunners`,
+      ),
+    },
+  };
+  if (
+    !equalJson(indexedProducer, {
+      repository: producer.repository,
+      commit: producer.commit,
+      tree: producer.tree,
+      harness: producer.harness,
+      workflow: producer.workflow,
+    })
+  ) {
+    throw new Error(`${source}.producer does not match the frozen producer`);
+  }
+  if (
+    !Array.isArray(object.platforms)
+    || object.platforms.length !== lock.platformMatrix.length
+  ) {
+    throw new Error(`${source}.platforms must match the frozen platform matrix`);
+  }
+  const aggregatePlatforms = Array.isArray(aggregate.platforms)
+    ? aggregate.platforms
+    : [];
+  const platforms = object.platforms.map((entry, index) => {
+    const label = `${source}.platforms[${index}]`;
+    const platformObject = expectExactObject(
+      entry,
+      ['platform', 'record', 'protectedJob'],
+      label,
+    );
+    const platform = expectString(
+      platformObject.platform,
+      `${label}.platform`,
+      { maxBytes: 32 },
+    );
+    if (platform !== lock.platformMatrix[index]) {
+      throw new Error(`${source}.platforms must use the frozen platform order`);
+    }
+    const primaryRecord = aggregatePlatforms[index];
+    if (
+      !isPlainObject(primaryRecord)
+      || primaryRecord.platform !== platform
+    ) {
+      throw new Error(`${source} ${platform} primary record is missing`);
+    }
+    const recordObject = expectExactObject(
+      platformObject.record,
+      ['size', 'sha256'],
+      `${label}.record`,
+    );
+    const record = {
+      size: expectInteger(recordObject.size, `${label}.record.size`, {
+        minimum: 1,
+        maximum: MAX_EVIDENCE_BYTES,
+      }),
+      sha256: expectSha256(
+        recordObject.sha256,
+        `${label}.record.sha256`,
+      ),
+    };
+    const primaryRecordText = serializeCanonicalJson(primaryRecord);
+    if (
+      record.size !== Buffer.byteLength(primaryRecordText, 'utf8')
+      || record.sha256 !== sha256(primaryRecordText)
+    ) {
+      throw new Error(
+        `${source} ${platform} record digest does not match the primary record`,
+      );
+    }
+    const jobObject = expectExactObject(
+      platformObject.protectedJob,
+      [
+        'runId',
+        'runAttempt',
+        'jobId',
+        'artifactName',
+        'artifactSha256',
+        'attestationSubjectSha256',
+        'attestationBundleSha256',
+      ],
+      `${label}.protectedJob`,
+    );
+    const protectedJob = {
+      runId: expectString(
+        jobObject.runId,
+        `${label}.protectedJob.runId`,
+        { pattern: /^[1-9]\d*$/u, maxBytes: 32 },
+      ),
+      runAttempt: expectInteger(
+        jobObject.runAttempt,
+        `${label}.protectedJob.runAttempt`,
+        { minimum: 1, maximum: 1_000 },
+      ),
+      jobId: expectString(
+        jobObject.jobId,
+        `${label}.protectedJob.jobId`,
+        { pattern: /^[1-9]\d*$/u, maxBytes: 32 },
+      ),
+      artifactName: expectString(
+        jobObject.artifactName,
+        `${label}.protectedJob.artifactName`,
+        { pattern: IDENTIFIER_PATTERN, maxBytes: 192 },
+      ),
+      artifactSha256: expectSha256(
+        jobObject.artifactSha256,
+        `${label}.protectedJob.artifactSha256`,
+      ),
+      attestationSubjectSha256: expectSha256(
+        jobObject.attestationSubjectSha256,
+        `${label}.protectedJob.attestationSubjectSha256`,
+      ),
+      attestationBundleSha256: expectSha256(
+        jobObject.attestationBundleSha256,
+        `${label}.protectedJob.attestationBundleSha256`,
+      ),
+    };
+    if (
+      protectedJob.attestationSubjectSha256
+        !== protectedJob.artifactSha256
+    ) {
+      throw new Error(
+        `${source} ${platform} attestation subject does not match the artifact digest`,
+      );
+    }
+    if (
+      protectedJob.artifactName
+        !== `client-v1-conformance-${platform}`
+    ) {
+      throw new Error(
+        `${source} ${platform} artifact name does not match its platform`,
+      );
+    }
+    return { platform, record, protectedJob };
+  });
+  const protectedJobIdentities = platforms.map(({ protectedJob }) =>
+    [
+      protectedJob.runId,
+      protectedJob.runAttempt,
+      protectedJob.jobId,
+    ].join(':'),
+  );
+  if (
+    new Set(protectedJobIdentities).size !== protectedJobIdentities.length
+  ) {
+    throw new Error(
+      `${source} protected job provenance must be unique per platform`,
+    );
+  }
+  return canonicalize({
+    schemaVersion: 1,
+    issue: 'OpenCoven/sdk#38',
+    kind: 'client-v1-cross-repository-evidence-index',
+    candidate,
+    validator,
+    aggregate: aggregateMetadata,
+    producer: indexedProducer,
+    platforms,
+  });
 }

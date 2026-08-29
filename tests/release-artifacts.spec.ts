@@ -13,10 +13,12 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, test } from 'vitest';
 
 import {
+  assertFrozenReleaseArtifacts,
   createReleaseArtifacts,
   parseReleaseArtifactArguments,
   verifyReleaseArtifacts,
 } from '../scripts/create-release-artifacts.mjs';
+import { readFrozenConformanceLock } from '../scripts/conformance-contract.mjs';
 import { PUBLIC_PACKAGES } from '../scripts/repository-metadata.mjs';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -35,6 +37,47 @@ afterEach(() => {
 });
 
 describe('release artifacts', () => {
+  test('binds publication artifacts to the frozen candidate metadata', () => {
+    const lock = readFrozenConformanceLock();
+    const manifest = {
+      schemaVersion: 1 as const,
+      version: lock.candidate.releaseManifest.version,
+      packages: lock.candidate.sdkPackages.map((entry) => ({
+        name: entry.packageName,
+        version: entry.version,
+        file: entry.releaseFile,
+        size: entry.size,
+        sha256: entry.sha256,
+      })),
+    };
+    expect(() =>
+      assertFrozenReleaseArtifacts(manifest, lock),
+    ).not.toThrow();
+
+    const substituted = structuredClone(manifest);
+    substituted.packages[0]!.sha256 = 'f'.repeat(64);
+    expect(() =>
+      assertFrozenReleaseArtifacts(substituted, lock),
+    ).toThrow(
+      'Release artifact @opencoven/sdk-core does not match the frozen SDK candidate',
+    );
+  });
+
+  test('does not create canonical release artifacts without named evidence', () => {
+    const outputRoot = createOutputRoot();
+
+    expect(() =>
+      createReleaseArtifacts({
+        root: workspaceRoot,
+        outputRoot,
+        build: false,
+      }),
+    ).toThrow(
+      'release.config.json must name a passing SDK #38 aggregate record',
+    );
+    expect(existsSync(resolve(outputRoot, 'release-manifest.json'))).toBe(false);
+  });
+
   test('accepts pnpm argument separators without weakening option validation', () => {
     expect(
       parseReleaseArtifactArguments([
@@ -61,6 +104,7 @@ describe('release artifacts', () => {
       root: workspaceRoot,
       outputRoot,
       build: false,
+      requireConformanceEvidence: false,
     });
 
     expect(result.manifest.packages.map(({ name }) => name)).toEqual(
@@ -81,6 +125,7 @@ describe('release artifacts', () => {
       root: workspaceRoot,
       outputRoot,
       build: false,
+      requireConformanceEvidence: false,
     });
     const writtenManifest = JSON.parse(
       readFileSync(result.manifestPath, 'utf8'),
@@ -94,10 +139,18 @@ describe('release artifacts', () => {
         ({ file }) => !isAbsolute(file) && !file.includes('..'),
       ),
     ).toBe(true);
-    expect(verifyReleaseArtifacts({ root: workspaceRoot, artifactRoot: outputRoot })).toEqual(
+    expect(verifyReleaseArtifacts({
+      root: workspaceRoot,
+      artifactRoot: outputRoot,
+      requireConformanceEvidence: false,
+    })).toEqual(
       result.manifest,
     );
-    expect(verifyReleaseArtifacts({ root: workspaceRoot, artifactRoot: outputRoot })).toEqual(
+    expect(verifyReleaseArtifacts({
+      root: workspaceRoot,
+      artifactRoot: outputRoot,
+      requireConformanceEvidence: false,
+    })).toEqual(
       writtenManifest,
     );
   }, 30_000);
@@ -108,6 +161,7 @@ describe('release artifacts', () => {
       root: workspaceRoot,
       outputRoot,
       build: false,
+      requireConformanceEvidence: false,
     });
     const [firstEntry] = result.manifest.packages;
     expect(firstEntry).toBeDefined();
@@ -124,7 +178,11 @@ describe('release artifacts', () => {
     writeFileSync(firstTarball, bytes);
 
     expect(() =>
-      verifyReleaseArtifacts({ root: workspaceRoot, artifactRoot: outputRoot }),
+      verifyReleaseArtifacts({
+        root: workspaceRoot,
+        artifactRoot: outputRoot,
+        requireConformanceEvidence: false,
+      }),
     ).toThrow('digest does not match release-manifest.json');
   }, 30_000);
 
@@ -132,6 +190,7 @@ describe('release artifacts', () => {
     const result = createReleaseArtifacts({
       root: workspaceRoot,
       build: false,
+      requireConformanceEvidence: false,
     });
     temporaryRoots.push(result.artifactRoot);
 

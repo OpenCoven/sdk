@@ -50,8 +50,16 @@ export interface ValidatorIdentity extends CheckoutIdentity {
 }
 
 export interface FrozenConformanceLock {
-  schemaVersion: 1;
+  schemaVersion: 2;
   issue: 'OpenCoven/sdk#38';
+  platformMatrix: CanonicalPlatform[];
+  evidenceSchema: {
+    identity: 'urn:opencoven:schema:client-v1-cross-repository-platform-evidence:2';
+    path: 'conformance/client-v1-cross-repository-evidence.schema.json';
+    version: 2;
+    size: number;
+    sha256: string;
+  };
   candidate: CheckoutIdentity & {
     repository: 'OpenCoven/sdk';
     releaseManifest: ReleaseManifestMetadata;
@@ -74,16 +82,44 @@ export interface FrozenConformanceLock {
       vendorFiles: VendorFileMetadata[];
     };
   };
+  evidenceProducer:
+    | (CheckoutIdentity & {
+        status: 'blocked';
+        blockerId: 'frozen-chat-commit-has-no-platform-evidence-producer';
+        repository: 'OpenCoven/chat';
+        packageManifest: FileMetadata & { path: 'package.json' };
+        availableHarness: FileMetadata & {
+          path: 'scripts/contract-canary.mjs';
+        };
+        availableCommand: 'test:contract-canary';
+        requiredRecordSchemaVersion: 2;
+      })
+    | (CheckoutIdentity & {
+        status: 'compatible';
+        repository: 'OpenCoven/chat';
+        packageManifest: FileMetadata & { path: 'package.json' };
+        harness: FileMetadata & {
+          path: 'scripts/phase1-conformance.mjs';
+          version: string;
+        };
+        command: 'test:phase1-conformance';
+        recordSchemaVersion: 2;
+        workflow: {
+          path: string;
+          job: string;
+          environment: string;
+          signerWorkflow: string;
+          signerDigest: string;
+          sourceDigest: string;
+          predicateType: 'https://slsa.dev/provenance/v1';
+          denySelfHostedRunners: true;
+        };
+      });
   toolchain: {
     nodeVersion: string;
     pnpmVersion: string;
     rustVersion: string;
     tauriVersion: string;
-  };
-  harness: {
-    name: string;
-    version: string;
-    repository: 'OpenCoven/chat';
   };
   scanners: {
     redaction: {
@@ -367,6 +403,50 @@ export interface AggregatedConformanceEvidence {
   };
 }
 
+export interface ReviewedEvidenceIndex {
+  schemaVersion: 1;
+  issue: 'OpenCoven/sdk#38';
+  kind: 'client-v1-cross-repository-evidence-index';
+  candidate: CheckoutIdentity;
+  validator: CheckoutIdentity;
+  aggregate: FileMetadata;
+  producer: {
+    repository: 'OpenCoven/chat';
+    commit: string;
+    tree: string;
+    harness: FileMetadata & {
+      path: 'scripts/phase1-conformance.mjs';
+      version: string;
+    };
+    workflow: {
+      path: string;
+      job: string;
+      environment: string;
+      signerWorkflow: string;
+      signerDigest: string;
+      sourceDigest: string;
+      predicateType: 'https://slsa.dev/provenance/v1';
+      denySelfHostedRunners: true;
+    };
+  };
+  platforms: Array<{
+    platform: CanonicalPlatform;
+    record: {
+      size: number;
+      sha256: string;
+    };
+    protectedJob: {
+      runId: string;
+      runAttempt: number;
+      jobId: string;
+      artifactName: string;
+      artifactSha256: string;
+      attestationSubjectSha256: string;
+      attestationBundleSha256: string;
+    };
+  }>;
+}
+
 export function parseConformanceAggregationArgs(
   argv: string[],
 ): AggregationArguments;
@@ -382,6 +462,18 @@ export function parseFrozenConformanceLock(
   text: string,
   source?: string,
 ): FrozenConformanceLock;
+export function validateFrozenConformanceBindings(
+  lock: FrozenConformanceLock,
+  schemaText: string,
+  assertionRegistryText: string,
+): {
+  lock: FrozenConformanceLock;
+  schema: Record<string, unknown>;
+  registry: AssertionRegistry;
+};
+export function assertEvidenceProducerCompatibility(
+  lock: FrozenConformanceLock,
+): Extract<FrozenConformanceLock['evidenceProducer'], { status: 'compatible' }>;
 export function readAssertionRegistry(path?: string): AssertionRegistry;
 export function parseAssertionRegistry(
   text: string,
@@ -397,12 +489,23 @@ export function serializeCanonicalJson(value: unknown): string;
 export function parseAggregatedConformanceEvidence(
   text: string,
   source?: string,
-  options?: {
+  options: {
     frozenLockText?: string;
     assertionRegistryText?: string;
-    schema?: Record<string, unknown>;
+    schemaText?: string;
+    caveEngine: CaveAssertionEngine;
   },
 ): AggregatedConformanceEvidence;
+export function parseReviewedEvidenceIndex(
+  text: string,
+  source: string | undefined,
+  options: {
+    frozenLock: FrozenConformanceLock;
+    aggregate: AggregatedConformanceEvidence;
+    aggregatePath: string;
+    aggregateText: string;
+  },
+): ReviewedEvidenceIndex;
 export function aggregateConformanceEvidence(
   input: AggregateConformanceInput,
 ): AggregatedConformanceEvidence;

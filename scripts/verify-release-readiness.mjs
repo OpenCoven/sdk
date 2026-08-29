@@ -3,17 +3,20 @@
 import { validateReleaseReadiness } from './release-readiness.mjs';
 
 function parseArguments(arguments_) {
-  const options = {};
+  const options = {
+    requireConformanceEvidence: true,
+  };
+  let conformanceEvidenceFlagSeen = false;
 
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === '--require-conformance-evidence') {
-      if (options.requireConformanceEvidence !== undefined) {
+      if (conformanceEvidenceFlagSeen) {
         throw new Error(
           'Option --require-conformance-evidence may only be provided once',
         );
       }
-      options.requireConformanceEvidence = true;
+      conformanceEvidenceFlagSeen = true;
       continue;
     }
     if (argument === '--require-tag') {

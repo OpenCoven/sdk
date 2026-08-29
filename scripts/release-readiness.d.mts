@@ -36,6 +36,7 @@ export interface ReleaseReadinessOptions {
   tag?: string;
   requireTag?: boolean;
   requireConformanceEvidence?: boolean;
+  caveAuthorityRoot?: string;
 }
 
 export interface ReleaseReadinessSummary {
@@ -46,6 +47,12 @@ export interface ReleaseReadinessSummary {
 }
 
 export function readReleaseConfig(root?: string): ReleaseConfig;
+
+export function validateValidatorRuntimeFiles(
+  root: string,
+  validatorCommit: string,
+  releaseCommit?: string,
+): void;
 
 export function validateReleaseReadiness(
   options?: ReleaseReadinessOptions,

@@ -5,14 +5,17 @@ import {
   closeSync,
   constants,
   existsSync,
+  fchmodSync,
   fstatSync,
   fsyncSync,
   linkSync,
   lstatSync,
   mkdirSync,
   openSync,
+  readSync,
   readFileSync,
   realpathSync,
+  rmdirSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -22,11 +25,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   aggregateConformanceEvidence,
-  parseAssertionRegistry,
+  assertEvidenceProducerCompatibility,
   parseConformanceAggregationArgs,
   parseFrozenConformanceLock,
   parsePlatformEvidence,
   serializeCanonicalJson,
+  validateFrozenConformanceBindings,
 } from './conformance-contract.mjs';
 import {
   cleanupOwnedTempRoot,
@@ -624,6 +628,74 @@ function unlinkIfExact(path, expectedStats) {
   }
 }
 
+function readDescriptorBytes(descriptor, size) {
+  const bytes = Buffer.alloc(size);
+  let offset = 0;
+  while (offset < bytes.byteLength) {
+    const read = readSync(
+      descriptor,
+      bytes,
+      offset,
+      bytes.byteLength - offset,
+      offset,
+    );
+    if (read === 0) break;
+    offset += read;
+  }
+  return bytes.subarray(0, offset);
+}
+
+function assertDescriptorContent(descriptor, expectedBytes, message) {
+  const stats = fstatSync(descriptor);
+  if (
+    !stats.isFile()
+    || stats.size !== expectedBytes.byteLength
+    || !readDescriptorBytes(descriptor, stats.size).equals(expectedBytes)
+  ) {
+    throw new Error(message);
+  }
+  return stats;
+}
+
+function assertPathIdentity(path, expectedStats, message, onMismatch) {
+  const stats = lstatSync(path);
+  if (
+    stats.isSymbolicLink()
+    || !stats.isFile()
+    || stats.dev !== expectedStats.dev
+    || stats.ino !== expectedStats.ino
+  ) {
+    onMismatch?.(stats);
+    throw new Error(message);
+  }
+  return stats;
+}
+
+function removeDirectoryIfExact(path, expectedIdentity) {
+  try {
+    const current = lstatSync(path);
+    if (
+      !current.isDirectory()
+      || current.isSymbolicLink()
+      || current.dev !== expectedIdentity.dev
+      || current.ino !== expectedIdentity.ino
+    ) {
+      return false;
+    }
+    rmdirSync(path);
+    return true;
+  } catch (error) {
+    if (
+      error instanceof Error
+      && 'code' in error
+      && error.code === 'ENOENT'
+    ) {
+      return true;
+    }
+    throw error;
+  }
+}
+
 export function publishEvidenceAtomically(
   outputRoot,
   outputName,
@@ -642,53 +714,126 @@ export function publishEvidenceAtomically(
   if (typeof bytes !== 'string') {
     throw new Error('Evidence publication bytes must be a UTF-8 string');
   }
+  const expectedBytes = Buffer.from(bytes, 'utf8');
   const outputIdentity = inspectPrivateDirectory(outputRoot, 'output root');
-  const stagingDirectoryName = '.publication-staging';
-  const stagingRoot = resolve(outputIdentity.path, stagingDirectoryName);
-  const stagingIdentity = ensurePrivateDirectory(
-    stagingRoot,
-    'publication staging root',
-  );
   const outputPath = resolve(outputIdentity.path, outputName);
+  const lockName = '.publication-lock';
   const temporaryPath =
-    `${stagingDirectoryName}/.${outputName}.${process.pid}.${randomUUID()}.tmp`;
+    `.${outputName}.${process.pid}.${randomUUID()}.tmp`;
+  let lockIdentity;
+  let lockDescriptor;
+  let temporaryDescriptor;
+  let outputDescriptor;
   let temporaryStats;
+  let publishedStats;
+  let temporaryPathStats;
   let linked = false;
+  let temporaryUnlinked = false;
   const previousCwd = process.cwd();
   let cwdAnchored = false;
   try {
     process.chdir(outputIdentity.path);
     cwdAnchored = true;
     assertCurrentDirectoryIdentity(outputIdentity, 'output root');
-    assertRelativeDirectoryIdentity(
-      stagingDirectoryName,
-      stagingIdentity,
-      'publication staging root',
-    );
     if (existsSync(outputName)) {
       throw new Error(`Refusing to overwrite existing evidence ${outputName}`);
     }
-    assertRelativeDirectoryIdentity(
-      stagingDirectoryName,
-      stagingIdentity,
-      'publication staging root',
-    );
-    const descriptor = openSync(temporaryPath, 'wx', 0o600);
     try {
-      writeFileSync(descriptor, bytes, { encoding: 'utf8' });
-      fsyncSync(descriptor);
-      temporaryStats = fstatSync(descriptor);
-    } finally {
-      closeSync(descriptor);
+      mkdirSync(lockName, { mode: 0o700 });
+      chmodSync(lockName, 0o700);
+    } catch (error) {
+      if (
+        error instanceof Error
+        && 'code' in error
+        && error.code === 'EEXIST'
+      ) {
+        throw new Error('Evidence publication lock is already held', {
+          cause: error,
+        });
+      }
+      throw error;
     }
-    assertRelativeDirectoryIdentity(
-      stagingDirectoryName,
-      stagingIdentity,
-      'publication staging root',
+    lockIdentity = inspectPrivateDirectory(
+      resolve(outputIdentity.path, lockName),
+      'publication lock',
     );
+    lockDescriptor = openSync(
+      lockName,
+      constants.O_RDONLY
+        | (constants.O_DIRECTORY ?? 0)
+        | (constants.O_NOFOLLOW ?? 0),
+    );
+    const openedLock = fstatSync(lockDescriptor);
+    if (
+      !openedLock.isDirectory()
+      || openedLock.dev !== lockIdentity.dev
+      || openedLock.ino !== lockIdentity.ino
+    ) {
+      throw new Error('Publication lock identity changed');
+    }
+    fsyncPublicationDirectory('.', platform, outputIdentity);
+    temporaryDescriptor = openSync(
+      temporaryPath,
+      constants.O_RDWR
+        | constants.O_CREAT
+        | constants.O_EXCL
+        | (constants.O_NOFOLLOW ?? 0),
+      0o600,
+    );
+    writeFileSync(temporaryDescriptor, expectedBytes);
+    fsyncSync(temporaryDescriptor);
+    temporaryStats = fstatSync(temporaryDescriptor);
+    if (
+      !temporaryStats.isFile()
+      || temporaryStats.nlink !== 1
+      || (temporaryStats.mode & 0o077) !== 0
+      || (
+        typeof process.getuid === 'function'
+        && temporaryStats.uid !== process.getuid()
+      )
+    ) {
+      throw new Error('Prepared evidence file is not an owner-private regular file');
+    }
+    options.afterTempFsyncBeforeCommit?.();
     options.beforeLink?.();
     assertDirectoryIdentity(outputIdentity, 'output root');
     assertCurrentDirectoryIdentity(outputIdentity, 'output root');
+    assertRelativeDirectoryIdentity(
+      lockName,
+      lockIdentity,
+      'publication lock',
+    );
+    temporaryStats = assertDescriptorContent(
+      temporaryDescriptor,
+      expectedBytes,
+      'Prepared evidence content changed before publication',
+    );
+    temporaryPathStats = assertPathIdentity(
+      temporaryPath,
+      temporaryStats,
+      'Prepared evidence path no longer names the prepared descriptor',
+      (stats) => {
+        temporaryPathStats = stats;
+      },
+    );
+    fchmodSync(temporaryDescriptor, 0o400);
+    fsyncSync(temporaryDescriptor);
+    options.afterPreparedVerifyBeforeLink?.();
+    temporaryStats = assertDescriptorContent(
+      temporaryDescriptor,
+      expectedBytes,
+      'Prepared evidence content changed before publication',
+    );
+    temporaryPathStats = assertPathIdentity(
+      temporaryPath,
+      temporaryStats,
+      'Prepared evidence path no longer names the prepared descriptor',
+      (stats) => {
+        temporaryPathStats = stats;
+      },
+    );
+    fchmodSync(temporaryDescriptor, 0o400);
+    fsyncSync(temporaryDescriptor);
     try {
       linkSync(temporaryPath, outputName);
       linked = true;
@@ -704,39 +849,97 @@ export function publishEvidenceAtomically(
       }
       throw error;
     }
+    publishedStats = lstatSync(outputName);
     options.afterLinkBeforeVerify?.();
-    const outputStats = lstatSync(outputName);
+    assertDirectoryIdentity(outputIdentity, 'output root');
+    assertCurrentDirectoryIdentity(outputIdentity, 'output root');
+    assertRelativeDirectoryIdentity(
+      lockName,
+      lockIdentity,
+      'publication lock',
+    );
+    outputDescriptor = openSync(
+      outputName,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+    );
+    const openedOutput = fstatSync(outputDescriptor);
     if (
-      outputStats.isSymbolicLink()
-      || !outputStats.isFile()
-      || outputStats.dev !== temporaryStats.dev
-      || outputStats.ino !== temporaryStats.ino
+      !openedOutput.isFile()
+      || openedOutput.dev !== temporaryStats.dev
+      || openedOutput.ino !== temporaryStats.ino
     ) {
-      throw new Error('Published evidence does not match the prepared file');
+      throw new Error(
+        'Published evidence inode does not match the prepared descriptor',
+      );
     }
-    assertCurrentDirectoryIdentity(outputIdentity, 'output root');
-    assertDirectoryIdentity(outputIdentity, 'output root');
+    assertPathIdentity(
+      outputName,
+      openedOutput,
+      'Published evidence path identity changed during publication',
+    );
+    const preparedAfterLink = assertDescriptorContent(
+      temporaryDescriptor,
+      expectedBytes,
+      'Published evidence content changed during publication',
+    );
+    const publishedAfterLink = assertDescriptorContent(
+      outputDescriptor,
+      expectedBytes,
+      'Published evidence content changed during publication',
+    );
+    if (
+      preparedAfterLink.nlink !== 2
+      || publishedAfterLink.nlink !== 2
+    ) {
+      throw new Error('Published evidence has an unexpected hard-link count');
+    }
     options.afterLink?.();
-    fsyncPublicationDirectory(
-      '.',
-      platform,
-      outputIdentity,
-    );
+    fsyncSync(outputDescriptor);
     unlinkSync(temporaryPath);
-    fsyncPublicationDirectory(
-      stagingDirectoryName,
-      platform,
-      stagingIdentity,
+    temporaryUnlinked = true;
+    options.afterTempUnlinkBeforeFinalVerify?.();
+    assertCurrentDirectoryIdentity(outputIdentity, 'output root');
+    assertDirectoryIdentity(outputIdentity, 'output root');
+    assertRelativeDirectoryIdentity(
+      lockName,
+      lockIdentity,
+      'publication lock',
     );
-    assertCurrentDirectoryIdentity(outputIdentity, 'output root');
-    assertDirectoryIdentity(outputIdentity, 'output root');
-    assertCurrentDirectoryIdentity(outputIdentity, 'output root');
-    assertDirectoryIdentity(outputIdentity, 'output root');
+    const preparedFinal = assertDescriptorContent(
+      temporaryDescriptor,
+      expectedBytes,
+      'Published evidence content changed during publication',
+    );
+    const publishedFinal = assertDescriptorContent(
+      outputDescriptor,
+      expectedBytes,
+      'Published evidence content changed during publication',
+    );
+    if (
+      preparedFinal.dev !== publishedFinal.dev
+      || preparedFinal.ino !== publishedFinal.ino
+      || preparedFinal.nlink !== 1
+      || publishedFinal.nlink !== 1
+    ) {
+      throw new Error('Published evidence retains an unexpected inode alias');
+    }
+    assertPathIdentity(
+      outputName,
+      publishedFinal,
+      'Published evidence path identity changed during publication',
+    );
+    fsyncSync(outputDescriptor);
+    fsyncPublicationDirectory('.', platform, outputIdentity);
+    if (!removeDirectoryIfExact(lockName, lockIdentity)) {
+      throw new Error('Publication lock identity changed');
+    }
+    lockIdentity = undefined;
+    fsyncPublicationDirectory('.', platform, outputIdentity);
   } catch (error) {
     const rollbackErrors = [];
-    if (linked && temporaryStats !== undefined) {
+    if (linked && publishedStats !== undefined) {
       try {
-        if (!unlinkIfExact(outputName, temporaryStats)) {
+        if (!unlinkIfExact(outputName, publishedStats)) {
           rollbackErrors.push(
             new Error('Refused to remove a non-matching publication destination'),
           );
@@ -751,12 +954,42 @@ export function publishEvidenceAtomically(
         rollbackErrors.push(rollbackError);
       }
     }
-    if (temporaryStats !== undefined) {
+    if (!temporaryUnlinked && temporaryStats !== undefined) {
       try {
-        unlinkIfExact(temporaryPath, temporaryStats);
+        const cleanupStats =
+          publishedStats !== undefined
+          && (
+            publishedStats.dev !== temporaryStats.dev
+            || publishedStats.ino !== temporaryStats.ino
+          )
+            ? publishedStats
+            : temporaryPathStats ?? temporaryStats;
+        if (!unlinkIfExact(temporaryPath, cleanupStats)) {
+          rollbackErrors.push(
+            new Error('Refused to remove a non-matching publication temporary'),
+          );
+        }
       } catch (cleanupError) {
         rollbackErrors.push(cleanupError);
       }
+    }
+    if (lockIdentity !== undefined) {
+      try {
+        if (!removeDirectoryIfExact(lockName, lockIdentity)) {
+          rollbackErrors.push(
+            new Error('Refused to remove a non-matching publication lock'),
+          );
+        } else {
+          lockIdentity = undefined;
+        }
+      } catch (cleanupError) {
+        rollbackErrors.push(cleanupError);
+      }
+    }
+    try {
+      fsyncPublicationDirectory('.', platform, outputIdentity);
+    } catch (cleanupError) {
+      rollbackErrors.push(cleanupError);
     }
     if (rollbackErrors.length > 0) {
       throw new AggregateError(
@@ -767,6 +1000,9 @@ export function publishEvidenceAtomically(
     }
     throw error;
   } finally {
+    if (outputDescriptor !== undefined) closeSync(outputDescriptor);
+    if (temporaryDescriptor !== undefined) closeSync(temporaryDescriptor);
+    if (lockDescriptor !== undefined) closeSync(lockDescriptor);
     if (cwdAnchored) process.chdir(previousCwd);
   }
   return outputPath;
@@ -856,17 +1092,14 @@ export async function runConformanceAggregation(argv = process.argv.slice(2)) {
     validatorLockFile.bytes.toString('utf8'),
     'committed frozen conformance lock',
   );
-  const registry = parseAssertionRegistry(
+  const bindings = validateFrozenConformanceBindings(
+    frozenLock,
+    validatorSchemaFile.bytes.toString('utf8'),
     validatorRegistryFile.bytes.toString('utf8'),
-    'committed assertion registry',
   );
-  if (
-    validatorRegistryFile.size !== frozenLock.assertionRegistry.size
-    || validatorRegistryFile.sha256 !== frozenLock.assertionRegistry.sha256
-  ) {
-    throw new Error('Committed assertion registry does not match the frozen lock');
-  }
-  const evidenceSchema = JSON.parse(validatorSchemaFile.bytes.toString('utf8'));
+  const registry = bindings.registry;
+  const evidenceSchema = bindings.schema;
+  const evidenceProducer = assertEvidenceProducerCompatibility(frozenLock);
   const platformRecords = options.recordPaths.map((recordPath) =>
     parsePlatformEvidence(
       readEvidenceFile(resolve(recordPath)),
@@ -879,9 +1112,11 @@ export async function runConformanceAggregation(argv = process.argv.slice(2)) {
     throw new Error('No platform evidence records were supplied');
   }
   if (
-    baseline.harness.name !== frozenLock.harness.name
-    || baseline.harness.version !== frozenLock.harness.version
-    || baseline.harness.repository !== frozenLock.harness.repository
+    baseline.harness.name !== evidenceProducer.harness.path
+    || baseline.harness.version !== evidenceProducer.harness.version
+    || baseline.harness.repository !== evidenceProducer.repository
+    || baseline.harness.commit !== evidenceProducer.commit
+    || baseline.harness.tree !== evidenceProducer.tree
   ) {
     throw new Error(
       'Platform evidence harness does not match the frozen harness contract',
@@ -953,9 +1188,9 @@ export async function runConformanceAggregation(argv = process.argv.slice(2)) {
   const harnessCheckout = inspectRepositoryCheckout(
     resolve(options.harnessRoot),
     {
-      repository: baseline.harness.repository,
-      commit: baseline.harness.commit,
-      tree: baseline.harness.tree,
+      repository: evidenceProducer.repository,
+      commit: evidenceProducer.commit,
+      tree: evidenceProducer.tree,
     },
     'Chat harness checkout',
   );
@@ -993,11 +1228,17 @@ export async function runConformanceAggregation(argv = process.argv.slice(2)) {
       'Chat vendored SDK package',
     );
   }
-  readTrackedFileAtCommit(
+  assertCommittedFileMetadata(
     harnessCheckout.root,
-    frozenLock.harness.name,
-    'Chat conformance harness',
     harnessCheckout.commit,
+    evidenceProducer.packageManifest,
+    'Chat conformance producer package manifest',
+  );
+  assertCommittedFileMetadata(
+    harnessCheckout.root,
+    harnessCheckout.commit,
+    evidenceProducer.harness,
+    'Chat conformance harness',
   );
   if (caveEngineFile === undefined) {
     throw new Error('Frozen Cave assertion engine metadata is missing');

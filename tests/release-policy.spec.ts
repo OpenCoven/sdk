@@ -39,6 +39,18 @@ describe('release and support policies', () => {
     expect(releasing).toContain('revoke');
     expect(releasing).toContain('does not publish packages');
     expect(releasing).toContain('creates four tarballs');
+    expect(releasing).toContain('reviewed evidence index');
+    expect(releasing).toContain('GitHub artifact attestation');
+    expect(releasing).toContain('--signer-workflow');
+    expect(releasing).toContain('--signer-digest');
+    expect(releasing).toContain('--source-digest');
+    expect(releasing).toContain('--deny-self-hosted-runners');
+    expect(releasing).toContain(
+      'corepack pnpm@10.34.0 verify:release',
+    );
+    expect(releasing).not.toContain(
+      'verify:release --require-conformance-evidence',
+    );
     expect(releasing).toContain(
       '`@opencoven/dev-cli` is not part of the 0.1 release group',
     );

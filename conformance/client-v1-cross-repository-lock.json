@@ -1,6 +1,18 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "issue": "OpenCoven/sdk#38",
+  "platformMatrix": [
+    "darwin-arm64",
+    "linux-x64",
+    "win32-x64"
+  ],
+  "evidenceSchema": {
+    "identity": "urn:opencoven:schema:client-v1-cross-repository-platform-evidence:2",
+    "path": "conformance/client-v1-cross-repository-evidence.schema.json",
+    "version": 2,
+    "size": 23174,
+    "sha256": "af7d1eb904028f56b5a014f06cecf954dccb5486f1b5bd9859e4b64463b5df1f"
+  },
   "candidate": {
     "repository": "OpenCoven/sdk",
     "commit": "acc38488f00860d246c3c553375634d64806eabb",
@@ -150,16 +162,30 @@
       ]
     }
   },
+  "evidenceProducer": {
+    "status": "blocked",
+    "blockerId": "frozen-chat-commit-has-no-platform-evidence-producer",
+    "repository": "OpenCoven/chat",
+    "commit": "dbbcf3a71155730f0e707e181ef3ca7e770c719f",
+    "tree": "85ce03bfa8ec1a8e5002821eee3147cd73a59e25",
+    "packageManifest": {
+      "path": "package.json",
+      "size": 3202,
+      "sha256": "dff8b65c3643b04c9cb85dccfd9035f90046b1f047b84c0a563a6bce6880e17f"
+    },
+    "availableHarness": {
+      "path": "scripts/contract-canary.mjs",
+      "size": 36293,
+      "sha256": "1118d1999874b6a5a6fcf48355fe2a30c66b6142e178ff759569982bab4696f4"
+    },
+    "availableCommand": "test:contract-canary",
+    "requiredRecordSchemaVersion": 2
+  },
   "toolchain": {
     "nodeVersion": "v24.18.1",
     "pnpmVersion": "pnpm@10.34.0",
     "rustVersion": "1.95.0",
     "tauriVersion": "2.11.4"
-  },
-  "harness": {
-    "name": "scripts/phase1-conformance.mjs",
-    "version": "0.1.0",
-    "repository": "OpenCoven/chat"
   },
   "scanners": {
     "redaction": {

@@ -1,11 +1,20 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+} from 'node:fs';
 import { devNull } from 'node:os';
 import { resolve } from 'node:path';
 
 import { PUBLIC_PACKAGES } from './repository-metadata.mjs';
-import { parseAggregatedConformanceEvidence } from './conformance-contract.mjs';
+import {
+  assertEvidenceProducerCompatibility,
+  parseFrozenConformanceLock,
+  validateFrozenConformanceBindings,
+} from './conformance-contract.mjs';
 
 const CONFIG_FIELDS = Object.freeze([
   'schemaVersion',
@@ -34,6 +43,23 @@ const CONFORMANCE_REGISTRY_PATH =
   'conformance/client-v1-cross-repository-assertions.json';
 const CONFORMANCE_SCHEMA_PATH =
   'conformance/client-v1-cross-repository-evidence.schema.json';
+const CONFORMANCE_VERIFIER_PATH =
+  'scripts/verify-committed-conformance-evidence.mjs';
+const VALIDATOR_RUNTIME_PATHS = Object.freeze([
+  '.github/workflows/release.yml',
+  'package.json',
+  'pnpm-lock.yaml',
+  'scripts/aggregate-client-v1-conformance.mjs',
+  'scripts/conformance-contract.mjs',
+  'scripts/create-release-artifacts.mjs',
+  'scripts/owned-temp-directory.mjs',
+  'scripts/package-artifacts.mjs',
+  'scripts/publish-release-artifacts.mjs',
+  'scripts/release-readiness.mjs',
+  'scripts/repository-metadata.mjs',
+  CONFORMANCE_VERIFIER_PATH,
+  'scripts/verify-release-readiness.mjs',
+]);
 const STRICT_SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
@@ -62,6 +88,292 @@ function readCommittedBlob(root, commit, path) {
       stdio: ['ignore', 'pipe', 'ignore'],
     },
   );
+}
+
+function readCommittedRegularBlob(root, commit, path, label) {
+  const entry = runReadinessGit(
+    root,
+    ['ls-tree', commit, '--', path],
+  ).trim();
+  const match = /^100(?:644|755) blob ([0-9a-f]{40})\t(.+)$/u.exec(entry);
+  if (match === null || match[2] !== path) {
+    throw new Error(`${label} is not a committed regular file`);
+  }
+  return runReadinessGit(
+    root,
+    ['cat-file', 'blob', match[1]],
+    { encoding: 'buffer' },
+  );
+}
+
+export function validateValidatorRuntimeFiles(
+  root,
+  validatorCommit,
+  releaseCommit = 'HEAD',
+) {
+  for (const [value, label] of [
+    [validatorCommit, 'validatorCommit'],
+    [releaseCommit, 'releaseCommit'],
+  ]) {
+    if (
+      typeof value !== 'string'
+      || !/^(?:HEAD|[0-9a-f]{40})$/u.test(value)
+    ) {
+      throw new Error(`${label} must be HEAD or a full Git commit`);
+    }
+  }
+  for (const path of VALIDATOR_RUNTIME_PATHS) {
+    const validatorBytes = readCommittedRegularBlob(
+      root,
+      validatorCommit,
+      path,
+      `Validator runtime file ${path}`,
+    );
+    const releaseBytes = readCommittedRegularBlob(
+      root,
+      releaseCommit,
+      path,
+      `Release runtime file ${path}`,
+    );
+    if (!validatorBytes.equals(releaseBytes)) {
+      throw new Error(
+        `Validator runtime file ${path} differs from the recorded validator commit`,
+      );
+    }
+    const workingPath = resolve(root, path);
+    let stats;
+    let workingBytes;
+    try {
+      stats = lstatSync(workingPath);
+      workingBytes = readFileSync(workingPath);
+    } catch (error) {
+      throw new Error(
+        `Validator runtime file ${path} does not match the release commit working tree`,
+        { cause: error },
+      );
+    }
+    const status = runReadinessGit(
+      root,
+      [
+        'status',
+        '--porcelain=v1',
+        '--untracked-files=all',
+        '--',
+        path,
+      ],
+    );
+    if (
+      stats.isSymbolicLink()
+      || !stats.isFile()
+      || !workingBytes.equals(releaseBytes)
+      || status.length !== 0
+    ) {
+      throw new Error(
+        `Validator runtime file ${path} does not match the release commit working tree`,
+      );
+    }
+  }
+}
+
+function runReadinessGit(
+  root,
+  arguments_,
+  { encoding = 'utf8', stdio = ['ignore', 'pipe', 'ignore'] } = {},
+) {
+  return execFileSync(
+    'git',
+    [
+      '-c',
+      'core.excludesFile=',
+      '-c',
+      `core.attributesFile=${devNull}`,
+      '-c',
+      'core.fsmonitor=false',
+      '-c',
+      'core.untrackedCache=false',
+      '-c',
+      'credential.helper=',
+      '-C',
+      root,
+      ...arguments_,
+    ],
+    {
+      encoding,
+      env: createReadinessGitEnvironment(),
+      maxBuffer: 32 * 1024 * 1024,
+      stdio,
+      timeout: 15_000,
+      killSignal: 'SIGKILL',
+    },
+  );
+}
+
+function normalizeGitHubRepository(remote) {
+  const trimmed = remote.trim();
+  const match =
+    /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?$/u.exec(
+      trimmed,
+    );
+  return match?.[1] ?? null;
+}
+
+function inspectReleaseRepository(root) {
+  let canonicalRoot;
+  try {
+    canonicalRoot = realpathSync(root);
+  } catch (error) {
+    throw new Error('Release readiness root must be a readable Git checkout', {
+      cause: error,
+    });
+  }
+  let gitRoot;
+  try {
+    gitRoot = realpathSync(
+      runReadinessGit(canonicalRoot, ['rev-parse', '--show-toplevel']).trim(),
+    );
+  } catch (error) {
+    throw new Error('Release readiness root must be a readable Git checkout', {
+      cause: error,
+    });
+  }
+  if (gitRoot !== canonicalRoot) {
+    throw new Error('Release readiness root must equal the Git top-level');
+  }
+  const repository = normalizeGitHubRepository(
+    runReadinessGit(canonicalRoot, ['remote', 'get-url', 'origin']),
+  );
+  if (repository !== 'OpenCoven/sdk') {
+    throw new Error('Release readiness checkout origin must be OpenCoven/sdk');
+  }
+  return {
+    root: canonicalRoot,
+    repository,
+    commit: runReadinessGit(canonicalRoot, ['rev-parse', 'HEAD']).trim(),
+    tree: runReadinessGit(
+      canonicalRoot,
+      ['rev-parse', 'HEAD^{tree}'],
+    ).trim(),
+  };
+}
+
+function readCommittedCleanFile(
+  checkout,
+  path,
+  label,
+  maximumBytes = 1_048_576,
+) {
+  if (
+    typeof path !== 'string'
+    || !/^(?!\/)(?!.*\\)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9@._/-]+$/u.test(
+      path,
+    )
+  ) {
+    throw new Error(`${label} path is not canonical`);
+  }
+  const treeEntry = runReadinessGit(
+    checkout.root,
+    ['ls-tree', checkout.commit, '--', path],
+  ).trim();
+  const match = /^100(?:644|755) blob ([0-9a-f]{40})\t(.+)$/u.exec(treeEntry);
+  if (match === null || match[2] !== path) {
+    throw new Error(`${label} must be a committed tracked regular file`);
+  }
+  const committedBytes = runReadinessGit(
+    checkout.root,
+    ['cat-file', 'blob', match[1]],
+    { encoding: 'buffer' },
+  );
+  if (committedBytes.byteLength > maximumBytes) {
+    throw new Error(`${label} exceeds the ${maximumBytes}-byte limit`);
+  }
+  const workingPath = resolve(checkout.root, path);
+  let stats;
+  let workingBytes;
+  try {
+    stats = lstatSync(workingPath);
+    workingBytes = readFileSync(workingPath);
+  } catch (error) {
+    throw new Error(`${label} must match its committed bytes`, {
+      cause: error,
+    });
+  }
+  if (
+    stats.isSymbolicLink()
+    || !stats.isFile()
+    || stats.size !== committedBytes.byteLength
+    || !workingBytes.equals(committedBytes)
+  ) {
+    throw new Error(`${label} must match its committed bytes`);
+  }
+  const status = runReadinessGit(
+    checkout.root,
+    [
+      'status',
+      '--porcelain=v1',
+      '--untracked-files=all',
+      '--',
+      path,
+    ],
+  );
+  if (status.length !== 0) {
+    throw new Error(`${label} must match its committed bytes`);
+  }
+  return {
+    path,
+    blob: match[1],
+    bytes: committedBytes,
+    size: committedBytes.byteLength,
+    sha256: createHash('sha256').update(committedBytes).digest('hex'),
+  };
+}
+
+function verifyCommittedConformanceEvidence({
+  checkout,
+  aggregateRecord,
+  indexRecord,
+  caveAuthorityRoot,
+}) {
+  if (
+    typeof caveAuthorityRoot !== 'string'
+    || caveAuthorityRoot.length === 0
+  ) {
+    throw new Error(
+      'OPENCOVEN_CAVE_AUTHORITY_ROOT must name the exact clean frozen Cave checkout',
+    );
+  }
+  const output = execFileSync(
+    process.execPath,
+    [
+      resolve(checkout.root, CONFORMANCE_VERIFIER_PATH),
+      '--root',
+      checkout.root,
+      '--commit',
+      checkout.commit,
+      '--aggregate',
+      aggregateRecord,
+      '--index',
+      indexRecord,
+      '--cave-root',
+      caveAuthorityRoot,
+    ],
+    {
+      encoding: 'utf8',
+      env: createReadinessGitEnvironment(),
+      maxBuffer: 4 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 30_000,
+      killSignal: 'SIGKILL',
+    },
+  );
+  const result = JSON.parse(output);
+  if (
+    !isRecord(result)
+    || !isRecord(result.aggregate)
+    || !isRecord(result.index)
+  ) {
+    throw new Error('Committed conformance evidence verifier returned invalid output');
+  }
+  return result;
 }
 
 function isRecord(value) {
@@ -183,6 +495,66 @@ function validateConfigValues(config) {
   }
 }
 
+function readWorkflowJob(workflow, jobName) {
+  const lines = workflow.split('\n');
+  const jobsIndex = lines.findIndex((line) => /^jobs:\s*(?:#.*)?$/u.test(line));
+  if (jobsIndex < 0) {
+    throw new Error('Release workflow must define jobs');
+  }
+  const marker = `  ${jobName}:`;
+  const jobIndex = lines.findIndex(
+    (line, index) =>
+      index > jobsIndex
+      && line.replace(/\s+#.*$/u, '') === marker,
+  );
+  if (jobIndex < 0) {
+    throw new Error(`Release workflow must define a ${jobName} job`);
+  }
+  let endIndex = lines.length;
+  for (let index = jobIndex + 1; index < lines.length; index += 1) {
+    if (/^ {2}[A-Za-z0-9_-]+:\s*(?:#.*)?$/u.test(lines[index])) {
+      endIndex = index;
+      break;
+    }
+  }
+  return lines.slice(jobIndex + 1, endIndex);
+}
+
+function readWorkflowJobScalar(jobLines, key) {
+  const pattern = new RegExp(
+    `^ {4}${key}:\\s*([^#\\s][^#]*?)\\s*(?:#.*)?$`,
+    'u',
+  );
+  const matches = jobLines
+    .map((line) => pattern.exec(line)?.[1]?.trim())
+    .filter((value) => value !== undefined);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function readWorkflowJobMapping(jobLines, key) {
+  const marker = `    ${key}:`;
+  const mappingIndex = jobLines.findIndex(
+    (line) => line.replace(/\s+#.*$/u, '') === marker,
+  );
+  if (mappingIndex < 0) return null;
+  const mapping = {};
+  for (let index = mappingIndex + 1; index < jobLines.length; index += 1) {
+    const line = jobLines[index];
+    if (line.trim().length === 0 || line.trimStart().startsWith('#')) {
+      continue;
+    }
+    if (/^ {0,4}\S/u.test(line)) break;
+    const match =
+      /^ {6}([A-Za-z0-9_-]+):\s*([^#\s][^#]*?)\s*(?:#.*)?$/u.exec(
+        line,
+      );
+    if (match !== null) {
+      mapping[match[1]] = match[2].trim();
+    }
+  }
+  return mapping;
+}
+
 function validateReleaseWorkflow(root, config) {
   const workflowPath = resolve(root, RELEASE_WORKFLOW_PATH);
   if (!existsSync(workflowPath)) {
@@ -193,37 +565,29 @@ function validateReleaseWorkflow(root, config) {
   // with CRLF endings would never match `publish:\n` -- the validator would
   // report a missing publish job on a workflow that has one.
   const workflow = readFileSync(workflowPath, 'utf8').replace(/\r\n/g, '\n');
-  const publishJobMarker = '\n  publish:\n';
-  const publishJobIndex = workflow.indexOf(publishJobMarker);
-  if (publishJobIndex < 0) {
-    throw new Error('Release workflow must define a publish job');
-  }
-
-  // Only the publish job, not everything after it.
-  //
-  // Slicing to the end of the file let any later job satisfy these
-  // requirements: a publish job with no `environment` and no permissions block
-  // passed as long as some other job further down happened to contain those
-  // strings. That is the deployment lock reporting itself as present while
-  // being absent, which is the one failure this check exists to prevent.
-  const publishJobBody = workflow.slice(publishJobIndex + publishJobMarker.length);
-  const nextJobIndex = publishJobBody.search(/\n {2}\S/);
-  const publishJob =
-    nextJobIndex < 0 ? publishJobBody : publishJobBody.slice(0, nextJobIndex);
-  if (!publishJob.includes(`environment: ${config.githubEnvironment}`)) {
+  const publishJob = readWorkflowJob(workflow, 'publish');
+  if (
+    readWorkflowJobScalar(publishJob, 'environment')
+      !== config.githubEnvironment
+  ) {
     throw new Error(
       `Release workflow publish job must use environment ${config.githubEnvironment}`,
     );
   }
-  for (const requirement of [
-    'needs: preflight',
-    'contents: read',
-    'id-token: write',
-    'attestations: write',
+  if (readWorkflowJobScalar(publishJob, 'needs') !== 'preflight') {
+    throw new Error(
+      'Release workflow publish job must contain needs: preflight',
+    );
+  }
+  const permissions = readWorkflowJobMapping(publishJob, 'permissions');
+  for (const [permission, value] of [
+    ['contents', 'read'],
+    ['id-token', 'write'],
+    ['attestations', 'write'],
   ]) {
-    if (!publishJob.includes(requirement)) {
+    if (permissions?.[permission] !== value) {
       throw new Error(
-        `Release workflow publish job must contain ${requirement}`,
+        `Release workflow publish job must contain ${permission}: ${value}`,
       );
     }
   }
@@ -243,6 +607,7 @@ export function validateReleaseReadiness({
   tag,
   requireTag = false,
   requireConformanceEvidence = false,
+  caveAuthorityRoot = process.env.OPENCOVEN_CAVE_AUTHORITY_ROOT,
 } = {}) {
   if (mode !== 'verify' && mode !== 'publish') {
     throw new Error(`Release mode must be verify or publish, received ${String(mode)}`);
@@ -362,10 +727,6 @@ export function validateReleaseReadiness({
     }
   }
 
-  if (mode === 'publish' && !config.publishingEnabled) {
-    throw new Error('Release publishing is disabled by release.config.json');
-  }
-
   const aggregateRecord = config.conformanceEvidence.aggregateRecord;
   let conformanceEvidenceRecord = null;
   if (aggregateRecord === null) {
@@ -374,7 +735,7 @@ export function validateReleaseReadiness({
         'release.config.json must name a passing SDK #38 aggregate record',
       );
     }
-  } else {
+  } else if (requireConformanceEvidence || mode === 'publish') {
     const expectedRecord =
       `${CONFORMANCE_RESULTS_DIRECTORY}/${config.conformanceEvidence.candidateCommit}.json`;
     if (aggregateRecord !== expectedRecord) {
@@ -382,87 +743,90 @@ export function validateReleaseReadiness({
         `release.config.json conformanceEvidence.aggregateRecord must be ${expectedRecord}`,
       );
     }
-    const recordPath = resolve(root, aggregateRecord);
-    let stats;
+    const evidenceIndexRecord = aggregateRecord.replace(/\.json$/u, '.index.json');
+    const checkout = inspectReleaseRepository(root);
+    readCommittedCleanFile(
+      checkout,
+      'release.config.json',
+      'release.config.json',
+    );
+    const aggregateFile = readCommittedCleanFile(
+      checkout,
+      aggregateRecord,
+      'release.config.json conformance evidence record',
+    );
+    readCommittedCleanFile(
+      checkout,
+      evidenceIndexRecord,
+      'release.config.json conformance evidence index',
+    );
+    const frozenLockFile = readCommittedCleanFile(
+      checkout,
+      CONFORMANCE_LOCK_PATH,
+      'Frozen conformance lock',
+    );
+    const assertionRegistryFile = readCommittedCleanFile(
+      checkout,
+      CONFORMANCE_REGISTRY_PATH,
+      'Frozen assertion registry',
+    );
+    const schemaFile = readCommittedCleanFile(
+      checkout,
+      CONFORMANCE_SCHEMA_PATH,
+      'Frozen evidence schema',
+    );
+    readCommittedCleanFile(
+      checkout,
+      CONFORMANCE_VERIFIER_PATH,
+      'Committed conformance evidence verifier',
+    );
+    const frozenLock = parseFrozenConformanceLock(
+      frozenLockFile.bytes.toString('utf8'),
+      'committed frozen conformance lock',
+    );
+    const bindings = validateFrozenConformanceBindings(
+      frozenLock,
+      schemaFile.bytes.toString('utf8'),
+      assertionRegistryFile.bytes.toString('utf8'),
+    );
+    assertEvidenceProducerCompatibility(bindings.lock);
     try {
-      stats = lstatSync(recordPath);
-    } catch (error) {
-      throw new Error(
-        'release.config.json conformance evidence record does not exist',
-        { cause: error },
+      const aggregateEnvelope = JSON.parse(
+        aggregateFile.bytes.toString('utf8'),
       );
-    }
-    if (stats.isSymbolicLink() || !stats.isFile() || stats.size > 1_048_576) {
-      throw new Error(
-        'release.config.json conformance evidence record must be a bounded regular file',
-      );
-    }
-    try {
-      const aggregateText = readFileSync(recordPath, 'utf8');
-      const envelope = JSON.parse(aggregateText);
       if (
-        !isRecord(envelope)
-        || !isRecord(envelope.validator)
-        || typeof envelope.validator.commit !== 'string'
-        || !/^[0-9a-f]{40}$/.test(envelope.validator.commit)
+        !isRecord(aggregateEnvelope)
+        || !isRecord(aggregateEnvelope.validator)
+        || typeof aggregateEnvelope.validator.commit !== 'string'
+        || !/^[0-9a-f]{40}$/u.test(aggregateEnvelope.validator.commit)
       ) {
         throw new Error('aggregate validator commit is missing or invalid');
       }
-      const validatorCommit = envelope.validator.commit;
-      const frozenLockBytes = readCommittedBlob(
-        root,
-        validatorCommit,
-        CONFORMANCE_LOCK_PATH,
+      validateValidatorRuntimeFiles(
+        checkout.root,
+        aggregateEnvelope.validator.commit,
+        checkout.commit,
       );
-      const assertionRegistryBytes = readCommittedBlob(
-        root,
-        validatorCommit,
-        CONFORMANCE_REGISTRY_PATH,
-      );
-      const schemaBytes = readCommittedBlob(
-        root,
-        validatorCommit,
-        CONFORMANCE_SCHEMA_PATH,
-      );
-      const aggregate = parseAggregatedConformanceEvidence(
-        aggregateText,
-        'release conformance aggregate',
-        {
-          frozenLockText: frozenLockBytes.toString('utf8'),
-          assertionRegistryText: assertionRegistryBytes.toString('utf8'),
-          schema: JSON.parse(schemaBytes.toString('utf8')),
-        },
-      );
-      const validatorTree = execFileSync(
-        'git',
-        [
-          '-C',
-          root,
-          'rev-parse',
-          `${aggregate.validator.commit}^{tree}`,
-        ],
-        {
-          encoding: 'utf8',
-          env: createReadinessGitEnvironment(),
-          stdio: ['ignore', 'pipe', 'ignore'],
-        },
+      const verified = verifyCommittedConformanceEvidence({
+        checkout,
+        aggregateRecord,
+        indexRecord: evidenceIndexRecord,
+        caveAuthorityRoot,
+      });
+      const aggregate = verified.aggregate;
+      const validatorTree = runReadinessGit(
+        checkout.root,
+        ['rev-parse', `${aggregate.validator.commit}^{tree}`],
       ).trim();
       if (validatorTree !== aggregate.validator.tree) {
         throw new Error('aggregate validator tree does not match its commit');
       }
-      const candidateTree = execFileSync(
-        'git',
+      const candidateTree = runReadinessGit(
+        checkout.root,
         [
-          '-C',
-          root,
           'rev-parse',
           `${config.conformanceEvidence.candidateCommit}^{tree}`,
         ],
-        {
-          encoding: 'utf8',
-          env: createReadinessGitEnvironment(),
-          stdio: ['ignore', 'pipe', 'ignore'],
-        },
       ).trim();
       if (
         aggregate.candidate.provenance.commit
@@ -473,42 +837,32 @@ export function validateReleaseReadiness({
           'aggregate candidate does not match the configured frozen candidate',
         );
       }
-      execFileSync(
-        'git',
+      runReadinessGit(
+        checkout.root,
         [
-          '-C',
-          root,
           'merge-base',
           '--is-ancestor',
           config.conformanceEvidence.candidateCommit,
           aggregate.validator.commit,
         ],
-        {
-          env: createReadinessGitEnvironment(),
-          stdio: 'ignore',
-        },
+        { stdio: 'ignore' },
       );
-      execFileSync(
-        'git',
+      runReadinessGit(
+        checkout.root,
         [
-          '-C',
-          root,
           'merge-base',
           '--is-ancestor',
           aggregate.validator.commit,
-          'HEAD',
+          checkout.commit,
         ],
-        {
-          env: createReadinessGitEnvironment(),
-          stdio: 'ignore',
-        },
+        { stdio: 'ignore' },
       );
       for (const metadata of [
         aggregate.validator.contract,
         aggregate.validator.schema,
       ]) {
         const bytes = readCommittedBlob(
-          root,
+          checkout.root,
           aggregate.validator.commit,
           metadata.path,
         );
@@ -521,6 +875,30 @@ export function validateReleaseReadiness({
           );
         }
       }
+      for (const [path, currentFile] of [
+        [CONFORMANCE_LOCK_PATH, frozenLockFile],
+        [CONFORMANCE_REGISTRY_PATH, assertionRegistryFile],
+        [CONFORMANCE_SCHEMA_PATH, schemaFile],
+      ]) {
+        const validatorBytes = readCommittedBlob(
+          checkout.root,
+          aggregate.validator.commit,
+          path,
+        );
+        if (!validatorBytes.equals(currentFile.bytes)) {
+          throw new Error(
+            `aggregate validator file ${path} differs from the reviewed release contract`,
+          );
+        }
+      }
+      if (
+        verified.index.aggregate.size !== aggregateFile.size
+        || verified.index.aggregate.sha256 !== aggregateFile.sha256
+      ) {
+        throw new Error(
+          'reviewed conformance evidence index does not bind the committed aggregate',
+        );
+      }
     } catch (error) {
       throw new Error(
         'release.config.json conformance evidence record is not a complete canonical aggregate',
@@ -528,6 +906,10 @@ export function validateReleaseReadiness({
       );
     }
     conformanceEvidenceRecord = aggregateRecord;
+  }
+
+  if (mode === 'publish' && !config.publishingEnabled) {
+    throw new Error('Release publishing is disabled by release.config.json');
   }
 
   return {

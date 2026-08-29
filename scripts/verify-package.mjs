@@ -886,10 +886,12 @@ try {
     root,
     outputRoot: releaseArtifactRoot,
     build: false,
+    requireConformanceEvidence: false,
   });
   verifyReleaseArtifacts({
     root,
     artifactRoot: releaseArtifactRoot,
+    requireConformanceEvidence: false,
   });
   process.stdout.write('Release artifact manifest verified.\n');
 
