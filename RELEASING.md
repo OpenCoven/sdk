@@ -24,6 +24,14 @@ release-gate matrix is narrower than the published package Node runtime
 support and does not by itself authorize release; #38 still requires one
 passing evidence record for each target.
 
+After the native consumer has produced those three records, validate and
+combine them with `corepack pnpm@10.34.0 conformance:aggregate -- ...` as
+documented in
+[`docs/workflows/client-v1-cross-repository-conformance.md`](docs/workflows/client-v1-cross-repository-conformance.md).
+The SDK command imports Cave's exact locked assertion engine and validates
+already-completed evidence; it does not execute a platform journey or change
+release state.
+
 Before unlocking, create and protect the `npm-release` environment, confirm
 branch protections and required checks, confirm npm organization ownership,
 and complete the first-publish/trusted-publisher prerequisites below.

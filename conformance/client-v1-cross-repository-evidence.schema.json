@@ -1,0 +1,403 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/OpenCoven/sdk/blob/main/conformance/client-v1-cross-repository-evidence.schema.json",
+  "title": "OpenCoven Client v1 cross-repository platform evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "issue",
+    "platform",
+    "ranAt",
+    "environment",
+    "releases",
+    "commits",
+    "digests",
+    "caveRecord",
+    "sdkAssertions",
+    "chatAssertions",
+    "coverage",
+    "notCovered",
+    "isolation"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "issue": {
+      "const": "OpenCoven/sdk#38"
+    },
+    "platform": {
+      "enum": [
+        "darwin-arm64",
+        "linux-x64",
+        "win32-x64"
+      ]
+    },
+    "ranAt": {
+      "type": "string"
+    },
+    "environment": {
+      "$ref": "#/$defs/environment"
+    },
+    "releases": {
+      "$ref": "#/$defs/releases"
+    },
+    "commits": {
+      "$ref": "#/$defs/commits"
+    },
+    "digests": {
+      "$ref": "#/$defs/digests"
+    },
+    "caveRecord": {
+      "$ref": "#/$defs/caveRecord"
+    },
+    "sdkAssertions": {
+      "$ref": "#/$defs/assertions"
+    },
+    "chatAssertions": {
+      "$ref": "#/$defs/assertions"
+    },
+    "coverage": {
+      "$ref": "#/$defs/coverage"
+    },
+    "notCovered": {
+      "$ref": "#/$defs/notCovered"
+    },
+    "isolation": {
+      "$ref": "#/$defs/isolation"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "stringArray": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "arch",
+        "nodeVersion",
+        "packageManagerVersion"
+      ],
+      "properties": {
+        "os": {
+          "enum": [
+            "darwin",
+            "linux",
+            "win32"
+          ]
+        },
+        "arch": {
+          "enum": [
+            "arm64",
+            "x64"
+          ]
+        },
+        "nodeVersion": {
+          "type": "string",
+          "pattern": "^v24\\.[0-9]+\\.[0-9]+$"
+        },
+        "packageManagerVersion": {
+          "const": "pnpm@10.34.0"
+        }
+      }
+    },
+    "releases": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cave",
+        "coven"
+      ],
+      "properties": {
+        "cave": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "coven": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "commits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cave",
+        "coven",
+        "sdk",
+        "chat"
+      ],
+      "properties": {
+        "cave": {
+          "$ref": "#/$defs/commit"
+        },
+        "coven": {
+          "$ref": "#/$defs/commit"
+        },
+        "sdk": {
+          "$ref": "#/$defs/commit"
+        },
+        "chat": {
+          "$ref": "#/$defs/commit"
+        }
+      }
+    },
+    "digests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caveAssertionEngine",
+        "caveContractFixture",
+        "hpkeVectors",
+        "consumerLock",
+        "assertionRegistry",
+        "sdkTarballs"
+      ],
+      "properties": {
+        "caveAssertionEngine": {
+          "$ref": "#/$defs/sha256"
+        },
+        "caveContractFixture": {
+          "$ref": "#/$defs/sha256"
+        },
+        "hpkeVectors": {
+          "$ref": "#/$defs/sha256"
+        },
+        "consumerLock": {
+          "$ref": "#/$defs/sha256"
+        },
+        "assertionRegistry": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sdkTarballs": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "packageName",
+              "sha256"
+            ],
+            "properties": {
+              "packageName": {
+                "enum": [
+                  "@opencoven/sdk-core",
+                  "@opencoven/cave-client",
+                  "@opencoven/coven-client",
+                  "@opencoven/sdk"
+                ]
+              },
+              "sha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        }
+      }
+    },
+    "assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "result",
+        "diagnosticId"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[._/-][a-z0-9]+)*$"
+        },
+        "result": {
+          "enum": [
+            "pass",
+            "fail",
+            "skip"
+          ]
+        },
+        "diagnosticId": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[._/-][a-z0-9]+)*$"
+        }
+      }
+    },
+    "assertions": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/assertion"
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cave",
+        "coven",
+        "sdk",
+        "chat"
+      ],
+      "properties": {
+        "cave": {
+          "const": true
+        },
+        "coven": {
+          "const": true
+        },
+        "sdk": {
+          "const": true
+        },
+        "chat": {
+          "const": true
+        }
+      }
+    },
+    "notCovered": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scopeId",
+          "diagnosticId"
+        ],
+        "properties": {
+          "scopeId": {
+            "enum": [
+              "cross-process-pairing",
+              "oauth-ui",
+              "remote-peer",
+              "write-apis"
+            ]
+          },
+          "diagnosticId": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:[._/-][a-z0-9]+)*$"
+          }
+        }
+      }
+    },
+    "caveRecord": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "The unmodified record emitted and re-rendered for equality by Cave scripts/client-v1-conformance.mjs. Its authoritative shape intentionally is not duplicated in this SDK schema."
+    },
+    "isolation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "network",
+        "sourceCheckoutDependency",
+        "workspaceLinkDependency",
+        "retainedPrivatePaths",
+        "retainedSocketHandles",
+        "roots",
+        "operatorState"
+      ],
+      "properties": {
+        "strategy": {
+          "const": "process-owned-temporary-roots"
+        },
+        "network": {
+          "const": "loopback-only"
+        },
+        "sourceCheckoutDependency": {
+          "const": false
+        },
+        "workspaceLinkDependency": {
+          "const": false
+        },
+        "retainedPrivatePaths": {
+          "const": false
+        },
+        "retainedSocketHandles": {
+          "const": false
+        },
+        "roots": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "ownershipVerified",
+              "removedAfterRun"
+            ],
+            "properties": {
+              "id": {
+                "enum": [
+                  "cave-home",
+                  "coven-home",
+                  "consumer-home",
+                  "native-credential-store"
+                ]
+              },
+              "ownershipVerified": {
+                "const": true
+              },
+              "removedAfterRun": {
+                "const": true
+              }
+            }
+          }
+        },
+        "operatorState": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "beforeSha256",
+              "afterSha256"
+            ],
+            "properties": {
+              "id": {
+                "enum": [
+                  "cave-home",
+                  "coven-home",
+                  "native-credential-store",
+                  "projects"
+                ]
+              },
+              "beforeSha256": {
+                "$ref": "#/$defs/sha256"
+              },
+              "afterSha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
