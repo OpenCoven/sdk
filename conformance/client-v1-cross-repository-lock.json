@@ -11,7 +11,7 @@
     "path": "conformance/client-v1-cross-repository-evidence.schema.json",
     "version": 2,
     "size": 23174,
-    "sha256": "af7d1eb904028f56b5a014f06cecf954dccb5486f1b5bd9859e4b64463b5df1f"
+    "sha256": "f9d58f4daee3f8a6fbf78650a18a74ed3ac14c39f1ae086d94324658d7fbdfad"
   },
   "candidate": {
     "repository": "OpenCoven/sdk",
@@ -88,24 +88,24 @@
   "sources": {
     "cave": {
       "repository": "OpenCoven/coven-cave",
-      "commit": "2a0ff9237e94e652e477b22f60fd6d721b9e6451",
-      "tree": "5f5a2711552746695ffba6ff7a9e8af81647f194",
-      "releaseVersion": "0.3.11",
+      "commit": "6325fc4c1154c7d7398074a9760a2e2dc323b424",
+      "tree": "9144939792d3dbdd91c208d7e2abc5ecc0eac089",
+      "releaseVersion": "0.3.12",
       "files": [
         {
           "path": "scripts/client-v1-conformance.mjs",
-          "size": 141424,
-          "sha256": "27d0e898931e6b01a67cbfa20f1d72ba0f988f19772c0e5ca3ccb239a56eba02"
+          "size": 146432,
+          "sha256": "b611d2b2935dad3cf913eda45e30ba109ba2ab53dadfef8670a26c7c03b115dd"
         },
         {
           "path": "src/lib/server/client-v1/contract-fixture.json",
-          "size": 16210,
-          "sha256": "1b78125dab5b77414efd2d34e13315f542b197715ed26c6521f588e299abe61d"
+          "size": 16695,
+          "sha256": "c0b1af2442409f8b26bbf0cf2a5fac467d23e5f56d2c966a9428c4b3e830a186"
         },
         {
           "path": "src/lib/server/client-v1/contract-fixture.sha256",
           "size": 65,
-          "sha256": "2739e5028b79deca7e3a3a3c7191fb96ff24657d03c6997d4462c7edd8f20b4b"
+          "sha256": "26a64f65631fd5afdaa29bb3d5af8f16811376e854d5fe56bc8f7434f861530d"
         },
         {
           "path": "src/lib/server/client-v1/hpke-bound-v1-vectors.json",
@@ -234,6 +234,6 @@
   "assertionRegistry": {
     "path": "conformance/client-v1-cross-repository-assertions.json",
     "size": 10715,
-    "sha256": "f88c4f79a35cea5c4d190ce1af5d8d28633f6c6d197f91c708470e48bd37491c"
+    "sha256": "6d5619033469f81a5d40f4fa4b5000708922da29b2eb7a76e4a4db4dfff198cb"
   }
 }
