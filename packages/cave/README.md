@@ -58,6 +58,10 @@ record. Unix discovery still requires a positive inode.
 - Conversational control adds the first bounded mutation authority while Cave
   remains the sole executor and canonical owner; see
   [Conversational control](#conversational-control) below.
+- Privileged authority adds capability-gated attachment transfer, passive
+  rich content, attention responses, task handoffs, and the confirmed GitHub
+  action envelope while Cave remains the sole executor; see
+  [Privileged authority](#privileged-authority) below.
 - Four bounded async iterators, `iterateFamiliars()`, `iterateProjects()`,
   `iterateConversations()`, and `iterateConversationMessages()`, lazily compose
   the list routes. There is intentionally no iterator for the single-item
@@ -542,6 +546,86 @@ commit and transport bindings can be reviewed against it. The private CLI
 streaming renderers (human/JSON/NDJSON ordering) are likewise staged for a
 follow-up PR per the design's PR plan, as no CLI command can execute a
 mutation against a real authority before that contract exists.
+
+## Privileged authority
+
+The privileged authority tier covers attachment transfer, rich content,
+attention responses, task handoffs, and explicitly confirmed GitHub actions.
+Cave stays authoritative for storage, grants, confirmation revalidation,
+idempotency, audit, and domain mutation; the SDK exposes capability-gated
+typed operations only.
+
+### Capability gating
+
+`createCaveCapabilityRegistry(contract)` resolves an action class
+(`attachment-transfer`, `rich-content`, `attention-response`,
+`task-handoff`, `github-action`) against the live operation table on every
+call. An action class is actionable only when the consulted contract
+declares at least one operation carrying its required scope; resolutions are
+fresh frozen descriptors, never cached capability objects. The default
+registry mirrors the pinned fixture (verified by tests), under which every
+privileged class resolves `undeclared` and `CaveClient` reports
+`unsupported_operation`. Every privileged request additionally requires an
+exact `confirmed: true` and a caller-supplied 36-character operation UUID.
+
+### Attachment transfer
+
+Upload and download requests are validated fail closed before any
+capability or transport work: file count, per-file size, total request size,
+declared MIME type versus magic-byte signature agreement, filename rules
+(no separators, dot segments, control characters, or hidden dotfiles),
+symlink refusal, and the atomic binding of every attachment to its uploader
+credential and conversation. Canonical attachment records are metadata-only:
+attachment bytes never enter canonical conversation JSON, browser storage,
+profile config, or diagnostic bundles.
+
+### Rich content
+
+`parseCaveRichContent(value)` turns an untrusted payload into a strict,
+non-executable AST over a closed node vocabulary (text, code, line break,
+link, paragraph, heading, code block, blockquote, list). There is no HTML
+node type and no event-handler field anywhere in the model: markup-looking
+text is preserved byte for byte as inert text, unknown node types and
+unknown fields are rejected, link targets allow only `https:` and
+`mailto:` (no scheme-less targets, no userinfo), and node-count, depth,
+and character limits fail closed. Oversized hostile payloads are rejected,
+never truncated.
+
+### Attention and task handoffs
+
+`parseCaveAttentionResponseRequest(value)` accepts the closed response
+kinds `acknowledge` and `decline` with a bounded optional note.
+`parseCaveTaskHandoffRequest(value)` moves a handoff through the declared
+transition map, keeping proposed, pending, completed, rejected, and failed
+strictly distinct; terminal states transition to nothing.
+
+### GitHub actions
+
+The curated GitHub action union (`CAVE_GITHUB_ACTION_KINDS`) is deliberately
+**empty**: no reviewed producer contract has curated which GitHub actions
+exist, so naming concrete kinds would fabricate a curation. The type-level
+union is therefore uninhabitable and `parseCaveGitHubActionRequest` rejects
+every request with the precise gap — fail closed by construction — while
+the confirmation, operation-UUID, and bounded-input machinery ship ready
+for the curated union.
+
+### Upstream contract gap
+
+The authoritative Cave fixture pinned at producer commit `4adc97b1` declares
+the privileged pairing scopes but **no attachment, rich-content, attention,
+task, or GitHub operations and no such capability families**. The five
+optional `CaveTransport` methods `uploadAttachment`,
+`downloadAttachment`, `respondToAttention`, `requestTaskHandoff`, and
+`submitGitHubAction` stay unbound, and no CLI commands ship for unsupported
+privileged actions. The Cave producer routes, scope-to-operation mapping,
+capability families, attachment storage semantics, rich-content payload
+contract, attention/task state ownership, the curated GitHub action union,
+and their conformance vectors are owed by the upstream Cave producer
+contract; once that lands, `pnpm sync:contracts` imports the exact fixture
+commit and the registry, request parsers, and transport bindings are
+reviewed against it. The privileged authority tier additionally requires a
+dedicated security review of privileged authority before any of it becomes
+actionable.
 
 ## Compatibility, deadlines, and retry guidance
 

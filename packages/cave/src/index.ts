@@ -77,6 +77,46 @@ export {
   createConversationEventTranslator,
   validateConversationEventCursor,
 } from './conversation-control.js';
+export {
+  CAVE_ATTACHMENT_CONTENT_TYPES,
+  CAVE_ATTACHMENT_LIMITS,
+  sniffCaveAttachmentContentType,
+  bindCaveAttachments,
+  parseCaveAttachmentDownloadRequest,
+  parseCaveAttachmentRecord,
+  parseCaveAttachmentUploadRequest,
+  CaveAttachmentSchemaError,
+} from './attachment-transfer.js';
+export {
+  CAVE_PRIVILEGED_ACTION_CLASSES,
+  CAVE_PRIVILEGED_ACTION_REQUIREMENTS,
+  CAVE_DEFAULT_CAPABILITY_CONTRACT,
+  createCaveCapabilityRegistry,
+  createDefaultCaveCapabilityRegistry,
+  parsePrivilegedConfirmation,
+  validatePrivilegedOperationId,
+} from './privileged-capabilities.js';
+export {
+  CAVE_RICH_CONTENT_LIMITS,
+  CAVE_RICH_CONTENT_URL_SCHEMES,
+  parseCaveRichContent,
+  serializeCaveRichContent,
+  collectCaveRichContentUrls,
+  parseCaveRichContentUrl,
+  CaveRichContentError,
+} from './rich-content.js';
+export {
+  CAVE_TASK_HANDOFF_STATES,
+  CAVE_TASK_HANDOFF_TRANSITIONS,
+  CAVE_ATTENTION_RESPONSE_KINDS,
+  isCaveTaskHandoffTransition,
+  parseCaveTaskHandoffRequest,
+  parseCaveAttentionResponseRequest,
+} from './attention-handoff.js';
+export {
+  CAVE_GITHUB_ACTION_KINDS,
+  parseCaveGitHubActionRequest,
+} from './github-actions.js';
 export type {
   CaveConversationEvent,
   CaveConversationEventBase,
@@ -98,6 +138,40 @@ export type {
   CaveSendConversationMessageRequest,
   CaveSendConversationMessageResult,
 } from './conversation-control.js';
+export type {
+  CaveAttachmentBinding,
+  CaveAttachmentContent,
+  CaveAttachmentDescriptor,
+  CaveAttachmentDownloadRequest,
+  CaveAttachmentRecord,
+  CaveAttachmentUploadRequest,
+  CaveAttachmentContentType,
+} from './attachment-transfer.js';
+export type {
+  CaveCapabilityRegistry,
+  CaveCapabilityResolution,
+  CaveCapabilityStatus,
+  CaveCapabilityContractSource,
+  CaveDeclaredOperationRef,
+  CavePrivilegedActionClass,
+  CavePrivilegedActionRequirement,
+} from './privileged-capabilities.js';
+export type {
+  CaveRichContentDocument,
+  CaveRichContentBlock,
+  CaveRichContentInline,
+  CaveRichContentUrlScheme,
+} from './rich-content.js';
+export type {
+  CaveTaskHandoffState,
+  CaveTaskHandoffRequest,
+  CaveAttentionResponseKind,
+  CaveAttentionResponseRequest,
+} from './attention-handoff.js';
+export type {
+  CaveGitHubActionKind,
+  CaveGitHubActionRequest,
+} from './github-actions.js';
 export type {
   CaveAuthorityBinding,
   CaveAuthorityBoundPairingExchange,

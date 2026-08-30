@@ -58,6 +58,30 @@ import {
   parseProjectsEnvelope,
 } from './canonical-reads.js';
 import {
+  CaveAttachmentSchemaError,
+  parseCaveAttachmentDownloadRequest,
+  parseCaveAttachmentRecord,
+  parseCaveAttachmentUploadRequest,
+  type CaveAttachmentDownloadRequest,
+  type CaveAttachmentRecord,
+  type CaveAttachmentUploadRequest,
+} from './attachment-transfer.js';
+import {
+  createDefaultCaveCapabilityRegistry,
+  type CaveCapabilityRegistry,
+  type CavePrivilegedActionClass,
+} from './privileged-capabilities.js';
+import {
+  parseCaveAttentionResponseRequest,
+  parseCaveTaskHandoffRequest,
+  type CaveAttentionResponseRequest,
+  type CaveTaskHandoffRequest,
+} from './attention-handoff.js';
+import {
+  parseCaveGitHubActionRequest,
+  type CaveGitHubActionRequest,
+} from './github-actions.js';
+import {
   forgetStoredCredential,
   inspectStoredCredentialMaterial,
   invalidateStoredCredential,
@@ -137,6 +161,12 @@ export interface CaveManagedNativeCredentialCustody {
 
 interface CaveClientOptionsBase {
   operation?: OperationDefaults;
+  /**
+   * Capability registry for the privileged authority tiers. Defaults to the
+   * registry derived from the pinned contract fixture, under which every
+   * privileged action class resolves `undeclared`.
+   */
+  capabilities?: CaveCapabilityRegistry;
 }
 
 interface CaveClientOptionsWithoutCredentials extends CaveClientOptionsBase {
@@ -472,6 +502,7 @@ interface CapturedCaveClientOptions {
   operation: OperationDefaults | undefined;
   credentials: CaveCredentialBinding | undefined;
   credentialCustody: { mode: unknown } | undefined;
+  capabilities: CaveCapabilityRegistry | undefined;
 }
 
 function captureCaveClientOptions(
@@ -482,6 +513,7 @@ function captureCaveClientOptions(
     'operation',
     'credentials',
     'credentialCustody',
+    'capabilities',
   ]);
   if (options === undefined || !Object.hasOwn(options, 'transport')) {
     return undefined;
@@ -542,6 +574,10 @@ function captureCaveClientOptions(
     operation,
     credentials,
     credentialCustody,
+    capabilities:
+      options.capabilities === undefined
+        ? undefined
+        : (options.capabilities as CaveCapabilityRegistry),
   });
 }
 
@@ -1780,6 +1816,7 @@ export class CaveClient {
   readonly #credentials: CaveCredentialBinding | undefined;
   readonly #managedCredentialTransport: CaveManagedCredentialTransport | undefined;
   readonly #stagedManagedCredentialTransport: CaveStagedManagedCredentialTransport | undefined;
+  readonly #capabilities: CaveCapabilityRegistry;
 
   constructor(options: CaveClientOptions) {
     const captured = captureCaveClientOptions(options);
@@ -1798,10 +1835,18 @@ export class CaveClient {
     ) {
       throw new TypeError('Managed native credential custody cannot use a JavaScript SecretStore.');
     }
+    if (
+      captured.capabilities !== undefined &&
+      typeof captured.capabilities.resolve !== 'function'
+    ) {
+      throw new TypeError('capabilities must be a CaveCapabilityRegistry.');
+    }
 
     this.#transport = captured.transport;
     this.#operation = captured.operation;
     this.#credentials = captured.credentials;
+    this.#capabilities =
+      captured.capabilities ?? createDefaultCaveCapabilityRegistry();
     this.#managedCredentialTransport =
       captured.credentialCustody?.mode === 'managed-native'
         ? captured.transport as CaveManagedCredentialTransport
@@ -3331,6 +3376,40 @@ export class CaveClient {
     }
   }
 
+  /**
+   * Shared privileged-action dispatch. Request validation has already
+   * happened by the time this runs; the capability gate resolves the action
+   * class against the consulted contract on every call and reports
+   * `unsupported_operation` with zero transport dispatch for an undeclared
+   * class. The operation UUID is attached to every client error.
+   */
+  async #privilegedMutation<T>(
+    operation: string,
+    actionClass: CavePrivilegedActionClass,
+    operationId: string,
+    options: OperationOptions,
+    executor: (context: OperationContext) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await this.#execute(
+        operation,
+        options,
+        async (context) => {
+          this.#ensureActive(context, operation);
+          const resolution = this.#capabilities.resolve(actionClass);
+          if (resolution.status !== 'declared') {
+            throw unsupported(operation);
+          }
+          return await executor(context);
+        },
+        true,
+        this.#usesManagedCredentialTransport(),
+      );
+    } catch (error) {
+      throw attachConversationOperationId(error, operationId);
+    }
+  }
+
   #parseConversationResponse<T>(operation: string, parse: () => T): T {
     try {
       return parse();
@@ -3668,6 +3747,167 @@ export class CaveClient {
           'stopConversationOperation',
           () => parseConversationOperationResponse(response, validatedId),
         );
+      },
+    );
+  }
+
+  /**
+   * Bounded attachment upload. The request is validated fail closed (file
+   * count, size, request size, MIME/signature agreement, filename, symlink,
+   * and the atomic uploader-credential-plus-conversation binding) before any
+   * capability or transport work, so a validation rejection performs zero
+   * domain mutation. Under the pinned contract the attachment capability is
+   * undeclared and this reports `unsupported_operation`.
+   */
+  async uploadAttachment(
+    request: CaveAttachmentUploadRequest,
+    options: OperationOptions = {},
+  ): Promise<CaveAttachmentRecord> {
+    const validated = parseCaveAttachmentUploadRequest(request);
+
+    return await this.#privilegedMutation(
+      'uploadAttachment',
+      'attachment-transfer',
+      validated.operationId,
+      options,
+      async (context) => {
+        const call = this.#transport.uploadAttachment?.bind(this.#transport);
+        if (call === undefined) {
+          throw unsupported('uploadAttachment');
+        }
+        const response = this.#managedSnapshot(
+          await call(validated, context),
+          'uploadAttachment',
+        );
+        try {
+          return parseCaveAttachmentRecord(response);
+        } catch (error) {
+          if (error instanceof CaveAttachmentSchemaError) {
+            throw invalidCanonicalResponse('uploadAttachment', error.field);
+          }
+          throw error;
+        }
+      },
+    );
+  }
+
+  /**
+   * Bounded attachment download. The request carries the byte ceiling; the
+   * canonical record is the validated result metadata. Under the pinned
+   * contract this reports `unsupported_operation` before any transport work.
+   */
+  async downloadAttachment(
+    request: CaveAttachmentDownloadRequest,
+    options: OperationOptions = {},
+  ): Promise<CaveAttachmentRecord> {
+    const validated = parseCaveAttachmentDownloadRequest(request);
+
+    return await this.#privilegedMutation(
+      'downloadAttachment',
+      'attachment-transfer',
+      validated.operationId,
+      options,
+      async (context) => {
+        const call = this.#transport.downloadAttachment?.bind(this.#transport);
+        if (call === undefined) {
+          throw unsupported('downloadAttachment');
+        }
+        const response = this.#managedSnapshot(
+          await call(validated, context),
+          'downloadAttachment',
+        );
+        try {
+          return parseCaveAttachmentRecord(response);
+        } catch (error) {
+          if (error instanceof CaveAttachmentSchemaError) {
+            throw invalidCanonicalResponse('downloadAttachment', error.field);
+          }
+          throw error;
+        }
+      },
+    );
+  }
+
+  /**
+   * One attention response with a closed response-kind union and a bounded
+   * optional note. Validation failure performs zero domain mutation; under
+   * the pinned contract the attention capability is undeclared and this
+   * reports `unsupported_operation`.
+   */
+  async respondToAttention(
+    request: CaveAttentionResponseRequest,
+    options: OperationOptions = {},
+  ): Promise<void> {
+    const validated = parseCaveAttentionResponseRequest(request);
+
+    return await this.#privilegedMutation(
+      'respondToAttention',
+      'attention-response',
+      validated.operationId,
+      options,
+      async (context) => {
+        const call = this.#transport.respondToAttention?.bind(this.#transport);
+        if (call === undefined) {
+          throw unsupported('respondToAttention');
+        }
+        await call(validated, context);
+      },
+    );
+  }
+
+  /**
+   * One task-handoff transition. The declared transition map keeps
+   * proposed, pending, completed, rejected, and failed strictly distinct;
+   * an illegal or skipped transition is a configuration error before any
+   * capability or transport work. Under the pinned contract this reports
+   * `unsupported_operation`.
+   */
+  async requestTaskHandoff(
+    request: CaveTaskHandoffRequest,
+    options: OperationOptions = {},
+  ): Promise<void> {
+    const validated = parseCaveTaskHandoffRequest(request);
+
+    return await this.#privilegedMutation(
+      'requestTaskHandoff',
+      'task-handoff',
+      validated.operationId,
+      options,
+      async (context) => {
+        const call = this.#transport.requestTaskHandoff?.bind(this.#transport);
+        if (call === undefined) {
+          throw unsupported('requestTaskHandoff');
+        }
+        await call(validated, context);
+      },
+    );
+  }
+
+  /**
+   * One explicitly confirmed GitHub action. The curated action union is
+   * empty under the pinned contract, so every request is rejected during
+   * request parsing — before any capability or transport work — and zero
+   * domain mutation is possible. When the upstream producer contract
+   * curates the union, the confirmed request flows through the capability
+   * gate to Cave, which revalidates confirmation, scope, grant, and bounds.
+   */
+  async submitGitHubAction(
+    request: CaveGitHubActionRequest,
+    options: OperationOptions = {},
+  ): Promise<void> {
+    const validated = parseCaveGitHubActionRequest(request);
+
+    return await this.#privilegedMutation(
+      'submitGitHubAction',
+      'github-action',
+      validated.operationId,
+      options,
+      async (context) => {
+        const call = this.#transport.submitGitHubAction?.bind(this.#transport);
+        if (call === undefined) {
+          throw unsupported('submitGitHubAction');
+        }
+        await call(validated, context);
       },
     );
   }
