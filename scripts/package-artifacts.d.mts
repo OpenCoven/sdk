@@ -3,6 +3,28 @@ export function isolatedInstallArgs(options?: {
   workspace?: boolean;
 }): string[];
 
+export function runPnpm(
+  args: string[],
+  cwd: string,
+  options?: {
+    corepackPath?: string;
+    env?: NodeJS.ProcessEnv;
+    nodePath?: string;
+    stdio?: 'ignore' | 'inherit' | 'pipe';
+  },
+): void;
+
+export function runPnpmAsync(
+  args: string[],
+  cwd: string,
+  options?: {
+    corepackPath?: string;
+    env?: NodeJS.ProcessEnv;
+    nodePath?: string;
+    stdio?: 'ignore' | 'inherit' | 'pipe';
+  },
+): Promise<void>;
+
 export function installIsolatedOfflineAfterWarming(
   directory: string,
   options?: {

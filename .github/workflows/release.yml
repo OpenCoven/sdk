@@ -120,6 +120,7 @@ jobs:
             scripts/release-runtime-integrity.mjs
             scripts/repository-metadata.mjs
             scripts/verify-committed-conformance-evidence.mjs
+            scripts/verify-development-release-configuration.mjs
             scripts/verify-github-environment-policies.mjs
             scripts/verify-release-readiness.mjs
           )
@@ -151,9 +152,7 @@ jobs:
             OPENCOVEN_CAVE_AUTHORITY_ROOT="$OPENCOVEN_CAVE_AUTHORITY_ROOT" \
             "$node_path" ./scripts/verify-release-readiness.mjs \
               --mode verify \
-              --version "$RELEASE_VERSION" \
-              --require-live-environment-policy \
-              --require-conformance-evidence
+              --version "$RELEASE_VERSION"
       - name: Verify publish gates and release tag
         if: inputs.mode == 'publish'
         env:
@@ -175,9 +174,7 @@ jobs:
               --mode publish \
               --version "$RELEASE_VERSION" \
               --tag "sdk-v$RELEASE_VERSION" \
-              --require-tag \
-              --require-live-environment-policy \
-              --require-conformance-evidence
+              --require-tag
       - name: Require clean reviewed tree
         run: |
           if [ -n "$(/usr/bin/git status --porcelain --untracked-files=all)" ]; then

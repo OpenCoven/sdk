@@ -1,4 +1,5 @@
 export const PROTECTED_PNPM_PACKAGE_MANAGER: 'pnpm@10.34.0';
+export const AUTHENTICATED_GIT_EXECUTABLE: '/usr/bin/git';
 
 export const AUTHENTICATED_NODE_VERSION: 'v24.18.1';
 export const AUTHENTICATED_NODE_LINUX_X64_VERSION: 'v24.18.1';
@@ -36,6 +37,7 @@ export const REVIEWED_NPM_CLI_ENTRYPOINT_SHA256:
 
 export const RELEASE_RUNTIME_INTEGRITY_CONSTANTS: Readonly<{
   protectedPnpmPackageManager: 'pnpm@10.34.0';
+  authenticatedGitExecutable: '/usr/bin/git';
   authenticatedNodeVersion: 'v24.18.1';
   authenticatedNodeLinuxX64Version: 'v24.18.1';
   authenticatedNodeLinuxX64ExecutableSha256:
@@ -71,6 +73,16 @@ export function runWithGitHubTokensScrubbed<T>(
   environment: Record<string, string | undefined>,
   operation: () => T | Promise<T>,
 ): Promise<T>;
+
+export interface AuthenticatedGitRuntime {
+  gitPath: '/usr/bin/git';
+  gitSize: number;
+  gitVersion: string;
+}
+
+export function resolveAuthenticatedGitRuntime(options?: {
+  platform?: NodeJS.Platform;
+}): AuthenticatedGitRuntime;
 
 export function createSterileReleaseEnvironment(options: {
   authenticatedNodePath: string;

@@ -19,7 +19,7 @@ import {
 } from './github-conformance-evidence.mjs';
 import { assertFrozenNodeRuntime } from './release-readiness.mjs';
 import {
-  createGitHubTokenFreeEnvironment,
+  resolveAuthenticatedGitRuntime,
   runWithGitHubTokensScrubbed,
 } from './release-runtime-integrity.mjs';
 
@@ -29,26 +29,31 @@ const REGISTRY_PATH =
 const SCHEMA_PATH =
   'conformance/client-v1-cross-repository-evidence.schema.json';
 
-function createGitEnvironment() {
-  const environment = {};
-  for (const [key, value] of Object.entries(
-    createGitHubTokenFreeEnvironment(process.env),
-  )) {
-    if (!key.toUpperCase().startsWith('GIT_') && value !== undefined) {
-      environment[key] = value;
-    }
-  }
-  environment.GIT_CONFIG_GLOBAL = devNull;
-  environment.GIT_CONFIG_NOSYSTEM = '1';
-  environment.GIT_NO_REPLACE_OBJECTS = '1';
-  environment.GIT_OPTIONAL_LOCKS = '0';
-  environment.GIT_TERMINAL_PROMPT = '0';
-  return environment;
+function createGitEnvironment(root) {
+  return {
+    PATH: '/usr/bin:/bin',
+    HOME: root,
+    LANG: 'C',
+    LC_ALL: 'C',
+    TZ: 'UTC',
+    GIT_ALLOW_PROTOCOL: '',
+    GIT_ASKPASS: devNull,
+    GIT_ATTR_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: devNull,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_NO_LAZY_FETCH: '1',
+    GIT_NO_REPLACE_OBJECTS: '1',
+    GIT_OPTIONAL_LOCKS: '0',
+    GIT_SSH: devNull,
+    GIT_SSH_COMMAND: devNull,
+    GIT_TERMINAL_PROMPT: '0',
+    SSH_ASKPASS: devNull,
+  };
 }
 
-function runGit(root, args, { encoding = 'utf8' } = {}) {
+function runGit(gitRuntime, root, args, { encoding = 'utf8' } = {}) {
   return execFileSync(
-    'git',
+    gitRuntime.gitPath,
     [
       '-c',
       'core.excludesFile=',
@@ -66,7 +71,7 @@ function runGit(root, args, { encoding = 'utf8' } = {}) {
     ],
     {
       encoding,
-      env: createGitEnvironment(),
+      env: createGitEnvironment(root),
       maxBuffer: 32 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 15_000,
@@ -75,7 +80,7 @@ function runGit(root, args, { encoding = 'utf8' } = {}) {
   );
 }
 
-function readCommittedRegularBlob(root, commit, path, label) {
+function readCommittedRegularBlob(gitRuntime, root, commit, path, label) {
   if (
     typeof path !== 'string'
     || !/^(?!\/)(?!.*\\)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9@._/-]+$/u.test(
@@ -84,12 +89,16 @@ function readCommittedRegularBlob(root, commit, path, label) {
   ) {
     throw new Error(`${label} path is not canonical`);
   }
-  const entry = runGit(root, ['ls-tree', commit, '--', path]).trim();
+  const entry = runGit(
+    gitRuntime,
+    root,
+    ['ls-tree', commit, '--', path],
+  ).trim();
   const match = /^100(?:644|755) blob ([0-9a-f]{40})\t(.+)$/u.exec(entry);
   if (match === null || match[2] !== path) {
     throw new Error(`${label} is not a committed regular file`);
   }
-  const bytes = runGit(root, ['cat-file', 'blob', match[1]], {
+  const bytes = runGit(gitRuntime, root, ['cat-file', 'blob', match[1]], {
     encoding: 'buffer',
   });
   if (bytes.byteLength > 1_048_576) {
@@ -148,33 +157,38 @@ function parseArguments(argv) {
 
 async function verifyCommittedConformanceEvidenceWithScrubbedEnvironment(
   options,
-  { execute, env } = {},
+  { execute, env, gitRuntime } = {},
 ) {
   const lockText = readCommittedRegularBlob(
+    gitRuntime,
     options.root,
     options.commit,
     LOCK_PATH,
     'Frozen conformance lock',
   ).toString('utf8');
   const registryText = readCommittedRegularBlob(
+    gitRuntime,
     options.root,
     options.commit,
     REGISTRY_PATH,
     'Frozen assertion registry',
   ).toString('utf8');
   const schemaText = readCommittedRegularBlob(
+    gitRuntime,
     options.root,
     options.commit,
     SCHEMA_PATH,
     'Frozen evidence schema',
   ).toString('utf8');
   const aggregateText = readCommittedRegularBlob(
+    gitRuntime,
     options.root,
     options.commit,
     options.aggregate,
     'Committed conformance aggregate',
   ).toString('utf8');
   const indexText = readCommittedRegularBlob(
+    gitRuntime,
     options.root,
     options.commit,
     options.index,
@@ -191,12 +205,17 @@ async function verifyCommittedConformanceEvidenceWithScrubbedEnvironment(
   }
   validateFrozenConformanceBindings(lock, schemaText, registryText);
   assertEvidenceProducerCompatibility(lock);
+  const caveRoot = resolve(options.caveRoot);
   const inspectedCaveEngine = inspectCaveAssertionEngine(
-    resolve(options.caveRoot),
+    caveRoot,
     {
       repository: lock.sources.cave.repository,
       commit: lock.sources.cave.commit,
       tree: lock.sources.cave.tree,
+    },
+    {
+      gitExecutable: gitRuntime.gitPath,
+      gitEnvironment: createGitEnvironment(caveRoot),
     },
   );
   const expectedCaveEngine = lock.sources.cave.files[0];
@@ -230,16 +249,24 @@ export async function verifyCommittedConformanceEvidence(
   { execute, env = process.env } = {},
 ) {
   const githubEnvironment = { ...env };
-  return runWithGitHubTokensScrubbed(
+  const gitRuntime = resolveAuthenticatedGitRuntime();
+  const result = await runWithGitHubTokensScrubbed(
     process.env,
     () => verifyCommittedConformanceEvidenceWithScrubbedEnvironment(
       options,
       {
         ...(execute === undefined ? {} : { execute }),
         env: githubEnvironment,
+        gitRuntime,
       },
     ),
   );
+  return {
+    ...result,
+    runtime: {
+      git: gitRuntime,
+    },
+  };
 }
 
 export async function main(argv = process.argv.slice(2)) {

@@ -31,6 +31,7 @@ import {
 import {
   inspectReleaseRepository,
   readReleaseConfig,
+  validateReleaseConfiguration,
   validateReleaseReadiness,
 } from './release-readiness.mjs';
 import {
@@ -687,7 +688,7 @@ export function createConformanceArtifacts({
     ? runReleaseProcess('git', ['rev-parse', 'HEAD'], root).trim()
     : undefined;
 
-  const readiness = validateReleaseReadiness({
+  const readiness = validateReleaseConfiguration({
     root,
     version,
     requireConformanceEvidence,
@@ -810,7 +811,7 @@ export function verifyConformanceArtifacts({
   const releaseCommit = requireConformanceEvidence
     ? runReleaseProcess('git', ['rev-parse', 'HEAD'], root).trim()
     : undefined;
-  const readiness = validateReleaseReadiness({
+  const readiness = validateReleaseConfiguration({
     root,
     version,
     requireConformanceEvidence,
@@ -1254,8 +1255,6 @@ export function createPublicationArtifacts({
     root,
     mode: 'verify',
     version,
-    requireConformanceEvidence: true,
-    requireLiveEnvironmentPolicy: true,
     githubExecute,
     env,
   });

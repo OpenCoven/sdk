@@ -45,7 +45,26 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 const packageArtifactHelpers = packageArtifacts as unknown as {
   findTarball(directory: string): string;
-  runPnpm(args: string[], cwd: string): void;
+  runPnpm(
+    args: string[],
+    cwd: string,
+    options?: {
+      corepackPath?: string;
+      env?: NodeJS.ProcessEnv;
+      nodePath?: string;
+      stdio?: 'ignore' | 'inherit' | 'pipe';
+    },
+  ): void;
+  runPnpmAsync(
+    args: string[],
+    cwd: string,
+    options?: {
+      corepackPath?: string;
+      env?: NodeJS.ProcessEnv;
+      nodePath?: string;
+      stdio?: 'ignore' | 'inherit' | 'pipe';
+    },
+  ): Promise<void>;
 };
 const ROOT_PACKAGE_EXPORTS = {
   '.': {
@@ -252,6 +271,194 @@ describe('packed public packages', () => {
     expect(warmArgs).not.toContain('--offline');
     expect(warmArgs).toContain('--prefer-offline');
     expect(isolatedInstallArgs()).toContain('--offline');
+  });
+
+  test.each([
+    ['nodePath', { nodePath: process.execPath }],
+    ['corepackPath', { corepackPath: '/tmp/corepack.js' }],
+  ])('rejects partial synchronous pnpm runtime overrides containing only %s', (_label, options) => {
+    expect(() =>
+      packageArtifactHelpers.runPnpm(['--version'], root, options),
+    ).toThrow('nodePath and corepackPath must be provided together');
+  });
+
+  test.each([
+    ['nodePath', { nodePath: process.execPath }],
+    ['corepackPath', { corepackPath: '/tmp/corepack.js' }],
+  ])('rejects partial asynchronous pnpm runtime overrides containing only %s', async (_label, options) => {
+    await expect(
+      packageArtifactHelpers.runPnpmAsync(['--version'], root, options),
+    ).rejects.toThrow('nodePath and corepackPath must be provided together');
+  });
+
+  test('constructs exact synchronous authenticated and reviewed-default pnpm commands', () => {
+    const artifactContext = createOwnedTempDirectory({
+      prefix: 'opencoven-pnpm-sync-invocation-spec',
+      childSegments: ['fake-bin'],
+    });
+    const fakeBin = resolve(artifactContext.rootPath, 'fake-bin');
+    const authenticatedCorepack = resolve(
+      artifactContext.rootPath,
+      'authenticated-corepack.cjs',
+    );
+    const defaultCorepack = resolve(fakeBin, 'corepack');
+    const authenticatedCallPath = resolve(
+      artifactContext.rootPath,
+      'authenticated-call.json',
+    );
+    const defaultCallPath = resolve(
+      artifactContext.rootPath,
+      'default-call.json',
+    );
+    const recorder = `#!/usr/bin/env node
+const { writeFileSync } = require('node:fs');
+writeFileSync(process.env.PNPM_CALL_PATH, JSON.stringify({
+  argv: process.argv.slice(2),
+  entrypoint: process.argv[1],
+  executable: process.execPath,
+}));
+`;
+
+    writeFileSync(authenticatedCorepack, recorder);
+    writeFileSync(defaultCorepack, recorder, { mode: 0o700 });
+
+    try {
+      packageArtifactHelpers.runPnpm(
+        ['pack', '--ignore-scripts'],
+        artifactContext.rootPath,
+        {
+          nodePath: process.execPath,
+          corepackPath: authenticatedCorepack,
+          env: {
+            ...process.env,
+            PNPM_CALL_PATH: authenticatedCallPath,
+          },
+          stdio: 'pipe',
+        },
+      );
+      packageArtifactHelpers.runPnpm(
+        ['pack', '--ignore-scripts'],
+        artifactContext.rootPath,
+        {
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
+            PNPM_CALL_PATH: defaultCallPath,
+          },
+          stdio: 'pipe',
+        },
+      );
+
+      expect(JSON.parse(readFileSync(authenticatedCallPath, 'utf8'))).toEqual({
+        argv: [
+          'pnpm@10.34.0',
+          '--config.pnpmfile=/dev/null',
+          '--config.global-pnpmfile=/dev/null',
+          'pack',
+          '--ignore-scripts',
+        ],
+        entrypoint: authenticatedCorepack,
+        executable: process.execPath,
+      });
+      expect(JSON.parse(readFileSync(defaultCallPath, 'utf8'))).toEqual({
+        argv: [
+          'pnpm@10.34.0',
+          '--config.pnpmfile=/dev/null',
+          '--config.global-pnpmfile=/dev/null',
+          'pack',
+          '--ignore-scripts',
+        ],
+        entrypoint: defaultCorepack,
+        executable: process.execPath,
+      });
+    } finally {
+      cleanupOwnedTempRoot(artifactContext);
+    }
+  });
+
+  test('constructs exact asynchronous authenticated and reviewed-default pnpm commands', async () => {
+    const artifactContext = createOwnedTempDirectory({
+      prefix: 'opencoven-pnpm-async-invocation-spec',
+      childSegments: ['fake-bin'],
+    });
+    const fakeBin = resolve(artifactContext.rootPath, 'fake-bin');
+    const authenticatedCorepack = resolve(
+      artifactContext.rootPath,
+      'authenticated-corepack.cjs',
+    );
+    const defaultCorepack = resolve(fakeBin, 'corepack');
+    const authenticatedCallPath = resolve(
+      artifactContext.rootPath,
+      'authenticated-call.json',
+    );
+    const defaultCallPath = resolve(
+      artifactContext.rootPath,
+      'default-call.json',
+    );
+    const recorder = `#!/usr/bin/env node
+const { writeFileSync } = require('node:fs');
+writeFileSync(process.env.PNPM_CALL_PATH, JSON.stringify({
+  argv: process.argv.slice(2),
+  entrypoint: process.argv[1],
+  executable: process.execPath,
+}));
+`;
+
+    writeFileSync(authenticatedCorepack, recorder);
+    writeFileSync(defaultCorepack, recorder, { mode: 0o700 });
+
+    try {
+      await packageArtifactHelpers.runPnpmAsync(
+        ['install', '--offline'],
+        artifactContext.rootPath,
+        {
+          nodePath: process.execPath,
+          corepackPath: authenticatedCorepack,
+          env: {
+            ...process.env,
+            PNPM_CALL_PATH: authenticatedCallPath,
+          },
+          stdio: 'pipe',
+        },
+      );
+      await packageArtifactHelpers.runPnpmAsync(
+        ['install', '--offline'],
+        artifactContext.rootPath,
+        {
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
+            PNPM_CALL_PATH: defaultCallPath,
+          },
+          stdio: 'pipe',
+        },
+      );
+
+      expect(JSON.parse(readFileSync(authenticatedCallPath, 'utf8'))).toEqual({
+        argv: [
+          'pnpm@10.34.0',
+          '--config.pnpmfile=/dev/null',
+          '--config.global-pnpmfile=/dev/null',
+          'install',
+          '--offline',
+        ],
+        entrypoint: authenticatedCorepack,
+        executable: process.execPath,
+      });
+      expect(JSON.parse(readFileSync(defaultCallPath, 'utf8'))).toEqual({
+        argv: [
+          'pnpm@10.34.0',
+          '--config.pnpmfile=/dev/null',
+          '--config.global-pnpmfile=/dev/null',
+          'install',
+          '--offline',
+        ],
+        entrypoint: defaultCorepack,
+        executable: process.execPath,
+      });
+    } finally {
+      cleanupOwnedTempRoot(artifactContext);
+    }
   });
 
   test('installs isolated consumer workspaces recursively', () => {

@@ -117,10 +117,20 @@ function createGitEnvironment(inheritedEnvironment = process.env) {
   return environment;
 }
 
-function runGit(root, args, label, { encoding = 'utf8', input } = {}) {
+function runGit(
+  root,
+  args,
+  label,
+  {
+    encoding = 'utf8',
+    gitEnvironment,
+    gitExecutable = 'git',
+    input,
+  } = {},
+) {
   try {
     return execFileSync(
-      'git',
+      gitExecutable,
       [
         ...gitConfigurationOverrides,
         '-C',
@@ -130,7 +140,7 @@ function runGit(root, args, label, { encoding = 'utf8', input } = {}) {
       ],
       {
         encoding,
-        env: createGitEnvironment(),
+        env: gitEnvironment ?? createGitEnvironment(),
         input,
         maxBuffer: 32 * 1024 * 1024,
         stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
@@ -145,11 +155,12 @@ function runGit(root, args, label, { encoding = 'utf8', input } = {}) {
   }
 }
 
-function countLocalExcludeRules(root, label) {
+function countLocalExcludeRules(root, label, gitOptions) {
   const gitPath = runGit(
     root,
     ['rev-parse', '--path-format=absolute', '--git-path', 'info/exclude'],
     label,
+    gitOptions,
   ).trim();
   let contents;
   try {
@@ -171,17 +182,23 @@ function countLocalExcludeRules(root, label) {
     .filter((line) => line.trim().length > 0 && !line.startsWith('#')).length;
 }
 
-function countReplacementRefs(root, label) {
+function countReplacementRefs(root, label, gitOptions) {
   const output = runGit(
     root,
     ['for-each-ref', '--count=101', '--format=1', 'refs/replace'],
     label,
+    gitOptions,
   ).trim();
   return output.length === 0 ? 0 : output.split('\n').length;
 }
 
-function countHiddenIndexEntries(root, label) {
-  const output = runGit(root, ['ls-files', '--cached', '-v', '-z'], label);
+function countHiddenIndexEntries(root, label, gitOptions) {
+  const output = runGit(
+    root,
+    ['ls-files', '--cached', '-v', '-z'],
+    label,
+    gitOptions,
+  );
   let count = 0;
   for (const record of output.split('\0')) {
     if (['h', 's', 'S'].includes(record[0] ?? '')) {
@@ -191,11 +208,12 @@ function countHiddenIndexEntries(root, label) {
   return count;
 }
 
-function countSubmodules(root, label) {
+function countSubmodules(root, label, gitOptions) {
   const output = runGit(
     root,
     ['ls-files', '--cached', '--stage', '-z'],
     label,
+    gitOptions,
   );
   let count = 0;
   for (const record of output.split('\0')) {
@@ -295,7 +313,12 @@ function validateExpectedIdentity(expected, label) {
   }
 }
 
-export function inspectRepositoryCheckout(root, expected, label) {
+export function inspectRepositoryCheckout(
+  root,
+  expected,
+  label,
+  gitOptions = {},
+) {
   validateExpectedIdentity(expected, label);
   let metadata;
   let resolvedRoot;
@@ -309,12 +332,21 @@ export function inspectRepositoryCheckout(root, expected, label) {
     throw new Error(`${label} root must be a non-symlink directory`);
   }
   const gitRoot = realpathSync(
-    runGit(resolvedRoot, ['rev-parse', '--show-toplevel'], label).trim(),
+    runGit(
+      resolvedRoot,
+      ['rev-parse', '--show-toplevel'],
+      label,
+      gitOptions,
+    ).trim(),
   );
   if (gitRoot !== resolvedRoot) {
     throw new Error(`${label} root must equal the Git top-level`);
   }
-  const localExcludeCount = countLocalExcludeRules(resolvedRoot, label);
+  const localExcludeCount = countLocalExcludeRules(
+    resolvedRoot,
+    label,
+    gitOptions,
+  );
   if (localExcludeCount > 0) {
     throw new Error(
       `${label} has ${formatCount(
@@ -324,7 +356,11 @@ export function inspectRepositoryCheckout(root, expected, label) {
       )}`,
     );
   }
-  const replacementCount = countReplacementRefs(resolvedRoot, label);
+  const replacementCount = countReplacementRefs(
+    resolvedRoot,
+    label,
+    gitOptions,
+  );
   if (replacementCount > 0) {
     throw new Error(
       `${label} has ${formatCount(
@@ -334,7 +370,7 @@ export function inspectRepositoryCheckout(root, expected, label) {
       )}`,
     );
   }
-  const hiddenCount = countHiddenIndexEntries(resolvedRoot, label);
+  const hiddenCount = countHiddenIndexEntries(resolvedRoot, label, gitOptions);
   if (hiddenCount > 0) {
     throw new Error(
       `${label} has ${formatCount(
@@ -344,7 +380,7 @@ export function inspectRepositoryCheckout(root, expected, label) {
       )}`,
     );
   }
-  const submoduleCount = countSubmodules(resolvedRoot, label);
+  const submoduleCount = countSubmodules(resolvedRoot, label, gitOptions);
   if (submoduleCount > 0) {
     throw new Error(
       `${label} has ${formatCount(
@@ -366,6 +402,7 @@ export function inspectRepositoryCheckout(root, expected, label) {
         '--ignore-submodules=none',
       ],
       label,
+      gitOptions,
     ),
   );
   if (
@@ -377,16 +414,31 @@ export function inspectRepositoryCheckout(root, expected, label) {
     throw new Error(`${label} is dirty (${formatDirtySummary(dirty)})`);
   }
   const repository = normalizeGitHubRepository(
-    runGit(resolvedRoot, ['remote', 'get-url', 'origin'], label),
+    runGit(
+      resolvedRoot,
+      ['remote', 'get-url', 'origin'],
+      label,
+      gitOptions,
+    ),
   );
   if (repository !== expected.repository) {
     throw new Error(`${label} origin does not match expected repository`);
   }
-  const commit = runGit(resolvedRoot, ['rev-parse', 'HEAD'], label).trim();
+  const commit = runGit(
+    resolvedRoot,
+    ['rev-parse', 'HEAD'],
+    label,
+    gitOptions,
+  ).trim();
   if (expected.commit !== undefined && commit !== expected.commit) {
     throw new Error(`${label} HEAD does not match expected commit`);
   }
-  const tree = runGit(resolvedRoot, ['rev-parse', 'HEAD^{tree}'], label).trim();
+  const tree = runGit(
+    resolvedRoot,
+    ['rev-parse', 'HEAD^{tree}'],
+    label,
+    gitOptions,
+  ).trim();
   if (expected.tree !== undefined && tree !== expected.tree) {
     throw new Error(`${label} committed tree does not match expected tree`);
   }
@@ -403,6 +455,7 @@ export function readTrackedFileAtCommit(
   relativePath,
   label,
   capturedCommit,
+  gitOptions = {},
 ) {
   if (
     typeof relativePath !== 'string'
@@ -416,6 +469,7 @@ export function readTrackedFileAtCommit(
     root,
     ['ls-tree', capturedCommit, '--', relativePath],
     label,
+    gitOptions,
   ).trim();
   const match = /^100(?:644|755) blob ([0-9a-f]{40})\t(.+)$/u.exec(treeEntry);
   if (match === null || match[2] !== relativePath) {
@@ -423,6 +477,7 @@ export function readTrackedFileAtCommit(
   }
   const blob = match[1];
   const bytes = runGit(root, ['cat-file', 'blob', blob], label, {
+    ...gitOptions,
     encoding: 'buffer',
   });
   return {
@@ -441,17 +496,23 @@ function assertCommittedFileMetadata(root, commit, expected, label) {
   return file;
 }
 
-export function inspectCaveAssertionEngine(caveRoot, expectedIdentity) {
+export function inspectCaveAssertionEngine(
+  caveRoot,
+  expectedIdentity,
+  gitOptions = {},
+) {
   const checkout = inspectRepositoryCheckout(
     caveRoot,
     expectedIdentity ?? { repository: 'OpenCoven/coven-cave' },
     'Cave checkout',
+    gitOptions,
   );
   const file = readTrackedFileAtCommit(
     checkout.root,
     'scripts/client-v1-conformance.mjs',
     'Cave assertion engine',
     checkout.commit,
+    gitOptions,
   );
   return {
     ...checkout,

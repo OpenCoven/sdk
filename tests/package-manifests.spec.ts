@@ -122,7 +122,7 @@ describe('workspace package manifests', () => {
 
   test('runs the clean Phase 0 matrix before the remaining full verification', () => {
     expect(rootManifest.scripts?.verify).toBe(
-      'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 clean:public-dist && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 verify:release:local && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint',
+      'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 clean:public-dist && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 verify:development-release-configuration && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint',
     );
   });
 
@@ -218,13 +218,15 @@ describe('workspace package manifests', () => {
     expect(rootManifest.scripts?.['verify:compat']).not.toMatch(
       /(?:^|&& )corepack pnpm@10\.34\.0 test(?: &&|$)/u,
     );
-    expect(rootManifest.scripts?.['verify:release:local']).toBe(
-      'node ./scripts/verify-release-readiness.mjs',
+    expect(rootManifest.scripts?.['verify:development-release-configuration']).toBe(
+      'node ./scripts/verify-development-release-configuration.mjs',
     );
     expect(rootManifest.scripts?.['verify:release']).toBe(
-      'node ./scripts/verify-release-readiness.mjs --require-conformance-evidence --require-live-environment-policy',
+      'node ./scripts/verify-release-readiness.mjs',
     );
-    expect(rootManifest.scripts?.verify).toContain('verify:release:local');
+    expect(rootManifest.scripts?.verify).toContain(
+      'verify:development-release-configuration',
+    );
     expect(rootManifest.scripts?.['verify:repository']).toBe(
       'corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 clean:public-dist && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint',
     );

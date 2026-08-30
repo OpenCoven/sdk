@@ -16,6 +16,7 @@ import {
   validateFrozenConformanceBindings,
 } from './conformance-contract.mjs';
 import {
+  AUTHENTICATED_GIT_EXECUTABLE,
   AUTHENTICATED_NPM_CLI_ENTRYPOINT_SHA256,
   AUTHENTICATED_NPM_CLI_TREE_SHA256,
   AUTHENTICATED_NPM_TARBALL_INTEGRITY,
@@ -59,7 +60,7 @@ const PUBLICATION_ATTESTATION_ARTIFACT_NAME =
 const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
 const PREFLIGHT_JOB_SHA256 =
-  '07281236fd24c6ff0c4a1755798798f37ccd38e2e72712e121a1199de6f2a9b4';
+  'be8a098a1945fa66123c0cad0fcb865952d14d8769a1b7d211d173faf9cc00f3';
 const REPOSITORY_VERIFICATION_JOB_SHA256 =
   'e9a1e8dbfb25f4a4ecd3a8bcdbbdf081da958c1df411aeb27abd4a344d695398';
 const PUBLICATION_CANDIDATE_JOB_SHA256 =
@@ -147,6 +148,7 @@ const VALIDATOR_RUNTIME_PATHS = Object.freeze([
   'scripts/release-runtime-integrity.mjs',
   'scripts/repository-metadata.mjs',
   CONFORMANCE_VERIFIER_PATH,
+  'scripts/verify-development-release-configuration.mjs',
   'scripts/verify-github-environment-policies.mjs',
   'scripts/verify-release-readiness.mjs',
 ]);
@@ -523,6 +525,15 @@ function verifyCommittedConformanceEvidence({
     !isRecord(result)
     || !isRecord(result.aggregate)
     || !isRecord(result.index)
+    || !isRecord(result.runtime)
+    || !isRecord(result.runtime.git)
+    || result.runtime.git.gitPath !== AUTHENTICATED_GIT_EXECUTABLE
+    || !Number.isSafeInteger(result.runtime.git.gitSize)
+    || result.runtime.git.gitSize <= 0
+    || typeof result.runtime.git.gitVersion !== 'string'
+    || !/^git version [0-9]+\.[0-9]+\.[0-9]+[^\r\n]*$/u.test(
+      result.runtime.git.gitVersion,
+    )
   ) {
     throw new Error('Committed conformance evidence verifier returned invalid output');
   }
@@ -1972,7 +1983,7 @@ export function readReleaseConfig(root = process.cwd()) {
   return config;
 }
 
-export function validateReleaseReadiness({
+export function validateReleaseConfiguration({
   root = process.cwd(),
   mode = 'verify',
   version,
@@ -2308,4 +2319,53 @@ export function validateReleaseReadiness({
     packages: PUBLIC_PACKAGES.map(({ packageName }) => packageName),
     conformanceEvidenceRecord,
   };
+}
+
+export function validateReleaseReadiness(options = {}) {
+  if (
+    Object.hasOwn(options, 'requireFrozenRuntime')
+    || Object.hasOwn(options, 'requireConformanceEvidence')
+    || Object.hasOwn(options, 'requireLiveEnvironmentPolicy')
+  ) {
+    throw new Error('Release readiness strictness is not configurable');
+  }
+  const {
+    root = process.cwd(),
+    mode = 'verify',
+    version,
+    tag,
+    requireTag = false,
+    caveAuthorityRoot = process.env.OPENCOVEN_CAVE_AUTHORITY_ROOT,
+    githubExecute = execFileSync,
+    env = process.env,
+    environmentPolicyNow = () => new Date(),
+  } = options;
+  return validateReleaseConfiguration({
+    root,
+    mode,
+    version,
+    tag,
+    requireTag,
+    requireFrozenRuntime: true,
+    requireConformanceEvidence: true,
+    requireLiveEnvironmentPolicy: true,
+    caveAuthorityRoot,
+    githubExecute,
+    env,
+    environmentPolicyNow,
+  });
+}
+
+export function validateDevelopmentReleaseConfiguration({
+  root = process.cwd(),
+  version,
+} = {}) {
+  return validateReleaseConfiguration({
+    root,
+    mode: 'verify',
+    version,
+    requireFrozenRuntime: true,
+    requireConformanceEvidence: false,
+    requireLiveEnvironmentPolicy: false,
+  });
 }

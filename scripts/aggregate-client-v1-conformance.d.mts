@@ -22,6 +22,11 @@ export interface InspectedCaveAssertionEngine extends InspectedCheckout {
   sourceBytes: Buffer;
 }
 
+export interface GitExecutionOptions {
+  gitEnvironment?: NodeJS.ProcessEnv;
+  gitExecutable?: string;
+}
+
 export function inspectRepositoryCheckout(
   root: string,
   expected: {
@@ -30,6 +35,7 @@ export function inspectRepositoryCheckout(
     tree?: string;
   },
   label: string,
+  gitOptions?: GitExecutionOptions,
 ): InspectedCheckout;
 
 export function readTrackedFileAtCommit(
@@ -37,6 +43,7 @@ export function readTrackedFileAtCommit(
   relativePath: string,
   label: string,
   capturedCommit: string,
+  gitOptions?: GitExecutionOptions,
 ): InspectedTrackedFile;
 
 export function inspectCaveAssertionEngine(
@@ -46,6 +53,7 @@ export function inspectCaveAssertionEngine(
     commit?: string;
     tree?: string;
   },
+  gitOptions?: GitExecutionOptions,
 ): InspectedCaveAssertionEngine;
 
 export function loadCommittedCaveAssertionEngine(

@@ -3,35 +3,10 @@
 import { validateReleaseReadiness } from './release-readiness.mjs';
 
 function parseArguments(arguments_) {
-  const options = {
-    requireConformanceEvidence: false,
-    requireLiveEnvironmentPolicy: false,
-  };
-  let conformanceEvidenceFlagSeen = false;
-  let liveEnvironmentPolicyFlagSeen = false;
+  const options = {};
 
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
-    if (argument === '--require-conformance-evidence') {
-      if (conformanceEvidenceFlagSeen) {
-        throw new Error(
-          'Option --require-conformance-evidence may only be provided once',
-        );
-      }
-      conformanceEvidenceFlagSeen = true;
-      options.requireConformanceEvidence = true;
-      continue;
-    }
-    if (argument === '--require-live-environment-policy') {
-      if (liveEnvironmentPolicyFlagSeen) {
-        throw new Error(
-          'Option --require-live-environment-policy may only be provided once',
-        );
-      }
-      liveEnvironmentPolicyFlagSeen = true;
-      options.requireLiveEnvironmentPolicy = true;
-      continue;
-    }
     if (argument === '--require-tag') {
       if (options.requireTag !== undefined) {
         throw new Error('Option --require-tag may only be provided once');
@@ -67,7 +42,6 @@ function parseArguments(arguments_) {
 try {
   const result = validateReleaseReadiness({
     root: process.cwd(),
-    requireFrozenRuntime: true,
     ...parseArguments(process.argv.slice(2)),
   });
   process.stdout.write(`${JSON.stringify(result)}\n`);

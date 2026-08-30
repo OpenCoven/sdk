@@ -266,12 +266,13 @@ reviewed change that adds the aggregate and sibling index.
 Run the local exact-runtime release and security checks with:
 
 ```bash
-corepack pnpm@10.34.0 verify:release:local
+corepack pnpm@10.34.0 verify:development-release-configuration
 ```
 
 This validates the local workflow, release configuration, package policy, and
 security invariants under exact Node `v24.18.1` without claiming that remote
-evidence exists. Candidate advancement uses the explicit authoritative path:
+evidence exists. It is intentionally not named or implemented as release
+readiness. Candidate advancement uses the authoritative release-readiness path:
 
 ```bash
 GH_TOKEN=... \

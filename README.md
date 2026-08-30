@@ -431,7 +431,7 @@ pnpm test
 pnpm build
 node scripts/verify-contracts.mjs
 node scripts/verify-package.mjs
-pnpm verify:release:local
+pnpm verify:development-release-configuration
 pnpm test:coverage
 pnpm test:stress
 pnpm lint

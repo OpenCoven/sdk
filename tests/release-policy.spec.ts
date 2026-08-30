@@ -57,7 +57,7 @@ describe('release and support policies', () => {
       'corepack pnpm@10.34.0 verify:release',
     );
     expect(releasing).toContain(
-      'corepack pnpm@10.34.0 verify:release:local',
+      'corepack pnpm@10.34.0 verify:development-release-configuration',
     );
     expect(releasing).not.toContain(
       'verify:release --require-conformance-evidence',

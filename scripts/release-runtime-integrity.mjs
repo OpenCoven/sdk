@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { accessSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import {
@@ -12,6 +13,7 @@ import { dirname, relative, resolve, sep } from 'node:path';
 import { posix } from 'node:path';
 
 export const PROTECTED_PNPM_PACKAGE_MANAGER = 'pnpm@10.34.0';
+export const AUTHENTICATED_GIT_EXECUTABLE = '/usr/bin/git';
 
 export const AUTHENTICATED_NODE_VERSION = 'v24.18.1';
 export const AUTHENTICATED_NODE_LINUX_X64_VERSION = AUTHENTICATED_NODE_VERSION;
@@ -47,6 +49,7 @@ export const REVIEWED_NPM_CLI_ENTRYPOINT_SHA256 =
 
 export const RELEASE_RUNTIME_INTEGRITY_CONSTANTS = Object.freeze({
   protectedPnpmPackageManager: PROTECTED_PNPM_PACKAGE_MANAGER,
+  authenticatedGitExecutable: AUTHENTICATED_GIT_EXECUTABLE,
   authenticatedNodeVersion: AUTHENTICATED_NODE_VERSION,
   authenticatedNodeLinuxX64Version: AUTHENTICATED_NODE_LINUX_X64_VERSION,
   authenticatedNodeLinuxX64ExecutableSha256:
@@ -179,6 +182,82 @@ function assertExecutableFile(path, label) {
   }
 
   return stats;
+}
+
+function assertTrustedRootOwnedPath(path, label, expectedType) {
+  const stats = lstatSync(path);
+  if (stats.isSymbolicLink()) {
+    throw new Error(`${label} must not be a symlink: ${path}`);
+  }
+  if (
+    (expectedType === 'directory' && !stats.isDirectory())
+    || (expectedType === 'file' && !stats.isFile())
+  ) {
+    throw new Error(`${label} must be a ${expectedType}: ${path}`);
+  }
+  if (stats.uid !== 0) {
+    throw new Error(`${label} must be owned by root: ${path}`);
+  }
+  if ((stats.mode & 0o022) !== 0) {
+    throw new Error(`${label} must not be group- or other-writable: ${path}`);
+  }
+  if (realpathSync(path) !== path) {
+    throw new Error(`${label} must resolve to its exact allowed path: ${path}`);
+  }
+  return stats;
+}
+
+export function resolveAuthenticatedGitRuntime({
+  platform = process.platform,
+} = {}) {
+  if (platform !== 'darwin' && platform !== 'linux') {
+    throw new Error(
+      'Committed conformance evidence verification is supported only on darwin and linux hosts',
+    );
+  }
+  assertTrustedRootOwnedPath('/usr', 'authenticated Git path root', 'directory');
+  assertTrustedRootOwnedPath(
+    '/usr/bin',
+    'authenticated Git executable directory',
+    'directory',
+  );
+  const stats = assertExecutableFile(
+    AUTHENTICATED_GIT_EXECUTABLE,
+    'authenticated Git executable',
+  );
+  assertTrustedRootOwnedPath(
+    AUTHENTICATED_GIT_EXECUTABLE,
+    'authenticated Git executable',
+    'file',
+  );
+  const versionOutput = execFileSync(
+    AUTHENTICATED_GIT_EXECUTABLE,
+    ['--version'],
+    {
+      encoding: 'utf8',
+      env: {
+        PATH: '/usr/bin:/bin',
+        HOME: '/tmp',
+        LANG: 'C',
+        LC_ALL: 'C',
+        TZ: 'UTC',
+        GIT_CONFIG_GLOBAL: devNull,
+        GIT_CONFIG_NOSYSTEM: '1',
+      },
+      maxBuffer: 4 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5_000,
+      killSignal: 'SIGKILL',
+    },
+  );
+  if (!/^git version [0-9]+\.[0-9]+\.[0-9]+[^\r\n]*\r?\n$/u.test(versionOutput)) {
+    throw new Error('authenticated Git executable returned an invalid version');
+  }
+  return {
+    gitPath: AUTHENTICATED_GIT_EXECUTABLE,
+    gitSize: stats.size,
+    gitVersion: versionOutput.trim(),
+  };
 }
 
 export function createSterileReleaseEnvironment({

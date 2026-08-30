@@ -18,8 +18,10 @@ platform, in this exact matrix and order:
 2. `linux-x64`
 3. `win32-x64`
 
-Aggregation runs only on a Darwin or Linux coordinator. Windows remains a
-required record platform, but Node does not expose the directory-relative
+Aggregation runs only on a Darwin or Linux coordinator. Committed-evidence
+verification on those hosts authenticates the root-owned, non-writable
+`/usr/bin/git` executable instead of resolving Git from `PATH`. Windows remains
+a required record platform, but Node does not expose the directory-relative
 publication primitives needed to support the aggregator safely on Windows.
 
 There is no passing aggregate in this repository yet. The exact frozen Chat

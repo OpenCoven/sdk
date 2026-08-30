@@ -68,7 +68,7 @@ export interface ReleaseConfig {
   packages: string[];
 }
 
-export interface ReleaseReadinessOptions {
+export interface ReleaseConfigurationOptions {
   root?: string;
   mode?: 'verify' | 'publish';
   version?: string;
@@ -78,10 +78,21 @@ export interface ReleaseReadinessOptions {
   requireConformanceEvidence?: boolean;
   requireLiveEnvironmentPolicy?: boolean;
   caveAuthorityRoot?: string;
-  githubExecute?: typeof import('node:child_process').execFileSync;
+  githubExecute?: (
+    command: string,
+    arguments_: string[],
+    options?: Record<string, unknown>,
+  ) => string;
   env?: NodeJS.ProcessEnv;
   environmentPolicyNow?: () => Date;
 }
+
+export type ReleaseReadinessOptions = Omit<
+  ReleaseConfigurationOptions,
+  | 'requireFrozenRuntime'
+  | 'requireConformanceEvidence'
+  | 'requireLiveEnvironmentPolicy'
+>;
 
 export interface ReleaseReadinessSummary {
   version: string;
@@ -129,4 +140,12 @@ export function validateValidatorRuntimeFiles(
 
 export function validateReleaseReadiness(
   options?: ReleaseReadinessOptions,
+): ReleaseReadinessSummary;
+
+export function validateReleaseConfiguration(
+  options?: ReleaseConfigurationOptions,
+): ReleaseReadinessSummary;
+
+export function validateDevelopmentReleaseConfiguration(
+  options?: Pick<ReleaseConfigurationOptions, 'root' | 'version'>,
 ): ReleaseReadinessSummary;

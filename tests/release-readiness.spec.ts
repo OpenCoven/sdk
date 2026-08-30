@@ -15,7 +15,8 @@ import { afterEach, describe, expect, test } from 'vitest';
 
 import {
   readReleaseConfig,
-  validateReleaseReadiness,
+  validateReleaseConfiguration as validateReleaseReadiness,
+  validateReleaseReadiness as validateCanonicalReleaseReadiness,
 } from '../scripts/release-readiness.mjs';
 import * as releaseReadinessModule from '../scripts/release-readiness.mjs';
 import type {
@@ -178,6 +179,7 @@ const VALIDATOR_RUNTIME_PATHS = [
   'scripts/release-runtime-integrity.mjs',
   'scripts/repository-metadata.mjs',
   'scripts/verify-committed-conformance-evidence.mjs',
+  'scripts/verify-development-release-configuration.mjs',
   'scripts/verify-github-environment-policies.mjs',
   'scripts/verify-release-readiness.mjs',
 ] as const;
@@ -313,7 +315,7 @@ afterEach(() => {
 });
 
 describe('release readiness contract', () => {
-  test('keeps authoritative evidence checks explicit at the CLI boundary', () => {
+  test('keeps release readiness authoritative and rejects obsolete strictness flags', () => {
     const environment = Object.fromEntries(
       Object.entries(process.env).filter(
         ([key]) =>
@@ -322,7 +324,7 @@ describe('release readiness contract', () => {
           && key !== 'OPENCOVEN_GH_PATH',
       ),
     );
-    const localResult = spawnSync(
+    const authoritativeResult = spawnSync(
       process.execPath,
       ['./scripts/verify-release-readiness.mjs'],
       {
@@ -331,11 +333,31 @@ describe('release readiness contract', () => {
         env: environment,
       },
     );
-    const authoritativeResult = spawnSync(
+    const developmentResult = spawnSync(
+      process.execPath,
+      ['./scripts/verify-development-release-configuration.mjs'],
+      {
+        cwd: workspaceRoot,
+        encoding: 'utf8',
+        env: environment,
+      },
+    );
+    const obsoleteConformanceFlag = spawnSync(
       process.execPath,
       [
         './scripts/verify-release-readiness.mjs',
         '--require-conformance-evidence',
+      ],
+      {
+        cwd: workspaceRoot,
+        encoding: 'utf8',
+        env: environment,
+      },
+    );
+    const obsoleteEnvironmentFlag = spawnSync(
+      process.execPath,
+      [
+        './scripts/verify-release-readiness.mjs',
         '--require-live-environment-policy',
       ],
       {
@@ -345,18 +367,32 @@ describe('release readiness contract', () => {
       },
     );
 
-    expect(localResult.status).toBe(0);
-    expect(localResult.stderr).toBe('');
-    expect(JSON.parse(localResult.stdout)).toMatchObject({
-      version: '0.1.0',
-      publishingEnabled: false,
-      conformanceEvidenceRecord: null,
-    });
     expect(authoritativeResult.status).toBe(1);
     expect(authoritativeResult.stdout).toBe('');
     expect(authoritativeResult.stderr).toContain(
       'GH_TOKEN is required for authoritative GitHub environment verification',
     );
+    expect(developmentResult.status).toBe(0);
+    expect(developmentResult.stderr).toBe('');
+    expect(JSON.parse(developmentResult.stdout)).toMatchObject({
+      version: '0.1.0',
+      publishingEnabled: false,
+      conformanceEvidenceRecord: null,
+    });
+    expect(obsoleteConformanceFlag.status).toBe(1);
+    expect(obsoleteConformanceFlag.stderr).toContain(
+      'Unknown option --require-conformance-evidence',
+    );
+    expect(obsoleteEnvironmentFlag.status).toBe(1);
+    expect(obsoleteEnvironmentFlag.stderr).toContain(
+      'Unknown option --require-live-environment-policy',
+    );
+    expect(() =>
+      validateCanonicalReleaseReadiness({
+        root: workspaceRoot,
+        requireConformanceEvidence: false,
+      } as never),
+    ).toThrow('Release readiness strictness is not configurable');
   });
 
   test('wires the non-optional evidence gate into every canonical release path', () => {
@@ -369,12 +405,14 @@ describe('release readiness contract', () => {
     );
 
     expect(manifest.scripts['verify:release']).toBe(
-      'node ./scripts/verify-release-readiness.mjs --require-conformance-evidence --require-live-environment-policy',
-    );
-    expect(manifest.scripts['verify:release:local']).toBe(
       'node ./scripts/verify-release-readiness.mjs',
     );
-    expect(manifest.scripts.verify).toContain('verify:release:local');
+    expect(manifest.scripts['verify:development-release-configuration']).toBe(
+      'node ./scripts/verify-development-release-configuration.mjs',
+    );
+    expect(manifest.scripts.verify).toContain(
+      'verify:development-release-configuration',
+    );
     expect(workflow).toContain('assertNoReleaseRuntimeShadows');
     expect(workflow).toContain(
       '"$node_path" "$corepack_path" pnpm@10.34.0',
@@ -409,12 +447,8 @@ describe('release readiness contract', () => {
     expect(ciWorkflow).toMatch(
       /name: Verify Node 24 package compatibility\s+if: matrix\.node == '24\.x'\s+run: corepack pnpm@10\.34\.0 verify:compat/u,
     );
-    expect(
-      workflow.match(/--require-conformance-evidence/gu),
-    ).toHaveLength(2);
-    expect(
-      workflow.match(/--require-live-environment-policy/gu),
-    ).toHaveLength(2);
+    expect(workflow).not.toContain('--require-conformance-evidence');
+    expect(workflow).not.toContain('--require-live-environment-policy');
     const publishJobIndex = workflow.indexOf('\n  publish:\n');
     expect(publishJobIndex).toBeGreaterThan(0);
     const preflightJob = workflow.slice(0, publishJobIndex);

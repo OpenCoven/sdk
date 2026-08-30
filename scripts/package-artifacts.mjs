@@ -26,21 +26,36 @@ export function run(command, args, cwd, options = {}) {
   });
 }
 
-export function runPnpm(args, cwd, options = {}) {
-  const command = options.nodePath ?? 'corepack';
+function createPnpmInvocation(args, options) {
+  const hasNodePath = options.nodePath !== undefined;
+  const hasCorepackPath = options.corepackPath !== undefined;
+  if (hasNodePath !== hasCorepackPath) {
+    throw new Error('nodePath and corepackPath must be provided together');
+  }
   const pnpmArguments = [
     'pnpm@10.34.0',
     '--config.pnpmfile=/dev/null',
     '--config.global-pnpmfile=/dev/null',
     ...args,
   ];
-  const commandArguments = options.corepackPath === undefined
-    ? pnpmArguments
-    : [
-        options.corepackPath,
-        ...pnpmArguments,
-      ];
-  return run(command, commandArguments, cwd, options);
+  if (!hasNodePath) {
+    return {
+      command: 'corepack',
+      args: pnpmArguments,
+    };
+  }
+  return {
+    command: options.nodePath,
+    args: [
+      options.corepackPath,
+      ...pnpmArguments,
+    ],
+  };
+}
+
+export function runPnpm(args, cwd, options = {}) {
+  const invocation = createPnpmInvocation(args, options);
+  return run(invocation.command, invocation.args, cwd, options);
 }
 
 export function isolatedInstallArgs({ offline = true, workspace = false } = {}) {
@@ -77,22 +92,10 @@ function removeInstalledModuleTrees(directory) {
   }
 }
 
-function runPnpmAsync(args, cwd, options = {}) {
-  const command = options.nodePath ?? 'corepack';
-  const pnpmArguments = [
-    'pnpm@10.34.0',
-    '--config.pnpmfile=/dev/null',
-    '--config.global-pnpmfile=/dev/null',
-    ...args,
-  ];
-  const commandArguments = options.corepackPath === undefined
-    ? pnpmArguments
-    : [
-        options.corepackPath,
-        ...pnpmArguments,
-      ];
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(command, commandArguments, {
+export async function runPnpmAsync(args, cwd, options = {}) {
+  const invocation = createPnpmInvocation(args, options);
+  await new Promise((resolvePromise, reject) => {
+    const child = spawn(invocation.command, invocation.args, {
       cwd,
       stdio: options.stdio ?? 'inherit',
       env: options.env,

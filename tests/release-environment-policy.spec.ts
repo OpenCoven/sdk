@@ -311,13 +311,11 @@ describe('authoritative release environment policy', () => {
     expect(() =>
       validateReleaseReadiness({
         root,
-        requireConformanceEvidence: true,
-        requireLiveEnvironmentPolicy: true,
         githubExecute: createGitHubExecute(fixture, calls),
         env: { GH_TOKEN: 'github-token' },
         environmentPolicyNow: () =>
           new Date('2026-08-29T21:00:00Z'),
-      } as never),
+      }),
     ).toThrow(
       'release.config.json must name a passing SDK #38 aggregate record',
     );
@@ -340,17 +338,15 @@ describe('authoritative release environment policy', () => {
     expect(manifest.scripts['verify:release-environments']).toBe(
       'node ./scripts/verify-github-environment-policies.mjs',
     );
-    expect(manifest.scripts['verify:release']).toContain(
-      '--require-live-environment-policy',
+    expect(manifest.scripts['verify:release']).toBe(
+      'node ./scripts/verify-release-readiness.mjs',
     );
-    expect(manifest.scripts['verify:release:local']).not.toContain(
-      '--require-live-environment-policy',
+    expect(manifest.scripts['verify:development-release-configuration']).toBe(
+      'node ./scripts/verify-development-release-configuration.mjs',
     );
-    expect(
-      workflow.match(/--require-live-environment-policy/gu),
-    ).toHaveLength(2);
+    expect(workflow).not.toContain('--require-live-environment-policy');
     expect(artifactBuilder).toMatch(
-      /export function createPublicationArtifacts[\s\S]*requireLiveEnvironmentPolicy: true/u,
+      /export function createPublicationArtifacts[\s\S]*const readiness = validateReleaseReadiness\(/u,
     );
   });
 });
