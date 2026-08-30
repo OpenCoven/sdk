@@ -54,3 +54,10 @@
   exposing strict HPKE discovery v2 authority metadata with browser Web Crypto.
 - Freeze the packed declaration, runtime exports, and package export map in the
   repository API baseline.
+- Add explicit managed-native credential custody for narrow native pairing,
+  credential status, and forget transports. Managed bridges retain pairing
+  secrets and bearers outside JavaScript while the SDK validates all exposed
+  non-secret results.
+- Add browser-safe managed Cave and core subpaths plus a native
+  discovery-source adapter that validates owner-checked discovery bytes and
+  metadata in the SDK.

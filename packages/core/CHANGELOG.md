@@ -19,3 +19,10 @@
 - Add a bounded versioned diagnostic report builder that emits only approved
   environment, phase, capability, version, instance-suffix, health timestamp,
   and safe error facts.
+- Add explicit managed-native credential custody for narrow native pairing,
+  credential status, and forget transports. Managed bridges retain pairing
+  secrets and bearers outside JavaScript while the SDK validates all exposed
+  non-secret results.
+- Add browser-safe managed Cave and core subpaths plus a native
+  discovery-source adapter that validates owner-checked discovery bytes and
+  metadata in the SDK.
