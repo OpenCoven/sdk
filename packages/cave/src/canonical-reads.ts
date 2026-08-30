@@ -478,7 +478,7 @@ function parseProject(value: unknown, field: string): CaveProject {
   };
 }
 
-function parseConversation(
+export function parseConversation(
   value: unknown,
   field: string,
 ): CaveConversation {

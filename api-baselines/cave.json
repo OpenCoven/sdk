@@ -17,13 +17,18 @@
   "entrypoints": {
     ".": {
       "declarationFiles": [
-        "dist/client-BbxpTVKf.d.ts",
+        "dist/client-ootQTXcj.d.ts",
         "dist/index.d.ts"
       ],
       "runtimeExports": {
         "dist/index.js": [
           "CAVE_ANALYTICS_WINDOWS",
           "CAVE_CLIENT_VERSION",
+          "CAVE_CONVERSATION_EVENT_TYPES",
+          "CAVE_CONVERSATION_OPERATION_STATES",
+          "CAVE_CONVERSATION_ORIGINATING_SCOPES",
+          "CAVE_CONVERSATION_RECONCILE_REASONS",
+          "CAVE_CONVERSATION_TERMINAL_STATES",
           "CAVE_FAMILIAR_PROPERTIES",
           "CAVE_PAIRING_SCOPES",
           "CAVE_PAIRING_STATUSES",
@@ -31,7 +36,9 @@
           "CaveClientError",
           "CaveDiscoveryError",
           "CavePairingSession",
+          "caveConversationReconcileReason",
           "createCaveClient",
+          "createConversationEventTranslator",
           "createDiscoveredCaveClient",
           "createManagedCaveClient",
           "digestCaveContractFixture",
@@ -41,13 +48,14 @@
           "normalizeCaveError",
           "parseCaveContractFixture",
           "parseVerifiedCaveContractFixture",
+          "validateConversationEventCursor",
           "verifyCaveContractFixtureDigest"
         ]
       }
     },
     "./managed": {
       "declarationFiles": [
-        "dist/client-BbxpTVKf.d.ts",
+        "dist/client-ootQTXcj.d.ts",
         "dist/managed.d.ts"
       ],
       "runtimeExports": {

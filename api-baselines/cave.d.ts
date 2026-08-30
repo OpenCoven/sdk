@@ -1,6 +1,6 @@
 // Entrypoint: .
-// Declaration: dist/client-BbxpTVKf.d.ts
-import { OperationContext, PageOptions, OperationDefaults, SecretStore, SecretStoreReference, OperationOptions, Page, BoundedPageOptions, NormalizedError, CompatibilityAssessment } from '@opencoven/sdk-core/browser';
+// Declaration: dist/client-ootQTXcj.d.ts
+import { OperationObserver, OperationContext, PageOptions, OperationDefaults, SecretStore, SecretStoreReference, OperationOptions, Page, BoundedPageOptions, NormalizedError, CompatibilityAssessment } from '@opencoven/sdk-core/browser';
 
 interface CaveCanonicalFamiliar {
     id: string;
@@ -358,6 +358,186 @@ interface CaveFamiliarAnalyticsResponse {
     error?: string;
 }
 
+/**
+ * Conversational control: the first bounded mutation authority.
+ *
+ * Cave remains the sole executor and canonical state owner. The SDK exposes
+ * constrained typed operations only — never arbitrary HTTP paths, private
+ * Cave routes, or raw transport escape hatches — and owns the public DTOs,
+ * validators, and the single event translator shared by initial and resumed
+ * streams.
+ *
+ * The five Client v1 operations this surface is defined against
+ * (`conversations.create`, `messages.send`, `operations.read`,
+ * `operations.events`, `operations.stop`) are not yet declared by the
+ * authoritative Cave contract fixture this SDK vendors. This module therefore
+ * defines the typed requests, results, operation records, event vocabulary,
+ * cursor handling, and translation rules only; it introduces no HTTP paths.
+ * Transport bindings for the five operations stay optional and are expected
+ * to arrive with the upstream Cave producer contract and a re-imported
+ * fixture.
+ *
+ * This module is import-pure: no discovery, credential, filesystem, network,
+ * or daemon I/O happens at import time.
+ */
+type CaveConversationOperationId = string;
+type CaveConversationEventCursor = string;
+interface CaveCreateConversationRequest {
+    operationId: CaveConversationOperationId;
+    familiarId: string;
+    projectId?: string;
+}
+type CaveSendConversationMessageRequest = {
+    operationId: CaveConversationOperationId;
+    text: string;
+    retryOfTurnId?: never;
+} | {
+    operationId: CaveConversationOperationId;
+    retryOfTurnId: string;
+    text?: never;
+};
+interface CaveRetryConversationTurnRequest {
+    operationId: CaveConversationOperationId;
+    retryOfTurnId: string;
+}
+type CaveConversationOperationState = 'pending' | 'accepted' | 'running' | 'stopping' | 'completed' | 'failed' | 'cancelled';
+type CaveConversationOperationKind = 'conversations.create' | 'messages.send';
+type CaveConversationOriginatingScope = 'chat:write' | 'conversations:write';
+interface CaveConversationOperation {
+    id: CaveConversationOperationId;
+    kind: CaveConversationOperationKind;
+    state: CaveConversationOperationState;
+    originatingScope: CaveConversationOriginatingScope;
+    conversationId: string;
+    inputTurnId?: string;
+    outputTurnId?: string;
+    retryOfTurnId?: string;
+    failureCode?: string;
+    latestEventId: number;
+    replayFloorEventId: number;
+    createdAt: string;
+    updatedAt: string;
+    idempotencyResultExpiresAt?: string;
+}
+interface CaveCreateConversationResult {
+    operationId: CaveConversationOperationId;
+    replayed: boolean;
+    conversation: CaveConversation;
+}
+interface CaveSendConversationMessageResult {
+    operation: CaveConversationOperation;
+    replayed: boolean;
+}
+interface CaveConversationEventBase {
+    operationId: CaveConversationOperationId;
+    eventId: number;
+    cursor: CaveConversationEventCursor;
+    occurredAt: string;
+}
+type CaveConversationEventType = 'operation.accepted' | 'assistant.delta' | 'operation.stopping' | 'operation.completed' | 'operation.failed' | 'operation.cancelled';
+type CaveConversationEvent = (CaveConversationEventBase & {
+    type: 'operation.accepted';
+    conversationId: string;
+    inputTurnId: string;
+    retryOfTurnId?: string;
+}) | (CaveConversationEventBase & {
+    type: 'assistant.delta';
+    text: string;
+}) | (CaveConversationEventBase & {
+    type: 'operation.stopping';
+}) | (CaveConversationEventBase & {
+    type: 'operation.completed';
+    outputTurnId: string;
+}) | (CaveConversationEventBase & {
+    type: 'operation.failed';
+    outputTurnId: string;
+    code: string;
+}) | (CaveConversationEventBase & {
+    type: 'operation.cancelled';
+    outputTurnId: string;
+});
+interface CaveConversationEventPage {
+    operation: CaveConversationOperation;
+    events: readonly CaveConversationEvent[];
+    complete: boolean;
+    cursor?: {
+        current?: CaveConversationEventCursor;
+        next?: CaveConversationEventCursor;
+        hasMore: boolean;
+    };
+}
+interface CaveConversationEventPageRequest {
+    cursor?: CaveConversationEventCursor;
+    waitMs?: number;
+}
+interface CaveConversationStreamOptions {
+    cursor?: CaveConversationEventCursor;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    observer?: OperationObserver;
+}
+declare const CAVE_CONVERSATION_OPERATION_STATES: readonly ["pending", "accepted", "running", "stopping", "completed", "failed", "cancelled"];
+declare const CAVE_CONVERSATION_TERMINAL_STATES: readonly ["completed", "failed", "cancelled"];
+declare const CAVE_CONVERSATION_EVENT_TYPES: readonly ["operation.accepted", "assistant.delta", "operation.stopping", "operation.completed", "operation.failed", "operation.cancelled"];
+/** The scope stored with an operation when it was claimed; reads of the operation and its events are authorized by it. */
+declare const CAVE_CONVERSATION_ORIGINATING_SCOPES: readonly ["chat:write", "conversations:write"];
+/**
+ * The defined `reconcile_required` reasons. A `reconcile_required` error is
+ * an instruction to reload canonical state, not a transient transport retry.
+ */
+declare const CAVE_CONVERSATION_RECONCILE_REASONS: readonly ["replay_gap", "operation_expired", "canonical_branch_changed", "idempotency_result_expired", "canonical_state_moved"];
+type CaveConversationReconcileReason = (typeof CAVE_CONVERSATION_RECONCILE_REASONS)[number];
+/**
+ * Event cursors are opaque route strings bounded by the authoritative
+ * `cursorCharacters` limit. The SDK never decodes them.
+ */
+declare function validateConversationEventCursor(value: unknown, label: string): CaveConversationEventCursor;
+interface CaveConversationTranslatedPage {
+    operation: CaveConversationOperation;
+    events: readonly CaveConversationEvent[];
+    complete: boolean;
+    requestId: string | undefined;
+    nextCursor?: CaveConversationEventCursor;
+}
+interface CaveConversationEventTranslator {
+    readonly operationId: CaveConversationOperationId;
+    readonly deliveredThroughEventId: number;
+    /**
+     * Validate one raw event-page response and return the accepted events in
+     * wire order. Throws a protocol error on any violation.
+     */
+    translate(page: unknown): CaveConversationTranslatedPage;
+    /** Advance the accepted cursor after the event has been delivered. */
+    commit(eventId: number): void;
+}
+interface CaveConversationEventTranslatorOptions {
+    /**
+     * True when this stream's first page resumes behind an opaque cursor from
+     * an earlier generator run: the first accepted event then cannot be
+     * gap-checked against a known event ID. A fresh stream must begin at
+     * event 1.
+     */
+    resumeAfterOpaqueCursor?: boolean;
+}
+/**
+ * The one parser/translator for conversation event pages. Initial attachment
+ * and every resumed long poll pass through it.
+ *
+ * The translator validates the shared Client v1 envelope before event data,
+ * validates the operation ID on every event, requires contiguous increasing
+ * event IDs, suppresses an exact duplicate event at or below the caller's
+ * accepted cursor, and refuses forward gaps, reordered events, changed
+ * operation IDs, malformed terminal sequences, and events after terminal as
+ * protocol violations. The resume cursor advances only when the caller
+ * commits, after the corresponding event has been delivered.
+ */
+declare function createConversationEventTranslator(operationId: CaveConversationOperationId, options?: CaveConversationEventTranslatorOptions): CaveConversationEventTranslator;
+/**
+ * The defined `reconcile_required` reasons, read from normalized error
+ * details without trusting the error shape.
+ */
+declare function caveConversationReconcileReason(error: unknown): CaveConversationReconcileReason | undefined;
+
 interface CaveTransport {
     health(context?: OperationContext): Promise<CaveHealthResponse>;
     pairingCreate?(request: CavePairingRequest, context?: OperationContext): Promise<CavePairingCreated>;
@@ -372,6 +552,19 @@ interface CaveTransport {
     listConversations?(options: PageOptions, context?: OperationContext): Promise<unknown>;
     getConversation?(conversationId: string, context?: OperationContext): Promise<unknown>;
     listConversationMessages?(conversationId: string, options: PageOptions, context?: OperationContext): Promise<unknown>;
+    /**
+     * Conversational control is optional for every transport. The five Client
+     * v1 conversation-operation routes are not yet declared by the
+     * authoritative Cave contract fixture this SDK vendors, so no transport
+     * binds them today; the client reports a missing one as
+     * `unsupported_operation` rather than inventing a route. Results are
+     * `unknown` at this trust boundary and are validated by the client.
+     */
+    createConversation?(request: CaveCreateConversationRequest, context?: OperationContext): Promise<unknown>;
+    sendConversationMessage?(conversationId: string, request: CaveSendConversationMessageRequest, context?: OperationContext): Promise<unknown>;
+    getConversationOperation?(operationId: CaveConversationOperationId, context?: OperationContext): Promise<unknown>;
+    readConversationOperationEvents?(operationId: CaveConversationOperationId, page: CaveConversationEventPageRequest, context?: OperationContext): Promise<unknown>;
+    stopConversationOperation?(operationId: CaveConversationOperationId, context?: OperationContext): Promise<unknown>;
     /**
      * The familiar operations are optional so that a transport written against
      * an older Cave still satisfies this interface. The client reports a missing
@@ -453,6 +646,13 @@ declare class CaveClientError extends Error {
     readonly statusCode: number | undefined;
     readonly details: Record<string, string> | undefined;
     constructor(normalized: NormalizedError, compatibility?: CompatibilityAssessment, options?: ErrorOptions);
+    /**
+     * The caller-visible operation UUID for a conversation mutation or stream,
+     * attached once the validated operation ID has been accepted by the SDK.
+     * Undefined for errors raised before acceptance and for non-conversation
+     * operations. Carries fixed metadata only.
+     */
+    get operationId(): string | undefined;
 }
 declare function isCaveClientError(error: unknown): error is CaveClientError;
 declare class CavePairingSession {
@@ -490,14 +690,59 @@ declare class CaveClient {
     createPairing(request: CavePairingRequest, options?: OperationOptions): Promise<CavePairingSession>;
     credentialStatus(options?: OperationOptions): Promise<CaveCredentialStatus>;
     forgetCredential(options?: OperationOptions): Promise<boolean>;
+    /**
+     * Canonical conversation creation. Accepts only the operation UUID, one
+     * canonical familiar ID, and an optional canonical project ID; Cave owns
+     * every other decision. Create does not start an executor and does not
+     * open an event stream.
+     */
+    createConversation(request: CaveCreateConversationRequest, options?: OperationOptions): Promise<CaveCreateConversationResult>;
+    /**
+     * One text send, or one explicit retry when the request carries
+     * `retryOfTurnId`. The response is an acceptance/result envelope, not the
+     * output stream; attach with `streamConversationOperation`. The exact text
+     * is preserved byte for byte. An identical completed send replays Cave's
+     * recorded result; the SDK never replays one on its own.
+     */
+    sendConversationMessage(conversationId: string, request: CaveSendConversationMessageRequest, options?: OperationOptions): Promise<CaveSendConversationMessageResult>;
+    /**
+     * Typed convenience over `messages.send` for retrying an explicitly failed
+     * or cancelled assistant turn. It uses a fresh operation UUID and the
+     * explicit `retryOfTurnId`; it introduces no second producer route.
+     */
+    retryConversationTurn(conversationId: string, request: CaveRetryConversationTurnRequest, options?: OperationOptions): Promise<CaveSendConversationMessageResult>;
+    /**
+     * The non-content operation record: fixed codes, turn references, event
+     * bounds, and timestamps. Prompt, attachment, bearer, and raw-cause
+     * content never appear here.
+     */
+    getConversationOperation(operationId: string, options?: OperationOptions): Promise<CaveConversationOperation>;
+    /**
+     * The typed, resumable event stream for one conversation operation.
+     *
+     * `options.timeoutMs` is one total stream budget; each long poll receives
+     * only the remaining budget. A caller abort closes the current event read
+     * and this generator: it never calls Stop and never resubmits a send.
+     * Initial attachment and every resumed page pass through the same event
+     * translator, which suppresses duplicates at or below the accepted cursor
+     * and refuses protocol violations. `reconcile_required` is an instruction
+     * to reload canonical history, not a retry.
+     */
+    streamConversationOperation(operationId: string, options?: CaveConversationStreamOptions): AsyncGenerator<CaveConversationEvent>;
+    /**
+     * Explicit Stop for one conversation operation. Repeated Stop calls are
+     * safe against the target operation; this client sends each Stop exactly
+     * once and never retries it after ambiguous transport completion.
+     */
+    stopConversationOperation(operationId: string, options?: OperationOptions): Promise<CaveConversationOperation>;
 }
 declare function createCaveClient(options: CaveClientOptions): CaveClient;
 
-export { type CavePropertyCoverage as $, type CaveExecutionWindow as A, type CaveFamiliar as B, type CavePairingRequest as C, type CaveFamiliarAnalytics as D, type CaveFamiliarAnalyticsOptions as E, type CaveFamiliarAnalyticsResponse as F, type CaveFamiliarContract as G, type CaveFamiliarContractResponse as H, type CaveFamiliarProperty as I, type CaveFamiliarWire as J, type CaveFamiliarsResponse as K, type CaveHealth as L, type CaveHealthData as M, type CaveHealthResponse as N, type CaveManagedCredentialStatusResult as O, type CaveManagedCredentialTransport as P, type CaveManagedForgetCredentialResult as Q, type CaveManagedNativeCredentialCustody as R, type CaveManagedPairingCreated as S, type CaveManagedPairingExchange as T, type CavePairingCreated as U, type CavePairingExchange as V, type CavePairingScope as W, CavePairingSession as X, type CavePairingState as Y, type CavePairingStatus as Z, type CaveProject as _, CaveClient as a, type CaveTransport as a0, createCaveClient as a1, isCaveClientError as a2, normalizeCaveError as a3, CAVE_ANALYTICS_WINDOWS as b, CAVE_FAMILIAR_PROPERTIES as c, CAVE_PAIRING_SCOPES as d, CAVE_PAIRING_STATUSES as e, type CaveAnalyticsWindowKey as f, type CaveAuthorityBinding as g, type CaveAuthorityBoundPairingExchange as h, type CaveCanonicalFamiliar as i, CaveClientError as j, type CaveClientOptions as k, type CaveContractFile as l, type CaveContractReport as m, type CaveContractViolation as n, type CaveConversation as o, type CaveConversationMessage as p, type CaveCredentialAccess as q, type CaveCredentialBinding as r, type CaveCredentialDisconnectedReason as s, type CaveCredentialMetadata as t, type CaveCredentialPersistingTransport as u, type CaveCredentialStatus as v, type CaveExecutionAttempt as w, type CaveExecutionBackfill as x, type CaveExecutionCoverage as y, type CaveExecutionSlice as z };
+export { type CaveFamiliarContract as $, type CaveConversationMessage as A, type CaveConversationOperation as B, type CavePairingRequest as C, type CaveConversationOperationId as D, type CaveConversationOperationKind as E, type CaveConversationOperationState as F, type CaveConversationOriginatingScope as G, type CaveConversationReconcileReason as H, type CaveConversationStreamOptions as I, type CaveConversationTranslatedPage as J, type CaveCreateConversationRequest as K, type CaveCreateConversationResult as L, type CaveCredentialAccess as M, type CaveCredentialBinding as N, type CaveCredentialDisconnectedReason as O, type CaveCredentialMetadata as P, type CaveCredentialPersistingTransport as Q, type CaveCredentialStatus as R, type CaveExecutionAttempt as S, type CaveExecutionBackfill as T, type CaveExecutionCoverage as U, type CaveExecutionSlice as V, type CaveExecutionWindow as W, type CaveFamiliar as X, type CaveFamiliarAnalytics as Y, type CaveFamiliarAnalyticsOptions as Z, type CaveFamiliarAnalyticsResponse as _, CaveClient as a, type CaveFamiliarContractResponse as a0, type CaveFamiliarProperty as a1, type CaveFamiliarWire as a2, type CaveFamiliarsResponse as a3, type CaveHealth as a4, type CaveHealthData as a5, type CaveHealthResponse as a6, type CaveManagedCredentialStatusResult as a7, type CaveManagedCredentialTransport as a8, type CaveManagedForgetCredentialResult as a9, type CaveManagedNativeCredentialCustody as aa, type CaveManagedPairingCreated as ab, type CaveManagedPairingExchange as ac, type CavePairingCreated as ad, type CavePairingExchange as ae, type CavePairingScope as af, CavePairingSession as ag, type CavePairingState as ah, type CavePairingStatus as ai, type CaveProject as aj, type CavePropertyCoverage as ak, type CaveRetryConversationTurnRequest as al, type CaveSendConversationMessageRequest as am, type CaveSendConversationMessageResult as an, type CaveTransport as ao, caveConversationReconcileReason as ap, createCaveClient as aq, createConversationEventTranslator as ar, isCaveClientError as as, normalizeCaveError as at, validateConversationEventCursor as au, CAVE_ANALYTICS_WINDOWS as b, CAVE_CONVERSATION_EVENT_TYPES as c, CAVE_CONVERSATION_OPERATION_STATES as d, CAVE_CONVERSATION_ORIGINATING_SCOPES as e, CAVE_CONVERSATION_RECONCILE_REASONS as f, CAVE_CONVERSATION_TERMINAL_STATES as g, CAVE_FAMILIAR_PROPERTIES as h, CAVE_PAIRING_SCOPES as i, CAVE_PAIRING_STATUSES as j, type CaveAnalyticsWindowKey as k, type CaveAuthorityBinding as l, type CaveAuthorityBoundPairingExchange as m, type CaveCanonicalFamiliar as n, CaveClientError as o, type CaveClientOptions as p, type CaveContractFile as q, type CaveContractReport as r, type CaveContractViolation as s, type CaveConversation as t, type CaveConversationEvent as u, type CaveConversationEventBase as v, type CaveConversationEventPage as w, type CaveConversationEventPageRequest as x, type CaveConversationEventTranslator as y, type CaveConversationEventType as z };
 // Entrypoint: .
 // Declaration: dist/index.d.ts
-import { C as CavePairingRequest, a as CaveClient } from './client-BbxpTVKf.js';
-export { b as CAVE_ANALYTICS_WINDOWS, c as CAVE_FAMILIAR_PROPERTIES, d as CAVE_PAIRING_SCOPES, e as CAVE_PAIRING_STATUSES, f as CaveAnalyticsWindowKey, g as CaveAuthorityBinding, h as CaveAuthorityBoundPairingExchange, i as CaveCanonicalFamiliar, j as CaveClientError, k as CaveClientOptions, l as CaveContractFile, m as CaveContractReport, n as CaveContractViolation, o as CaveConversation, p as CaveConversationMessage, q as CaveCredentialAccess, r as CaveCredentialBinding, s as CaveCredentialDisconnectedReason, t as CaveCredentialMetadata, u as CaveCredentialPersistingTransport, v as CaveCredentialStatus, w as CaveExecutionAttempt, x as CaveExecutionBackfill, y as CaveExecutionCoverage, z as CaveExecutionSlice, A as CaveExecutionWindow, B as CaveFamiliar, D as CaveFamiliarAnalytics, E as CaveFamiliarAnalyticsOptions, F as CaveFamiliarAnalyticsResponse, G as CaveFamiliarContract, H as CaveFamiliarContractResponse, I as CaveFamiliarProperty, J as CaveFamiliarWire, K as CaveFamiliarsResponse, L as CaveHealth, M as CaveHealthData, N as CaveHealthResponse, O as CaveManagedCredentialStatusResult, P as CaveManagedCredentialTransport, Q as CaveManagedForgetCredentialResult, R as CaveManagedNativeCredentialCustody, S as CaveManagedPairingCreated, T as CaveManagedPairingExchange, U as CavePairingCreated, V as CavePairingExchange, W as CavePairingScope, X as CavePairingSession, Y as CavePairingState, Z as CavePairingStatus, _ as CaveProject, $ as CavePropertyCoverage, a0 as CaveTransport, a1 as createCaveClient, a2 as isCaveClientError, a3 as normalizeCaveError } from './client-BbxpTVKf.js';
+import { C as CavePairingRequest, a as CaveClient } from './client-ootQTXcj.js';
+export { b as CAVE_ANALYTICS_WINDOWS, c as CAVE_CONVERSATION_EVENT_TYPES, d as CAVE_CONVERSATION_OPERATION_STATES, e as CAVE_CONVERSATION_ORIGINATING_SCOPES, f as CAVE_CONVERSATION_RECONCILE_REASONS, g as CAVE_CONVERSATION_TERMINAL_STATES, h as CAVE_FAMILIAR_PROPERTIES, i as CAVE_PAIRING_SCOPES, j as CAVE_PAIRING_STATUSES, k as CaveAnalyticsWindowKey, l as CaveAuthorityBinding, m as CaveAuthorityBoundPairingExchange, n as CaveCanonicalFamiliar, o as CaveClientError, p as CaveClientOptions, q as CaveContractFile, r as CaveContractReport, s as CaveContractViolation, t as CaveConversation, u as CaveConversationEvent, v as CaveConversationEventBase, w as CaveConversationEventPage, x as CaveConversationEventPageRequest, y as CaveConversationEventTranslator, z as CaveConversationEventType, A as CaveConversationMessage, B as CaveConversationOperation, D as CaveConversationOperationId, E as CaveConversationOperationKind, F as CaveConversationOperationState, G as CaveConversationOriginatingScope, H as CaveConversationReconcileReason, I as CaveConversationStreamOptions, J as CaveConversationTranslatedPage, K as CaveCreateConversationRequest, L as CaveCreateConversationResult, M as CaveCredentialAccess, N as CaveCredentialBinding, O as CaveCredentialDisconnectedReason, P as CaveCredentialMetadata, Q as CaveCredentialPersistingTransport, R as CaveCredentialStatus, S as CaveExecutionAttempt, T as CaveExecutionBackfill, U as CaveExecutionCoverage, V as CaveExecutionSlice, W as CaveExecutionWindow, X as CaveFamiliar, Y as CaveFamiliarAnalytics, Z as CaveFamiliarAnalyticsOptions, _ as CaveFamiliarAnalyticsResponse, $ as CaveFamiliarContract, a0 as CaveFamiliarContractResponse, a1 as CaveFamiliarProperty, a2 as CaveFamiliarWire, a3 as CaveFamiliarsResponse, a4 as CaveHealth, a5 as CaveHealthData, a6 as CaveHealthResponse, a7 as CaveManagedCredentialStatusResult, a8 as CaveManagedCredentialTransport, a9 as CaveManagedForgetCredentialResult, aa as CaveManagedNativeCredentialCustody, ab as CaveManagedPairingCreated, ac as CaveManagedPairingExchange, ad as CavePairingCreated, ae as CavePairingExchange, af as CavePairingScope, ag as CavePairingSession, ah as CavePairingState, ai as CavePairingStatus, aj as CaveProject, ak as CavePropertyCoverage, al as CaveRetryConversationTurnRequest, am as CaveSendConversationMessageRequest, an as CaveSendConversationMessageResult, ao as CaveTransport, ap as caveConversationReconcileReason, aq as createCaveClient, ar as createConversationEventTranslator, as as isCaveClientError, at as normalizeCaveError, au as validateConversationEventCursor } from './client-ootQTXcj.js';
 import { OperationOptions, OperationContext, PageOptions, OperationDefaults, SecretStore, SecretStoreReference } from '@opencoven/sdk-core';
 import '@opencoven/sdk-core/browser';
 
@@ -794,8 +1039,8 @@ declare const CAVE_CLIENT_VERSION: string;
 
 export { CAVE_CLIENT_VERSION, CaveClient, type CaveContractCursor, type CaveContractEnvelopeMetadata, type CaveContractFixture, type CaveContractHealthData, type CaveContractIdentity, type CaveContractOperation, type CaveContractPairingCreatedData, type CaveContractPairingExchangeData, type CaveContractPairingStatusData, type CaveContractPublicRoute, type CaveContractRevision, type CaveDiscoveredClientOptions, type CaveDiscoveredEndpoint, type CaveDiscoveryDependencies, CaveDiscoveryError, type CaveDiscoveryErrorCode, type CaveDiscoveryFileHandle, type CaveDiscoveryPathIdentity, type CaveDiscoveryRecordIdentity, type CaveEndpointFreshness, type CaveManagedClientOptions, type CaveManagedNativeDiscardResult, type CaveManagedNativePairingCreated, type CaveManagedNativePairingExchange, type CaveManagedNativeResponse, type CaveManagedNativeTransport, CavePairingRequest, type CaveWindowsPathTrustResult, type CaveWindowsPathTrustValidator, type DiscoverCaveEndpointOptions, createDiscoveredCaveClient, createManagedCaveClient, digestCaveContractFixture, discoverCaveEndpoint, isCaveDiscoveryError, parseCaveContractFixture, parseVerifiedCaveContractFixture, verifyCaveContractFixtureDigest };
 // Entrypoint: ./managed
-// Declaration: dist/client-BbxpTVKf.d.ts
-import { OperationContext, PageOptions, OperationDefaults, SecretStore, SecretStoreReference, OperationOptions, Page, BoundedPageOptions, NormalizedError, CompatibilityAssessment } from '@opencoven/sdk-core/browser';
+// Declaration: dist/client-ootQTXcj.d.ts
+import { OperationObserver, OperationContext, PageOptions, OperationDefaults, SecretStore, SecretStoreReference, OperationOptions, Page, BoundedPageOptions, NormalizedError, CompatibilityAssessment } from '@opencoven/sdk-core/browser';
 
 interface CaveCanonicalFamiliar {
     id: string;
@@ -1153,6 +1398,186 @@ interface CaveFamiliarAnalyticsResponse {
     error?: string;
 }
 
+/**
+ * Conversational control: the first bounded mutation authority.
+ *
+ * Cave remains the sole executor and canonical state owner. The SDK exposes
+ * constrained typed operations only — never arbitrary HTTP paths, private
+ * Cave routes, or raw transport escape hatches — and owns the public DTOs,
+ * validators, and the single event translator shared by initial and resumed
+ * streams.
+ *
+ * The five Client v1 operations this surface is defined against
+ * (`conversations.create`, `messages.send`, `operations.read`,
+ * `operations.events`, `operations.stop`) are not yet declared by the
+ * authoritative Cave contract fixture this SDK vendors. This module therefore
+ * defines the typed requests, results, operation records, event vocabulary,
+ * cursor handling, and translation rules only; it introduces no HTTP paths.
+ * Transport bindings for the five operations stay optional and are expected
+ * to arrive with the upstream Cave producer contract and a re-imported
+ * fixture.
+ *
+ * This module is import-pure: no discovery, credential, filesystem, network,
+ * or daemon I/O happens at import time.
+ */
+type CaveConversationOperationId = string;
+type CaveConversationEventCursor = string;
+interface CaveCreateConversationRequest {
+    operationId: CaveConversationOperationId;
+    familiarId: string;
+    projectId?: string;
+}
+type CaveSendConversationMessageRequest = {
+    operationId: CaveConversationOperationId;
+    text: string;
+    retryOfTurnId?: never;
+} | {
+    operationId: CaveConversationOperationId;
+    retryOfTurnId: string;
+    text?: never;
+};
+interface CaveRetryConversationTurnRequest {
+    operationId: CaveConversationOperationId;
+    retryOfTurnId: string;
+}
+type CaveConversationOperationState = 'pending' | 'accepted' | 'running' | 'stopping' | 'completed' | 'failed' | 'cancelled';
+type CaveConversationOperationKind = 'conversations.create' | 'messages.send';
+type CaveConversationOriginatingScope = 'chat:write' | 'conversations:write';
+interface CaveConversationOperation {
+    id: CaveConversationOperationId;
+    kind: CaveConversationOperationKind;
+    state: CaveConversationOperationState;
+    originatingScope: CaveConversationOriginatingScope;
+    conversationId: string;
+    inputTurnId?: string;
+    outputTurnId?: string;
+    retryOfTurnId?: string;
+    failureCode?: string;
+    latestEventId: number;
+    replayFloorEventId: number;
+    createdAt: string;
+    updatedAt: string;
+    idempotencyResultExpiresAt?: string;
+}
+interface CaveCreateConversationResult {
+    operationId: CaveConversationOperationId;
+    replayed: boolean;
+    conversation: CaveConversation;
+}
+interface CaveSendConversationMessageResult {
+    operation: CaveConversationOperation;
+    replayed: boolean;
+}
+interface CaveConversationEventBase {
+    operationId: CaveConversationOperationId;
+    eventId: number;
+    cursor: CaveConversationEventCursor;
+    occurredAt: string;
+}
+type CaveConversationEventType = 'operation.accepted' | 'assistant.delta' | 'operation.stopping' | 'operation.completed' | 'operation.failed' | 'operation.cancelled';
+type CaveConversationEvent = (CaveConversationEventBase & {
+    type: 'operation.accepted';
+    conversationId: string;
+    inputTurnId: string;
+    retryOfTurnId?: string;
+}) | (CaveConversationEventBase & {
+    type: 'assistant.delta';
+    text: string;
+}) | (CaveConversationEventBase & {
+    type: 'operation.stopping';
+}) | (CaveConversationEventBase & {
+    type: 'operation.completed';
+    outputTurnId: string;
+}) | (CaveConversationEventBase & {
+    type: 'operation.failed';
+    outputTurnId: string;
+    code: string;
+}) | (CaveConversationEventBase & {
+    type: 'operation.cancelled';
+    outputTurnId: string;
+});
+interface CaveConversationEventPage {
+    operation: CaveConversationOperation;
+    events: readonly CaveConversationEvent[];
+    complete: boolean;
+    cursor?: {
+        current?: CaveConversationEventCursor;
+        next?: CaveConversationEventCursor;
+        hasMore: boolean;
+    };
+}
+interface CaveConversationEventPageRequest {
+    cursor?: CaveConversationEventCursor;
+    waitMs?: number;
+}
+interface CaveConversationStreamOptions {
+    cursor?: CaveConversationEventCursor;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    observer?: OperationObserver;
+}
+declare const CAVE_CONVERSATION_OPERATION_STATES: readonly ["pending", "accepted", "running", "stopping", "completed", "failed", "cancelled"];
+declare const CAVE_CONVERSATION_TERMINAL_STATES: readonly ["completed", "failed", "cancelled"];
+declare const CAVE_CONVERSATION_EVENT_TYPES: readonly ["operation.accepted", "assistant.delta", "operation.stopping", "operation.completed", "operation.failed", "operation.cancelled"];
+/** The scope stored with an operation when it was claimed; reads of the operation and its events are authorized by it. */
+declare const CAVE_CONVERSATION_ORIGINATING_SCOPES: readonly ["chat:write", "conversations:write"];
+/**
+ * The defined `reconcile_required` reasons. A `reconcile_required` error is
+ * an instruction to reload canonical state, not a transient transport retry.
+ */
+declare const CAVE_CONVERSATION_RECONCILE_REASONS: readonly ["replay_gap", "operation_expired", "canonical_branch_changed", "idempotency_result_expired", "canonical_state_moved"];
+type CaveConversationReconcileReason = (typeof CAVE_CONVERSATION_RECONCILE_REASONS)[number];
+/**
+ * Event cursors are opaque route strings bounded by the authoritative
+ * `cursorCharacters` limit. The SDK never decodes them.
+ */
+declare function validateConversationEventCursor(value: unknown, label: string): CaveConversationEventCursor;
+interface CaveConversationTranslatedPage {
+    operation: CaveConversationOperation;
+    events: readonly CaveConversationEvent[];
+    complete: boolean;
+    requestId: string | undefined;
+    nextCursor?: CaveConversationEventCursor;
+}
+interface CaveConversationEventTranslator {
+    readonly operationId: CaveConversationOperationId;
+    readonly deliveredThroughEventId: number;
+    /**
+     * Validate one raw event-page response and return the accepted events in
+     * wire order. Throws a protocol error on any violation.
+     */
+    translate(page: unknown): CaveConversationTranslatedPage;
+    /** Advance the accepted cursor after the event has been delivered. */
+    commit(eventId: number): void;
+}
+interface CaveConversationEventTranslatorOptions {
+    /**
+     * True when this stream's first page resumes behind an opaque cursor from
+     * an earlier generator run: the first accepted event then cannot be
+     * gap-checked against a known event ID. A fresh stream must begin at
+     * event 1.
+     */
+    resumeAfterOpaqueCursor?: boolean;
+}
+/**
+ * The one parser/translator for conversation event pages. Initial attachment
+ * and every resumed long poll pass through it.
+ *
+ * The translator validates the shared Client v1 envelope before event data,
+ * validates the operation ID on every event, requires contiguous increasing
+ * event IDs, suppresses an exact duplicate event at or below the caller's
+ * accepted cursor, and refuses forward gaps, reordered events, changed
+ * operation IDs, malformed terminal sequences, and events after terminal as
+ * protocol violations. The resume cursor advances only when the caller
+ * commits, after the corresponding event has been delivered.
+ */
+declare function createConversationEventTranslator(operationId: CaveConversationOperationId, options?: CaveConversationEventTranslatorOptions): CaveConversationEventTranslator;
+/**
+ * The defined `reconcile_required` reasons, read from normalized error
+ * details without trusting the error shape.
+ */
+declare function caveConversationReconcileReason(error: unknown): CaveConversationReconcileReason | undefined;
+
 interface CaveTransport {
     health(context?: OperationContext): Promise<CaveHealthResponse>;
     pairingCreate?(request: CavePairingRequest, context?: OperationContext): Promise<CavePairingCreated>;
@@ -1167,6 +1592,19 @@ interface CaveTransport {
     listConversations?(options: PageOptions, context?: OperationContext): Promise<unknown>;
     getConversation?(conversationId: string, context?: OperationContext): Promise<unknown>;
     listConversationMessages?(conversationId: string, options: PageOptions, context?: OperationContext): Promise<unknown>;
+    /**
+     * Conversational control is optional for every transport. The five Client
+     * v1 conversation-operation routes are not yet declared by the
+     * authoritative Cave contract fixture this SDK vendors, so no transport
+     * binds them today; the client reports a missing one as
+     * `unsupported_operation` rather than inventing a route. Results are
+     * `unknown` at this trust boundary and are validated by the client.
+     */
+    createConversation?(request: CaveCreateConversationRequest, context?: OperationContext): Promise<unknown>;
+    sendConversationMessage?(conversationId: string, request: CaveSendConversationMessageRequest, context?: OperationContext): Promise<unknown>;
+    getConversationOperation?(operationId: CaveConversationOperationId, context?: OperationContext): Promise<unknown>;
+    readConversationOperationEvents?(operationId: CaveConversationOperationId, page: CaveConversationEventPageRequest, context?: OperationContext): Promise<unknown>;
+    stopConversationOperation?(operationId: CaveConversationOperationId, context?: OperationContext): Promise<unknown>;
     /**
      * The familiar operations are optional so that a transport written against
      * an older Cave still satisfies this interface. The client reports a missing
@@ -1248,6 +1686,13 @@ declare class CaveClientError extends Error {
     readonly statusCode: number | undefined;
     readonly details: Record<string, string> | undefined;
     constructor(normalized: NormalizedError, compatibility?: CompatibilityAssessment, options?: ErrorOptions);
+    /**
+     * The caller-visible operation UUID for a conversation mutation or stream,
+     * attached once the validated operation ID has been accepted by the SDK.
+     * Undefined for errors raised before acceptance and for non-conversation
+     * operations. Carries fixed metadata only.
+     */
+    get operationId(): string | undefined;
 }
 declare function isCaveClientError(error: unknown): error is CaveClientError;
 declare class CavePairingSession {
@@ -1285,14 +1730,59 @@ declare class CaveClient {
     createPairing(request: CavePairingRequest, options?: OperationOptions): Promise<CavePairingSession>;
     credentialStatus(options?: OperationOptions): Promise<CaveCredentialStatus>;
     forgetCredential(options?: OperationOptions): Promise<boolean>;
+    /**
+     * Canonical conversation creation. Accepts only the operation UUID, one
+     * canonical familiar ID, and an optional canonical project ID; Cave owns
+     * every other decision. Create does not start an executor and does not
+     * open an event stream.
+     */
+    createConversation(request: CaveCreateConversationRequest, options?: OperationOptions): Promise<CaveCreateConversationResult>;
+    /**
+     * One text send, or one explicit retry when the request carries
+     * `retryOfTurnId`. The response is an acceptance/result envelope, not the
+     * output stream; attach with `streamConversationOperation`. The exact text
+     * is preserved byte for byte. An identical completed send replays Cave's
+     * recorded result; the SDK never replays one on its own.
+     */
+    sendConversationMessage(conversationId: string, request: CaveSendConversationMessageRequest, options?: OperationOptions): Promise<CaveSendConversationMessageResult>;
+    /**
+     * Typed convenience over `messages.send` for retrying an explicitly failed
+     * or cancelled assistant turn. It uses a fresh operation UUID and the
+     * explicit `retryOfTurnId`; it introduces no second producer route.
+     */
+    retryConversationTurn(conversationId: string, request: CaveRetryConversationTurnRequest, options?: OperationOptions): Promise<CaveSendConversationMessageResult>;
+    /**
+     * The non-content operation record: fixed codes, turn references, event
+     * bounds, and timestamps. Prompt, attachment, bearer, and raw-cause
+     * content never appear here.
+     */
+    getConversationOperation(operationId: string, options?: OperationOptions): Promise<CaveConversationOperation>;
+    /**
+     * The typed, resumable event stream for one conversation operation.
+     *
+     * `options.timeoutMs` is one total stream budget; each long poll receives
+     * only the remaining budget. A caller abort closes the current event read
+     * and this generator: it never calls Stop and never resubmits a send.
+     * Initial attachment and every resumed page pass through the same event
+     * translator, which suppresses duplicates at or below the accepted cursor
+     * and refuses protocol violations. `reconcile_required` is an instruction
+     * to reload canonical history, not a retry.
+     */
+    streamConversationOperation(operationId: string, options?: CaveConversationStreamOptions): AsyncGenerator<CaveConversationEvent>;
+    /**
+     * Explicit Stop for one conversation operation. Repeated Stop calls are
+     * safe against the target operation; this client sends each Stop exactly
+     * once and never retries it after ambiguous transport completion.
+     */
+    stopConversationOperation(operationId: string, options?: OperationOptions): Promise<CaveConversationOperation>;
 }
 declare function createCaveClient(options: CaveClientOptions): CaveClient;
 
-export { type CavePropertyCoverage as $, type CaveExecutionWindow as A, type CaveFamiliar as B, type CavePairingRequest as C, type CaveFamiliarAnalytics as D, type CaveFamiliarAnalyticsOptions as E, type CaveFamiliarAnalyticsResponse as F, type CaveFamiliarContract as G, type CaveFamiliarContractResponse as H, type CaveFamiliarProperty as I, type CaveFamiliarWire as J, type CaveFamiliarsResponse as K, type CaveHealth as L, type CaveHealthData as M, type CaveHealthResponse as N, type CaveManagedCredentialStatusResult as O, type CaveManagedCredentialTransport as P, type CaveManagedForgetCredentialResult as Q, type CaveManagedNativeCredentialCustody as R, type CaveManagedPairingCreated as S, type CaveManagedPairingExchange as T, type CavePairingCreated as U, type CavePairingExchange as V, type CavePairingScope as W, CavePairingSession as X, type CavePairingState as Y, type CavePairingStatus as Z, type CaveProject as _, CaveClient as a, type CaveTransport as a0, createCaveClient as a1, isCaveClientError as a2, normalizeCaveError as a3, CAVE_ANALYTICS_WINDOWS as b, CAVE_FAMILIAR_PROPERTIES as c, CAVE_PAIRING_SCOPES as d, CAVE_PAIRING_STATUSES as e, type CaveAnalyticsWindowKey as f, type CaveAuthorityBinding as g, type CaveAuthorityBoundPairingExchange as h, type CaveCanonicalFamiliar as i, CaveClientError as j, type CaveClientOptions as k, type CaveContractFile as l, type CaveContractReport as m, type CaveContractViolation as n, type CaveConversation as o, type CaveConversationMessage as p, type CaveCredentialAccess as q, type CaveCredentialBinding as r, type CaveCredentialDisconnectedReason as s, type CaveCredentialMetadata as t, type CaveCredentialPersistingTransport as u, type CaveCredentialStatus as v, type CaveExecutionAttempt as w, type CaveExecutionBackfill as x, type CaveExecutionCoverage as y, type CaveExecutionSlice as z };
+export { type CaveFamiliarContract as $, type CaveConversationMessage as A, type CaveConversationOperation as B, type CavePairingRequest as C, type CaveConversationOperationId as D, type CaveConversationOperationKind as E, type CaveConversationOperationState as F, type CaveConversationOriginatingScope as G, type CaveConversationReconcileReason as H, type CaveConversationStreamOptions as I, type CaveConversationTranslatedPage as J, type CaveCreateConversationRequest as K, type CaveCreateConversationResult as L, type CaveCredentialAccess as M, type CaveCredentialBinding as N, type CaveCredentialDisconnectedReason as O, type CaveCredentialMetadata as P, type CaveCredentialPersistingTransport as Q, type CaveCredentialStatus as R, type CaveExecutionAttempt as S, type CaveExecutionBackfill as T, type CaveExecutionCoverage as U, type CaveExecutionSlice as V, type CaveExecutionWindow as W, type CaveFamiliar as X, type CaveFamiliarAnalytics as Y, type CaveFamiliarAnalyticsOptions as Z, type CaveFamiliarAnalyticsResponse as _, CaveClient as a, type CaveFamiliarContractResponse as a0, type CaveFamiliarProperty as a1, type CaveFamiliarWire as a2, type CaveFamiliarsResponse as a3, type CaveHealth as a4, type CaveHealthData as a5, type CaveHealthResponse as a6, type CaveManagedCredentialStatusResult as a7, type CaveManagedCredentialTransport as a8, type CaveManagedForgetCredentialResult as a9, type CaveManagedNativeCredentialCustody as aa, type CaveManagedPairingCreated as ab, type CaveManagedPairingExchange as ac, type CavePairingCreated as ad, type CavePairingExchange as ae, type CavePairingScope as af, CavePairingSession as ag, type CavePairingState as ah, type CavePairingStatus as ai, type CaveProject as aj, type CavePropertyCoverage as ak, type CaveRetryConversationTurnRequest as al, type CaveSendConversationMessageRequest as am, type CaveSendConversationMessageResult as an, type CaveTransport as ao, caveConversationReconcileReason as ap, createCaveClient as aq, createConversationEventTranslator as ar, isCaveClientError as as, normalizeCaveError as at, validateConversationEventCursor as au, CAVE_ANALYTICS_WINDOWS as b, CAVE_CONVERSATION_EVENT_TYPES as c, CAVE_CONVERSATION_OPERATION_STATES as d, CAVE_CONVERSATION_ORIGINATING_SCOPES as e, CAVE_CONVERSATION_RECONCILE_REASONS as f, CAVE_CONVERSATION_TERMINAL_STATES as g, CAVE_FAMILIAR_PROPERTIES as h, CAVE_PAIRING_SCOPES as i, CAVE_PAIRING_STATUSES as j, type CaveAnalyticsWindowKey as k, type CaveAuthorityBinding as l, type CaveAuthorityBoundPairingExchange as m, type CaveCanonicalFamiliar as n, CaveClientError as o, type CaveClientOptions as p, type CaveContractFile as q, type CaveContractReport as r, type CaveContractViolation as s, type CaveConversation as t, type CaveConversationEvent as u, type CaveConversationEventBase as v, type CaveConversationEventPage as w, type CaveConversationEventPageRequest as x, type CaveConversationEventTranslator as y, type CaveConversationEventType as z };
 // Entrypoint: ./managed
 // Declaration: dist/managed.d.ts
-import { P as CaveManagedCredentialTransport, a as CaveClient } from './client-BbxpTVKf.js';
-export { b as CAVE_ANALYTICS_WINDOWS, c as CAVE_FAMILIAR_PROPERTIES, d as CAVE_PAIRING_SCOPES, e as CAVE_PAIRING_STATUSES, i as CaveCanonicalFamiliar, j as CaveClientError, k as CaveClientOptions, o as CaveConversation, p as CaveConversationMessage, q as CaveCredentialAccess, r as CaveCredentialBinding, t as CaveCredentialMetadata, v as CaveCredentialStatus, E as CaveFamiliarAnalyticsOptions, L as CaveHealth, O as CaveManagedCredentialStatusResult, Q as CaveManagedForgetCredentialResult, R as CaveManagedNativeCredentialCustody, S as CaveManagedPairingCreated, T as CaveManagedPairingExchange, C as CavePairingRequest, W as CavePairingScope, X as CavePairingSession, Y as CavePairingState, Z as CavePairingStatus, _ as CaveProject, a0 as CaveTransport, a2 as isCaveClientError, a3 as normalizeCaveError } from './client-BbxpTVKf.js';
+import { a8 as CaveManagedCredentialTransport, a as CaveClient } from './client-ootQTXcj.js';
+export { b as CAVE_ANALYTICS_WINDOWS, h as CAVE_FAMILIAR_PROPERTIES, i as CAVE_PAIRING_SCOPES, j as CAVE_PAIRING_STATUSES, n as CaveCanonicalFamiliar, o as CaveClientError, p as CaveClientOptions, t as CaveConversation, A as CaveConversationMessage, M as CaveCredentialAccess, N as CaveCredentialBinding, P as CaveCredentialMetadata, R as CaveCredentialStatus, Z as CaveFamiliarAnalyticsOptions, a4 as CaveHealth, a7 as CaveManagedCredentialStatusResult, a9 as CaveManagedForgetCredentialResult, aa as CaveManagedNativeCredentialCustody, ab as CaveManagedPairingCreated, ac as CaveManagedPairingExchange, C as CavePairingRequest, af as CavePairingScope, ag as CavePairingSession, ah as CavePairingState, ai as CavePairingStatus, aj as CaveProject, ao as CaveTransport, as as isCaveClientError, at as normalizeCaveError } from './client-ootQTXcj.js';
 import { OperationOptions, OperationDefaults, OperationContext } from '@opencoven/sdk-core/browser';
 
 interface CaveManagedDiscoverySource {

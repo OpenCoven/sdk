@@ -26,6 +26,30 @@ import {
 } from './authority-binding-contract.js';
 import { CAVE_CONTRACT_ERROR_CODES } from './contract-constraints.js';
 import {
+  CaveConversationResponseError,
+  CaveConversationSchemaError,
+  createConversationEventTranslator,
+  parseConversationOperationResponse,
+  parseCreateConversationRequest,
+  parseCreateConversationResult,
+  parseRetryConversationTurnRequest,
+  parseSendConversationMessageRequest,
+  parseSendConversationMessageResult,
+  validateConversationEventCursor,
+  validateConversationOperationId,
+  type CaveConversationEvent,
+  type CaveConversationEventCursor,
+  type CaveConversationOperation,
+  type CaveConversationOperationId,
+  type CaveConversationStreamOptions,
+  type CaveConversationTranslatedPage,
+  type CaveCreateConversationRequest,
+  type CaveCreateConversationResult,
+  type CaveRetryConversationTurnRequest,
+  type CaveSendConversationMessageRequest,
+  type CaveSendConversationMessageResult,
+} from './conversation-control.js';
+import {
   CaveCanonicalSchemaError,
   parseConversationEnvelope,
   parseConversationMessagesEnvelope,
@@ -226,6 +250,34 @@ export class CaveClientError extends Error {
     this.details = asStringRecord(ownDataErrorShape(options?.cause).details);
     Object.defineProperty(this, CAVE_CLIENT_ERROR_BRAND, { value: true });
   }
+
+  /**
+   * The caller-visible operation UUID for a conversation mutation or stream,
+   * attached once the validated operation ID has been accepted by the SDK.
+   * Undefined for errors raised before acceptance and for non-conversation
+   * operations. Carries fixed metadata only.
+   */
+  get operationId(): string | undefined {
+    return CAVE_CONVERSATION_OPERATION_IDS.get(this);
+  }
+}
+
+/**
+ * Operation IDs travel with conversation mutation and stream errors once the
+ * validated ID was accepted. A WeakMap keeps the error surface additive:
+ * the identifier is readable via `operationId` without changing any
+ * constructor or serialized shape.
+ */
+const CAVE_CONVERSATION_OPERATION_IDS = new WeakMap<CaveClientError, string>();
+
+function attachConversationOperationId<TError>(
+  error: TError,
+  operationId: CaveConversationOperationId,
+): TError {
+  if (isCaveClientError(error)) {
+    CAVE_CONVERSATION_OPERATION_IDS.set(error, operationId);
+  }
+  return error;
 }
 
 export function isCaveClientError(error: unknown): error is CaveClientError {
@@ -3245,6 +3297,379 @@ export class CaveClient {
       this.#ensureActive(context, 'forgetCredential');
       return await forgetStoredCredential(credentials.store, credentials.reference, { context });
     }, true, this.#stagedManagedCredentialTransport !== undefined);
+  }
+
+  /**
+   * One-shot conversation mutation. The executor runs exactly once: an
+   * ambiguous transport completion never replays the mutation, and the
+   * caller-visible operation UUID rides every post-acceptance error.
+   */
+  /**
+   * One-shot conversation mutation. The executor runs exactly once: an
+   * ambiguous transport completion never replays the mutation, and the
+   * caller-visible operation UUID rides every post-acceptance error.
+   */
+  async #conversationMutation<T>(
+    operation: string,
+    operationId: CaveConversationOperationId,
+    options: OperationOptions,
+    executor: (context: OperationContext) => Promise<T>,
+  ): Promise<T> {
+    const redactManagedErrors = this.#usesManagedCredentialTransport();
+    try {
+      return await this.#executePersistentMutation(
+        operation,
+        options,
+        async (context) => {
+          this.#ensureActive(context, operation);
+          return await executor(context);
+        },
+        redactManagedErrors,
+      );
+    } catch (error) {
+      throw attachConversationOperationId(error, operationId);
+    }
+  }
+
+  #parseConversationResponse<T>(operation: string, parse: () => T): T {
+    try {
+      return parse();
+    } catch (error) {
+      if (
+        error instanceof CaveConversationSchemaError ||
+        error instanceof CaveCanonicalSchemaError
+      ) {
+        throw invalidCanonicalResponse(
+          operation,
+          error instanceof CaveCanonicalSchemaError
+            ? error.field
+            : (error).field,
+        );
+      }
+      throw error;
+    }
+  }
+
+  async #conversationTransportCall(
+    operation: string,
+    call: (() => Promise<unknown>) | undefined,
+  ): Promise<unknown> {
+    if (call === undefined) {
+      throw unsupported(operation);
+    }
+    return await call();
+  }
+
+  /**
+   * Canonical conversation creation. Accepts only the operation UUID, one
+   * canonical familiar ID, and an optional canonical project ID; Cave owns
+   * every other decision. Create does not start an executor and does not
+   * open an event stream.
+   */
+  async createConversation(
+    request: CaveCreateConversationRequest,
+    options: OperationOptions = {},
+  ): Promise<CaveCreateConversationResult> {
+    const validated = parseCreateConversationRequest(request);
+
+    return await this.#conversationMutation(
+      'createConversation',
+      validated.operationId,
+      options,
+      async (context) => {
+        const call = this.#transport.createConversation?.bind(this.#transport);
+        const response = this.#managedSnapshot(
+          await this.#conversationTransportCall(
+            'createConversation',
+            call === undefined ? undefined : () => call(validated, context),
+          ),
+          'createConversation',
+        );
+        return this.#parseConversationResponse(
+          'createConversation',
+          () => parseCreateConversationResult(response, validated.operationId),
+        );
+      },
+    );
+  }
+
+  /**
+   * One text send, or one explicit retry when the request carries
+   * `retryOfTurnId`. The response is an acceptance/result envelope, not the
+   * output stream; attach with `streamConversationOperation`. The exact text
+   * is preserved byte for byte. An identical completed send replays Cave's
+   * recorded result; the SDK never replays one on its own.
+   */
+  async sendConversationMessage(
+    conversationId: string,
+    request: CaveSendConversationMessageRequest,
+    options: OperationOptions = {},
+  ): Promise<CaveSendConversationMessageResult> {
+    const validatedConversationId = validateCanonicalId(
+      conversationId,
+      'conversationId',
+    );
+    const validated = parseSendConversationMessageRequest(request);
+
+    return await this.#conversationMutation(
+      'sendConversationMessage',
+      validated.operationId,
+      options,
+      async (context) => {
+        const call = this.#transport.sendConversationMessage?.bind(this.#transport);
+        const response = this.#managedSnapshot(
+          await this.#conversationTransportCall(
+            'sendConversationMessage',
+            call === undefined
+              ? undefined
+              : () => call(validatedConversationId, validated, context),
+          ),
+          'sendConversationMessage',
+        );
+        return this.#parseConversationResponse(
+          'sendConversationMessage',
+          () => parseSendConversationMessageResult(response, validated.operationId),
+        );
+      },
+    );
+  }
+
+  /**
+   * Typed convenience over `messages.send` for retrying an explicitly failed
+   * or cancelled assistant turn. It uses a fresh operation UUID and the
+   * explicit `retryOfTurnId`; it introduces no second producer route.
+   */
+  async retryConversationTurn(
+    conversationId: string,
+    request: CaveRetryConversationTurnRequest,
+    options: OperationOptions = {},
+  ): Promise<CaveSendConversationMessageResult> {
+    const validated = parseRetryConversationTurnRequest(request);
+    return await this.sendConversationMessage(
+      conversationId,
+      { operationId: validated.operationId, retryOfTurnId: validated.retryOfTurnId },
+      options,
+    );
+  }
+
+  /**
+   * The non-content operation record: fixed codes, turn references, event
+   * bounds, and timestamps. Prompt, attachment, bearer, and raw-cause
+   * content never appear here.
+   */
+  async getConversationOperation(
+    operationId: string,
+    options: OperationOptions = {},
+  ): Promise<CaveConversationOperation> {
+    const validatedId = validateConversationOperationId(operationId);
+
+    return this.#execute('getConversationOperation', options, async (context) => {
+      this.#ensureActive(context, 'getConversationOperation');
+      const call = this.#transport.getConversationOperation?.bind(this.#transport);
+      const response = this.#managedSnapshot(
+        await this.#conversationTransportCall(
+          'getConversationOperation',
+          call === undefined ? undefined : () => call(validatedId, context),
+        ),
+        'getConversationOperation',
+      );
+      try {
+        return this.#parseConversationResponse('getConversationOperation', () =>
+          parseConversationOperationResponse(response, validatedId),
+        );
+      } catch (error) {
+        if (error instanceof CaveConversationSchemaError) {
+          throw invalidCanonicalResponse('getConversationOperation', error.field);
+        }
+        throw error;
+      }
+    }, true, this.#usesManagedCredentialTransport());
+  }
+
+  /**
+   * The typed, resumable event stream for one conversation operation.
+   *
+   * `options.timeoutMs` is one total stream budget; each long poll receives
+   * only the remaining budget. A caller abort closes the current event read
+   * and this generator: it never calls Stop and never resubmits a send.
+   * Initial attachment and every resumed page pass through the same event
+   * translator, which suppresses duplicates at or below the accepted cursor
+   * and refuses protocol violations. `reconcile_required` is an instruction
+   * to reload canonical history, not a retry.
+   */
+  streamConversationOperation(
+    operationId: string,
+    options: CaveConversationStreamOptions = {},
+  ): AsyncGenerator<CaveConversationEvent> {
+    return this.#streamConversationEvents(operationId, options);
+  }
+
+  async *#streamConversationEvents(
+    operationId: string,
+    options: CaveConversationStreamOptions,
+  ): AsyncGenerator<CaveConversationEvent> {
+    const validatedId = validateConversationOperationId(operationId);
+    const resumeCursor =
+      options.cursor === undefined
+        ? undefined
+        : validateConversationEventCursor(options.cursor, 'cursor');
+    const translator = createConversationEventTranslator(validatedId, {
+      ...(resumeCursor === undefined ? {} : { resumeAfterOpaqueCursor: true }),
+    });
+    const callerAborted = (): boolean => options.signal?.aborted === true;
+    const totalBudgetMs = options.timeoutMs ?? this.#operation?.timeoutMs;
+    const deadline =
+      totalBudgetMs === undefined ? undefined : performance.now() + totalBudgetMs;
+    let cursor: CaveConversationEventCursor | undefined = resumeCursor;
+
+    const readPage = async (): Promise<CaveConversationTranslatedPage> => {
+      let remainingMs: number | undefined;
+      if (deadline !== undefined) {
+        remainingMs = Math.floor(deadline - performance.now());
+        if (remainingMs < 1) {
+          const cause = { code: 'timeout', retryable: true };
+          throw attachConversationOperationId(
+            new CaveClientError(
+              normalizeCaveError(cause, 'streamConversationOperation'),
+              undefined,
+              { cause },
+            ),
+            validatedId,
+          );
+        }
+      }
+
+      try {
+        const page = await this.#execute(
+          'streamConversationOperation',
+          {
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
+            ...(remainingMs === undefined ? {} : { timeoutMs: remainingMs }),
+            ...(options.observer === undefined ? {} : { observer: options.observer }),
+          },
+          async (context) => {
+            this.#ensureActive(context, 'streamConversationOperation');
+            const call = this.#transport.readConversationOperationEvents?.bind(
+              this.#transport,
+            );
+            if (call === undefined) {
+              throw unsupported('streamConversationOperation');
+            }
+            return this.#managedSnapshot(
+              await call(
+                validatedId,
+                { ...(cursor === undefined ? {} : { cursor }) },
+                context,
+              ),
+              'streamConversationOperation',
+            );
+          },
+          true,
+          this.#usesManagedCredentialTransport(),
+        );
+        try {
+          return this.#parseConversationResponse('streamConversationOperation', () =>
+            translator.translate(page),
+          );
+        } catch (error) {
+          if (error instanceof CaveConversationSchemaError) {
+            throw invalidCanonicalResponse('streamConversationOperation', error.field);
+          }
+          // Route errors arrive as typed response errors; surface them as
+          // normalized client errors with their bounded details intact.
+          if (error instanceof CaveConversationResponseError) {
+            const cause = error;
+            throw attachConversationOperationId(
+              new CaveClientError(
+                normalizeCaveError(error, 'streamConversationOperation'),
+                undefined,
+                { cause },
+              ),
+              validatedId,
+            );
+          }
+          throw error;
+        }
+      } catch (error) {
+        throw attachConversationOperationId(error, validatedId);
+      }
+    };
+
+    while (true) {
+      if (callerAborted()) {
+        // A caller abort closes the current event read and this generator.
+        // It never calls Stop and never resubmits a send.
+        return;
+      }
+
+      let page: CaveConversationTranslatedPage;
+      try {
+        page = await readPage();
+      } catch (error) {
+        if (
+          isOperationAbortedError(error) ||
+          (isCaveClientError(error) && error.code === 'aborted')
+        ) {
+          // A caller abort closes the current event read and this generator.
+          // It never calls Stop and never resubmits a send.
+          return;
+        }
+        throw error;
+      }
+
+      for (const event of page.events) {
+        // A caller abort closes the current event read and this generator
+        // immediately: buffered events are not delivered and the resume
+        // cursor stays at the last delivered event.
+        if (callerAborted()) {
+          return;
+        }
+        // The resume cursor advances only after the event is delivered.
+        yield event;
+        translator.commit(event.eventId);
+        cursor = event.cursor;
+      }
+
+      if (page.complete) {
+        return;
+      }
+      if (page.nextCursor !== undefined) {
+        cursor = page.nextCursor;
+      }
+      // An empty page with `complete: false` keeps polling the same cursor.
+    }
+  }
+
+  /**
+   * Explicit Stop for one conversation operation. Repeated Stop calls are
+   * safe against the target operation; this client sends each Stop exactly
+   * once and never retries it after ambiguous transport completion.
+   */
+  async stopConversationOperation(
+    operationId: string,
+    options: OperationOptions = {},
+  ): Promise<CaveConversationOperation> {
+    const validatedId = validateConversationOperationId(operationId);
+
+    return await this.#conversationMutation(
+      'stopConversationOperation',
+      validatedId,
+      options,
+      async (context) => {
+        const call = this.#transport.stopConversationOperation?.bind(this.#transport);
+        const response = this.#managedSnapshot(
+          await this.#conversationTransportCall(
+            'stopConversationOperation',
+            call === undefined ? undefined : () => call(validatedId, context),
+          ),
+          'stopConversationOperation',
+        );
+        return this.#parseConversationResponse(
+          'stopConversationOperation',
+          () => parseConversationOperationResponse(response, validatedId),
+        );
+      },
+    );
   }
 }
 

@@ -67,6 +67,37 @@ export {
   CAVE_PAIRING_SCOPES,
   CAVE_PAIRING_STATUSES,
 } from './schemas.js';
+export {
+  CAVE_CONVERSATION_EVENT_TYPES,
+  CAVE_CONVERSATION_OPERATION_STATES,
+  CAVE_CONVERSATION_ORIGINATING_SCOPES,
+  CAVE_CONVERSATION_RECONCILE_REASONS,
+  CAVE_CONVERSATION_TERMINAL_STATES,
+  caveConversationReconcileReason,
+  createConversationEventTranslator,
+  validateConversationEventCursor,
+} from './conversation-control.js';
+export type {
+  CaveConversationEvent,
+  CaveConversationEventBase,
+  CaveConversationEventPage,
+  CaveConversationEventPageRequest,
+  CaveConversationEventTranslator,
+  CaveConversationEventType,
+  CaveConversationOperation,
+  CaveConversationOperationId,
+  CaveConversationOperationKind,
+  CaveConversationOperationState,
+  CaveConversationOriginatingScope,
+  CaveConversationReconcileReason,
+  CaveConversationStreamOptions,
+  CaveConversationTranslatedPage,
+  CaveCreateConversationRequest,
+  CaveCreateConversationResult,
+  CaveRetryConversationTurnRequest,
+  CaveSendConversationMessageRequest,
+  CaveSendConversationMessageResult,
+} from './conversation-control.js';
 export type {
   CaveAuthorityBinding,
   CaveAuthorityBoundPairingExchange,

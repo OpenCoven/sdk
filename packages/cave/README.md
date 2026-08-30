@@ -55,6 +55,9 @@ record. Unix discovery still requires a positive inode.
   one-page Client v1 canonical reads through `listFamiliars()`,
   `listProjects()`, `listConversations()`, `getConversation()`, and
   `listConversationMessages()`.
+- Conversational control adds the first bounded mutation authority while Cave
+  remains the sole executor and canonical owner; see
+  [Conversational control](#conversational-control) below.
 - Four bounded async iterators, `iterateFamiliars()`, `iterateProjects()`,
   `iterateConversations()`, and `iterateConversationMessages()`, lazily compose
   the list routes. There is intentionally no iterator for the single-item
@@ -471,6 +474,74 @@ Migration note: transports that returned `{ data: { status: "ok" } }` must now
 return the complete Client v1 health envelope shown above. Consumers may keep
 checking `health.status`, and can additionally gate pairing or feature use from
 the normalized metadata.
+
+## Conversational control
+
+Conversational control is the first bounded mutation authority. Cave remains
+the sole executor, idempotency authority, operation journal, replay authority,
+stop authority, and canonical conversation owner; the SDK exposes only
+constrained typed operations — never arbitrary HTTP paths, private Cave
+routes, or raw transport escape hatches.
+
+### Client methods
+
+- `client.createConversation({ operationId, familiarId, projectId? }, options?)`
+  creates one empty canonical conversation for one familiar. The caller
+  supplies the operation UUID; Cave resolves roots, harnesses, runtimes,
+  titles, and origin internally.
+- `client.sendConversationMessage(conversationId, { operationId, text })` sends
+  one text message and returns the acceptance envelope with the operation
+  record and a `replayed` flag. Text is preserved byte for byte. A retry is
+  the same route with `retryOfTurnId` instead of text:
+  `client.retryConversationTurn(conversationId, { operationId, retryOfTurnId })`
+  is a typed convenience that introduces no second producer route.
+- `client.getConversationOperation(operationId)` returns the non-content
+  operation record (fixed codes, turn references, event bounds, timestamps —
+  never prompt, attachment, or bearer content).
+- `client.streamConversationOperation(operationId, options?)` returns the
+  typed, resumable event stream. `options.timeoutMs` is one total stream
+  budget; each long poll receives only the remaining budget. A caller abort
+  closes the current event read and the generator: it never calls Stop and
+  never resubmits a send.
+- `client.stopConversationOperation(operationId)` sends each explicit Stop
+  exactly once and never retries it after an ambiguous transport completion;
+  calling Stop again explicitly is safe.
+
+Every mutation is dispatched exactly once. An ambiguous transport completion
+never causes an automatic replay: inspect `error.operationId` (attached to
+every post-acceptance error) and decide explicitly. An identical completed
+mutation replays Cave's recorded result with `replayed: true`; a reused
+operation key with a different canonical request hash is Cave's
+`conflict / idempotency_key_reused`. Initial attachment and every resumed
+stream pass through the same event translator, which validates the envelope
+before event data, requires contiguous monotonic event IDs, suppresses exact
+duplicates at or below the accepted cursor, and refuses gaps, reordering,
+foreign operation IDs, and malformed terminal sequences as
+`invalid_response`. On `reconcile_required`, reload `getConversation()` and
+`listConversationMessages()` from the first page and replace — never append
+to — the local projection; the SDK never fabricates omitted deltas.
+
+### Upstream contract gap
+
+The five Client v1 conversation operations (`conversations.create`,
+`messages.send`, `operations.read`, `operations.events`, `operations.stop`)
+are **not yet declared** by the authoritative Cave contract fixture this SDK
+vendors (pinned producer commit `4adc97b1`). The SDK therefore ships the full
+typed surface — request validation, result/event DTO parsing, the single
+event translator for initial and resumed streams, operation-ID error
+propagation, no-auto-replay semantics, and reconciliation helpers — while the
+optional `CaveTransport` methods `createConversation`,
+`sendConversationMessage`, `getConversationOperation`,
+`readConversationOperationEvents`, and `stopConversationOperation` stay
+unbound: every transport binding would be a speculative route. Calls today
+fail with `unsupported_operation` naming the missing capability. The route
+records, generated-fixture limits, event/cursor contract, and
+request-hash conformance vectors are owed by the upstream Cave producer
+contract; once that lands, `pnpm sync:contracts` imports the exact fixture
+commit and transport bindings can be reviewed against it. The private CLI
+streaming renderers (human/JSON/NDJSON ordering) are likewise staged for a
+follow-up PR per the design's PR plan, as no CLI command can execute a
+mutation against a real authority before that contract exists.
 
 ## Compatibility, deadlines, and retry guidance
 
