@@ -165,8 +165,8 @@
   "evidenceProducer": {
     "status": "compatible",
     "repository": "OpenCoven/chat",
-    "commit": "2ef4d47a09fe19cc78b415d5fc52bf2ee293a48e",
-    "tree": "a686d0273a11c406b64a9bfb86e2a65cb2a33d9a",
+    "commit": "704c2644c2165e76bb175b49dd2a11fd28ae2d7c",
+    "tree": "98a7e514b6be9c32cba6548ab3a8fb0a99f7d0a3",
     "packageManifest": {
       "path": "package.json",
       "size": 3286,
@@ -175,8 +175,8 @@
     "harness": {
       "path": "scripts/phase1-conformance.mjs",
       "version": "2.0.0",
-      "size": 121045,
-      "sha256": "b2d2451adb931ef2697957db77d0307e410244113712df8b90122f5c6653d1c2"
+      "size": 121101,
+      "sha256": "84cbf87182ba39af3c3a486927267aec244e56591ed8481c53f324abc408ece9"
     },
     "command": "test:phase1-conformance",
     "recordSchemaVersion": 2,
@@ -184,7 +184,7 @@
       "name": "client-v1 conformance",
       "path": ".github/workflows/client-v1-conformance.yml",
       "size": 4914,
-      "sha256": "96b34310d2c860eb5999ad6c4c3f05a1ea9d8dfb91d7674603538d8afe6dbad4",
+      "sha256": "adfb5fd10d8c9ebf888161d58092ee099545a5c7f279921119f2fb26d847438b",
       "job": "platform-conformance",
       "jobNameTemplate": "platform-conformance ({platform})",
       "aggregationJob": "aggregate-conformance",
@@ -209,8 +209,8 @@
         ]
       },
       "signerWorkflow": "OpenCoven/chat/.github/workflows/client-v1-conformance.yml",
-      "signerDigest": "2ef4d47a09fe19cc78b415d5fc52bf2ee293a48e",
-      "sourceDigest": "2ef4d47a09fe19cc78b415d5fc52bf2ee293a48e",
+      "signerDigest": "704c2644c2165e76bb175b49dd2a11fd28ae2d7c",
+      "sourceDigest": "704c2644c2165e76bb175b49dd2a11fd28ae2d7c",
       "predicateType": "https://slsa.dev/provenance/v1",
       "denySelfHostedRunners": true
     }
