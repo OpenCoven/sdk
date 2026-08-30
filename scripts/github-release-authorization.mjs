@@ -25,10 +25,14 @@ import {
   verifyPublicationArtifacts,
 } from './create-release-artifacts.mjs';
 import {
+  inspectAnnotatedReleaseTag,
   inspectReleaseRepository,
   readReleaseConfig,
   validateReleaseWorkflow,
 } from './release-readiness.mjs';
+import {
+  createGitHubTokenFreeEnvironment,
+} from './release-runtime-integrity.mjs';
 
 const MAX_GITHUB_RESPONSE_BYTES = 1_048_576;
 const MAX_ATTESTATION_BUNDLE_BYTES = 16 * 1_048_576;
@@ -53,6 +57,20 @@ function authorizationGitEnvironment(source = process.env) {
     ...(typeof source.GH_TOKEN === 'string'
       ? { GH_TOKEN: source.GH_TOKEN }
       : {}),
+    GIT_CONFIG_GLOBAL: devNull,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_NO_REPLACE_OBJECTS: '1',
+    GIT_OPTIONAL_LOCKS: '0',
+    GIT_TERMINAL_PROMPT: '0',
+  };
+}
+
+function authorizationLocalEnvironment(source = process.env) {
+  return {
+    ...createGitHubTokenFreeEnvironment(source),
+    PATH: '/usr/bin:/bin',
+    HOME: source.HOME ?? source.RUNNER_TEMP ?? '/tmp',
+    TMPDIR: source.TMPDIR ?? source.RUNNER_TEMP ?? '/tmp',
     GIT_CONFIG_GLOBAL: devNull,
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_NO_REPLACE_OBJECTS: '1',
@@ -248,6 +266,34 @@ function canonicalPackageEntries(packages) {
   });
 }
 
+function normalizeReleaseTag(tag, version, source, label) {
+  assertExactFields(
+    tag,
+    ['name', 'ref', 'objectId', 'commit', 'tree'],
+    label,
+  );
+  const expectedName = `sdk-v${version}`;
+  if (
+    tag.name !== expectedName
+    || tag.ref !== `refs/tags/${expectedName}`
+    || typeof tag.objectId !== 'string'
+    || !GIT_OID_PATTERN.test(tag.objectId)
+    || tag.commit !== source.commit
+    || tag.tree !== source.tree
+  ) {
+    throw new Error(
+      `${label} must bind the annotated sdk-v<version> tag object to the exact source commit and tree`,
+    );
+  }
+  return {
+    name: tag.name,
+    ref: tag.ref,
+    objectId: tag.objectId,
+    commit: tag.commit,
+    tree: tag.tree,
+  };
+}
+
 export function createPublicationAuthorizationRecord({
   artifactId,
   artifactDigest,
@@ -259,6 +305,7 @@ export function createPublicationAuthorizationRecord({
   jobId,
   manifest,
   manifestText,
+  tag,
 }) {
   if (
     typeof artifactId !== 'string'
@@ -316,6 +363,12 @@ export function createPublicationAuthorizationRecord({
     ['repository', 'commit', 'tree', 'runtimeManifest', 'npmConfigFiles'],
     'Publication candidate source',
   );
+  const normalizedTag = normalizeReleaseTag(
+    tag,
+    manifest.version,
+    manifest.source,
+    'Publication authorization tag',
+  );
   assertExactFields(
     manifest.toolchain,
     [
@@ -359,13 +412,14 @@ export function createPublicationAuthorizationRecord({
     `opencoven-sdk-publication-attestation-${manifest.source.commit}`
     + `-${manifest.version}`;
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     kind: 'opencoven-sdk-publication-security-review',
     issue: 'OpenCoven/sdk#40',
     disposition: 'ship',
     reviewer: { ...REVIEWER_AUTHORIZATION },
     environmentPolicy: normalizedEnvironmentPolicy,
     version: manifest.version,
+    tag: normalizedTag,
     source: {
       repository: manifest.source.repository,
       commit: manifest.source.commit,
@@ -457,6 +511,7 @@ function parseAuthorizationBody(text) {
       'environmentPolicy',
       'reviewer',
       'version',
+      'tag',
       'source',
       'manifest',
       'packages',
@@ -501,6 +556,12 @@ function parseAuthorizationBody(text) {
       'candidateTree',
     ],
     'Publication authorization source.runtimeManifest',
+  );
+  const tag = normalizeReleaseTag(
+    value.tag,
+    value.version,
+    value.source,
+    'Publication authorization tag',
   );
   assertExactFields(
     value.manifest,
@@ -572,7 +633,7 @@ function parseAuthorizationBody(text) {
   );
   const packages = canonicalPackageEntries(value.packages);
   if (
-    value.schemaVersion !== 7
+    value.schemaVersion !== 8
     || value.kind !== 'opencoven-sdk-publication-security-review'
     || value.issue !== 'OpenCoven/sdk#40'
     || value.disposition !== 'ship'
@@ -692,6 +753,7 @@ function parseAuthorizationBody(text) {
     ...value,
     environmentPolicy,
     packages,
+    tag,
   };
 }
 
@@ -863,6 +925,68 @@ function readCandidateAttestationBundle(root, authorization) {
   return path;
 }
 
+export function verifyReleaseTagAuthorization({
+  root = process.cwd(),
+  authorization,
+  execute = execFileSync,
+  env = process.env,
+} = {}) {
+  if (!isRecord(authorization) || !isRecord(authorization.source)) {
+    throw new Error('Publication release tag authorization is invalid');
+  }
+  const tag = normalizeReleaseTag(
+    authorization.tag,
+    authorization.version,
+    authorization.source,
+    'Publication authorization tag',
+  );
+  const localTag = inspectAnnotatedReleaseTag(root, tag.name);
+  if (localTag.objectId !== tag.objectId) {
+    throw new Error('Release tag object changed after authorization');
+  }
+  if (
+    localTag.ref !== tag.ref
+    || localTag.commit !== tag.commit
+    || localTag.tree !== tag.tree
+  ) {
+    throw new Error(
+      'Release tag no longer resolves to the authorized commit and tree',
+    );
+  }
+  const liveReference = runGitHubApi(
+    execute,
+    `repos/OpenCoven/sdk/git/ref/tags/${encodeURIComponent(tag.name)}`,
+    env,
+  );
+  if (
+    !isRecord(liveReference)
+    || liveReference.ref !== tag.ref
+    || !isRecord(liveReference.object)
+    || liveReference.object.type !== 'tag'
+    || liveReference.object.sha !== tag.objectId
+  ) {
+    throw new Error('Release tag object changed after authorization');
+  }
+  const liveTag = runGitHubApi(
+    execute,
+    `repos/OpenCoven/sdk/git/tags/${tag.objectId}`,
+    env,
+  );
+  if (
+    !isRecord(liveTag)
+    || liveTag.tag !== tag.name
+    || liveTag.sha !== tag.objectId
+    || !isRecord(liveTag.object)
+    || liveTag.object.type !== 'commit'
+    || liveTag.object.sha !== tag.commit
+  ) {
+    throw new Error(
+      'Release tag no longer resolves to the authorized commit and tree',
+    );
+  }
+  return tag;
+}
+
 export function resolvePublicationSecurityReview({
   root = process.cwd(),
   commentId,
@@ -904,7 +1028,7 @@ export function resolvePublicationSecurityReview({
     ],
     {
       encoding: 'utf8',
-      env: authorizationGitEnvironment(),
+      env: authorizationLocalEnvironment(env),
       stdio: ['ignore', 'pipe', 'ignore'],
     },
   );
@@ -1010,6 +1134,12 @@ export function resolvePublicationSecurityReview({
       'Release checkout must equal the exact #40-authorized release commit and tree',
     );
   }
+  verifyReleaseTagAuthorization({
+    root,
+    authorization,
+    execute,
+    env,
+  });
   const liveEnvironmentPolicy = verifyLiveReleaseEnvironmentPolicies({
     config,
     execute,
@@ -1301,6 +1431,7 @@ export function verifyPublicationSecurityReview({
     jobId: authorization.provenance.jobId,
     manifest,
     manifestText,
+    tag: authorization.tag,
   });
   const actualBody = {
     schemaVersion: authorization.schemaVersion,
@@ -1315,6 +1446,7 @@ export function verifyPublicationSecurityReview({
       roleName: authorization.reviewer.roleName,
     },
     version: authorization.version,
+    tag: authorization.tag,
     source: authorization.source,
     manifest: authorization.manifest,
     packages: authorization.packages,

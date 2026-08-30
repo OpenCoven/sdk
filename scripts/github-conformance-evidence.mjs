@@ -22,6 +22,9 @@ import {
   createOwnedTempDirectory,
 } from './owned-temp-directory.mjs';
 import { parseReleaseWorkflowDocument } from './release-readiness.mjs';
+import {
+  createGitHubCliEnvironment,
+} from './release-runtime-integrity.mjs';
 
 const MAX_GITHUB_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_ATTESTATION_BUNDLE_BYTES = 16 * 1024 * 1024;
@@ -58,11 +61,22 @@ function parseGitHubJson(text, label) {
   }
 }
 
+function githubExecutable(env) {
+  const path = env.OPENCOVEN_GH_PATH ?? '/usr/bin/gh';
+  if (
+    typeof path !== 'string'
+    || !/^\/(?:[A-Za-z0-9._+-]+\/)*[A-Za-z0-9._+-]+$/u.test(path)
+  ) {
+    throw new Error('OPENCOVEN_GH_PATH must be an absolute executable path');
+  }
+  return path;
+}
+
 function runGh(execute, args, { cwd = process.cwd(), env = process.env } = {}) {
-  return execute('gh', args, {
+  return execute(githubExecutable(env), args, {
     cwd,
     encoding: 'utf8',
-    env,
+    env: createGitHubCliEnvironment(env),
     maxBuffer: MAX_GITHUB_RESPONSE_BYTES,
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: 120_000,

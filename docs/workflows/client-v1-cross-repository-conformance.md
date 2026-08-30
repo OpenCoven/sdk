@@ -275,6 +275,12 @@ gh attestation verify <artifact> \
   --format json
 ```
 
+`GH_TOKEN` is injected only into the exact `gh api`, `gh run download`, and
+`gh attestation` subprocesses. The validator scrubs both `GH_TOKEN` and
+`GITHUB_TOKEN` before local Git inspection and before loading or invoking the
+committed Cave assertion engine; package build and packing subprocesses use
+their own sterile token-free environment.
+
 The verifier checks the attestation certificate's source repository, source
 ref, source digest, signer digest, GitHub-hosted runner identity, and exact
 run-invocation URI. The attestation subject must equal the downloaded canonical

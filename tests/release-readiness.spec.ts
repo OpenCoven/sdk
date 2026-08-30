@@ -313,27 +313,48 @@ afterEach(() => {
 });
 
 describe('release readiness contract', () => {
-  test('requires live environment policy even when the CLI flag is omitted', () => {
-    const result = spawnSync(
+  test('keeps authoritative evidence checks explicit at the CLI boundary', () => {
+    const environment = Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([key]) =>
+          key !== 'GH_TOKEN'
+          && key !== 'GITHUB_TOKEN'
+          && key !== 'OPENCOVEN_GH_PATH',
+      ),
+    );
+    const localResult = spawnSync(
       process.execPath,
       ['./scripts/verify-release-readiness.mjs'],
       {
         cwd: workspaceRoot,
         encoding: 'utf8',
-        env: Object.fromEntries(
-          Object.entries(process.env).filter(
-            ([key]) =>
-              key !== 'GH_TOKEN'
-              && key !== 'GITHUB_TOKEN'
-              && key !== 'OPENCOVEN_GH_PATH',
-          ),
-        ),
+        env: environment,
+      },
+    );
+    const authoritativeResult = spawnSync(
+      process.execPath,
+      [
+        './scripts/verify-release-readiness.mjs',
+        '--require-conformance-evidence',
+        '--require-live-environment-policy',
+      ],
+      {
+        cwd: workspaceRoot,
+        encoding: 'utf8',
+        env: environment,
       },
     );
 
-    expect(result.status).toBe(1);
-    expect(result.stdout).toBe('');
-    expect(result.stderr).toContain(
+    expect(localResult.status).toBe(0);
+    expect(localResult.stderr).toBe('');
+    expect(JSON.parse(localResult.stdout)).toMatchObject({
+      version: '0.1.0',
+      publishingEnabled: false,
+      conformanceEvidenceRecord: null,
+    });
+    expect(authoritativeResult.status).toBe(1);
+    expect(authoritativeResult.stdout).toBe('');
+    expect(authoritativeResult.stderr).toContain(
       'GH_TOKEN is required for authoritative GitHub environment verification',
     );
   });
@@ -350,7 +371,10 @@ describe('release readiness contract', () => {
     expect(manifest.scripts['verify:release']).toBe(
       'node ./scripts/verify-release-readiness.mjs --require-conformance-evidence --require-live-environment-policy',
     );
-    expect(manifest.scripts.verify).toContain('verify:release');
+    expect(manifest.scripts['verify:release:local']).toBe(
+      'node ./scripts/verify-release-readiness.mjs',
+    );
+    expect(manifest.scripts.verify).toContain('verify:release:local');
     expect(workflow).toContain('assertNoReleaseRuntimeShadows');
     expect(workflow).toContain(
       '"$node_path" "$corepack_path" pnpm@10.34.0',
@@ -374,15 +398,16 @@ describe('release readiness contract', () => {
       resolve(workspaceRoot, '.github/workflows/ci.yml'),
       'utf8',
     );
-    expect(ciWorkflow).toContain('  actions: read');
-    expect(ciWorkflow).toContain('  attestations: read');
-    expect(ciWorkflow).toContain('  deployments: read');
-    expect(ciWorkflow).toContain('  issues: read');
+    expect(ciWorkflow).toMatch(/^permissions:\n {2}contents: read\n/mu);
+    expect(ciWorkflow).not.toContain('  actions: read');
+    expect(ciWorkflow).not.toContain('  attestations: read');
+    expect(ciWorkflow).not.toContain('  deployments: read');
+    expect(ciWorkflow).not.toContain('  issues: read');
     expect(ciWorkflow).toMatch(
-      /name: Verify authoritative release gates\s+if: matrix\.node == '24\.18\.1'\s+env:\s+GH_TOKEN: \$\{\{ github\.token \}\}\s+run: node \.\/scripts\/verify-release-readiness\.mjs --require-conformance-evidence --require-live-environment-policy/u,
+      /name: Verify exact release runtime\s+if: matrix\.node == '24\.18\.1'\s+run: corepack pnpm@10\.34\.0 verify/u,
     );
     expect(ciWorkflow).toMatch(
-      /name: Verify minimum supported Node\s+if: matrix\.node == '24\.18\.1'\s+run: corepack pnpm@10\.34\.0 verify:repository/u,
+      /name: Verify Node 24 package compatibility\s+if: matrix\.node == '24\.x'\s+run: corepack pnpm@10\.34\.0 verify:compat/u,
     );
     expect(
       workflow.match(/--require-conformance-evidence/gu),
@@ -654,6 +679,34 @@ describe('release readiness contract', () => {
     ).toThrow(
       '.node-version must contain 24.18.1 with one trailing newline',
     );
+  });
+
+  test('does not impose the frozen release runtime on compatibility-safe checks', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'version');
+    if (descriptor === undefined) {
+      throw new Error('process.version descriptor is unavailable');
+    }
+    Object.defineProperty(process, 'version', {
+      ...descriptor,
+      value: 'v24.19.0',
+    });
+    try {
+      expect(() =>
+        validateReleaseReadiness({
+          root: workspaceRoot,
+        }),
+      ).not.toThrow();
+      expect(() =>
+        validateReleaseReadiness({
+          root: workspaceRoot,
+          requireFrozenRuntime: true,
+        }),
+      ).toThrow(
+        'Release and conformance verification require Node v24.18.1, received v24.19.0',
+      );
+    } finally {
+      Object.defineProperty(process, 'version', descriptor);
+    }
   });
 
   test('rejects uncommitted verifier runtime drift before executing it', () => {
@@ -1018,6 +1071,42 @@ describe('release readiness contract', () => {
         requireTag: true,
       }),
     ).toThrow('Release tag sdk-v0.1.0 is absent');
+  });
+
+  test('requires the release tag to be an annotated tag object', () => {
+    const annotatedFixture = createReleaseFixture();
+    initializeReleaseFixtureRepository(annotatedFixture);
+    git(annotatedFixture, [
+      '-c',
+      'tag.gpgSign=false',
+      'tag',
+      '--annotate',
+      'sdk-v0.1.0',
+      '--message',
+      'SDK v0.1.0',
+    ]);
+
+    expect(() =>
+      validateReleaseReadiness({
+        root: annotatedFixture,
+        version: '0.1.0',
+        tag: 'sdk-v0.1.0',
+        requireTag: true,
+      }),
+    ).not.toThrow();
+
+    const lightweightFixture = createReleaseFixture();
+    initializeReleaseFixtureRepository(lightweightFixture);
+    git(lightweightFixture, ['tag', 'sdk-v0.1.0']);
+
+    expect(() =>
+      validateReleaseReadiness({
+        root: lightweightFixture,
+        version: '0.1.0',
+        tag: 'sdk-v0.1.0',
+        requireTag: true,
+      }),
+    ).toThrow('Release tag sdk-v0.1.0 must be an annotated tag object');
   });
 
   test('enforces the npm trusted-publisher environment on the final publish job', () => {

@@ -18,6 +18,10 @@ import {
   verifyGitHubConformanceEvidence,
 } from './github-conformance-evidence.mjs';
 import { assertFrozenNodeRuntime } from './release-readiness.mjs';
+import {
+  createGitHubTokenFreeEnvironment,
+  runWithGitHubTokensScrubbed,
+} from './release-runtime-integrity.mjs';
 
 const LOCK_PATH = 'conformance/client-v1-cross-repository-lock.json';
 const REGISTRY_PATH =
@@ -27,7 +31,9 @@ const SCHEMA_PATH =
 
 function createGitEnvironment() {
   const environment = {};
-  for (const [key, value] of Object.entries(process.env)) {
+  for (const [key, value] of Object.entries(
+    createGitHubTokenFreeEnvironment(process.env),
+  )) {
     if (!key.toUpperCase().startsWith('GIT_') && value !== undefined) {
       environment[key] = value;
     }
@@ -140,9 +146,9 @@ function parseArguments(argv) {
   return values;
 }
 
-export async function verifyCommittedConformanceEvidence(
+async function verifyCommittedConformanceEvidenceWithScrubbedEnvironment(
   options,
-  { execute } = {},
+  { execute, env } = {},
 ) {
   const lockText = readCommittedRegularBlob(
     options.root,
@@ -215,7 +221,25 @@ export async function verifyCommittedConformanceEvidence(
     indexText,
     caveEngine,
     ...(execute === undefined ? {} : { execute }),
+    ...(env === undefined ? {} : { env }),
   });
+}
+
+export async function verifyCommittedConformanceEvidence(
+  options,
+  { execute, env = process.env } = {},
+) {
+  const githubEnvironment = { ...env };
+  return runWithGitHubTokensScrubbed(
+    process.env,
+    () => verifyCommittedConformanceEvidenceWithScrubbedEnvironment(
+      options,
+      {
+        ...(execute === undefined ? {} : { execute }),
+        env: githubEnvironment,
+      },
+    ),
+  );
 }
 
 export async function main(argv = process.argv.slice(2)) {

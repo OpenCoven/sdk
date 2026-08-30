@@ -4,8 +4,8 @@ import { validateReleaseReadiness } from './release-readiness.mjs';
 
 function parseArguments(arguments_) {
   const options = {
-    requireConformanceEvidence: true,
-    requireLiveEnvironmentPolicy: true,
+    requireConformanceEvidence: false,
+    requireLiveEnvironmentPolicy: false,
   };
   let conformanceEvidenceFlagSeen = false;
   let liveEnvironmentPolicyFlagSeen = false;
@@ -19,6 +19,7 @@ function parseArguments(arguments_) {
         );
       }
       conformanceEvidenceFlagSeen = true;
+      options.requireConformanceEvidence = true;
       continue;
     }
     if (argument === '--require-live-environment-policy') {
@@ -66,6 +67,7 @@ function parseArguments(arguments_) {
 try {
   const result = validateReleaseReadiness({
     root: process.cwd(),
+    requireFrozenRuntime: true,
     ...parseArguments(process.argv.slice(2)),
   });
   process.stdout.write(`${JSON.stringify(result)}\n`);

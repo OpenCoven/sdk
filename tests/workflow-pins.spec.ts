@@ -77,6 +77,29 @@ function runScripts(source: string): string[] {
   return scripts;
 }
 
+function checkoutSteps(source: string): string[] {
+  const lines = source.split('\n');
+  const steps: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!/^\s+- uses: actions\/checkout@/u.test(lines[index] ?? '')) {
+      continue;
+    }
+    const block = [lines[index] ?? ''];
+    for (index += 1; index < lines.length; index += 1) {
+      const line = lines[index] ?? '';
+      if (/^\s+- (?:uses|name):/u.test(line)) {
+        index -= 1;
+        break;
+      }
+      block.push(line);
+    }
+    steps.push(block.join('\n'));
+  }
+
+  return steps;
+}
+
 describe('workflow action pins', () => {
   test('runs branch validation once through pull requests and still verifies main pushes', () => {
     expect(workflow).toMatch(
@@ -87,8 +110,12 @@ describe('workflow action pins', () => {
 
   test('uses an explicit read-only GitHub token scope', () => {
     expect(workflow).toMatch(
-      /^permissions:\n\s{2}actions: read\n\s{2}attestations: read\n\s{2}contents: read\n\s{2}deployments: read\n\s{2}issues: read\n/m,
+      /^permissions:\n\s{2}contents: read\n/m,
     );
+    expect(workflow).not.toContain('  actions: read');
+    expect(workflow).not.toContain('  attestations: read');
+    expect(workflow).not.toContain('  deployments: read');
+    expect(workflow).not.toContain('  issues: read');
   });
 
   test('configures staged secret detection', () => {
@@ -149,30 +176,70 @@ describe('workflow action pins', () => {
   test('runs the canonical verifier with bounded, cancellable execution', () => {
     const installStep = workflow.indexOf('- name: Install dependencies');
     const verifyStep = workflow.indexOf(
-      '- name: Verify minimum supported Node',
+      '- name: Verify exact release runtime',
     );
 
     expect(workflow).toContain('cancel-in-progress: true');
     expect(workflow).toContain('timeout-minutes: 15');
     expect(workflow).toContain(
-      'run: corepack pnpm@10.34.0 verify:repository',
+      'run: corepack pnpm@10.34.0 verify',
     );
     expect(installStep).toBeGreaterThanOrEqual(0);
     expect(verifyStep).toBeGreaterThan(installStep);
     expect(
-      workflow.match(/run: corepack pnpm@10\.34\.0 verify:repository$/gm),
+      workflow.match(/run: corepack pnpm@10\.34\.0 verify$/gm),
     ).toHaveLength(1);
   });
 
-  test('verifies the minimum and moving Node 24 targets', () => {
+  test('separates exact release verification from moving Node 24 compatibility', () => {
     expect(workflow).toContain("node: ['24.18.1', '24.x']");
     expect(workflow).toContain('run: corepack pnpm@10.34.0 verify:compat');
     expect(workflow).toContain(
-      'run: node ./scripts/verify-release-readiness.mjs --require-conformance-evidence',
+      'run: corepack pnpm@10.34.0 verify',
     );
-    expect(workflow).toContain(
-      'run: corepack pnpm@10.34.0 verify:repository',
+    expect(workflow).not.toContain(
+      'run: node ./scripts/verify-release-readiness.mjs',
     );
+    const compatibilityStep = workflow.slice(
+      workflow.indexOf('- name: Verify Node 24 package compatibility'),
+    );
+    expect(compatibilityStep).not.toContain('verify:release');
+  });
+
+  test('checks out complete SDK history anywhere full security tests run', () => {
+    const ciSdkCheckouts = checkoutSteps(workflow).filter(
+      (step) => !step.includes('repository: OpenCoven/coven-cave'),
+    );
+    expect(ciSdkCheckouts).toHaveLength(1);
+    expect(ciSdkCheckouts[0]).toContain('fetch-depth: 0');
+
+    const repositoryVerificationJob = releaseWorkflow.slice(
+      releaseWorkflow.indexOf('\n  repository-verification:\n'),
+      releaseWorkflow.indexOf('\n  publication-candidate:\n'),
+    );
+    const releaseSdkCheckouts = checkoutSteps(repositoryVerificationJob).filter(
+      (step) => !step.includes('repository: OpenCoven/coven-cave'),
+    );
+    expect(releaseSdkCheckouts).toHaveLength(1);
+    expect(releaseSdkCheckouts[0]).toContain('fetch-depth: 0');
+
+    const caveCheckout = checkoutSteps(workflow).find(
+      (step) => step.includes('repository: OpenCoven/coven-cave'),
+    );
+    expect(caveCheckout).toBeDefined();
+    const swappedDepths = workflow
+      .replace(
+        ciSdkCheckouts[0] ?? '',
+        (ciSdkCheckouts[0] ?? '').replace('fetch-depth: 0', 'fetch-depth: 1'),
+      )
+      .replace(
+        caveCheckout ?? '',
+        (caveCheckout ?? '').replace('fetch-depth: 1', 'fetch-depth: 0'),
+      );
+    const regressedSdkCheckout = checkoutSteps(swappedDepths).find(
+      (step) => !step.includes('repository: OpenCoven/coven-cave'),
+    );
+    expect(regressedSdkCheckout).not.toContain('fetch-depth: 0');
   });
 
   test('protects publishing with OIDC, attestations, and exact artifact actions', () => {

@@ -56,8 +56,16 @@ describe('release and support policies', () => {
     expect(releasing).toContain(
       'corepack pnpm@10.34.0 verify:release',
     );
+    expect(releasing).toContain(
+      'corepack pnpm@10.34.0 verify:release:local',
+    );
     expect(releasing).not.toContain(
       'verify:release --require-conformance-evidence',
+    );
+    expect(releasing).toContain('annotated tag object ID');
+    expect(releasing).toMatch(/immediately before\s+the first npm publish/u);
+    expect(releasing).toMatch(
+      /`GH_TOKEN` is injected only into the exact `gh api`, `gh run download`, and\s+`gh attestation` subprocesses/u,
     );
     expect(releasing).toContain(
       '`@opencoven/dev-cli` is not part of the 0.1 release group',
@@ -71,5 +79,6 @@ describe('release and support policies', () => {
     expect(readme).toContain('[Security policy](SECURITY.md)');
     expect(readme).toContain('[Release process](RELEASING.md)');
     expect(readme).toContain('not published');
+    expect(readme).not.toContain('export GH_TOKEN=');
   });
 });

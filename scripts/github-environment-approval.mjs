@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
-const SCHEMA_VERSION = 1;
+const PENDING_SCHEMA_VERSION = 1;
+const PROTECTED_SCHEMA_VERSION = 2;
 const SOURCE_REPOSITORY = 'OpenCoven/sdk';
 const WORKFLOW_PATH = '.github/workflows/release.yml';
 const WORKFLOW_REF = 'refs/heads/main';
@@ -633,8 +634,10 @@ function normalizePendingEvidenceRecord(
     ],
     label,
   );
-  if (record.schemaVersion !== SCHEMA_VERSION) {
-    throw new Error(`${label}.schemaVersion must equal ${SCHEMA_VERSION}`);
+  if (record.schemaVersion !== PENDING_SCHEMA_VERSION) {
+    throw new Error(
+      `${label}.schemaVersion must equal ${PENDING_SCHEMA_VERSION}`,
+    );
   }
   if (record.kind !== PENDING_APPROVAL_KIND) {
     throw new Error(`${label}.kind must equal ${JSON.stringify(PENDING_APPROVAL_KIND)}`);
@@ -786,7 +789,7 @@ function normalizePendingEvidenceRecord(
   }
 
   return canonicalize({
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: PENDING_SCHEMA_VERSION,
     kind: PENDING_APPROVAL_KIND,
     source,
     workflow,
@@ -877,11 +880,39 @@ function normalizeDeployment(deployment, source, workflow, expected, label = 'de
   };
 }
 
-function normalizeSecurityReview(securityReview, expected, label = 'securityReview') {
-  const record = expectRecord(securityReview, label);
-  const reviewer = expectRecord(record.reviewer, `${label}.reviewer`);
+function normalizeSecurityReview(
+  securityReview,
+  expected,
+  source,
+  label = 'securityReview',
+) {
+  const record = expectExactFields(
+    securityReview,
+    ['commentId', 'reviewer', 'tag'],
+    label,
+  );
+  const reviewer = expectExactFields(
+    record.reviewer,
+    ['authorAssociation', 'id', 'login', 'permission', 'roleName'],
+    `${label}.reviewer`,
+  );
+  const tag = expectExactFields(
+    record.tag,
+    ['commit', 'name', 'objectId', 'ref', 'tree'],
+    `${label}.tag`,
+  );
   const normalized = {
     commentId: normalizePositiveIdString(record.commentId, `${label}.commentId`),
+    tag: {
+      name: expectNonEmptyString(tag.name, `${label}.tag.name`),
+      ref: expectNonEmptyString(tag.ref, `${label}.tag.ref`),
+      objectId: normalizeGitObjectId(
+        tag.objectId,
+        `${label}.tag.objectId`,
+      ),
+      commit: normalizeGitObjectId(tag.commit, `${label}.tag.commit`),
+      tree: normalizeGitObjectId(tag.tree, `${label}.tag.tree`),
+    },
     reviewer: {
       id: normalizeReviewerId(reviewer.id, `${label}.reviewer.id`),
       login: expectNonEmptyString(reviewer.login, `${label}.reviewer.login`),
@@ -899,6 +930,18 @@ function normalizeSecurityReview(securityReview, expected, label = 'securityRevi
       ),
     },
   };
+  if (
+    !/^sdk-v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(
+      normalized.tag.name,
+    )
+    || normalized.tag.ref !== `refs/tags/${normalized.tag.name}`
+    || normalized.tag.commit !== source.commit
+    || normalized.tag.tree !== source.tree
+  ) {
+    throw new Error(
+      'Protected environment approval security review tag must bind the exact release source',
+    );
+  }
   if (
     normalized.reviewer.id !== expected.reviewer.id
     || normalized.reviewer.authorAssociation !== expected.reviewer.authorAssociation
@@ -963,7 +1006,7 @@ export function createPendingApprovalEvidence(options) {
   );
 
   return canonicalize({
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: PENDING_SCHEMA_VERSION,
     kind: PENDING_APPROVAL_KIND,
     source,
     workflow,
@@ -1022,8 +1065,10 @@ function normalizeProtectedApprovalReceiptRecord(
     ],
     label,
   );
-  if (record.schemaVersion !== SCHEMA_VERSION) {
-    throw new Error(`${label}.schemaVersion must equal ${SCHEMA_VERSION}`);
+  if (record.schemaVersion !== PROTECTED_SCHEMA_VERSION) {
+    throw new Error(
+      `${label}.schemaVersion must equal ${PROTECTED_SCHEMA_VERSION}`,
+    );
   }
   if (record.kind !== PROTECTED_APPROVAL_KIND) {
     throw new Error(`${label}.kind must equal ${JSON.stringify(PROTECTED_APPROVAL_KIND)}`);
@@ -1127,7 +1172,7 @@ function normalizeProtectedApprovalReceiptRecord(
     );
   }
   return canonicalize({
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: PROTECTED_SCHEMA_VERSION,
     kind: PROTECTED_APPROVAL_KIND,
     source,
     workflow,
@@ -1185,60 +1230,12 @@ function normalizeProtectedApprovalReceiptRecord(
       expected,
       `${label}.deployment`,
     ),
-    securityReview: (() => {
-      const securityReview = expectExactFields(
-        record.securityReview,
-        ['commentId', 'reviewer'],
-        `${label}.securityReview`,
-      );
-      const securityReviewer = expectExactFields(
-        securityReview.reviewer,
-        ['authorAssociation', 'id', 'login', 'permission', 'roleName'],
-        `${label}.securityReview.reviewer`,
-      );
-      const reviewerId = normalizeReviewerId(
-        securityReviewer.id,
-        `${label}.securityReview.reviewer.id`,
-      );
-      const reviewerAssociation = expectNonEmptyString(
-        securityReviewer.authorAssociation,
-        `${label}.securityReview.reviewer.authorAssociation`,
-      );
-      const reviewerPermission = expectNonEmptyString(
-        securityReviewer.permission,
-        `${label}.securityReview.reviewer.permission`,
-      );
-      const reviewerRoleName = expectNonEmptyString(
-        securityReviewer.roleName,
-        `${label}.securityReview.reviewer.roleName`,
-      );
-      if (
-        reviewerId !== expected.reviewer.id
-        || reviewerAssociation !== expected.reviewer.authorAssociation
-        || reviewerPermission !== expected.reviewer.permission
-        || reviewerRoleName !== expected.reviewer.roleName
-      ) {
-        throw new Error(
-          'Protected environment approval must bind the immutable reviewer id and exact reviewer authorization from the security review',
-        );
-      }
-      return {
-        commentId: normalizePositiveIdString(
-          securityReview.commentId,
-          `${label}.securityReview.commentId`,
-        ),
-        reviewer: {
-          id: reviewerId,
-          login: expectNonEmptyString(
-            securityReviewer.login,
-            `${label}.securityReview.reviewer.login`,
-          ),
-          authorAssociation: reviewerAssociation,
-          permission: reviewerPermission,
-          roleName: reviewerRoleName,
-        },
-      };
-    })(),
+    securityReview: normalizeSecurityReview(
+      record.securityReview,
+      expected,
+      source,
+      `${label}.securityReview`,
+    ),
     createdAt,
   });
 }
@@ -1303,6 +1300,7 @@ export function createProtectedApprovalReceipt(options) {
   const securityReview = normalizeSecurityReview(
     record.securityReview,
     expected,
+    pendingEvidence.source,
   );
   if (securityReview.reviewer.id !== pendingEvidence.reviewer.id) {
     throw new Error(
@@ -1318,7 +1316,7 @@ export function createProtectedApprovalReceipt(options) {
   }
 
   return canonicalize({
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion: PROTECTED_SCHEMA_VERSION,
     kind: PROTECTED_APPROVAL_KIND,
     source: pendingEvidence.source,
     workflow: pendingEvidence.workflow,
@@ -1343,6 +1341,7 @@ export function createProtectedApprovalReceipt(options) {
     deployment,
     securityReview: {
       commentId: securityReview.commentId,
+      tag: securityReview.tag,
       reviewer: securityReview.reviewer,
     },
     createdAt,

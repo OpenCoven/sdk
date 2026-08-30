@@ -7,6 +7,7 @@ import {
   readdirSync,
   realpathSync,
 } from 'node:fs';
+import { devNull } from 'node:os';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { posix } from 'node:path';
 
@@ -80,6 +81,73 @@ function sha512Integrity(bytes) {
 function assertNonEmptyString(value, label) {
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`${label} must be a non-empty string`);
+  }
+}
+
+function isGitHubTokenName(name) {
+  const normalized = name.toUpperCase();
+  return normalized === 'GH_TOKEN' || normalized === 'GITHUB_TOKEN';
+}
+
+export function createGitHubTokenFreeEnvironment(source = process.env) {
+  return Object.fromEntries(
+    Object.entries(source).filter(
+      ([name, value]) => !isGitHubTokenName(name) && value !== undefined,
+    ),
+  );
+}
+
+export function createGitHubCliEnvironment(source = process.env) {
+  const tokenEntry = Object.entries(source).find(
+    ([name]) => name.toUpperCase() === 'GH_TOKEN',
+  );
+  if (typeof tokenEntry?.[1] !== 'string' || tokenEntry[1].length === 0) {
+    throw new Error('GH_TOKEN is required for authoritative GitHub verification');
+  }
+  return {
+    PATH: '/usr/bin:/bin',
+    HOME: source.HOME ?? source.RUNNER_TEMP ?? '/tmp',
+    TMPDIR: source.TMPDIR ?? source.RUNNER_TEMP ?? '/tmp',
+    GH_HOST: 'github.com',
+    GH_TOKEN: tokenEntry[1],
+    GIT_CONFIG_GLOBAL: devNull,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_NO_REPLACE_OBJECTS: '1',
+    GIT_OPTIONAL_LOCKS: '0',
+    GIT_TERMINAL_PROMPT: '0',
+  };
+}
+
+export async function runWithGitHubTokensScrubbed(
+  environment,
+  operation,
+) {
+  if (
+    environment === null
+    || typeof environment !== 'object'
+    || typeof operation !== 'function'
+  ) {
+    throw new Error(
+      'GitHub token scrubbing requires an environment and operation',
+    );
+  }
+  const originalTokens = Object.entries(environment).filter(
+    ([name]) => isGitHubTokenName(name),
+  );
+  for (const [name] of originalTokens) {
+    delete environment[name];
+  }
+  try {
+    return await operation();
+  } finally {
+    for (const name of Object.keys(environment)) {
+      if (isGitHubTokenName(name)) {
+        delete environment[name];
+      }
+    }
+    for (const [name, value] of originalTokens) {
+      environment[name] = value;
+    }
   }
 }
 

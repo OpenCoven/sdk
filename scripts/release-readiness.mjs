@@ -20,6 +20,7 @@ import {
   AUTHENTICATED_NPM_CLI_TREE_SHA256,
   AUTHENTICATED_NPM_TARBALL_INTEGRITY,
   AUTHENTICATED_NPM_TARBALL_URL,
+  createGitHubTokenFreeEnvironment,
 } from './release-runtime-integrity.mjs';
 import {
   verifyLiveReleaseEnvironmentPolicies,
@@ -60,7 +61,7 @@ const UPLOAD_ARTIFACT_ACTION =
 const PREFLIGHT_JOB_SHA256 =
   '07281236fd24c6ff0c4a1755798798f37ccd38e2e72712e121a1199de6f2a9b4';
 const REPOSITORY_VERIFICATION_JOB_SHA256 =
-  '271cda1603d40f9b2a7c4baf5c910e5fdd030a4a5d9218cd5c957246aecc2697';
+  'e9a1e8dbfb25f4a4ecd3a8bcdbbdf081da958c1df411aeb27abd4a344d695398';
 const PUBLICATION_CANDIDATE_JOB_SHA256 =
   'f87f40a0b7e5b9d57d59c7dc9b87d2647443ceb5e066a900feba7f98fcbdddb1';
 const PUBLICATION_CANDIDATE_ATTESTATION_JOB_SHA256 =
@@ -152,19 +153,14 @@ const VALIDATOR_RUNTIME_PATHS = Object.freeze([
 const STRICT_SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
-function createReadinessGitEnvironment({ includeGitHubToken = false } = {}) {
+function createReadinessGitEnvironment(source = process.env) {
   const environment = {};
-  for (const [key, value] of Object.entries(process.env)) {
+  for (const [key, value] of Object.entries(
+    createGitHubTokenFreeEnvironment(source),
+  )) {
     const normalizedKey = key.toUpperCase();
     if (
       !normalizedKey.startsWith('GIT_')
-      && (
-        includeGitHubToken
-        || (
-          normalizedKey !== 'GH_TOKEN'
-          && normalizedKey !== 'GITHUB_TOKEN'
-        )
-      )
       && value !== undefined
     ) {
       environment[key] = value;
@@ -374,6 +370,40 @@ export function inspectReleaseRepository(root) {
   };
 }
 
+export function inspectAnnotatedReleaseTag(root, tag) {
+  if (typeof tag !== 'string' || tag.length === 0) {
+    throw new Error('Release tag must be a non-empty string');
+  }
+  const reference = `refs/tags/${tag}`;
+  let objectId;
+  try {
+    objectId = runReadinessGit(
+      root,
+      ['rev-parse', '--verify', `${reference}^{tag}`],
+    ).trim();
+  } catch {
+    try {
+      runReadinessGit(root, ['rev-parse', '--verify', reference]);
+    } catch {
+      throw new Error(`Release tag ${tag} is absent`);
+    }
+    throw new Error(`Release tag ${tag} must be an annotated tag object`);
+  }
+  return {
+    name: tag,
+    ref: reference,
+    objectId,
+    commit: runReadinessGit(
+      root,
+      ['rev-parse', '--verify', `${reference}^{commit}`],
+    ).trim(),
+    tree: runReadinessGit(
+      root,
+      ['rev-parse', '--verify', `${reference}^{tree}`],
+    ).trim(),
+  };
+}
+
 function readCommittedCleanFile(
   checkout,
   path,
@@ -450,6 +480,7 @@ function verifyCommittedConformanceEvidence({
   aggregateRecord,
   indexRecord,
   caveAuthorityRoot,
+  env,
 }) {
   if (
     typeof caveAuthorityRoot !== 'string'
@@ -458,6 +489,10 @@ function verifyCommittedConformanceEvidence({
     throw new Error(
       'OPENCOVEN_CAVE_AUTHORITY_ROOT must name the exact clean frozen Cave checkout',
     );
+  }
+  const verifierEnvironment = createReadinessGitEnvironment(env);
+  if (typeof env.GH_TOKEN === 'string' && env.GH_TOKEN.length > 0) {
+    verifierEnvironment.GH_TOKEN = env.GH_TOKEN;
   }
   const output = execFileSync(
     process.execPath,
@@ -476,7 +511,7 @@ function verifyCommittedConformanceEvidence({
     ],
     {
       encoding: 'utf8',
-      env: createReadinessGitEnvironment({ includeGitHubToken: true }),
+      env: verifierEnvironment,
       maxBuffer: 4 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 180_000,
@@ -1943,6 +1978,7 @@ export function validateReleaseReadiness({
   version,
   tag,
   requireTag = false,
+  requireFrozenRuntime = false,
   requireConformanceEvidence = false,
   requireLiveEnvironmentPolicy = false,
   caveAuthorityRoot = process.env.OPENCOVEN_CAVE_AUTHORITY_ROOT,
@@ -1956,6 +1992,9 @@ export function validateReleaseReadiness({
   if (typeof requireTag !== 'boolean') {
     throw new Error('requireTag must be a boolean');
   }
+  if (typeof requireFrozenRuntime !== 'boolean') {
+    throw new Error('requireFrozenRuntime must be a boolean');
+  }
   if (typeof requireConformanceEvidence !== 'boolean') {
     throw new Error('requireConformanceEvidence must be a boolean');
   }
@@ -1964,6 +2003,16 @@ export function validateReleaseReadiness({
   }
   if (version !== undefined) {
     assertStrictSemVer(version);
+  }
+  if (
+    requireFrozenRuntime
+    || requireConformanceEvidence
+    || requireLiveEnvironmentPolicy
+    || requireTag
+    || tag !== undefined
+    || mode === 'publish'
+  ) {
+    assertFrozenNodeRuntime(root);
   }
 
   const config = readReleaseConfig(root);
@@ -1989,27 +2038,13 @@ export function validateReleaseReadiness({
   }
 
   if (requireTag) {
-    let tagCommit;
-    try {
-      tagCommit = execFileSync(
-        'git',
-        ['-C', root, 'rev-parse', `refs/tags/${tag}^{commit}`],
-        {
-          encoding: 'utf8',
-          env: createReadinessGitEnvironment(),
-          stdio: ['ignore', 'pipe', 'ignore'],
-        },
-      ).trim();
-    } catch {
-      throw new Error(`Release tag ${tag} is absent`);
-    }
-    const headCommit = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], {
-      encoding: 'utf8',
-      env: createReadinessGitEnvironment(),
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    if (tagCommit !== headCommit) {
+    const releaseTag = inspectAnnotatedReleaseTag(root, tag);
+    const checkout = inspectReleaseRepository(root);
+    if (releaseTag.commit !== checkout.commit) {
       throw new Error(`Release tag ${tag} does not point to HEAD`);
+    }
+    if (releaseTag.tree !== checkout.tree) {
+      throw new Error(`Release tag ${tag} does not resolve to the HEAD tree`);
     }
   }
 
@@ -2090,7 +2125,6 @@ export function validateReleaseReadiness({
       );
     }
   } else if (requireConformanceEvidence || mode === 'publish') {
-    assertFrozenNodeRuntime(root);
     const expectedRecord =
       `${CONFORMANCE_RESULTS_DIRECTORY}/${config.conformanceEvidence.candidateCommit}.json`;
     if (aggregateRecord !== expectedRecord) {
@@ -2167,6 +2201,7 @@ export function validateReleaseReadiness({
         aggregateRecord,
         indexRecord: evidenceIndexRecord,
         caveAuthorityRoot,
+        env,
       });
       const aggregate = verified.aggregate;
       const validatorTree = runReadinessGit(

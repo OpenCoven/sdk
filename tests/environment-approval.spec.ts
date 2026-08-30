@@ -65,6 +65,13 @@ interface ApprovalModule {
     environment: Record<string, unknown>;
     securityReview: {
       commentId: string;
+      tag: {
+        name: string;
+        ref: string;
+        objectId: string;
+        commit: string;
+        tree: string;
+      };
       reviewer: {
         id: number;
         login: string;
@@ -129,6 +136,14 @@ const workflow = {
   ref: 'refs/heads/main',
   runId: '11000',
   runAttempt: 1,
+};
+
+const releaseTag = {
+  name: 'sdk-v0.1.0',
+  ref: 'refs/tags/sdk-v0.1.0',
+  objectId: 'c'.repeat(40),
+  commit: source.commit,
+  tree: source.tree,
 };
 
 const environment = {
@@ -414,6 +429,7 @@ describe('protected environment approval evidence', () => {
         environment,
         securityReview: {
           commentId: '4001',
+          tag: releaseTag,
           reviewer: {
             id: 68980965,
             login: 'BunsDev',
@@ -447,8 +463,7 @@ describe('protected environment approval evidence', () => {
       expected,
     });
 
-    expect(() =>
-      approval().createProtectedApprovalReceipt({
+    const receipt = approval().createProtectedApprovalReceipt({
         pendingEvidence,
         pendingEvidenceFile: {
           file: 'pending-approval.json',
@@ -481,6 +496,7 @@ describe('protected environment approval evidence', () => {
         environment,
         securityReview: {
           commentId: '4001',
+          tag: releaseTag,
           reviewer: {
             id: 68980965,
             login: 'BunsDev',
@@ -491,8 +507,15 @@ describe('protected environment approval evidence', () => {
         },
         createdAt: '2026-08-29T16:00:01.750Z',
         expected,
-      }),
-    ).not.toThrow();
+      });
+
+    expect(receipt).toMatchObject({
+      schemaVersion: 2,
+      securityReview: {
+        commentId: '4001',
+        tag: releaseTag,
+      },
+    });
   });
 
   test('rejects a pending reviewer login with a substituted immutable id', () => {
@@ -573,6 +596,7 @@ describe('protected environment approval evidence', () => {
         environment,
         securityReview: {
           commentId: '4001',
+          tag: releaseTag,
           reviewer: {
             id: 68980965,
             login: 'BunsDev',

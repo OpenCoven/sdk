@@ -7,11 +7,7 @@ on:
   pull_request:
 
 permissions:
-  actions: read
-  attestations: read
   contents: read
-  deployments: read
-  issues: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -30,6 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,18 +42,14 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
-      - name: Verify authoritative release gates
-        if: matrix.node == '24.18.1'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node ./scripts/verify-release-readiness.mjs --require-conformance-evidence --require-live-environment-policy
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      # The minimum-version verifier runs the clean-install Phase 0 matrix first,
-      # then enforces release readiness, coverage, stress, and linting.
-      - name: Verify minimum supported Node
+      # The frozen runtime exercises the complete local verification contract.
+      - name: Verify exact release runtime
         if: matrix.node == '24.18.1'
-        run: corepack pnpm@10.34.0 verify:repository
-      - name: Verify latest supported Node
+        run: corepack pnpm@10.34.0 verify
+      # The moving major validates supported package behavior without claiming
+      # exact release, conformance, provenance, or environment authority.
+      - name: Verify Node 24 package compatibility
         if: matrix.node == '24.x'
         run: corepack pnpm@10.34.0 verify:compat

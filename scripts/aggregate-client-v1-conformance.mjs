@@ -37,6 +37,10 @@ import {
   createOwnedTempDirectory,
 } from './owned-temp-directory.mjs';
 import {
+  createGitHubTokenFreeEnvironment,
+  runWithGitHubTokensScrubbed,
+} from './release-runtime-integrity.mjs';
+import {
   assertFrozenNodeRuntime,
   readReleaseConfig,
 } from './release-readiness.mjs';
@@ -90,7 +94,9 @@ function sha256(bytes) {
 
 function createGitEnvironment(inheritedEnvironment = process.env) {
   const environment = {};
-  for (const [key, value] of Object.entries(inheritedEnvironment)) {
+  for (const [key, value] of Object.entries(
+    createGitHubTokenFreeEnvironment(inheritedEnvironment),
+  )) {
     if (!key.toUpperCase().startsWith('GIT_') && value !== undefined) {
       environment[key] = value;
     }
@@ -1059,7 +1065,7 @@ function readEvidenceFile(path) {
   return readFileSync(path, 'utf8');
 }
 
-export async function runConformanceAggregation(argv = process.argv.slice(2)) {
+async function runConformanceAggregationWithScrubbedEnvironment(argv) {
   assertAggregationHostPlatform();
   const options = parseConformanceAggregationArgs(argv);
   const validatorCheckout = inspectRepositoryCheckout(
@@ -1284,6 +1290,13 @@ export async function runConformanceAggregation(argv = process.argv.slice(2)) {
     `client-v1 aggregate validated and written to .artifacts/client-v1-cross-repository-results/${basename(outputPath)}\n`,
   );
   return aggregate;
+}
+
+export async function runConformanceAggregation(argv = process.argv.slice(2)) {
+  return runWithGitHubTokensScrubbed(
+    process.env,
+    () => runConformanceAggregationWithScrubbedEnvironment(argv),
+  );
 }
 
 const invokedDirectly =

@@ -15,6 +15,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  verifyReleaseTagAuthorization,
   verifyPublicationSecurityReview,
 } from './github-release-authorization.mjs';
 import {
@@ -588,6 +589,12 @@ export function publishReleaseArtifacts({
       config.npmRegistry,
     );
     const oidc = validateOidcRequestEnvironment(env);
+    verifyReleaseTagAuthorization({
+      root,
+      authorization,
+      execute: githubExecute,
+      env,
+    });
     const publishEnvironment = {
       ...context.verificationEnv,
       ACTIONS_ID_TOKEN_REQUEST_URL: oidc.requestUrl,

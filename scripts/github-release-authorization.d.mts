@@ -6,7 +6,7 @@ import type {
 } from './github-environment-policy.mjs';
 
 export interface PublicationSecurityReview {
-  schemaVersion: 7;
+  schemaVersion: 8;
   kind: 'opencoven-sdk-publication-security-review';
   issue: 'OpenCoven/sdk#40';
   disposition: 'ship';
@@ -19,6 +19,13 @@ export interface PublicationSecurityReview {
     login?: string;
   };
   version: string;
+  tag: {
+    name: string;
+    ref: string;
+    objectId: string;
+    commit: string;
+    tree: string;
+  };
   source: {
     repository: 'OpenCoven/sdk';
     commit: string;
@@ -78,7 +85,15 @@ export function createPublicationAuthorizationRecord(options: {
   jobId: string;
   manifest: PublicationArtifactManifest;
   manifestText: string;
+  tag: PublicationSecurityReview['tag'];
 }): PublicationSecurityReview;
+
+export function verifyReleaseTagAuthorization(options: {
+  root?: string;
+  authorization: PublicationSecurityReview;
+  execute?: typeof import('node:child_process').execFileSync;
+  env?: NodeJS.ProcessEnv;
+}): PublicationSecurityReview['tag'];
 
 export function resolvePublicationSecurityReview(options: {
   root?: string;

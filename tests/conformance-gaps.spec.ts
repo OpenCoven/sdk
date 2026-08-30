@@ -1659,9 +1659,19 @@ describe('unresolved SDK #38 conformance gaps', () => {
       arguments_: string[],
       options: {
         cwd?: string;
+        env?: Record<string, string | undefined>;
       },
     ): string => {
-      expect(command).toBe('gh');
+      expect(command).toBe('/usr/bin/gh');
+      expect(options.env).toMatchObject({
+        PATH: '/usr/bin:/bin',
+        HOME: '/tmp/conformance-home',
+        TMPDIR: '/tmp/conformance-tmp',
+        GH_HOST: 'github.com',
+        GH_TOKEN: 'aggregate-token',
+      });
+      expect(options.env?.GITHUB_TOKEN).toBeUndefined();
+      expect(options.env?.UNRELATED_SECRET).toBeUndefined();
       ghCalls.push([...arguments_]);
       if (arguments_[0] === 'api') {
         const endpoint = arguments_.at(-1) ?? '';
@@ -1939,6 +1949,15 @@ describe('unresolved SDK #38 conformance gaps', () => {
       indexText: contract.serializeCanonicalJson(index),
       caveEngine: createCaveEngine(registry),
       execute,
+      env: {
+        PATH: '/tmp/untrusted-bin',
+        HOME: '/tmp/conformance-home',
+        TMPDIR: '/tmp/conformance-tmp',
+        GH_TOKEN: 'aggregate-token',
+        GITHUB_TOKEN: 'broad-token',
+        OPENCOVEN_GH_PATH: '/usr/bin/gh',
+        UNRELATED_SECRET: 'must-not-reach-gh',
+      },
     };
     const verificationInputForWorkflow = (workflowText: string) => {
       const workflowLock = structuredClone(lock);

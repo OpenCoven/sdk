@@ -59,6 +59,19 @@ export const RELEASE_RUNTIME_INTEGRITY_CONSTANTS: Readonly<{
     '8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7';
 }>;
 
+export function createGitHubTokenFreeEnvironment(
+  source?: Record<string, string | undefined>,
+): Record<string, string>;
+
+export function createGitHubCliEnvironment(
+  source?: Record<string, string | undefined>,
+): Record<string, string>;
+
+export function runWithGitHubTokensScrubbed<T>(
+  environment: Record<string, string | undefined>,
+  operation: () => T | Promise<T>,
+): Promise<T>;
+
 export function createSterileReleaseEnvironment(options: {
   authenticatedNodePath: string;
   home: string;

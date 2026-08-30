@@ -74,6 +74,7 @@ export interface ReleaseReadinessOptions {
   version?: string;
   tag?: string;
   requireTag?: boolean;
+  requireFrozenRuntime?: boolean;
   requireConformanceEvidence?: boolean;
   requireLiveEnvironmentPolicy?: boolean;
   caveAuthorityRoot?: string;
@@ -94,6 +95,14 @@ export function readReleaseConfig(root?: string): ReleaseConfig;
 export function inspectReleaseRepository(root: string): {
   root: string;
   repository: 'OpenCoven/sdk';
+  commit: string;
+  tree: string;
+};
+
+export function inspectAnnotatedReleaseTag(root: string, tag: string): {
+  name: string;
+  ref: string;
+  objectId: string;
   commit: string;
   tree: string;
 };

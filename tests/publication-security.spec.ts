@@ -66,6 +66,21 @@ const CANDIDATE_ARTIFACT_DIGEST = `sha256:${'c'.repeat(64)}`;
 const CANDIDATE_ATTESTATION_BUNDLE_DIGEST = `sha256:${'d'.repeat(64)}`;
 const CANDIDATE_ATTESTATION_BUNDLE_TEXT =
   '{"mediaType":"application/vnd.dev.sigstore.bundle.v0.3+json"}\n';
+const releaseTagsByCommit = new Map<string, ReleaseTagAuthorization>();
+
+type ReleaseTagAuthorization = {
+  name: string;
+  ref: string;
+  objectId: string;
+  commit: string;
+  tree: string;
+};
+
+type PublicationAuthorization =
+  ReturnType<typeof createRawPublicationAuthorizationRecord> & {
+    schemaVersion: 8;
+    tag: ReleaseTagAuthorization;
+  };
 
 type PublicationAuthorizationOptions = Parameters<
   typeof createRawPublicationAuthorizationRecord
@@ -92,14 +107,25 @@ function createPublicationAuthorizationRecord(
     | 'deploymentId'
     | 'environmentPolicy'
     | 'environmentId'
+    | 'tag'
   > & Partial<
     CandidateAttestationOptions & Pick<
       PublicationAuthorizationOptions,
       'deploymentId' | 'environmentId'
     >
-  >,
-) {
-  return createRawPublicationAuthorizationRecord({
+  > & {
+    tag?: ReleaseTagAuthorization;
+  },
+): PublicationAuthorization {
+  const manifest = options.manifest as unknown as PublicationManifest;
+  const tag = options.tag
+    ?? releaseTagsByCommit.get(manifest.source.commit);
+  if (tag === undefined) {
+    throw new Error(
+      `Missing release tag fixture for ${manifest.source.commit}`,
+    );
+  }
+  const authorization = createRawPublicationAuthorizationRecord({
     artifactDigest: CANDIDATE_ARTIFACT_DIGEST,
     attestationJobId: '20001',
     attestationBundle: {
@@ -112,8 +138,17 @@ function createPublicationAuthorizationRecord(
     deploymentId: '40000',
     environmentId: '50000',
     ...options,
+    tag,
     environmentPolicy: createEnvironmentPolicyReceipt(),
-  } as never);
+  } as never) as PublicationAuthorization;
+  if (authorization.tag === undefined) {
+    Object.defineProperty(authorization, 'tag', {
+      configurable: true,
+      enumerable: false,
+      value: tag,
+    });
+  }
+  return authorization;
 }
 
 interface PublicationManifest {
@@ -409,6 +444,27 @@ function writePublicationArtifacts(
   );
   const commit = git(sourceRoot, ['rev-parse', 'HEAD']);
   const tree = git(sourceRoot, ['rev-parse', 'HEAD^{tree}']);
+  git(sourceRoot, [
+    '-c',
+    'tag.gpgSign=false',
+    'tag',
+    '--force',
+    '--annotate',
+    `sdk-v${VERSION}`,
+    '--message',
+    `SDK v${VERSION}`,
+    'HEAD',
+  ]);
+  releaseTagsByCommit.set(commit, {
+    name: `sdk-v${VERSION}`,
+    ref: `refs/tags/sdk-v${VERSION}`,
+    objectId: git(sourceRoot, [
+      'rev-parse',
+      `refs/tags/sdk-v${VERSION}^{tag}`,
+    ]),
+    commit,
+    tree,
+  });
   const npmrcBytes = readFileSync(resolve(sourceRoot, '.npmrc'));
   const publisherPath = 'scripts/publish-release-artifacts.mjs';
   const publisherBytes = readFileSync(resolve(sourceRoot, publisherPath));
@@ -494,7 +550,7 @@ function writePublicationArtifacts(
 }
 
 function createGitHubExecute(
-  authorization: ReturnType<typeof createPublicationAuthorizationRecord>,
+  authorization: PublicationAuthorization,
 ) {
   return (command: string, arguments_: string[]): string => {
     expect(command).toBe('/usr/bin/gh');
@@ -558,6 +614,33 @@ function createGitHubExecute(
           id: 270919577,
           login: 'OpenCoven',
           type: 'Organization',
+        },
+      });
+    }
+    if (
+      endpoint
+        === `repos/OpenCoven/sdk/git/ref/tags/${encodeURIComponent(
+          authorization.tag.name,
+        )}`
+    ) {
+      return JSON.stringify({
+        ref: authorization.tag.ref,
+        object: {
+          type: 'tag',
+          sha: authorization.tag.objectId,
+        },
+      });
+    }
+    if (
+      endpoint
+        === `repos/OpenCoven/sdk/git/tags/${authorization.tag.objectId}`
+    ) {
+      return JSON.stringify({
+        tag: authorization.tag.name,
+        sha: authorization.tag.objectId,
+        object: {
+          type: 'commit',
+          sha: authorization.tag.commit,
         },
       });
     }
@@ -1011,7 +1094,7 @@ function publicationEnvironment(
 
 function writeApprovalArtifacts(
   sourceRoot: string,
-  securityReview: ReturnType<typeof createPublicationAuthorizationRecord>,
+  securityReview: PublicationAuthorization,
 ): {
   pendingApprovalRoot: string;
   protectedApprovalRoot: string;
@@ -1153,6 +1236,7 @@ function writeApprovalArtifacts(
     environment,
     securityReview: {
       commentId: '4001',
+      tag: securityReview.tag,
       reviewer: {
         id: REVIEWER_ID,
         login: 'BunsDev',
@@ -1239,6 +1323,7 @@ function publishTestRelease(
 }
 
 afterEach(() => {
+  releaseTagsByCommit.clear();
   for (const fixture of fixtures.splice(0)) {
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -1260,7 +1345,8 @@ describe('publication security', { timeout: 30_000 }, () => {
     });
 
     expect(authorization).toMatchObject({
-      schemaVersion: 7,
+      schemaVersion: 8,
+      tag: releaseTagsByCommit.get(candidate.manifest.source.commit),
       environmentPolicy: {
         kind: 'opencoven-sdk-release-environment-policy',
         policyDigest: createEnvironmentPolicyReceipt().policyDigest,
@@ -1294,6 +1380,139 @@ describe('publication security', { timeout: 30_000 }, () => {
         },
       },
     });
+  });
+
+  test('rejects an annotated release tag replaced after #40 authorization', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-replaced-release-tag-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    git(sourceRoot, [
+      '-c',
+      'tag.gpgSign=false',
+      'tag',
+      '--force',
+      '--annotate',
+      authorization.tag.name,
+      '--message',
+      'Replacement tag object',
+      authorization.source.commit,
+    ]);
+
+    expect(() =>
+      resolvePublicationSecurityReview({
+        root: sourceRoot,
+        commentId: '4001',
+        execute: createGitHubExecute(authorization),
+        env: { GH_TOKEN: 'github-token' },
+      } as never),
+    ).toThrow(/Release tag object changed after authorization/u);
+  });
+
+  test('rejects a remotely moved release tag after #40 authorization', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-remotely-moved-release-tag-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const execute = createGitHubExecute(authorization);
+
+    expect(() =>
+      resolvePublicationSecurityReview({
+        root: sourceRoot,
+        commentId: '4001',
+        execute: (command: string, arguments_: string[]) => {
+          const endpoint = arguments_.at(-1) ?? '';
+          if (
+            endpoint
+              === `repos/OpenCoven/sdk/git/ref/tags/${encodeURIComponent(
+                authorization.tag.name,
+              )}`
+          ) {
+            return JSON.stringify({
+              ref: authorization.tag.ref,
+              object: {
+                type: 'tag',
+                sha: 'f'.repeat(40),
+              },
+            });
+          }
+          return execute(command, arguments_);
+        },
+        env: { GH_TOKEN: 'github-token' },
+      } as never),
+    ).toThrow(/Release tag object changed after authorization/u);
+  });
+
+  test('rechecks the authorized release tag immediately before npm publication', () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(
+      resolve(tmpdir(), 'opencoven-final-release-tag-recheck-'),
+    );
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const execute = createGitHubExecute(authorization);
+    const publishCalls: Array<{
+      arguments_: string[];
+      cwd: string;
+      env: Record<string, string | undefined>;
+    }> = [];
+    let tagRefReads = 0;
+
+    expect(() =>
+      publishTestRelease({
+        authorization,
+        root: sourceRoot,
+        artifactRoot,
+        version: VERSION,
+        env: publicationEnvironment(sourceRoot),
+        execute: createNpmExecute(publishCalls),
+        githubExecute: (command: string, arguments_: string[]) => {
+          const endpoint = arguments_.at(-1) ?? '';
+          if (
+            endpoint
+              === `repos/OpenCoven/sdk/git/ref/tags/${encodeURIComponent(
+                authorization.tag.name,
+              )}`
+          ) {
+            tagRefReads += 1;
+            if (tagRefReads === 2) {
+              return JSON.stringify({
+                ref: authorization.tag.ref,
+                object: {
+                  type: 'tag',
+                  sha: 'f'.repeat(40),
+                },
+              });
+            }
+          }
+          return execute(command, arguments_);
+        },
+      } as never),
+    ).toThrow(/Release tag object changed after authorization/u);
+    expect(tagRefReads).toBe(2);
+    expect(publishCalls).toHaveLength(0);
   });
 
   test('rejects a live npm-publish policy that differs from the authorized receipt', () => {
@@ -2438,7 +2657,9 @@ describe('publication security', { timeout: 30_000 }, () => {
         execute: createNpmExecute([]),
         githubExecute: createGitHubExecute(authorization),
       } as never),
-    ).toThrow(/must equal the exact #40-authorized release commit and tree/u);
+    ).toThrow(
+      /security review tag must bind the exact release source|must equal the exact #40-authorized release commit and tree/u,
+    );
 
     const configRoot = createReleaseFixture();
     const configArtifactRoot = mkdtempSync(

@@ -17,6 +17,12 @@ const runtimeIntegrityModule = await import(
 ).catch(() => null);
 
 interface RuntimeIntegrityModule {
+  createGitHubCliEnvironment(
+    source?: Record<string, string | undefined>,
+  ): Record<string, string>;
+  createGitHubTokenFreeEnvironment(
+    source?: Record<string, string | undefined>,
+  ): Record<string, string>;
   createSterileReleaseEnvironment(options: {
     authenticatedNodePath: string;
     home: string;
@@ -58,6 +64,10 @@ interface RuntimeIntegrityModule {
     integrity: string;
   };
   assertNoReleaseRuntimeShadows(root: string): void;
+  runWithGitHubTokensScrubbed<T>(
+    environment: Record<string, string | undefined>,
+    operation: () => T | Promise<T>,
+  ): Promise<T>;
 }
 
 function runtimeIntegrity(): RuntimeIntegrityModule {
@@ -75,6 +85,59 @@ afterEach(() => {
 });
 
 describe('release runtime integrity', () => {
+  test('limits GitHub credentials to explicit CLI subprocess environments', async () => {
+    const runtime = runtimeIntegrity();
+    expect(typeof runtime.createGitHubTokenFreeEnvironment).toBe('function');
+    expect(typeof runtime.createGitHubCliEnvironment).toBe('function');
+    expect(typeof runtime.runWithGitHubTokensScrubbed).toBe('function');
+    const source = {
+      PATH: '/tmp/untrusted-bin',
+      HOME: '/tmp/release-home',
+      TMPDIR: '/tmp/release-tmp',
+      GH_TOKEN: 'aggregate-token',
+      GITHUB_TOKEN: 'broad-token',
+      UNRELATED_SECRET: 'must-not-reach-gh',
+    };
+    const tokenFree = runtime.createGitHubTokenFreeEnvironment(source);
+    const github = runtime.createGitHubCliEnvironment(source);
+
+    expect(tokenFree.GH_TOKEN).toBeUndefined();
+    expect(tokenFree.GITHUB_TOKEN).toBeUndefined();
+    expect(tokenFree.UNRELATED_SECRET).toBe('must-not-reach-gh');
+    expect(github).toEqual({
+      PATH: '/usr/bin:/bin',
+      HOME: '/tmp/release-home',
+      TMPDIR: '/tmp/release-tmp',
+      GH_HOST: 'github.com',
+      GH_TOKEN: 'aggregate-token',
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_NO_REPLACE_OBJECTS: '1',
+      GIT_OPTIONAL_LOCKS: '0',
+      GIT_TERMINAL_PROMPT: '0',
+    });
+
+    const observed = await runtime.runWithGitHubTokensScrubbed(
+      source,
+      async () => {
+        await Promise.resolve();
+        return {
+          ghToken: source.GH_TOKEN,
+          githubToken: source.GITHUB_TOKEN,
+          unrelated: source.UNRELATED_SECRET,
+        };
+      },
+    );
+
+    expect(observed).toEqual({
+      ghToken: undefined,
+      githubToken: undefined,
+      unrelated: 'must-not-reach-gh',
+    });
+    expect(source.GH_TOKEN).toBe('aggregate-token');
+    expect(source.GITHUB_TOKEN).toBe('broad-token');
+  });
+
   test('rejects a fake Node executable even when it self-reports the pinned version', () => {
     const root = mkdtempSync(resolve(tmpdir(), 'opencoven-fake-node-'));
     fixtures.push(root);

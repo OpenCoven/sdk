@@ -21,8 +21,8 @@ A normal publication requires every independent lock to be open:
 2. authoritative GitHub API verification confirms the immutable
    `OpenCoven/sdk` repository identity and the exact live policies for
    `publication-candidate`, `npm-release`, and `npm-publish`;
-3. #40 authorizes the exact publication candidate bytes and the verified
-   environment policy receipt through an immutable
+3. #40 authorizes the exact publication candidate bytes, annotated tag object
+   ID, and verified environment policy receipt through an immutable
    comment by GitHub user ID `68980965`, whose current repository association
    and role must remain `MEMBER` and `admin`;
 4. the pending `npm-release` deployment is captured by an attested witness,
@@ -71,8 +71,9 @@ and locked, and accepts only unedited canonical JSON whose author has immutable
 GitHub user ID `68980965`. The login is informational and may be renamed; the
 comment's `author_association` must be `MEMBER`, and the collaborators API must
 report the same numeric user ID with `admin` permission and role.
-The record binds the exact source commit/tree, raw manifest size/SHA-256,
-ordered package entries, pack toolchain, sterile publisher runtime,
+The record binds the exact source commit/tree, annotated `sdk-v<version>` tag
+object ID and peeled commit/tree, raw manifest size/SHA-256, ordered package
+entries, pack toolchain, sterile publisher runtime,
 workflow/run attempt/job ID, environment ID, deployment ID, and GitHub
 artifact ID/name/archive digest. It separately binds the successful
 `publication-candidate-attestation` job and the exact attestation-bundle
@@ -164,7 +165,7 @@ trailing newline. Its shape is:
     "workflow": ".github/workflows/release.yml",
     "workflowCommit": "<release-commit>"
   },
-  "schemaVersion": 7,
+  "schemaVersion": 8,
   "source": {
     "commit": "<release-commit>",
     "repository": "OpenCoven/sdk",
@@ -176,6 +177,13 @@ trailing newline. Its shape is:
       "sha256": "<raw-source-manifest-sha256>",
       "size": "<raw-source-manifest-size>"
     },
+    "tree": "<release-tree>"
+  },
+  "tag": {
+    "commit": "<release-commit>",
+    "name": "sdk-v<version>",
+    "objectId": "<annotated-tag-object-id>",
+    "ref": "refs/tags/sdk-v<version>",
     "tree": "<release-tree>"
   },
   "toolchain": {
@@ -235,6 +243,11 @@ gh attestation verify <artifact> \
   --format json
 ```
 
+`GH_TOKEN` is injected only into the exact `gh api`, `gh run download`, and
+`gh attestation` subprocesses. Local Git inspection, the committed Cave
+assertion engine, package builds, and package creation run with both
+`GH_TOKEN` and `GITHUB_TOKEN` scrubbed.
+
 The verifier requires the exact frozen repository, workflow path, source ref,
 commit, run attempt, job ID/name, protected environment, hosted-runner labels,
 artifact name, and successful conclusions. It also checks the certificate's
@@ -250,21 +263,31 @@ GitHub verification, readiness remains blocked. Set
 `release.config.json` `conformanceEvidence.aggregateRecord` only in the same
 reviewed change that adds the aggregate and sibling index.
 
-Then run:
+Run the local exact-runtime release and security checks with:
 
 ```bash
+corepack pnpm@10.34.0 verify:release:local
+```
+
+This validates the local workflow, release configuration, package policy, and
+security invariants under exact Node `v24.18.1` without claiming that remote
+evidence exists. Candidate advancement uses the explicit authoritative path:
+
+```bash
+GH_TOKEN=... \
+OPENCOVEN_GH_PATH="$(command -v gh)" \
 corepack pnpm@10.34.0 verify:release
 ```
 
-The CLI requires named evidence even when no flag is supplied. The current
-value remains `null`, so candidate advancement fails specifically for missing
-evidence. A configured record must be a committed, clean regular file at the
-exact candidate path with its committed sibling index. Release readiness
-requires exact Node `v24.18.1` from `.node-version`, revalidates the lock,
+The authoritative command requires named evidence and the exact live
+environment policies. The current aggregate value remains `null`, so
+candidate advancement fails specifically for missing evidence. A configured
+record must be a committed, clean regular file at the exact candidate path
+with its committed sibling index. Release readiness revalidates the lock,
 schema, registry, validator, candidate, and authoritative primary-record
 bytes, then uses the exact clean frozen Cave checkout to re-render Cave
-records. This does not open `publishingEnabled`, change package privacy, create
-a tag, or authorize npm.
+records. This does not open `publishingEnabled`, change package privacy,
+create a tag, or authorize npm.
 
 Before unlocking, create the dedicated `publication-candidate` environment,
 the protected `npm-release` approval environment, and the final
@@ -357,8 +380,11 @@ must not regenerate baselines merely to make verification pass.
 ## 4. Tag
 
 Create the annotated tag `sdk-v<version>` only after the reviewed release
-commit is on `main`. The release workflow verifies that the tag resolves to
-the exact checked-out `HEAD`.
+commit is on `main`. Record its annotated tag object ID in the immutable #40
+authorization. The release workflow verifies that the tag ref still names
+that exact tag object and that the tag peels to the authorized commit/tree.
+It repeats this check after protected approval and immediately before the
+first npm publish.
 
 ## 5. Verify-mode workflow
 
@@ -425,7 +451,8 @@ GitHub still reports a pending deployment; the checkout-free attestation job
 downloads that exact artifact ID and attests only `pending-approval.json`.
 The environment-protected, OIDC-free `approval-evidence` job verifies that
 witness attestation, resolves #40 again, binds its own job/deployment and start
-time, and uploads `protected-approval.json`. A second checkout-free
+time plus the exact authorized tag object ID, and uploads
+`protected-approval.json`. A second checkout-free
 `approval-evidence-attestation` job attests only that uploaded receipt. The
 final publish job requires both producer jobs and both isolated attestation
 jobs and rejects current environment rules or later POSTed deployment statuses
@@ -442,6 +469,11 @@ gzip header, compression level, filename, size, digest, workflow run, producer
 or attestation job, deployment, environment, rules version, artifact, bundle,
 commit, tree, source-manifest, or sterile publisher change requires new
 evidence and, where candidate bytes change, a new #40 review.
+After all protected approval evidence is validated, the publisher re-fetches
+the tag ref and annotated tag object, rechecks the local peeled commit/tree and
+the main workflow provenance, and performs the same check immediately before
+the first npm publish. A moved, replaced, lightweight, or differently peeled
+tag fails closed without invoking npm.
 
 ## 6. First-publish bootstrap
 

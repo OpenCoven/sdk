@@ -343,6 +343,9 @@ describe('authoritative release environment policy', () => {
     expect(manifest.scripts['verify:release']).toContain(
       '--require-live-environment-policy',
     );
+    expect(manifest.scripts['verify:release:local']).not.toContain(
+      '--require-live-environment-policy',
+    );
     expect(
       workflow.match(/--require-live-environment-policy/gu),
     ).toHaveLength(2);

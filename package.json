@@ -25,6 +25,7 @@
     "conformance:aggregate": "node ./scripts/aggregate-client-v1-conformance.mjs",
     "typecheck": "corepack pnpm@10.34.0 exec tsc --pretty false --noEmit -p tsconfig.eslint.json",
     "test": "corepack pnpm@10.34.0 build && vitest run",
+    "test:compat": "vitest run --exclude=tests/cleanup-merged-branch.spec.ts --exclude=tests/conformance-*.spec.ts --exclude=tests/conversational-control-design.spec.ts --exclude=tests/dependabot-config.spec.ts --exclude=tests/environment-approval.spec.ts --exclude=tests/offline-tooling-design.spec.ts --exclude=tests/package-manifests.spec.ts --exclude=tests/publication-*.spec.ts --exclude=tests/release-*.spec.ts --exclude=tests/repository-governance.spec.ts --exclude=tests/review-corrections.spec.ts --exclude=tests/workflow-pins.spec.ts",
     "test:coverage": "vitest run --coverage",
     "test:conformance-contract": "vitest run tests/conformance-contract.spec.ts tests/conformance-cli-security.spec.ts tests/conformance-gaps.spec.ts tests/conformance-checkouts-publication.spec.ts",
     "test:stress": "node ./scripts/run-operation-stress.mjs",
@@ -38,12 +39,13 @@
     "verify-package": "node ./scripts/verify-package.mjs",
     "verify:contracts": "node ./scripts/verify-contracts.mjs",
     "verify:cave-authority": "node ./scripts/verify-cave-contract-authority.mjs",
-    "verify:compat": "corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:package",
+    "verify:compat": "corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 clean:public-dist && corepack pnpm@10.34.0 build && corepack pnpm@10.34.0 test:compat && corepack pnpm@10.34.0 verify:package",
     "verify:repository": "corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 clean:public-dist && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint",
     "verify:package": "node ./scripts/verify-package.mjs",
     "verify:release-environments": "node ./scripts/verify-github-environment-policies.mjs",
     "verify:release": "node ./scripts/verify-release-readiness.mjs --require-conformance-evidence --require-live-environment-policy",
-    "verify": "corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 clean:public-dist && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 verify:release && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint"
+    "verify:release:local": "node ./scripts/verify-release-readiness.mjs",
+    "verify": "corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 clean:public-dist && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 verify:release:local && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint"
   },
   "devDependencies": {
     "@changesets/cli": "3.0.1",

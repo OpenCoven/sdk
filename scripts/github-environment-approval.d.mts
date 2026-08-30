@@ -90,7 +90,7 @@ export interface PendingApprovalEvidence {
 }
 
 export interface ProtectedApprovalReceipt {
-  schemaVersion: 1;
+  schemaVersion: 2;
   kind: 'opencoven-sdk-protected-environment-approval';
   source: ApprovalSource;
   workflow: ApprovalWorkflow;
@@ -142,6 +142,13 @@ export interface ProtectedApprovalReceipt {
   };
   securityReview: {
     commentId: string;
+    tag: {
+      name: string;
+      ref: string;
+      objectId: string;
+      commit: string;
+      tree: string;
+    };
     reviewer: {
       id: number;
       login: string;
@@ -216,6 +223,7 @@ export function createProtectedApprovalReceipt(options: {
   environment: Record<string, unknown>;
   securityReview: {
     commentId: string;
+    tag: ProtectedApprovalReceipt['securityReview']['tag'];
     reviewer: {
       id: number;
       login: string;

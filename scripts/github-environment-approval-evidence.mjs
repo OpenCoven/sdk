@@ -20,6 +20,7 @@ import {
   parsePendingApprovalEvidence,
   parseCanonicalJson,
   parseProtectedApprovalReceipt,
+  serializeCanonicalJson,
   serializePendingApprovalEvidence,
   serializeProtectedApprovalReceipt,
 } from './github-environment-approval.mjs';
@@ -652,6 +653,7 @@ export function captureProtectedApprovalReceipt({
     environment,
     securityReview: {
       commentId: securityReview.commentId,
+      tag: securityReview.tag,
       reviewer: securityReview.reviewer,
     },
     createdAt: now().toISOString(),
@@ -739,6 +741,8 @@ export function verifyProtectedApprovalArtifacts({
   if (
     !isRecord(securityReview)
     || receipt.securityReview.commentId !== securityReview.commentId
+    || serializeCanonicalJson(receipt.securityReview.tag)
+      !== serializeCanonicalJson(securityReview.tag)
     || receipt.securityReview.reviewer.id
       !== config.protectedApproval.reviewer.id
     || receipt.securityReview.reviewer.id !== securityReview.reviewer?.id
