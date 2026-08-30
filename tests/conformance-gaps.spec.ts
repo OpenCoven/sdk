@@ -1701,6 +1701,31 @@ describe('unresolved SDK #38 conformance gaps', () => {
         };
       }),
     };
+    const protectedEnvironment = {
+      id: Number(producer.workflow.environmentId),
+      name: producer.workflow.environment,
+      can_admins_bypass: false,
+      protection_rules: [
+        {
+          type: 'required_reviewers',
+          prevent_self_review: true,
+          reviewers: [
+            {
+              type: 'User',
+              reviewer: {
+                id: 68_980_965,
+                type: 'User',
+              },
+            },
+          ],
+        },
+        { type: 'branch_policy' },
+      ],
+      deployment_branch_policy: {
+        protected_branches: true,
+        custom_branch_policies: false,
+      },
+    };
 
     const execute = (
       command: string,
@@ -1727,27 +1752,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           return TEST_PRODUCER_WORKFLOW_TEXT;
         }
         if (endpoint.endsWith('/environments/client-v1-conformance')) {
-          return JSON.stringify({
-            id: Number(producer.workflow.environmentId),
-            name: producer.workflow.environment,
-            protection_rules: [
-              {
-                type: 'required_reviewers',
-                prevent_self_review: true,
-                reviewers: [
-                  {
-                    type: 'User',
-                    reviewer: { login: 'evidence-reviewer' },
-                  },
-                ],
-              },
-              { type: 'branch_policy' },
-            ],
-            deployment_branch_policy: {
-              protected_branches: true,
-              custom_branch_policies: false,
-            },
-          });
+          return JSON.stringify(protectedEnvironment);
         }
         const runMatch = /\/actions\/runs\/(\d+)$/u.exec(endpoint);
         if (runMatch !== null) {
@@ -2488,30 +2493,101 @@ describe('unresolved SDK #38 conformance gaps', () => {
       } as never),
     ).toThrow(/workflow bytes do not match/u);
 
-    expect(() =>
-      verifyGitHubConformanceEvidence({
-        ...verificationInput,
-        execute: (
-          command: string,
-          arguments_: string[],
-          options: { cwd?: string },
-        ) => {
-          const endpoint = arguments_.at(-1) ?? '';
-          if (
-            arguments_[0] === 'api'
-            && endpoint.endsWith('/environments/client-v1-conformance')
-          ) {
-            return JSON.stringify({
-              id: Number(producer.workflow.environmentId),
-              name: producer.workflow.environment,
-              protection_rules: [],
-              deployment_branch_policy: null,
-            });
-          }
-          return execute(command, arguments_, options);
+    const verificationInputForEnvironment = (
+      environment: Record<string, unknown>,
+    ) => ({
+      ...verificationInput,
+      execute: (
+        command: string,
+        arguments_: string[],
+        options: { cwd?: string },
+      ) => {
+        const endpoint = arguments_.at(-1) ?? '';
+        if (
+          arguments_[0] === 'api'
+          && endpoint.endsWith('/environments/client-v1-conformance')
+        ) {
+          return JSON.stringify(environment);
+        }
+        return execute(command, arguments_, options);
+      },
+    });
+    const environmentVariants = [
+      {
+        name: 'missing protection',
+        value: {
+          id: Number(producer.workflow.environmentId),
+          name: producer.workflow.environment,
+          can_admins_bypass: false,
+          protection_rules: [],
+          deployment_branch_policy: null,
         },
-      } as never),
-    ).toThrow(/required reviewer and protected-branch rules/u);
+      },
+      {
+        name: 'administrator bypass',
+        value: {
+          ...structuredClone(protectedEnvironment),
+          can_admins_bypass: true,
+        },
+      },
+      {
+        name: 'wrong reviewer',
+        value: {
+          ...structuredClone(protectedEnvironment),
+          protection_rules: [
+            {
+              type: 'required_reviewers',
+              prevent_self_review: true,
+              reviewers: [
+                {
+                  type: 'User',
+                  reviewer: { id: 1, type: 'User' },
+                },
+              ],
+            },
+            { type: 'branch_policy' },
+          ],
+        },
+      },
+      {
+        name: 'self review',
+        value: {
+          ...structuredClone(protectedEnvironment),
+          protection_rules: [
+            {
+              type: 'required_reviewers',
+              prevent_self_review: false,
+              reviewers: [
+                {
+                  type: 'User',
+                  reviewer: { id: 68_980_965, type: 'User' },
+                },
+              ],
+            },
+            { type: 'branch_policy' },
+          ],
+        },
+      },
+      {
+        name: 'wait timer',
+        value: {
+          ...structuredClone(protectedEnvironment),
+          protection_rules: [
+            ...structuredClone(protectedEnvironment.protection_rules),
+            { type: 'wait_timer', wait_timer: 1 },
+          ],
+        },
+      },
+    ];
+    for (const variant of environmentVariants) {
+      expect(
+        () =>
+          verifyGitHubConformanceEvidence(
+            verificationInputForEnvironment(variant.value) as never,
+          ),
+        variant.name,
+      ).toThrow(/exact protected environment policy/u);
+    }
 
     expect(() =>
       verifyGitHubConformanceEvidence({

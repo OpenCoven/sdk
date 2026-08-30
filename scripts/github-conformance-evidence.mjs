@@ -38,6 +38,7 @@ const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
 const ATTEST_BUILD_PROVENANCE_ACTION =
   'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8';
+const CHAT_ENVIRONMENT_REVIEWER_ID = 68_980_965;
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -510,27 +511,44 @@ function expectAttemptJobGraph(value, expectedByPlatform, label) {
 }
 
 function expectProtectedEnvironment(value, producer) {
-  const requiredReviewers = isRecord(value) && Array.isArray(value.protection_rules)
-    ? value.protection_rules.find(
-        (rule) =>
-          isRecord(rule)
-          && rule.type === 'required_reviewers'
-          && rule.prevent_self_review === true
-          && Array.isArray(rule.reviewers)
-          && rule.reviewers.length > 0,
-      )
-    : undefined;
+  const protectionRules =
+    isRecord(value) && Array.isArray(value.protection_rules)
+      ? value.protection_rules
+      : [];
+  const requiredReviewerRules = protectionRules.filter(
+    (rule) => isRecord(rule) && rule.type === 'required_reviewers',
+  );
+  const branchRules = protectionRules.filter(
+    (rule) => isRecord(rule) && rule.type === 'branch_policy',
+  );
+  const requiredReviewers = requiredReviewerRules[0];
+  const reviewer =
+    isRecord(requiredReviewers)
+    && Array.isArray(requiredReviewers.reviewers)
+    && requiredReviewers.reviewers.length === 1
+      ? requiredReviewers.reviewers[0]
+      : undefined;
   if (
     !isRecord(value)
     || value.id !== Number(producer.workflow.environmentId)
     || value.name !== producer.workflow.environment
-    || requiredReviewers === undefined
+    || value.can_admins_bypass !== false
+    || protectionRules.length !== 2
+    || requiredReviewerRules.length !== 1
+    || branchRules.length !== 1
+    || !isRecord(requiredReviewers)
+    || requiredReviewers.prevent_self_review !== true
+    || !isRecord(reviewer)
+    || reviewer.type !== 'User'
+    || !isRecord(reviewer.reviewer)
+    || reviewer.reviewer.id !== CHAT_ENVIRONMENT_REVIEWER_ID
+    || reviewer.reviewer.type !== 'User'
     || !isRecord(value.deployment_branch_policy)
     || value.deployment_branch_policy.protected_branches !== true
     || value.deployment_branch_policy.custom_branch_policies !== false
   ) {
     throw new Error(
-      'Frozen Chat evidence environment must retain required reviewer and protected-branch rules',
+      'Frozen Chat evidence environment must retain the exact protected environment policy',
     );
   }
   return value;

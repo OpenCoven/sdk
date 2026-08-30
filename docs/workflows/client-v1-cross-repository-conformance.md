@@ -90,7 +90,10 @@ already-committed Chat producer without creating a mutual commit-hash cycle.
 The selected checkout still supplies and binds the exact validator
 commit/tree, contract, schema, registry, and frozen-lock bytes in every record.
 The protected environment is `client-v1-conformance`, environment ID
-`20863036831`.
+`20863036831`. GitHub must report administrator bypass disabled, exactly one
+required reviewer with immutable user ID `68980965`, self-review prevention
+enabled, no wait-timer rule (zero minutes), and protected-branch-only
+deployment policy. Aggregation rejects any policy drift.
 
 ## Exact platform record
 

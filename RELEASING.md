@@ -216,9 +216,11 @@ The frozen Chat production source
 schema-v2 producer at
 `a3012b205ff27dbce9a416042854185ed940e15b`. Its protected workflow requires
 an exact SDK `validator_revision`, uses protected environment ID
-`20863036831`, and emits only complete observed-result records. Aggregation and
-release readiness remain fail closed until all three protected records and
-their reviewed GitHub attestations exist, as documented in
+`20863036831`, and emits only complete observed-result records. That environment
+must disable administrator bypass, require reviewer user ID `68980965`, prevent
+self-review, have a zero-minute wait timer, and allow protected branches only.
+Aggregation and release readiness remain fail closed until all three protected
+records and their reviewed GitHub attestations exist, as documented in
 [`docs/workflows/client-v1-cross-repository-conformance.md`](docs/workflows/client-v1-cross-repository-conformance.md).
 
 Before advancing this candidate after that blocker is resolved, copy the
