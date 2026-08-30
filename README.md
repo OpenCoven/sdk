@@ -48,9 +48,12 @@ SDK [#36](https://github.com/OpenCoven/sdk/issues/36) merged through PR #55 at
 [#37](https://github.com/OpenCoven/sdk/issues/37) resolves the next boundary by
 deferring the CLI from the 0.1 release group and assigning Phase 1 native trust
 adapters to Chat's Tauri layer. Chat
-[#27](https://github.com/OpenCoven/chat/issues/27) remains blocked on those
-native adapters and real-authority/packed-consumer conformance evidence on the
-merged producer path from
+[#27](https://github.com/OpenCoven/chat/issues/27) is closed after landing the
+native integration, and
+[OpenCoven/chat#30](https://github.com/OpenCoven/chat/pull/30) produced the first packed
+real-authority record on `darwin-arm64`. SDK
+[#38](https://github.com/OpenCoven/sdk/issues/38) remains open for the required
+`linux-x64` and `win32-x64` records on the merged producer path from
 [OpenCoven/coven-cave#5044](https://github.com/OpenCoven/coven-cave/pull/5044),
 which closed
 [OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
