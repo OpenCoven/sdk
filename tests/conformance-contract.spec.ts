@@ -215,13 +215,9 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      'dbbcf3a71155730f0e707e181ef3ca7e770c719f',
+      'fa0d6563caa7968848ff83d55a988c72c80fe0b1',
     );
-    expect(workflowDocument).toMatch(
-      /has no schema-v2 platform\s+evidence producer/u,
-    );
-    expect(workflowDocument).not.toContain(
-      'test:phase1-conformance --',
-    );
+    expect(workflowDocument).toContain('validator_revision');
+    expect(workflowDocument).toContain('20863036831');
   });
 });

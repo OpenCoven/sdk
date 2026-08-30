@@ -127,8 +127,8 @@
     },
     "chat": {
       "repository": "OpenCoven/chat",
-      "commit": "dbbcf3a71155730f0e707e181ef3ca7e770c719f",
-      "tree": "85ce03bfa8ec1a8e5002821eee3147cd73a59e25",
+      "commit": "edd4728792321771496df58bfc0e6122908a96ec",
+      "tree": "c373902b48b06520450f520e669a34f72b64a35d",
       "consumerLock": {
         "path": "pnpm-lock.yaml",
         "size": 56222,
@@ -163,23 +163,57 @@
     }
   },
   "evidenceProducer": {
-    "status": "blocked",
-    "blockerId": "frozen-chat-commit-has-no-platform-evidence-producer",
+    "status": "compatible",
     "repository": "OpenCoven/chat",
-    "commit": "dbbcf3a71155730f0e707e181ef3ca7e770c719f",
-    "tree": "85ce03bfa8ec1a8e5002821eee3147cd73a59e25",
+    "commit": "fa0d6563caa7968848ff83d55a988c72c80fe0b1",
+    "tree": "e987642b540869a6f52dd38763adb4dbd47018fb",
     "packageManifest": {
       "path": "package.json",
-      "size": 3202,
-      "sha256": "dff8b65c3643b04c9cb85dccfd9035f90046b1f047b84c0a563a6bce6880e17f"
+      "size": 3286,
+      "sha256": "b6ea2245b398f74e47e893068f4bf58b11f7e52e240209d5adcbb3c8c2144565"
     },
-    "availableHarness": {
-      "path": "scripts/contract-canary.mjs",
-      "size": 36293,
-      "sha256": "1118d1999874b6a5a6fcf48355fe2a30c66b6142e178ff759569982bab4696f4"
+    "harness": {
+      "path": "scripts/phase1-conformance.mjs",
+      "version": "2.0.0",
+      "size": 118110,
+      "sha256": "e509c3643b8ef56ed7e49ce4e5ee7a7603a2d8276e71194fb6257e092b22648f"
     },
-    "availableCommand": "test:contract-canary",
-    "requiredRecordSchemaVersion": 2
+    "command": "test:phase1-conformance",
+    "recordSchemaVersion": 2,
+    "workflow": {
+      "name": "client-v1 conformance",
+      "path": ".github/workflows/client-v1-conformance.yml",
+      "size": 4914,
+      "sha256": "d93d816af659928f8abfd63097e035a432ba6a8c9e4932ebac52312c640886cd",
+      "job": "platform-conformance",
+      "jobNameTemplate": "platform-conformance ({platform})",
+      "aggregationJob": "aggregate-conformance",
+      "aggregationJobName": "aggregate-conformance",
+      "aggregationRunnerLabels": [
+        "ubuntu-24.04"
+      ],
+      "environment": "client-v1-conformance",
+      "environmentId": "20863036831",
+      "artifactNameTemplate": "client-v1-conformance-{platform}",
+      "recordPathTemplate": ".artifacts/client-v1-conformance-{platform}.json",
+      "sourceRef": "refs/heads/main",
+      "runnerLabels": {
+        "darwin-arm64": [
+          "macos-14"
+        ],
+        "linux-x64": [
+          "ubuntu-24.04"
+        ],
+        "win32-x64": [
+          "windows-2025"
+        ]
+      },
+      "signerWorkflow": "OpenCoven/chat/.github/workflows/client-v1-conformance.yml",
+      "signerDigest": "fa0d6563caa7968848ff83d55a988c72c80fe0b1",
+      "sourceDigest": "fa0d6563caa7968848ff83d55a988c72c80fe0b1",
+      "predicateType": "https://slsa.dev/provenance/v1",
+      "denySelfHostedRunners": true
+    }
   },
   "toolchain": {
     "nodeVersion": "v24.18.1",

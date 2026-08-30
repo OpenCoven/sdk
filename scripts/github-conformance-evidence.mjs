@@ -142,9 +142,15 @@ function exactHarnessDigestCommand(producer) {
 
 function exactHarnessCommand(producer, recordPath) {
   return [
-    `node ${producer.harness.path}`,
+    'if [[ "${{ matrix.platform }}" == "linux-x64" ]]; then',
+    'bash scripts/phase1-linux-secret-service.sh',
+    '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
     '--platform "${{ matrix.platform }}"',
-    `--output "${recordPath}"`,
+    `--output "${recordPath}"; else`,
+    `node ${producer.harness.path}`,
+    '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
+    '--platform "${{ matrix.platform }}"',
+    `--output "${recordPath}"; fi`,
   ].join(' ');
 }
 
@@ -179,7 +185,14 @@ function expectedProtectedWorkflow(producer, toolchain) {
   return {
     name: producer.workflow.name,
     on: {
-      workflow_dispatch: null,
+      workflow_dispatch: {
+        inputs: {
+          validator_revision: {
+            required: true,
+            type: 'string',
+          },
+        },
+      },
     },
     permissions: {
       contents: 'read',
@@ -242,6 +255,11 @@ function expectedProtectedWorkflow(producer, toolchain) {
               + `--profile minimal && rustup default ${toolchain.rustVersion}`,
           },
           {
+            name: 'Install frozen Linux Secret Service',
+            if: "matrix.platform == 'linux-x64'",
+            run: 'node scripts/phase1-linux-secret-service.mjs --install',
+          },
+          {
             name: 'Require frozen toolchain',
             run: exactToolchainCommand(toolchain),
           },
@@ -251,6 +269,11 @@ function expectedProtectedWorkflow(producer, toolchain) {
           },
           {
             name: 'Produce platform evidence',
+            shell: 'bash',
+            env: {
+              OPENCOVEN_VALIDATOR_REVISION:
+                '${{ inputs.validator_revision }}',
+            },
             run: exactHarnessCommand(producer, recordPath),
           },
           {

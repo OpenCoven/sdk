@@ -8,8 +8,9 @@ There is no passing record yet. A result is added only after the exact same
 candidate has produced complete `darwin-arm64`, `linux-x64`, and `win32-x64`
 platform records and the SDK-side aggregator accepts all three.
 
-The frozen Chat commit currently has no schema-v2 platform evidence producer,
-so aggregation and release readiness remain fail-closed.
+The frozen Chat producer is compatible, but no protected platform records have
+been accepted yet. Aggregation and release readiness therefore remain
+fail-closed.
 
 After a compatible producer is frozen and real protected jobs pass, the
 authoritative verifier queries the frozen Chat workflow/run/job/artifact

@@ -211,13 +211,14 @@ release-gate matrix is narrower than the published package Node runtime
 support and does not by itself authorize release; #38 still requires one
 passing evidence record for each target.
 
-The frozen Chat commit
-`dbbcf3a71155730f0e707e181ef3ca7e770c719f` has no schema-v2 platform
-evidence producer. It contains only the older contract canary, so there is no
-truth-preserving adapter for the required platform, Cave, SDK, Chat, isolation,
-scan, and protected-job claims. Aggregation and release readiness intentionally
-fail closed until a reviewed lock update names an existing exact compatible
-producer commit and protected workflow, as documented in
+The frozen Chat production source
+`edd4728792321771496df58bfc0e6122908a96ec` is exercised by the compatible
+schema-v2 producer at
+`fa0d6563caa7968848ff83d55a988c72c80fe0b1`. Its protected workflow requires
+an exact SDK `validator_revision`, uses protected environment ID
+`20863036831`, and emits only complete observed-result records. Aggregation and
+release readiness remain fail closed until all three protected records and
+their reviewed GitHub attestations exist, as documented in
 [`docs/workflows/client-v1-cross-repository-conformance.md`](docs/workflows/client-v1-cross-repository-conformance.md).
 
 Before advancing this candidate after that blocker is resolved, copy the

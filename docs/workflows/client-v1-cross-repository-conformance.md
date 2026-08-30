@@ -24,13 +24,12 @@ verification on those hosts authenticates the root-owned, non-writable
 a required record platform, but Node does not expose the directory-relative
 publication primitives needed to support the aggregator safely on Windows.
 
-There is no passing aggregate in this repository yet. The exact frozen Chat
-commit `dbbcf3a71155730f0e707e181ef3ca7e770c719f` has no schema-v2 platform
-evidence producer, no `scripts/phase1-conformance.mjs`, and no
-`test:phase1-conformance` package script. The lock records that external
-blocker, and both aggregation and release readiness fail closed until a
-reviewed lock update names an exact compatible producer commit and protected
-workflow.
+There is no passing aggregate in this repository yet. The frozen Chat
+production source remains
+`edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
+is the later commit `fa0d6563caa7968848ff83d55a988c72c80fe0b1`.
+Aggregation and release readiness remain fail closed until all three protected
+platform records exist and their live GitHub attestations are reviewed.
 
 ## Frozen reviewed inputs
 
@@ -78,22 +77,20 @@ contains the complete frozen assertion registry. Its Cave list was imported
 once from the exact locked Cave engine with TTL and authority-takeover enabled.
 Runtime aggregation does not ask the engine to select IDs dynamically.
 
-## Platform producer compatibility blocker
+## Platform producer compatibility
 
-The frozen Chat source contains only `scripts/contract-canary.mjs`, invoked by
-`test:contract-canary`. That command accepts SDK and Cave roots and verifies a
-contract canary; it does not accept the six documented conformance checkouts
-and does not emit the schema-v2 platform record below. There are therefore no
-legacy platform records with enough independently verifiable information to
-adapt without inventing Cave, SDK, Chat, isolation, scan, environment, or
-protected-job claims.
+The frozen producer uses Chat's existing schema-v1 authority journey as an
+internal source, but emits schema v2 only after receiving every frozen SDK and
+Chat assertion from an exact observed-result map. Missing, duplicate,
+unexpected, skipped, failed, or blocked observations produce no record.
 
-This SDK intentionally provides no schema-v1-to-v2 upcast. A future compatible
-producer requires a reviewed lock change that names an existing exact Chat
-commit and tree, committed package manifest and harness bytes, record schema
-version 2, and the exact protected workflow path, job, and environment. Until
-then, `conformance:aggregate` reports the frozen producer blocker before
-accepting records.
+The protected dispatch requires a full lowercase `validator_revision`. The
+Chat commit does not pin that SDK revision, so the SDK validator can freeze the
+already-committed Chat producer without creating a mutual commit-hash cycle.
+The selected checkout still supplies and binds the exact validator
+commit/tree, contract, schema, registry, and frozen-lock bytes in every record.
+The protected environment is `client-v1-conformance`, environment ID
+`20863036831`.
 
 ## Exact platform record
 
@@ -225,18 +222,22 @@ newline, and cannot use anchors, aliases, merge keys, block scalars, duplicate
 keys, or prototype-shadowing keys.
 
 The parsed document must equal the complete reviewed structure: only a manual
-dispatch trigger, top-level `contents: read`, the exact ordered
+dispatch trigger with one required string input named `validator_revision`,
+top-level `contents: read`, the exact ordered
 platform/runner matrix, the protected environment, the exact job permissions,
 and exactly two jobs. The protected matrix job has one fixed sequence:
 pinned checkout without persisted credentials, pinned Node and pnpm setup,
-frozen dependency and Rust setup, exact Node/pnpm/Rust/Tauri verification,
-exact harness size/SHA-256 verification, direct invocation of the frozen
-harness to the platform-derived record path, read-only canonical JSON and
-platform validation, the pinned official artifact upload, and the pinned
-official provenance attestation. None of those steps may have an `if`
-condition. The artifact name occurs as a scalar exactly once, and the
-record path is identical across generation, validation, upload, and
-attestation. There is no mutable step after validation.
+frozen dependency and Rust setup, a Linux-only exact package setup for
+`dbus-daemon`, `gnome-keyring`, and `libsecret-tools`, exact
+Node/pnpm/Rust/Tauri verification, exact harness size/SHA-256 verification,
+and invocation of the frozen harness with the selected validator SHA. The
+Linux invocation runs inside Chat's committed private D-Bus/Secret Service
+wrapper. The remaining steps perform read-only canonical JSON and platform
+validation, pinned official artifact upload, and pinned official provenance
+attestation. The Linux-only setup is the sole reviewed step condition. The
+artifact name occurs as a scalar exactly once, and the record path is identical
+across generation, validation, upload, and attestation. There is no mutable
+step after validation.
 
 No other action, command, permission, output, condition, expression, local or
 reusable workflow, upload path, or attestation path is accepted. The
