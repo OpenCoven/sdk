@@ -32,8 +32,10 @@ SDK [#35](https://github.com/OpenCoven/sdk/issues/35) merged through PR #69 at
 `163961f4e59cfdef51d2271fa98e7c514977203f`. It adds strict discovery v2 plus
 `hpke-bound-v1`, and the upstream producer/runtime authority boundary landed in
 [`OpenCoven/coven-cave#5044`](https://github.com/OpenCoven/coven-cave/pull/5044)
-at merge commit `2a0ff9237e94e652e477b22f60fd6d721b9e6451`, closing
+and closed
 [`OpenCoven/coven-cave#4996`](https://github.com/OpenCoven/coven-cave/issues/4996).
+The frozen release authority is current Cave main
+`6325fc4c1154c7d7398074a9760a2e2dc323b424`.
 Issue #35 remains open only for real-authority pairing/custody evidence
 covering secure-store failure/retry, restart reuse, revocation,
 ambiguity handling, and no-secret retention.
