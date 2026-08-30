@@ -14,17 +14,21 @@ infrastructure.
 
 ## Release status
 
-This source repository is public, but all workspace packages are explicitly
-marked private, are not published, and have standard publishing blocked. The
-0.1 release inventory contains only `@opencoven/sdk-core`,
-`@opencoven/cave-client`, `@opencoven/coven-client`, and `@opencoven/sdk`.
-`@opencoven/dev-cli` remains private and is not packed, versioned with, or
-published beside that group. Standard publishing also requires
-`OPENCOVEN_RELEASE_AUTHORIZATION=publish`; remove or change these gates only as
-part of an intentional release process. The 0.1 native Chat/real-authority
-conformance release matrix is separately frozen to `darwin-arm64`,
-`linux-x64`, and `win32-x64`; see [SUPPORT.md](SUPPORT.md) for the distinction
-between Node runtime support and this release gate.
+This source repository is public. The reviewed 0.1.0 release-unlock change
+opens the repository publication lock — `release.config.json` sets
+`publishingEnabled` to `true` and the 0.1 release inventory
+(`@opencoven/sdk-core`, `@opencoven/cave-client`, `@opencoven/coven-client`,
+and `@opencoven/sdk`) is marked publishable — but no package has been
+published and nothing is published by that change alone: activation also
+requires the protected `npm-release` environment approval, the
+maintainer-authorized `sdk-v<version>` tag at the reviewed commit, and a
+release-workflow dispatch from `main`. `@opencoven/dev-cli` remains private
+and is not packed, versioned with, or published beside that group. Standard
+publishing also requires `OPENCOVEN_RELEASE_AUTHORIZATION=publish`; remove or
+change these gates only as part of an intentional release process. The 0.1
+native Chat/real-authority conformance release matrix is separately frozen to
+`darwin-arm64`, `linux-x64`, and `win32-x64`; see [SUPPORT.md](SUPPORT.md) for
+the distinction between Node runtime support and this release gate.
 
 - [Roadmap](docs/ROADMAP.md)
 - [0.1 read-only release design](docs/superpowers/specs/2026-08-22-sdk-0.1-read-only-release-design.md)

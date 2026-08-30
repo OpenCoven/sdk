@@ -20,6 +20,7 @@ import type {
   NativeConformancePlatforms,
   ReleaseConfig,
 } from '../scripts/release-readiness.d.mts';
+import { createReleaseArtifacts } from '../scripts/create-release-artifacts.mjs';
 import {
   createNpmPublishArgs,
   publishReleaseArtifacts,
@@ -28,6 +29,7 @@ import { PUBLIC_PACKAGES } from '../scripts/repository-metadata.mjs';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fixtures: string[] = [];
+const artifactRoots: string[] = [];
 
 interface MutablePackageManifest {
   dependencies: Record<string, string>;
@@ -153,21 +155,45 @@ afterEach(() => {
   for (const fixture of fixtures.splice(0)) {
     rmSync(fixture, { recursive: true, force: true });
   }
+  for (const artifactRoot of artifactRoots.splice(0)) {
+    rmSync(artifactRoot, { recursive: true, force: true });
+  }
 });
 
+function createUnlockedArtifactRoot(): string {
+  const outputRoot = mkdtempSync(
+    resolve(tmpdir(), 'opencoven-release-readiness-unlock-'),
+  );
+  artifactRoots.push(outputRoot);
+  createReleaseArtifacts({
+    root: workspaceRoot,
+    outputRoot,
+    build: false,
+  });
+  return outputRoot;
+}
+
 describe('release readiness contract', () => {
-  test('keeps publication disabled while packages are private', () => {
+  test('reflects the reviewed unlock of the repository publication lock', () => {
     const config = readReleaseConfig(workspaceRoot);
 
-    expect(config.publishingEnabled).toBe(false);
-    expect(() =>
+    // The 0.1.0 release-unlock change opens the repository lock deliberately.
+    // Publication still requires the second, independent deployment lock: the
+    // protected `npm-release` environment approval, reached only through the
+    // release workflow's tag-verified publish job.
+    expect(config.publishingEnabled).toBe(true);
+    expect(
       validateReleaseReadiness({
         root: workspaceRoot,
         mode: 'publish',
         version: '0.1.0',
         tag: 'sdk-v0.1.0',
       }),
-    ).toThrow('Release publishing is disabled by release.config.json');
+    ).toEqual({
+      version: '0.1.0',
+      publishingEnabled: true,
+      packages: PUBLIC_PACKAGES.map(({ packageName }) => packageName),
+    });
   });
 
   test('requires fixed versions and exact internal ranges', () => {
@@ -345,21 +371,25 @@ describe('release readiness contract', () => {
 
   test('enforces package privacy on both sides of the publishing lock', () => {
     const fixture = createReleaseFixture();
-    updateJson<MutablePackageManifest>(
-      resolve(fixture, 'packages/core/package.json'),
-      (manifest) => {
-        manifest.private = false;
-      },
-    );
+    const configPath = resolve(fixture, 'release.config.json');
 
+    // The reviewed base state is unlocked and publishable. Closing the lock
+    // while the manifests stay publishable must fail closed.
+    updateJson<MutableReleaseConfig>(configPath, (config) => {
+      config.publishingEnabled = false;
+    });
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
       '@opencoven/sdk-core must remain private while publishing is disabled',
     );
 
-    updateJson<MutableReleaseConfig>(
-      resolve(fixture, 'release.config.json'),
-      (config) => {
-        config.publishingEnabled = true;
+    // Re-opening the lock while any release manifest is private must fail.
+    updateJson<MutableReleaseConfig>(configPath, (config) => {
+      config.publishingEnabled = true;
+    });
+    updateJson<MutablePackageManifest>(
+      resolve(fixture, 'packages/cave/package.json'),
+      (manifest) => {
+        manifest.private = true;
       },
     );
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
@@ -380,10 +410,10 @@ describe('release readiness contract', () => {
     ).toThrow('Release tag is required');
   });
 
-  test('returns the canonical locked release summary', () => {
+  test('returns the canonical unlocked release summary', () => {
     expect(validateReleaseReadiness({ root: workspaceRoot })).toEqual({
       version: '0.1.0',
-      publishingEnabled: false,
+      publishingEnabled: true,
       packages: PUBLIC_PACKAGES.map(({ packageName }) => packageName),
     });
   });
@@ -406,19 +436,63 @@ describe('release readiness contract', () => {
     ]);
   });
 
-  test('never invokes npm while publication is locked', () => {
+  test('keeps npm uninvoked until the reviewed release artifacts verify', () => {
     expect(() =>
       publishReleaseArtifacts({
         root: workspaceRoot,
-        artifactRoot: '/tmp/missing-artifacts',
+        artifactRoot: resolve(
+          tmpdir(),
+          'opencoven-release-readiness-missing-artifacts',
+        ),
         version: '0.1.0',
         env: { OPENCOVEN_RELEASE_AUTHORIZATION: 'publish' },
         execute: () => {
-          throw new Error('must not execute while locked');
+          throw new Error('must not execute before artifacts verify');
         },
       }),
-    ).toThrow('Release publishing is disabled by release.config.json');
+    ).toThrow(/release-manifest\.json/);
   });
+
+  test('forbids token-based npm authentication on the publish path', () => {
+    const outputRoot = createUnlockedArtifactRoot();
+
+    for (const tokenVariable of ['NPM_TOKEN', 'NODE_AUTH_TOKEN']) {
+      expect(() =>
+        publishReleaseArtifacts({
+          root: workspaceRoot,
+          artifactRoot: outputRoot,
+          version: '0.1.0',
+          env: {
+            OPENCOVEN_RELEASE_AUTHORIZATION: 'publish',
+            [tokenVariable]: 'synthetic-not-a-real-credential',
+          },
+          execute: () => {
+            throw new Error('npm must not run');
+          },
+        }),
+      ).toThrow('Token-based npm authentication is forbidden for regular releases');
+    }
+  }, 30_000);
+
+  test('reaches the publish step only after artifact verification and authorization', () => {
+    const outputRoot = createUnlockedArtifactRoot();
+
+    // The repository lock is open, so the only remaining independent control is
+    // the protected `npm-release` environment approval in the release workflow.
+    // This spy proves the npm invocation is reached — and can only be reached —
+    // after readiness, artifact digests, and the authorization env var pass.
+    expect(() =>
+      publishReleaseArtifacts({
+        root: workspaceRoot,
+        artifactRoot: outputRoot,
+        version: '0.1.0',
+        env: { OPENCOVEN_RELEASE_AUTHORIZATION: 'publish' },
+        execute: () => {
+          throw new Error('publish step reached with verified artifacts');
+        },
+      }),
+    ).toThrow('publish step reached with verified artifacts');
+  }, 30_000);
 
   test('requires the release workflow identity and a tag on HEAD', () => {
     const fixture = createReleaseFixture();

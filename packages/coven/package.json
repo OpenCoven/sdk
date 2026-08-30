@@ -1,7 +1,6 @@
 {
   "name": "@opencoven/coven-client",
   "version": "0.1.0",
-  "private": true,
   "description": "Transport-neutral constrained Coven client",
   "type": "module",
   "sideEffects": false,
