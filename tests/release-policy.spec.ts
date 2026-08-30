@@ -28,7 +28,7 @@ describe('release and support policies', () => {
     expect(security).toContain('redact');
   });
 
-  test('documents bootstrap, trusted publishing, rollback, and incidents', () => {
+  test('documents the unlock state, bootstrap, trusted publishing, rollback, and incidents', () => {
     const releasing = readDocument('RELEASING.md');
 
     expect(releasing).toContain('First-publish bootstrap');
@@ -37,19 +37,19 @@ describe('release and support policies', () => {
     expect(releasing).toContain('deprecate');
     expect(releasing).toContain('incident response');
     expect(releasing).toContain('revoke');
-    expect(releasing).toContain('does not publish packages');
+    expect(releasing).toContain('opens the repository publication lock');
     expect(releasing).toContain('creates four tarballs');
     expect(releasing).toContain(
       '`@opencoven/dev-cli` is not part of the 0.1 release group',
     );
   });
 
-  test('links policies without claiming publication readiness', () => {
+  test('links policies while stating the reviewed unlock and remaining activation gates', () => {
     const readme = readDocument('README.md');
 
     expect(readme).toContain('[Support policy](SUPPORT.md)');
     expect(readme).toContain('[Security policy](SECURITY.md)');
     expect(readme).toContain('[Release process](RELEASING.md)');
-    expect(readme).toContain('not published');
+    expect(readme).toContain('nothing is published by that change alone');
   });
 });

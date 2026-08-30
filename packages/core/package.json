@@ -1,7 +1,6 @@
 {
   "name": "@opencoven/sdk-core",
   "version": "0.1.0",
-  "private": true,
   "description": "Transport-neutral OpenCoven SDK primitives",
   "type": "module",
   "sideEffects": false,

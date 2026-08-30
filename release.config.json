@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "publishingEnabled": false,
+  "publishingEnabled": true,
   "tagPrefix": "sdk-v",
   "npmAccess": "public",
   "npmDistTag": "latest",

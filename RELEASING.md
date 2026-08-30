@@ -1,10 +1,16 @@
 # Release process
 
-The repository contains release-readiness automation, but this phase does not publish packages.
-It does not create npm package records, configure GitHub
-environments, or register trusted publishers. The four-package 0.1 release
-group and the private CLI workspace all remain private, and the repository
-publication lock remains closed.
+The repository contains release-readiness automation. The reviewed 0.1.0
+release-unlock change deliberately opens the repository publication lock —
+`publishingEnabled` is `true` in `release.config.json` and the four release
+package manifests are publishable — while the second, independent deployment
+lock remains in force: a normal publication still requires the protected
+GitHub environment `npm-release` to approve the publish job. Opening the
+repository lock does not create npm package records, configure GitHub
+environments, or register trusted publishers, and it does not by itself tag,
+publish, or unlock anything externally; activation happens only through the
+maintainer-authorized `sdk-v<version>` tag and a release-workflow dispatch
+from `main`.
 
 `@opencoven/dev-cli` is not part of the 0.1 release group. Release tooling must
 not pack, publish, attest, or configure a trusted publisher for it.

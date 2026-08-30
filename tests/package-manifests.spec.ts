@@ -219,16 +219,19 @@ describe('workspace package manifests', () => {
     expect(vitestConfig).toContain('fileParallelism: false');
   });
 
-  test('keeps every release package unpublished until an intentional release change', () => {
+  test('marks the four release packages publishable behind the authorization gate', () => {
     expect(rootManifest.pnpm?.overrides?.esbuild).toMatch(EXACT_VERSION);
 
+    // The reviewed 0.1.0 release-unlock change intentionally unprivatizes the
+    // four release packages. The fail-closed lifecycle gate stays in place, and
+    // the private CLI remains outside the release inventory.
     for (const { manifestPath } of PUBLIC_PACKAGES) {
       const manifest = JSON.parse(readFileSync(resolve(workspaceRoot, manifestPath), 'utf8')) as {
         private?: boolean;
         scripts?: Record<string, string>;
       };
 
-      expect(manifest.private).toBe(true);
+      expect(manifest.private ?? false).toBe(false);
       expect(manifest.scripts?.prepublishOnly).toBe(
         'node ../../scripts/require-release-authorization.mjs',
       );
