@@ -36,9 +36,12 @@ and closed
 [`OpenCoven/coven-cave#4996`](https://github.com/OpenCoven/coven-cave/issues/4996).
 The frozen release authority is current Cave main
 `6325fc4c1154c7d7398074a9760a2e2dc323b424`.
-Issue #35 remains open only for real-authority pairing/custody evidence
-covering secure-store failure/retry, restart reuse, revocation,
-ambiguity handling, and no-secret retention.
+Issue #35 is closed after
+[OpenCoven/chat#30](https://github.com/OpenCoven/chat/pull/30) and
+[Actions run `33250233035`](https://github.com/OpenCoven/chat/actions/runs/33250233035)
+completed the packaged `darwin-arm64` pairing/custody matrix, including
+secure-store failure/retry, restart reuse, revocation, ambiguity handling, and
+retained evidence secret scanning.
 
 SDK [#36](https://github.com/OpenCoven/sdk/issues/36) merged through PR #55 at
 `d7f9e69378d6136c2771f60b4c57d7beeaa74f6a`. It exposes five one-page reads
@@ -53,13 +56,11 @@ SDK [#37](https://github.com/OpenCoven/sdk/issues/37) records that the private
 CLI is deferred from 0.1 and that Chat's Tauri layer owns the Phase 1 native
 trust adapters. The 0.1 native Chat/real-authority conformance matrix is now
 frozen to `darwin-arm64`, `linux-x64`, and `win32-x64`. Chat
-[#27](https://github.com/OpenCoven/chat/issues/27) remains blocked on durable
-implementation of those adapters and complete cross-repository evidence across
-that matrix. Its comments cite
-commit `950feb5` and branch `feat/native-sdk-integration`, but neither is
-currently reachable on GitHub, so recovery or rebuild of that integration
-evidence may be required before [#38](https://github.com/OpenCoven/sdk/issues/38)
-can close.
+[#27](https://github.com/OpenCoven/chat/issues/27) is closed after the native
+integration landed. OpenCoven/chat#30 and Actions run `33250233035` provide
+the first named packed real-authority record for `darwin-arm64`; SDK
+[#38](https://github.com/OpenCoven/sdk/issues/38) still requires equivalent
+passing records for `linux-x64` and `win32-x64`.
 
 ## Now — secure read-only 0.1
 
@@ -73,20 +74,18 @@ can close.
 
 - [#34](https://github.com/OpenCoven/sdk/issues/34) — secure Cave discovery
 - [#35](https://github.com/OpenCoven/sdk/issues/35) — pairing and credential
-  custody; strict discovery v2 + `hpke-bound-v1` merged through PR #69, but
-  real-authority pairing/custody evidence remains open
+  custody; closed after strict discovery v2 + `hpke-bound-v1` merged through
+  PR #69 and the packaged `darwin-arm64` pairing/custody evidence passed
 - [#36](https://github.com/OpenCoven/sdk/issues/36) — canonical reads merged through PR #55
 - [#37](https://github.com/OpenCoven/sdk/issues/37) — defer private CLI from 0.1; assign Phase 1 native trust adapters to Chat
 
 ### Consumer and evidence
 
 - [Chat #27](https://github.com/OpenCoven/chat/issues/27) — packed SDK/native
-  integration; durable implementation and reachable GitHub evidence still
-  required
+  integration complete
 - [#38](https://github.com/OpenCoven/sdk/issues/38) — cross-repository
-  real-authority conformance blocked on Chat #27 and complete
-  cross-repository evidence across the frozen `darwin-arm64`, `linux-x64`, and
-  `win32-x64` matrix; one passing record is required for each target
+  real-authority conformance; `darwin-arm64` has a passing record, while
+  `linux-x64` and `win32-x64` still require one passing record each
 - [#39](https://github.com/OpenCoven/sdk/issues/39) — profiles, diagnostics, and public API governance
 
 ### Release
