@@ -21,16 +21,27 @@ Delivered foundations include:
   merged through SDK PR #55;
 - contract fixture verification;
 - property, stress, package, and packed-consumer tests;
-- a locked two-key release system with checksummed artifacts and OIDC-oriented publishing.
+- a locked two-key release system with checksummed artifacts and OIDC-oriented publishing;
+- managed native Cave credential transport and custody (PRs #63, #68) with
+  `hpke-bound-v1` request binding (PR #69);
+- secure non-secret profiles (PR #65), redacted diagnostics (PR #66), and
+  frozen packed public API baselines (PR #64);
+- the frozen native conformance matrix (PR #70), the conversational-control
+  and offline-reads implementation designs (PRs #71, #72), and the
+  cross-repository conformance evidence contract (PR #73).
 
 All workspace packages remain private and public publishing remains
 intentionally disabled. The 0.1 release inventory contains the four SDK
 libraries; `@opencoven/dev-cli` remains a source-tested private workspace and
 is excluded from release artifacts and the Changesets fixed group.
 
-SDK [#35](https://github.com/OpenCoven/sdk/issues/35) merged through PR #69 at
-`163961f4e59cfdef51d2271fa98e7c514977203f`. It adds strict discovery v2 plus
-`hpke-bound-v1`, and the upstream producer/runtime authority boundary landed in
+SDK [#35](https://github.com/OpenCoven/sdk/issues/35) is closed. Its pairing and
+secure credential custody implementation merged through PR #54, and native
+custody hardening continued through PRs #63 (managed native credential
+transport), #68 (managed native credential custody), and #69
+(`hpke-bound-v1` request binding at
+`163961f4e59cfdef51d2271fa98e7c514977203f`). The upstream producer/runtime
+authority boundary landed in
 [`OpenCoven/coven-cave#5044`](https://github.com/OpenCoven/coven-cave/pull/5044)
 and closed
 [`OpenCoven/coven-cave#4996`](https://github.com/OpenCoven/coven-cave/issues/4996).
@@ -60,7 +71,9 @@ frozen to `darwin-arm64`, `linux-x64`, and `win32-x64`. Chat
 integration landed. OpenCoven/chat#30 and Actions run `33250233035` provide
 the first named packed real-authority record for `darwin-arm64`; SDK
 [#38](https://github.com/OpenCoven/sdk/issues/38) still requires equivalent
-passing records for `linux-x64` and `win32-x64`.
+passing records for `linux-x64` and `win32-x64`. The in-repo enforcement
+contract is covered by merged PR #73 and the open follow-up PR #74, including
+the declared assertion registry and fail-closed aggregation.
 
 ## Now — secure read-only 0.1
 
@@ -74,8 +87,9 @@ passing records for `linux-x64` and `win32-x64`.
 
 - [#34](https://github.com/OpenCoven/sdk/issues/34) — secure Cave discovery
 - [#35](https://github.com/OpenCoven/sdk/issues/35) — pairing and credential
-  custody; closed after strict discovery v2 + `hpke-bound-v1` merged through
-  PR #69 and the packaged `darwin-arm64` pairing/custody evidence passed
+  custody; closed — implementation merged through PR #54 with native custody
+  hardening through PRs #63/#68/#69; packaged `darwin-arm64` pairing/custody
+  evidence passed through OpenCoven/chat#30
 - [#36](https://github.com/OpenCoven/sdk/issues/36) — canonical reads merged through PR #55
 - [#37](https://github.com/OpenCoven/sdk/issues/37) — defer private CLI from 0.1; assign Phase 1 native trust adapters to Chat
 
@@ -84,8 +98,11 @@ passing records for `linux-x64` and `win32-x64`.
 - [Chat #27](https://github.com/OpenCoven/chat/issues/27) — packed SDK/native
   integration complete
 - [#38](https://github.com/OpenCoven/sdk/issues/38) — cross-repository
-  real-authority conformance; `darwin-arm64` has a passing record, while
-  `linux-x64` and `win32-x64` still require one passing record each
+  real-authority conformance; the in-repo enforcement contract landed through
+  merged PR #73 and is completed by open PR #74 (declared assertion registry,
+  fail-closed aggregation, redaction/digest scans, and release readiness bound
+  to a single named `aggregateRecord`); `darwin-arm64` has a passing record,
+  while `linux-x64` and `win32-x64` still require one passing record each
 - [#39](https://github.com/OpenCoven/sdk/issues/39) — profiles, diagnostics, and public API governance
 
 ### Release
