@@ -32,6 +32,8 @@ import {
   readPackedPackageManifest,
 } from '../scripts/repository-metadata.mjs';
 import {
+  createPublishSafePackageManifest,
+  createPublicPackageBuildInvocation,
   installIsolatedConsumersOfflineAfterWarming,
   installIsolatedOfflineAfterWarming,
   isolatedInstallArgs,
@@ -43,7 +45,26 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 const packageArtifactHelpers = packageArtifacts as unknown as {
   findTarball(directory: string): string;
-  runPnpm(args: string[], cwd: string): void;
+  runPnpm(
+    args: string[],
+    cwd: string,
+    options?: {
+      corepackPath?: string;
+      env?: NodeJS.ProcessEnv;
+      nodePath?: string;
+      stdio?: 'ignore' | 'inherit' | 'pipe';
+    },
+  ): void;
+  runPnpmAsync(
+    args: string[],
+    cwd: string,
+    options?: {
+      corepackPath?: string;
+      env?: NodeJS.ProcessEnv;
+      nodePath?: string;
+      stdio?: 'ignore' | 'inherit' | 'pipe';
+    },
+  ): Promise<void>;
 };
 const ROOT_PACKAGE_EXPORTS = {
   '.': {
@@ -176,12 +197,268 @@ describe('packed public packages', () => {
     expect(createManagedCaveClient).toBeTypeOf('function');
   });
 
+  test('builds public packages with the authenticated Node and exact tsup entrypoint', () => {
+    const invocation = createPublicPackageBuildInvocation({
+      root,
+      packageMetadata: PUBLIC_PACKAGES[0]!,
+      nodePath: '/opt/hostedtoolcache/node/24.18.1/x64/bin/node',
+    });
+
+    expect(invocation.command).toBe(
+      '/opt/hostedtoolcache/node/24.18.1/x64/bin/node',
+    );
+    expect(invocation.args[0]).toMatch(
+      /node_modules\/tsup\/dist\/cli-default\.js$/u,
+    );
+    expect(invocation.args[0]).not.toContain('node_modules/.bin');
+    expect(invocation.args.slice(1)).toEqual([
+      '--config',
+      'tsup.config.ts',
+    ]);
+    expect(invocation.cwd).toBe(resolve(root, 'packages/core'));
+  });
+
+  test('removes publish lifecycle hooks before invoking pnpm pack', () => {
+    const artifactContext = createOwnedTempDirectory({
+      prefix: 'opencoven-publish-safe-pack-spec',
+      childSegments: ['package', 'tarballs'],
+    });
+    const packageRoot = resolve(artifactContext.rootPath, 'package');
+    const tarballRoot = resolve(artifactContext.rootPath, 'tarballs');
+    const manifest = createPublishSafePackageManifest(
+      {
+        name: '@opencoven/sdk-core',
+        version: '0.1.0',
+        private: false,
+        scripts: {
+          build: 'tsup --config tsup.config.ts',
+          prepack:
+            'node -e "require(\'node:fs\').writeFileSync(\'prepack-ran\',\'yes\')"',
+          prepublishOnly: 'node require-release-authorization.mjs',
+          postpublish: 'node exfiltrate.mjs',
+        },
+      },
+      '@opencoven/sdk-core',
+    );
+
+    expect(manifest.scripts).toEqual({
+      build: 'tsup --config tsup.config.ts',
+    });
+    writeFileSync(
+      resolve(packageRoot, 'package.json'),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+    packageArtifactHelpers.runPnpm(
+      ['pack', '--pack-destination', tarballRoot],
+      packageRoot,
+    );
+    expect(existsSync(resolve(packageRoot, 'prepack-ran'))).toBe(false);
+    const packedManifest = JSON.parse(
+      readTarballFile(
+        packageArtifactHelpers.findTarball(tarballRoot),
+        'package.json',
+      ),
+    ) as { scripts?: Record<string, string> };
+    expect(packedManifest.scripts).toEqual({
+      build: 'tsup --config tsup.config.ts',
+    });
+    cleanupOwnedTempRoot(artifactContext);
+  });
+
   test('warms isolated installs before enforcing offline resolution', () => {
     const warmArgs = isolatedInstallArgs({ offline: false });
 
     expect(warmArgs).not.toContain('--offline');
     expect(warmArgs).toContain('--prefer-offline');
     expect(isolatedInstallArgs()).toContain('--offline');
+  });
+
+  test.each([
+    ['nodePath', { nodePath: process.execPath }],
+    ['corepackPath', { corepackPath: '/tmp/corepack.js' }],
+  ])('rejects partial synchronous pnpm runtime overrides containing only %s', (_label, options) => {
+    expect(() =>
+      packageArtifactHelpers.runPnpm(['--version'], root, options),
+    ).toThrow('nodePath and corepackPath must be provided together');
+  });
+
+  test.each([
+    ['nodePath', { nodePath: process.execPath }],
+    ['corepackPath', { corepackPath: '/tmp/corepack.js' }],
+  ])('rejects partial asynchronous pnpm runtime overrides containing only %s', async (_label, options) => {
+    await expect(
+      packageArtifactHelpers.runPnpmAsync(['--version'], root, options),
+    ).rejects.toThrow('nodePath and corepackPath must be provided together');
+  });
+
+  test('constructs exact synchronous authenticated and reviewed-default pnpm commands', () => {
+    const artifactContext = createOwnedTempDirectory({
+      prefix: 'opencoven-pnpm-sync-invocation-spec',
+      childSegments: ['fake-bin'],
+    });
+    const fakeBin = resolve(artifactContext.rootPath, 'fake-bin');
+    const authenticatedCorepack = resolve(
+      artifactContext.rootPath,
+      'authenticated-corepack.cjs',
+    );
+    const defaultCorepack = resolve(fakeBin, 'corepack');
+    const authenticatedCallPath = resolve(
+      artifactContext.rootPath,
+      'authenticated-call.json',
+    );
+    const defaultCallPath = resolve(
+      artifactContext.rootPath,
+      'default-call.json',
+    );
+    const recorder = `#!/usr/bin/env node
+const { writeFileSync } = require('node:fs');
+writeFileSync(process.env.PNPM_CALL_PATH, JSON.stringify({
+  argv: process.argv.slice(2),
+  entrypoint: process.argv[1],
+  executable: process.execPath,
+}));
+`;
+
+    writeFileSync(authenticatedCorepack, recorder);
+    writeFileSync(defaultCorepack, recorder, { mode: 0o700 });
+
+    try {
+      packageArtifactHelpers.runPnpm(
+        ['pack', '--ignore-scripts'],
+        artifactContext.rootPath,
+        {
+          nodePath: process.execPath,
+          corepackPath: authenticatedCorepack,
+          env: {
+            ...process.env,
+            PNPM_CALL_PATH: authenticatedCallPath,
+          },
+          stdio: 'pipe',
+        },
+      );
+      packageArtifactHelpers.runPnpm(
+        ['pack', '--ignore-scripts'],
+        artifactContext.rootPath,
+        {
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
+            PNPM_CALL_PATH: defaultCallPath,
+          },
+          stdio: 'pipe',
+        },
+      );
+
+      expect(JSON.parse(readFileSync(authenticatedCallPath, 'utf8'))).toEqual({
+        argv: [
+          'pnpm@10.34.0',
+          '--config.pnpmfile=/dev/null',
+          '--config.global-pnpmfile=/dev/null',
+          'pack',
+          '--ignore-scripts',
+        ],
+        entrypoint: authenticatedCorepack,
+        executable: process.execPath,
+      });
+      expect(JSON.parse(readFileSync(defaultCallPath, 'utf8'))).toEqual({
+        argv: [
+          'pnpm@10.34.0',
+          '--config.pnpmfile=/dev/null',
+          '--config.global-pnpmfile=/dev/null',
+          'pack',
+          '--ignore-scripts',
+        ],
+        entrypoint: defaultCorepack,
+        executable: process.execPath,
+      });
+    } finally {
+      cleanupOwnedTempRoot(artifactContext);
+    }
+  });
+
+  test('constructs exact asynchronous authenticated and reviewed-default pnpm commands', async () => {
+    const artifactContext = createOwnedTempDirectory({
+      prefix: 'opencoven-pnpm-async-invocation-spec',
+      childSegments: ['fake-bin'],
+    });
+    const fakeBin = resolve(artifactContext.rootPath, 'fake-bin');
+    const authenticatedCorepack = resolve(
+      artifactContext.rootPath,
+      'authenticated-corepack.cjs',
+    );
+    const defaultCorepack = resolve(fakeBin, 'corepack');
+    const authenticatedCallPath = resolve(
+      artifactContext.rootPath,
+      'authenticated-call.json',
+    );
+    const defaultCallPath = resolve(
+      artifactContext.rootPath,
+      'default-call.json',
+    );
+    const recorder = `#!/usr/bin/env node
+const { writeFileSync } = require('node:fs');
+writeFileSync(process.env.PNPM_CALL_PATH, JSON.stringify({
+  argv: process.argv.slice(2),
+  entrypoint: process.argv[1],
+  executable: process.execPath,
+}));
+`;
+
+    writeFileSync(authenticatedCorepack, recorder);
+    writeFileSync(defaultCorepack, recorder, { mode: 0o700 });
+
+    try {
+      await packageArtifactHelpers.runPnpmAsync(
+        ['install', '--offline'],
+        artifactContext.rootPath,
+        {
+          nodePath: process.execPath,
+          corepackPath: authenticatedCorepack,
+          env: {
+            ...process.env,
+            PNPM_CALL_PATH: authenticatedCallPath,
+          },
+          stdio: 'pipe',
+        },
+      );
+      await packageArtifactHelpers.runPnpmAsync(
+        ['install', '--offline'],
+        artifactContext.rootPath,
+        {
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
+            PNPM_CALL_PATH: defaultCallPath,
+          },
+          stdio: 'pipe',
+        },
+      );
+
+      expect(JSON.parse(readFileSync(authenticatedCallPath, 'utf8'))).toEqual({
+        argv: [
+          'pnpm@10.34.0',
+          '--config.pnpmfile=/dev/null',
+          '--config.global-pnpmfile=/dev/null',
+          'install',
+          '--offline',
+        ],
+        entrypoint: authenticatedCorepack,
+        executable: process.execPath,
+      });
+      expect(JSON.parse(readFileSync(defaultCallPath, 'utf8'))).toEqual({
+        argv: [
+          'pnpm@10.34.0',
+          '--config.pnpmfile=/dev/null',
+          '--config.global-pnpmfile=/dev/null',
+          'install',
+          '--offline',
+        ],
+        entrypoint: defaultCorepack,
+        executable: process.execPath,
+      });
+    } finally {
+      cleanupOwnedTempRoot(artifactContext);
+    }
   });
 
   test('installs isolated consumer workspaces recursively', () => {

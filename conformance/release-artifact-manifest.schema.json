@@ -1,0 +1,353 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:opencoven:schema:release-artifact-manifest:6",
+  "title": "OpenCoven release artifact manifest",
+  "description": "Separates the frozen private-source conformance artifact set from an immutable publication candidate produced before and later bound by the external security review.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/conformanceArtifactSet"
+    },
+    {
+      "$ref": "#/$defs/publicationArtifactSet"
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "gitOid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "positiveId": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "fileMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "size",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9@._/-]+$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "file",
+        "size",
+        "sha256"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "@opencoven/sdk-core",
+            "@opencoven/cave-client",
+            "@opencoven/coven-client",
+            "@opencoven/sdk"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9@._/-]+$"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "artifactList": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "conformanceArtifactSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "version",
+        "packages"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "packages": {
+          "$ref": "#/$defs/artifactList"
+        }
+      }
+    },
+    "publicationArtifactSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "artifactSet",
+        "version",
+        "source",
+        "toolchain",
+        "publisher",
+        "provenance",
+        "packages"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 6
+        },
+        "artifactSet": {
+          "const": "publication-candidate"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "commit",
+            "tree",
+            "runtimeManifest",
+            "npmConfigFiles"
+          ],
+          "properties": {
+            "repository": {
+              "const": "OpenCoven/sdk"
+            },
+            "commit": {
+              "$ref": "#/$defs/gitOid"
+            },
+            "tree": {
+              "$ref": "#/$defs/gitOid"
+            },
+            "runtimeManifest": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "file",
+                "size",
+                "sha256",
+                "runtimeSha256",
+                "candidateCommit",
+                "candidateTree"
+              ],
+              "properties": {
+                "file": {
+                  "const": "publication-source-manifest.json"
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1048576
+                },
+                "sha256": {
+                  "$ref": "#/$defs/sha256"
+                },
+                "runtimeSha256": {
+                  "$ref": "#/$defs/sha256"
+                },
+                "candidateCommit": {
+                  "$ref": "#/$defs/gitOid"
+                },
+                "candidateTree": {
+                  "$ref": "#/$defs/gitOid"
+                }
+              }
+            },
+            "npmConfigFiles": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "prefixItems": [
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/fileMetadata"
+                    },
+                    {
+                      "properties": {
+                        "path": {
+                          "const": ".npmrc"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "toolchain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "nodeVersion",
+            "nodePath",
+            "nodeSize",
+            "nodeSha256",
+            "corepackVersion",
+            "corepackTreeSha256",
+            "pnpmVersion",
+            "npmVersion",
+            "npmTarball",
+            "npmIntegrity",
+            "npmTreeSha256",
+            "npmEntrypointSha256",
+            "packCommand"
+          ],
+          "properties": {
+            "nodeVersion": {
+              "const": "v24.18.1"
+            },
+            "nodePath": {
+              "const": "/opt/hostedtoolcache/node/24.18.1/x64/bin/node"
+            },
+            "nodeSize": {
+              "const": 123656816
+            },
+            "nodeSha256": {
+              "const": "f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a"
+            },
+            "corepackVersion": {
+              "const": "0.35.0"
+            },
+            "corepackTreeSha256": {
+              "const": "469b918857ea32351ac6a0737597abc90330dd521005687543dbd6b142536b08"
+            },
+            "pnpmVersion": {
+              "const": "pnpm@10.34.0"
+            },
+            "npmVersion": {
+              "const": "11.5.1"
+            },
+            "npmTarball": {
+              "const": "https://registry.npmjs.org/npm/-/npm-11.5.1.tgz"
+            },
+            "npmIntegrity": {
+              "const": "sha512-Iy5vXZ55m8tIaSCz6bqQf9+W5XbPfoyURsgWLjOkFglqHTep6RDZqRj2sfYGeRyZvGu2HuJWm0lux0rxPQ29lQ=="
+            },
+            "npmTreeSha256": {
+              "const": "dbe97072240cb2048f84faade50f938bdca3ba04efa67719259f5528397f0f09"
+            },
+            "npmEntrypointSha256": {
+              "const": "8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7"
+            },
+            "packCommand": {
+              "const": "sanitize package manifests; node <authenticated-corepack> pnpm@10.34.0 --config.pnpmfile=/dev/null --config.global-pnpmfile=/dev/null pack"
+            }
+          }
+        },
+        "publisher": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/fileMetadata"
+            },
+            {
+              "properties": {
+                "path": {
+                  "const": "scripts/publish-release-artifacts.mjs"
+                }
+              }
+            }
+          ]
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "workflow",
+            "workflowCommit",
+            "sourceRef",
+            "runId",
+            "runAttempt",
+            "job",
+            "environment",
+            "artifactName"
+          ],
+          "properties": {
+            "repository": {
+              "const": "OpenCoven/sdk"
+            },
+            "workflow": {
+              "const": ".github/workflows/release.yml"
+            },
+            "workflowCommit": {
+              "$ref": "#/$defs/gitOid"
+            },
+            "sourceRef": {
+              "const": "refs/heads/main"
+            },
+            "runId": {
+              "$ref": "#/$defs/positiveId"
+            },
+            "runAttempt": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "job": {
+              "const": "publication-candidate"
+            },
+            "environment": {
+              "const": "publication-candidate"
+            },
+            "artifactName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^opencoven-sdk-publication-[0-9a-f]{40}-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+            }
+          }
+        },
+        "packages": {
+          "$ref": "#/$defs/artifactList"
+        }
+      }
+    }
+  }
+}

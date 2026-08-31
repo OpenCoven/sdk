@@ -1,71 +1,109 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/OpenCoven/sdk/blob/main/conformance/client-v1-cross-repository-evidence.schema.json",
+  "$id": "urn:opencoven:schema:client-v1-cross-repository-platform-evidence:2",
   "title": "OpenCoven Client v1 cross-repository platform evidence",
+  "description": "A single observed native-platform record for the frozen SDK 0.1 read-only conformance journey. Exact artifact and source values are supplied by client-v1-cross-repository-lock.json and enforced by the executable validator.",
+  "x-opencoven-frozen-contract": {
+    "schemaVersion": 2,
+    "platformMatrix": [
+      "darwin-arm64",
+      "linux-x64",
+      "win32-x64"
+    ],
+    "assertionRegistry": {
+      "path": "conformance/client-v1-cross-repository-assertions.json",
+      "size": 10715,
+      "sha256": "6d5619033469f81a5d40f4fa4b5000708922da29b2eb7a76e4a4db4dfff198cb"
+    }
+  },
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schemaVersion",
     "issue",
     "platform",
-    "ranAt",
+    "timing",
     "environment",
     "releases",
-    "commits",
-    "digests",
+    "provenance",
+    "harness",
+    "artifacts",
     "caveRecord",
     "sdkAssertions",
     "chatAssertions",
     "coverage",
     "notCovered",
-    "isolation"
+    "isolation",
+    "scans"
   ],
   "properties": {
     "schemaVersion": {
-      "const": 1
+      "description": "Platform evidence schema version.",
+      "const": 2
     },
     "issue": {
+      "description": "Release-gate issue owning this evidence.",
       "const": "OpenCoven/sdk#38"
     },
     "platform": {
+      "description": "Canonical native platform identifier.",
       "enum": [
         "darwin-arm64",
         "linux-x64",
         "win32-x64"
       ]
     },
-    "ranAt": {
-      "type": "string"
+    "timing": {
+      "description": "Observed harness interval; duration must equal completedAt minus startedAt.",
+      "$ref": "#/$defs/timing"
     },
     "environment": {
+      "description": "Observed platform, toolchain, custody, and IPC identity providers.",
       "$ref": "#/$defs/environment"
     },
     "releases": {
+      "description": "Exact Cave and Coven release versions exercised by the run.",
       "$ref": "#/$defs/releases"
     },
-    "commits": {
-      "$ref": "#/$defs/commits"
+    "provenance": {
+      "description": "Separated SDK candidate, SDK validator, Cave, Coven, and Chat committed source identities.",
+      "$ref": "#/$defs/provenance"
     },
-    "digests": {
-      "$ref": "#/$defs/digests"
+    "harness": {
+      "description": "Exact committed Chat harness identity and opaque invocation identifier; no command line is retained.",
+      "$ref": "#/$defs/harness"
+    },
+    "artifacts": {
+      "description": "Exact frozen lock, assertion registry, release manifest, tarballs, fixtures, vectors, consumer lock, and Chat vendor paths.",
+      "$ref": "#/$defs/artifacts"
     },
     "caveRecord": {
+      "description": "Unmodified Cave assertion-engine record, re-rendered by the committed Cave engine before acceptance.",
       "$ref": "#/$defs/caveRecord"
     },
     "sdkAssertions": {
-      "$ref": "#/$defs/assertions"
+      "description": "One result for every frozen SDK assertion ID, in registry order.",
+      "$ref": "#/$defs/crossAssertions"
     },
     "chatAssertions": {
-      "$ref": "#/$defs/assertions"
+      "description": "One result for every frozen common and platform Chat assertion ID, in registry order.",
+      "$ref": "#/$defs/crossAssertions"
     },
     "coverage": {
+      "description": "Required subject coverage; all four subjects must be true.",
       "$ref": "#/$defs/coverage"
     },
     "notCovered": {
+      "description": "The complete frozen non-release exclusion set; SDK and Chat are never exclusions.",
       "$ref": "#/$defs/notCovered"
     },
     "isolation": {
+      "description": "Opaque process-owned root identities, cleanup proof, and unchanged operator-state digests.",
       "$ref": "#/$defs/isolation"
+    },
+    "scans": {
+      "description": "Successful producer redaction and retained-evidence scan attestations.",
+      "$ref": "#/$defs/scans"
     }
   },
   "$defs": {
@@ -73,17 +111,234 @@
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
-    "commit": {
+    "gitOid": {
       "type": "string",
       "pattern": "^[0-9a-f]{40}$"
     },
-    "stringArray": {
-      "type": "array",
-      "maxItems": 1000,
-      "items": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 4096
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z0-9]+(?:[._/-][a-z0-9]+)*$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9@._/-]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "fileMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "size",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "releaseManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "version",
+        "size",
+        "sha256"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "sdkPackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageName",
+        "version",
+        "releaseFile",
+        "vendorPath",
+        "size",
+        "sha256"
+      ],
+      "properties": {
+        "packageName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "releaseFile": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "vendorPath": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "vendorFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageName",
+        "path",
+        "size",
+        "sha256"
+      ],
+      "properties": {
+        "packageName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "checkoutIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit",
+        "tree"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "commit": {
+          "$ref": "#/$defs/gitOid"
+        },
+        "tree": {
+          "$ref": "#/$defs/gitOid"
+        }
+      }
+    },
+    "validatorIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit",
+        "tree",
+        "contract",
+        "schema"
+      ],
+      "properties": {
+        "repository": {
+          "const": "OpenCoven/sdk"
+        },
+        "commit": {
+          "$ref": "#/$defs/gitOid"
+        },
+        "tree": {
+          "$ref": "#/$defs/gitOid"
+        },
+        "contract": {
+          "$ref": "#/$defs/fileMetadata"
+        },
+        "schema": {
+          "$ref": "#/$defs/fileMetadata"
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startedAt",
+        "completedAt",
+        "durationMs"
+      ],
+      "properties": {
+        "startedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "completedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        }
+      }
+    },
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "available"
+      ],
+      "properties": {
+        "backend": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "available": {
+          "const": true
+        }
       }
     },
     "environment": {
@@ -93,7 +348,11 @@
         "os",
         "arch",
         "nodeVersion",
-        "packageManagerVersion"
+        "pnpmVersion",
+        "rustVersion",
+        "tauriVersion",
+        "nativeCustody",
+        "covenIdentity"
       ],
       "properties": {
         "os": {
@@ -111,10 +370,29 @@
         },
         "nodeVersion": {
           "type": "string",
-          "pattern": "^v24\\.[0-9]+\\.[0-9]+$"
+          "maxLength": 32,
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
         },
-        "packageManagerVersion": {
-          "const": "pnpm@10.34.0"
+        "pnpmVersion": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^pnpm@[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "rustVersion": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "tauriVersion": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "nativeCustody": {
+          "$ref": "#/$defs/availability"
+        },
+        "covenIdentity": {
+          "$ref": "#/$defs/availability"
         }
       }
     },
@@ -129,95 +407,142 @@
         "cave": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 64
+          "maxLength": 32
         },
         "coven": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 64
+          "maxLength": 32
         }
       }
     },
-    "commits": {
+    "provenance": {
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "candidate",
+        "validator",
         "cave",
         "coven",
-        "sdk",
         "chat"
       ],
       "properties": {
+        "candidate": {
+          "$ref": "#/$defs/checkoutIdentity"
+        },
+        "validator": {
+          "$ref": "#/$defs/validatorIdentity"
+        },
         "cave": {
-          "$ref": "#/$defs/commit"
+          "$ref": "#/$defs/checkoutIdentity"
         },
         "coven": {
-          "$ref": "#/$defs/commit"
-        },
-        "sdk": {
-          "$ref": "#/$defs/commit"
+          "$ref": "#/$defs/checkoutIdentity"
         },
         "chat": {
-          "$ref": "#/$defs/commit"
+          "$ref": "#/$defs/checkoutIdentity"
         }
       }
     },
-    "digests": {
+    "harness": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "caveAssertionEngine",
-        "caveContractFixture",
-        "hpkeVectors",
-        "consumerLock",
-        "assertionRegistry",
-        "sdkTarballs"
+        "name",
+        "version",
+        "repository",
+        "commit",
+        "tree",
+        "invocationId"
       ],
       "properties": {
-        "caveAssertionEngine": {
-          "$ref": "#/$defs/sha256"
+        "name": {
+          "$ref": "#/$defs/relativePath"
         },
-        "caveContractFixture": {
-          "$ref": "#/$defs/sha256"
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
         },
-        "hpkeVectors": {
-          "$ref": "#/$defs/sha256"
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
         },
-        "consumerLock": {
-          "$ref": "#/$defs/sha256"
+        "commit": {
+          "$ref": "#/$defs/gitOid"
+        },
+        "tree": {
+          "$ref": "#/$defs/gitOid"
+        },
+        "invocationId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frozenLock",
+        "assertionRegistry",
+        "releaseManifest",
+        "sdkPackages",
+        "candidateCaveFiles",
+        "caveAuthorityFiles",
+        "consumerLock",
+        "chatVendorFiles"
+      ],
+      "properties": {
+        "frozenLock": {
+          "$ref": "#/$defs/fileMetadata"
         },
         "assertionRegistry": {
-          "$ref": "#/$defs/sha256"
+          "$ref": "#/$defs/fileMetadata"
         },
-        "sdkTarballs": {
+        "releaseManifest": {
+          "$ref": "#/$defs/releaseManifest"
+        },
+        "sdkPackages": {
           "type": "array",
           "minItems": 4,
           "maxItems": 4,
           "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "packageName",
-              "sha256"
-            ],
-            "properties": {
-              "packageName": {
-                "enum": [
-                  "@opencoven/sdk-core",
-                  "@opencoven/cave-client",
-                  "@opencoven/coven-client",
-                  "@opencoven/sdk"
-                ]
-              },
-              "sha256": {
-                "$ref": "#/$defs/sha256"
-              }
-            }
+            "$ref": "#/$defs/sdkPackage"
+          }
+        },
+        "candidateCaveFiles": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/fileMetadata"
+          }
+        },
+        "caveAuthorityFiles": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/fileMetadata"
+          }
+        },
+        "consumerLock": {
+          "$ref": "#/$defs/fileMetadata"
+        },
+        "chatVendorFiles": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/vendorFile"
           }
         }
       }
     },
-    "assertion": {
+    "crossAssertion": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -227,8 +552,7 @@
       ],
       "properties": {
         "id": {
-          "type": "string",
-          "pattern": "^[a-z0-9]+(?:[._/-][a-z0-9]+)*$"
+          "$ref": "#/$defs/identifier"
         },
         "result": {
           "enum": [
@@ -238,16 +562,243 @@
           ]
         },
         "diagnosticId": {
-          "type": "string",
-          "pattern": "^[a-z0-9]+(?:[._/-][a-z0-9]+)*$"
+          "$ref": "#/$defs/identifier"
         }
       }
     },
-    "assertions": {
+    "crossAssertions": {
       "type": "array",
+      "minItems": 1,
       "maxItems": 1000,
       "items": {
-        "$ref": "#/$defs/assertion"
+        "$ref": "#/$defs/crossAssertion"
+      }
+    },
+    "caveAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "result",
+        "detail"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192
+        },
+        "result": {
+          "enum": [
+            "pass",
+            "fail",
+            "skip"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total",
+        "passed",
+        "failed",
+        "skipped",
+        "status"
+      ],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "passed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        }
+      }
+    },
+    "authorityTakeover": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authorityMode",
+        "discoveryVersion",
+        "mechanism"
+      ],
+      "properties": {
+        "authorityMode": {
+          "const": "enforce"
+        },
+        "discoveryVersion": {
+          "const": 2
+        },
+        "mechanism": {
+          "const": "hpke-bound-v1"
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "where",
+        "says",
+        "measured",
+        "severity",
+        "why"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192
+        },
+        "where": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "says": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "measured": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "severity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "why": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      }
+    },
+    "caveRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "harness",
+        "issues",
+        "scope",
+        "ranAt",
+        "caveVersion",
+        "commit",
+        "platform",
+        "nodeVersion",
+        "includeTtl",
+        "authorityTakeover",
+        "notCovered",
+        "findings",
+        "summary",
+        "assertions"
+      ],
+      "properties": {
+        "harness": {
+          "const": "scripts/client-v1-conformance.mjs"
+        },
+        "issues": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "ranAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "caveVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "commit": {
+          "$ref": "#/$defs/gitOid"
+        },
+        "platform": {
+          "enum": [
+            "darwin-arm64",
+            "linux-x64",
+            "win32-x64"
+          ]
+        },
+        "nodeVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "includeTtl": {
+          "const": true
+        },
+        "authorityTakeover": {
+          "$ref": "#/$defs/authorityTakeover"
+        },
+        "notCovered": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "findings": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/finding"
+          }
+        },
+        "summary": {
+          "$ref": "#/$defs/summary"
+        },
+        "assertions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": {
+            "$ref": "#/$defs/caveAssertion"
+          }
+        }
       }
     },
     "coverage": {
@@ -274,36 +825,89 @@
         }
       }
     },
-    "notCovered": {
-      "type": "array",
-      "maxItems": 4,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "scopeId",
-          "diagnosticId"
-        ],
-        "properties": {
-          "scopeId": {
-            "enum": [
-              "cross-process-pairing",
-              "oauth-ui",
-              "remote-peer",
-              "write-apis"
-            ]
-          },
-          "diagnosticId": {
-            "type": "string",
-            "pattern": "^[a-z0-9]+(?:[._/-][a-z0-9]+)*$"
-          }
+    "notCoveredEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scopeId",
+        "diagnosticId"
+      ],
+      "properties": {
+        "scopeId": {
+          "enum": [
+            "cross-process-pairing",
+            "oauth-ui",
+            "remote-peer",
+            "write-apis"
+          ]
+        },
+        "diagnosticId": {
+          "$ref": "#/$defs/identifier"
         }
       }
     },
-    "caveRecord": {
+    "notCovered": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/notCoveredEntry"
+      }
+    },
+    "isolationRoot": {
       "type": "object",
-      "minProperties": 1,
-      "description": "The unmodified record emitted and re-rendered for equality by Cave scripts/client-v1-conformance.mjs. Its authoritative shape intentionally is not duplicated in this SDK schema."
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "opaqueId",
+        "ownershipVerified",
+        "removedAfterRun"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "cave-home",
+            "coven-home",
+            "consumer-home",
+            "native-credential-store"
+          ]
+        },
+        "opaqueId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "ownershipVerified": {
+          "const": true
+        },
+        "removedAfterRun": {
+          "const": true
+        }
+      }
+    },
+    "operatorState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "beforeSha256",
+        "afterSha256"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "cave-home",
+            "coven-home",
+            "native-credential-store",
+            "projects"
+          ]
+        },
+        "beforeSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "afterSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
     },
     "isolation": {
       "type": "object",
@@ -342,29 +946,7 @@
           "minItems": 4,
           "maxItems": 4,
           "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "id",
-              "ownershipVerified",
-              "removedAfterRun"
-            ],
-            "properties": {
-              "id": {
-                "enum": [
-                  "cave-home",
-                  "coven-home",
-                  "consumer-home",
-                  "native-credential-store"
-                ]
-              },
-              "ownershipVerified": {
-                "const": true
-              },
-              "removedAfterRun": {
-                "const": true
-              }
-            }
+            "$ref": "#/$defs/isolationRoot"
           }
         },
         "operatorState": {
@@ -372,30 +954,50 @@
           "minItems": 4,
           "maxItems": 4,
           "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "id",
-              "beforeSha256",
-              "afterSha256"
-            ],
-            "properties": {
-              "id": {
-                "enum": [
-                  "cave-home",
-                  "coven-home",
-                  "native-credential-store",
-                  "projects"
-                ]
-              },
-              "beforeSha256": {
-                "$ref": "#/$defs/sha256"
-              },
-              "afterSha256": {
-                "$ref": "#/$defs/sha256"
-              }
-            }
+            "$ref": "#/$defs/operatorState"
           }
+        }
+      }
+    },
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "scanner",
+        "version"
+      ],
+      "properties": {
+        "status": {
+          "const": "passed"
+        },
+        "scanner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9]+(?:[._/-][a-z0-9]+)*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[0-9]+(?:\\.[0-9]+){0,2}$"
+        }
+      }
+    },
+    "scans": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "redaction",
+        "retainedEvidence"
+      ],
+      "properties": {
+        "redaction": {
+          "$ref": "#/$defs/scan"
+        },
+        "retainedEvidence": {
+          "$ref": "#/$defs/scan"
         }
       }
     }

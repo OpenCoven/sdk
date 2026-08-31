@@ -77,6 +77,29 @@ function runScripts(source: string): string[] {
   return scripts;
 }
 
+function checkoutSteps(source: string): string[] {
+  const lines = source.split('\n');
+  const steps: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!/^\s+- uses: actions\/checkout@/u.test(lines[index] ?? '')) {
+      continue;
+    }
+    const block = [lines[index] ?? ''];
+    for (index += 1; index < lines.length; index += 1) {
+      const line = lines[index] ?? '';
+      if (/^\s+- (?:uses|name):/u.test(line)) {
+        index -= 1;
+        break;
+      }
+      block.push(line);
+    }
+    steps.push(block.join('\n'));
+  }
+
+  return steps;
+}
+
 describe('workflow action pins', () => {
   test('runs branch validation once through pull requests and still verifies main pushes', () => {
     expect(workflow).toMatch(
@@ -86,7 +109,13 @@ describe('workflow action pins', () => {
   });
 
   test('uses an explicit read-only GitHub token scope', () => {
-    expect(workflow).toMatch(/^permissions:\n\s{2}contents: read\n/m);
+    expect(workflow).toMatch(
+      /^permissions:\n\s{2}contents: read\n/m,
+    );
+    expect(workflow).not.toContain('  actions: read');
+    expect(workflow).not.toContain('  attestations: read');
+    expect(workflow).not.toContain('  deployments: read');
+    expect(workflow).not.toContain('  issues: read');
   });
 
   test('configures staged secret detection', () => {
@@ -126,13 +155,35 @@ describe('workflow action pins', () => {
     }
   });
 
+  test('does not persist checkout credentials beyond action steps', () => {
+    for (const [name, source] of [
+      ['ci.yml', workflow],
+      ['release.yml', releaseWorkflow],
+    ] as const) {
+      const checkoutCount = actionPins(source).filter(
+        ({ action }) => action === 'actions/checkout',
+      ).length;
+      const disabledPersistenceCount =
+        source.match(/persist-credentials: false/gu)?.length ?? 0;
+
+      expect(
+        disabledPersistenceCount,
+        `${name} must disable persisted credentials for every checkout`,
+      ).toBe(checkoutCount);
+    }
+  });
+
   test('runs the canonical verifier with bounded, cancellable execution', () => {
     const installStep = workflow.indexOf('- name: Install dependencies');
-    const verifyStep = workflow.indexOf('- name: Verify');
+    const verifyStep = workflow.indexOf(
+      '- name: Verify exact release runtime',
+    );
 
     expect(workflow).toContain('cancel-in-progress: true');
     expect(workflow).toContain('timeout-minutes: 15');
-    expect(workflow).toContain('run: corepack pnpm@10.34.0 verify');
+    expect(workflow).toContain(
+      'run: corepack pnpm@10.34.0 verify',
+    );
     expect(installStep).toBeGreaterThanOrEqual(0);
     expect(verifyStep).toBeGreaterThan(installStep);
     expect(
@@ -140,15 +191,65 @@ describe('workflow action pins', () => {
     ).toHaveLength(1);
   });
 
-  test('verifies the minimum and moving Node 24 targets', () => {
+  test('separates exact release verification from moving Node 24 compatibility', () => {
     expect(workflow).toContain("node: ['24.18.1', '24.x']");
     expect(workflow).toContain('run: corepack pnpm@10.34.0 verify:compat');
-    expect(workflow).toContain('run: corepack pnpm@10.34.0 verify');
+    expect(workflow).toContain(
+      'run: corepack pnpm@10.34.0 verify',
+    );
+    expect(workflow).not.toContain(
+      'run: node ./scripts/verify-release-readiness.mjs',
+    );
+    const compatibilityStep = workflow.slice(
+      workflow.indexOf('- name: Verify Node 24 package compatibility'),
+    );
+    expect(compatibilityStep).not.toContain('verify:release');
+  });
+
+  test('checks out complete SDK history anywhere full security tests run', () => {
+    const ciSdkCheckouts = checkoutSteps(workflow).filter(
+      (step) => !step.includes('repository: OpenCoven/coven-cave'),
+    );
+    expect(ciSdkCheckouts).toHaveLength(1);
+    expect(ciSdkCheckouts[0]).toContain('fetch-depth: 0');
+
+    const repositoryVerificationJob = releaseWorkflow.slice(
+      releaseWorkflow.indexOf('\n  repository-verification:\n'),
+      releaseWorkflow.indexOf('\n  publication-candidate:\n'),
+    );
+    const releaseSdkCheckouts = checkoutSteps(repositoryVerificationJob).filter(
+      (step) => !step.includes('repository: OpenCoven/coven-cave'),
+    );
+    expect(releaseSdkCheckouts).toHaveLength(1);
+    expect(releaseSdkCheckouts[0]).toContain('fetch-depth: 0');
+
+    const caveCheckout = checkoutSteps(workflow).find(
+      (step) => step.includes('repository: OpenCoven/coven-cave'),
+    );
+    expect(caveCheckout).toBeDefined();
+    const swappedDepths = workflow
+      .replace(
+        ciSdkCheckouts[0] ?? '',
+        (ciSdkCheckouts[0] ?? '').replace('fetch-depth: 0', 'fetch-depth: 1'),
+      )
+      .replace(
+        caveCheckout ?? '',
+        (caveCheckout ?? '').replace('fetch-depth: 1', 'fetch-depth: 0'),
+      );
+    const regressedSdkCheckout = checkoutSteps(swappedDepths).find(
+      (step) => !step.includes('repository: OpenCoven/coven-cave'),
+    );
+    expect(regressedSdkCheckout).not.toContain('fetch-depth: 0');
   });
 
   test('protects publishing with OIDC, attestations, and exact artifact actions', () => {
     expect(releaseWorkflow).toContain('workflow_dispatch:');
     expect(releaseWorkflow).toContain('environment: npm-release');
+    const publishJob = releaseWorkflow.slice(
+      releaseWorkflow.indexOf('\n  publish:\n'),
+    );
+    expect(publishJob).toContain('environment: npm-publish');
+    expect(publishJob).not.toContain('environment: npm-release');
     expect(releaseWorkflow).toContain('id-token: write');
     expect(releaseWorkflow).toContain('attestations: write');
     expect(releaseWorkflow).not.toContain('NPM_TOKEN');
@@ -159,13 +260,13 @@ describe('workflow action pins', () => {
     for (const action of [
       'actions/upload-artifact',
       'actions/download-artifact',
-      'actions/attest-build-provenance',
+      'actions/attest',
     ]) {
       expect(actionPins(releaseWorkflow).map((pin) => pin.action)).toContain(action);
     }
     expect(releaseWorkflow).toMatch(/^permissions:\n\s{2}contents: read\n/m);
-    expect(releaseWorkflow.match(/id-token: write/g)).toHaveLength(1);
-    expect(releaseWorkflow.match(/attestations: write/g)).toHaveLength(1);
+    expect(releaseWorkflow.match(/id-token: write/g)).toHaveLength(4);
+    expect(releaseWorkflow.match(/attestations: write/g)).toHaveLength(3);
     expect(releaseWorkflow).toContain(
       "if [ -n \"$(git status --porcelain --untracked-files=all)\" ]; then",
     );
@@ -175,11 +276,87 @@ describe('workflow action pins', () => {
     // could not fail, guarding the step that keeps an unreviewed tree from
     // being released.
     const cleanTreeIndex = releaseWorkflow.indexOf('Require clean reviewed tree');
-    const artifactsIndex = releaseWorkflow.indexOf('Create release artifacts');
+    const artifactsIndex = releaseWorkflow.indexOf(
+      'Create immutable publication candidate',
+    );
 
     expect(cleanTreeIndex).toBeGreaterThan(-1);
     expect(artifactsIndex).toBeGreaterThan(-1);
     expect(cleanTreeIndex).toBeLessThan(artifactsIndex);
+  });
+
+  test('authenticates protected Node entrypoints and ignores repository package-manager hooks', () => {
+    expect(releaseWorkflow).toContain(
+      'f3432a45b03b2da0d270095fdd8813dc34cbea73f5fc8b18c7a384b7cf9b333a',
+    );
+    expect(releaseWorkflow).toContain(
+      'node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"',
+    );
+    expect(releaseWorkflow).toContain('/usr/bin/sha256sum --check --strict');
+    expect(releaseWorkflow).toContain('/usr/bin/env -i');
+    const releaseBuilder = readFileSync(
+      resolve(root, 'scripts/create-release-artifacts.mjs'),
+      'utf8',
+    );
+    const packageArtifacts = readFileSync(
+      resolve(root, 'scripts/package-artifacts.mjs'),
+      'utf8',
+    );
+    const runtimeIntegrity = readFileSync(
+      resolve(root, 'scripts/release-runtime-integrity.mjs'),
+      'utf8',
+    );
+    expect(releaseBuilder).toContain('protectedPnpmArguments');
+    expect(runtimeIntegrity).toContain("'--ignore-pnpmfile'");
+    expect(packageArtifacts).toContain('--config.pnpmfile=/dev/null');
+    expect(releaseWorkflow).not.toMatch(
+      /publication-candidate:[\s\S]*?uses: pnpm\/action-setup@/u,
+    );
+    expect(releaseWorkflow).not.toMatch(
+      /publish:[\s\S]*?uses: pnpm\/action-setup@/u,
+    );
+  });
+
+  test('requires attested pending and protected approval evidence before publish', () => {
+    expect(releaseWorkflow).toContain('\n  approval-witness:\n');
+    expect(releaseWorkflow).toContain('\n  approval-witness-attestation:\n');
+    expect(releaseWorkflow).toContain('\n  approval-evidence:\n');
+    expect(releaseWorkflow).toContain('\n  approval-evidence-attestation:\n');
+    expect(releaseWorkflow).toContain(
+      'environment: npm-release',
+    );
+    expect(releaseWorkflow).toContain(
+      'opencoven-sdk-pending-approval-${{ github.run_id }}-${{ github.run_attempt }}',
+    );
+    expect(releaseWorkflow).toContain(
+      'opencoven-sdk-protected-approval-${{ github.run_id }}-${{ github.run_attempt }}',
+    );
+    expect(releaseWorkflow).toContain(
+      'needs: [preflight, repository-verification, approval-witness, approval-witness-attestation, approval-evidence, approval-evidence-attestation]',
+    );
+    expect(releaseWorkflow).toContain(
+      'PUBLISH_JOB_ID: ${{ needs.approval-evidence.outputs.publish-job-id }}',
+    );
+    const publisherStep = releaseWorkflow.slice(
+      releaseWorkflow.indexOf(
+        '      - name: Publish exact reviewed release artifacts\n',
+      ),
+    );
+    expect(publisherStep).toContain(
+      'GITHUB_SERVER_URL="$GITHUB_SERVER_URL"',
+    );
+    expect(publisherStep).toContain('PUBLISH_JOB_ID="$PUBLISH_JOB_ID"');
+    const approvalVerificationStep = releaseWorkflow.slice(
+      releaseWorkflow.indexOf(
+        '      - name: Verify exact reviewed publication bytes\n',
+      ),
+      releaseWorkflow.indexOf(
+        '      - name: Publish exact reviewed release artifacts\n',
+      ),
+    );
+    expect(approvalVerificationStep).toContain(
+      'PUBLISH_JOB_ID="$PUBLISH_JOB_ID"',
+    );
   });
 
   test('never interpolates dispatch inputs directly into release shell scripts', () => {
@@ -200,7 +377,7 @@ describe('workflow action pins', () => {
       expect(unsafeExpression).toMatch(DIRECT_DISPATCH_INPUT_PATTERN);
     }
     expect(releaseWorkflow.match(/RELEASE_VERSION: \$\{\{ inputs\.version \}\}/gu))
-      .toHaveLength(2);
+      .toHaveLength(3);
     expect(combinedScripts).toContain('--version "$RELEASE_VERSION"');
     expect(combinedScripts).toContain('--tag "sdk-v$RELEASE_VERSION"');
   });

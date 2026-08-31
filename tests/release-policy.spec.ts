@@ -39,6 +39,34 @@ describe('release and support policies', () => {
     expect(releasing).toContain('revoke');
     expect(releasing).toContain('does not publish packages');
     expect(releasing).toContain('creates four tarballs');
+    expect(releasing).toContain('reviewed evidence index');
+    expect(releasing).toContain('GitHub artifact attestation');
+    expect(releasing).toContain('publication-candidate-attestation');
+    expect(releasing).toContain('environment: `npm-publish`');
+    expect(releasing).toContain('verify:release-environments');
+    expect(releasing).toContain('protected-branch-only');
+    expect(releasing).toContain('environment policy receipt');
+    expect(releasing).toContain(
+      'the only OIDC-bearing job that may check out or execute repository-controlled',
+    );
+    expect(releasing).toContain('--signer-workflow');
+    expect(releasing).toContain('--signer-digest');
+    expect(releasing).toContain('--source-digest');
+    expect(releasing).toContain('--deny-self-hosted-runners');
+    expect(releasing).toContain(
+      'corepack pnpm@10.34.0 verify:release',
+    );
+    expect(releasing).toContain(
+      'corepack pnpm@10.34.0 verify:development-release-configuration',
+    );
+    expect(releasing).not.toContain(
+      'verify:release --require-conformance-evidence',
+    );
+    expect(releasing).toContain('annotated tag object ID');
+    expect(releasing).toMatch(/immediately before\s+the first npm publish/u);
+    expect(releasing).toMatch(
+      /`GH_TOKEN` is injected only into the exact `gh api`, `gh run download`, and\s+`gh attestation` subprocesses/u,
+    );
     expect(releasing).toContain(
       '`@opencoven/dev-cli` is not part of the 0.1 release group',
     );
@@ -51,5 +79,6 @@ describe('release and support policies', () => {
     expect(readme).toContain('[Security policy](SECURITY.md)');
     expect(readme).toContain('[Release process](RELEASING.md)');
     expect(readme).toContain('not published');
+    expect(readme).not.toContain('export GH_TOKEN=');
   });
 });

@@ -434,13 +434,20 @@ pnpm test
 pnpm build
 node scripts/verify-contracts.mjs
 node scripts/verify-package.mjs
-node scripts/verify-release-readiness.mjs
+pnpm verify:development-release-configuration
 pnpm test:coverage
 pnpm test:stress
 pnpm lint
 ```
 
 `corepack pnpm@10.34.0 verify` runs that canonical sequence after installation.
+The remote evidence gate is separate and scopes the GitHub token to its single
+command:
+
+```bash
+GH_TOKEN=... OPENCOVEN_GH_PATH="$(command -v gh)" \
+  corepack pnpm@10.34.0 verify:release
+```
 
 `pack-public-packages.mjs` is the reusable tarball producer for cross-repository
 consumers such as the Chat packed-package canary. It prints JSON containing a

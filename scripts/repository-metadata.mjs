@@ -132,10 +132,11 @@ export function assertCanonicalRepository(manifest, expectedDirectory, packageNa
   return repository;
 }
 
-export function readPackedPackageManifest(tarballPath) {
+export function readPackedPackageManifest(tarballPath, { env } = {}) {
   return JSON.parse(
-    execFileSync('tar', ['-xOf', tarballPath, 'package/package.json'], {
+    execFileSync('/usr/bin/tar', ['-xOf', tarballPath, 'package/package.json'], {
       encoding: 'utf8',
+      env,
     }),
   );
 }

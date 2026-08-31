@@ -26,4 +26,9 @@ export function assertCanonicalRepository(
   packageName: string,
 ): RepositoryMetadata;
 
-export function readPackedPackageManifest(tarballPath: string): PackageManifest;
+export function readPackedPackageManifest(
+  tarballPath: string,
+  options?: {
+    env?: NodeJS.ProcessEnv;
+  },
+): PackageManifest;

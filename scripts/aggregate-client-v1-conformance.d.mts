@@ -1,30 +1,67 @@
-import type { AggregatedConformanceEvidence } from './conformance-contract.d.mts';
+import type {
+  AggregatedConformanceEvidence,
+  CaveAssertionEngine,
+  CheckoutIdentity,
+} from './conformance-contract.d.mts';
 
-export interface InspectedCaveAssertionEngine {
-  commit: string;
+export interface InspectedCheckout extends CheckoutIdentity {
+  root: string;
+}
+
+export interface InspectedTrackedFile {
+  blob: string;
+  bytes: Buffer;
+  size: number;
+  sha256: string;
+}
+
+export interface InspectedCaveAssertionEngine extends InspectedCheckout {
   blob: string;
   digest: string;
+  size: number;
   sourceBytes: Buffer;
 }
 
-export function inspectCaveAssertionEngine(
-  caveRoot: string,
-): InspectedCaveAssertionEngine;
+export interface GitExecutionOptions {
+  gitEnvironment?: NodeJS.ProcessEnv;
+  gitExecutable?: string;
+}
 
-export function readTrackedHeadFileAtCommit(
+export function inspectRepositoryCheckout(
+  root: string,
+  expected: {
+    repository: string;
+    commit?: string;
+    tree?: string;
+  },
+  label: string,
+  gitOptions?: GitExecutionOptions,
+): InspectedCheckout;
+
+export function readTrackedFileAtCommit(
   root: string,
   relativePath: string,
   label: string,
   capturedCommit: string,
-): {
-  blob: string;
-  bytes: Buffer;
-  digest: string;
-};
+  gitOptions?: GitExecutionOptions,
+): InspectedTrackedFile;
+
+export function inspectCaveAssertionEngine(
+  caveRoot: string,
+  expectedIdentity?: {
+    repository: string;
+    commit?: string;
+    tree?: string;
+  },
+  gitOptions?: GitExecutionOptions,
+): InspectedCaveAssertionEngine;
 
 export function loadCommittedCaveAssertionEngine(
-  inspected: InspectedCaveAssertionEngine,
-): Promise<Record<string, unknown>>;
+  inspected: Pick<
+    InspectedCaveAssertionEngine,
+    'digest' | 'sourceBytes'
+  >,
+): Promise<CaveAssertionEngine & Record<string, unknown>>;
 
 export function assertAggregationHostPlatform(
   platform?: NodeJS.Platform,
@@ -33,19 +70,26 @@ export function assertAggregationHostPlatform(
 export function fsyncPublicationDirectory(
   directoryPath: string,
   platform?: NodeJS.Platform,
-): void;
-
-export function publishPreparedEvidence(
-  temporaryPath: string,
-  outputPath: string,
-  syncDirectory?: (directoryPath: string) => void,
+  expectedIdentity?: {
+    dev: number;
+    ino: number;
+  },
 ): void;
 
 export function publishEvidenceAtomically(
-  outputPath: string,
+  outputRoot: string,
+  outputName: string,
   bytes: string,
-  platform?: NodeJS.Platform,
-): void;
+  options?: {
+    platform?: NodeJS.Platform;
+    afterTempFsyncBeforeCommit?: () => void;
+    beforeLink?: () => void;
+    afterPreparedVerifyBeforeLink?: () => void;
+    afterLinkBeforeVerify?: () => void;
+    afterLink?: () => void;
+    afterTempUnlinkBeforeFinalVerify?: () => void;
+  },
+): string;
 
 export function runConformanceAggregation(
   argv?: string[],
