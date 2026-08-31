@@ -434,6 +434,11 @@ describe('public package entry points', () => {
     expect(exportedKeys(cave)).toEqual([
       'CAVE_ANALYTICS_WINDOWS',
       'CAVE_CLIENT_VERSION',
+      'CAVE_CONVERSATION_EVENT_TYPES',
+      'CAVE_CONVERSATION_OPERATION_STATES',
+      'CAVE_CONVERSATION_ORIGINATING_SCOPES',
+      'CAVE_CONVERSATION_RECONCILE_REASONS',
+      'CAVE_CONVERSATION_TERMINAL_STATES',
       'CAVE_FAMILIAR_PROPERTIES',
       'CAVE_PAIRING_SCOPES',
       'CAVE_PAIRING_STATUSES',
@@ -441,7 +446,9 @@ describe('public package entry points', () => {
       'CaveClientError',
       'CaveDiscoveryError',
       'CavePairingSession',
+      'caveConversationReconcileReason',
       'createCaveClient',
+      'createConversationEventTranslator',
       'createDiscoveredCaveClient',
       'createManagedCaveClient',
       'digestCaveContractFixture',
@@ -451,6 +458,7 @@ describe('public package entry points', () => {
       'normalizeCaveError',
       'parseCaveContractFixture',
       'parseVerifiedCaveContractFixture',
+      'validateConversationEventCursor',
       'verifyCaveContractFixtureDigest',
     ]);
     expect(exportedKeys(coven)).toEqual([
