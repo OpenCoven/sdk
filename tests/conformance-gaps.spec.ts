@@ -41,8 +41,12 @@ const PNPM_SETUP_ACTION =
   'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86';
 const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
+const DOWNLOAD_ARTIFACT_ACTION =
+  'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093';
 const ATTEST_BUILD_PROVENANCE_ACTION =
   'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8';
+const TEST_WINDOWS_SUPERVISOR_ARTIFACT =
+  'phase1-process-supervisor-win32-x64';
 const TEST_RECORD_PATH =
   '.artifacts/client-v1-conformance-${{ matrix.platform }}.json';
 const TEST_ARTIFACT_NAME =
@@ -50,10 +54,29 @@ const TEST_ARTIFACT_NAME =
 const TEST_VALIDATOR_INPUT = '${' + '{ inputs.validator_revision }}';
 const TEST_LINUX_SECRET_SERVICE_COMMAND =
   'node scripts/phase1-linux-secret-service.mjs --install';
+const TEST_PHASE1_REVISIONS_COMMAND = [
+  'node --input-type=module --eval "import { appendFileSync }',
+  'from \'node:fs\'; import { readPhase1ConformanceLock }',
+  'from \'./scripts/phase1-conformance-lock.mjs\';',
+  'const lock = readPhase1ConformanceLock();',
+  'for (const repository of [\'sdk\', \'cave\', \'coven\']) {',
+  'appendFileSync(process.env.GITHUB_OUTPUT, repository +',
+  '\'_repository=\' + lock[repository].repository + \'\\n\');',
+  'appendFileSync(process.env.GITHUB_OUTPUT, repository +',
+  '\'_revision=\' + lock[repository].revision + \'\\n\'); }',
+  'appendFileSync(process.env.GITHUB_OUTPUT, \'evidence_repository=\' +',
+  'lock.evidence.repository + \'\\n\');',
+  'appendFileSync(process.env.GITHUB_OUTPUT, \'evidence_revision=\' +',
+  'lock.evidence.revision + \'\\n\');"',
+].join(' ');
 const TEST_TOOLCHAIN_COMMAND = [
   'node --input-type=module --eval "import { execFileSync }',
-  'from \'node:child_process\'; const run = (command, args) =>',
-  'execFileSync(command, args, { encoding: \'utf8\' }).trim();',
+  'from \'node:child_process\'; import { resolveExecutableInvocation }',
+  'from \'./scripts/executable-resolution.mjs\';',
+  'const run = (command, args) => { const invocation =',
+  'resolveExecutableInvocation(command, process.env, process.platform, args);',
+  'return execFileSync(invocation.executable, invocation.args,',
+  '{ encoding: \'utf8\' }).trim(); };',
   'if (process.version !== \'v24.18.1\'',
   '|| \'pnpm@\' + run(\'pnpm\', [\'--version\']) !== \'pnpm@10.34.0\'',
   '|| !run(\'rustc\', [\'--version\']).startsWith(\'rustc 1.95.0 \')',
@@ -123,11 +146,45 @@ function protectedProducerSteps(): string[] {
   return [
     `      - uses: ${CHECKOUT_ACTION}`,
     '        with:',
+    '          fetch-depth: 0',
     '          persist-credentials: false',
     '          ref: ${{ github.sha }}',
     `      - uses: ${SETUP_NODE_ACTION}`,
     '        with:',
     '          node-version: 24.18.1',
+    '      - id: phase1-revisions',
+    '        name: Read Phase 1 reviewed revisions',
+    `        run: ${yamlSingleQuoted(TEST_PHASE1_REVISIONS_COMMAND)}`,
+    `      - uses: ${CHECKOUT_ACTION}`,
+    '        with:',
+    '          repository: ${{ steps.phase1-revisions.outputs.sdk_repository }}',
+    '          ref: ${{ steps.phase1-revisions.outputs.sdk_revision }}',
+    '          path: .phase1-counterparts/sdk',
+    '          persist-credentials: false',
+    `      - uses: ${CHECKOUT_ACTION}`,
+    '        with:',
+    '          repository: ${{ steps.phase1-revisions.outputs.evidence_repository }}',
+    '          ref: ${{ steps.phase1-revisions.outputs.evidence_revision }}',
+    '          path: .phase1-counterparts/sdk-evidence',
+    '          persist-credentials: false',
+    `      - uses: ${CHECKOUT_ACTION}`,
+    '        with:',
+    '          repository: OpenCoven/sdk',
+    '          ref: ${{ inputs.validator_revision }}',
+    '          path: .phase1-counterparts/sdk-validator',
+    '          persist-credentials: false',
+    `      - uses: ${CHECKOUT_ACTION}`,
+    '        with:',
+    '          repository: ${{ steps.phase1-revisions.outputs.cave_repository }}',
+    '          ref: ${{ steps.phase1-revisions.outputs.cave_revision }}',
+    '          path: .phase1-counterparts/coven-cave',
+    '          persist-credentials: false',
+    `      - uses: ${CHECKOUT_ACTION}`,
+    '        with:',
+    '          repository: ${{ steps.phase1-revisions.outputs.coven_repository }}',
+    '          ref: ${{ steps.phase1-revisions.outputs.coven_revision }}',
+    '          path: .phase1-counterparts/coven',
+    '          persist-credentials: false',
     `      - uses: ${PNPM_SETUP_ACTION}`,
     '        with:',
     '          version: 10.34.0',
@@ -142,10 +199,25 @@ function protectedProducerSteps(): string[] {
     `        run: ${yamlSingleQuoted(TEST_TOOLCHAIN_COMMAND)}`,
     '      - name: Verify frozen harness bytes',
     `        run: ${yamlSingleQuoted(TEST_HARNESS_DIGEST_COMMAND)}`,
+    `      - uses: ${DOWNLOAD_ARTIFACT_ACTION}`,
+    "        if: matrix.platform == 'win32-x64'",
+    '        with:',
+    `          name: ${TEST_WINDOWS_SUPERVISOR_ARTIFACT}`,
+    '          path: windows-supervisor-artifact',
+    '      - name: Install frozen Windows supervisor',
+    "        if: matrix.platform == 'win32-x64'",
+    '        shell: pwsh',
+    '        run: pwsh -NoProfile -File scripts/phase1-windows-supervisor-install.ps1',
     '      - name: Produce platform evidence',
     '        shell: bash',
     '        env:',
     `          OPENCOVEN_VALIDATOR_REVISION: ${TEST_VALIDATOR_INPUT}`,
+    '          OPENCOVEN_CHAT_ROOT: ${{ github.workspace }}',
+    '          OPENCOVEN_SDK_ROOT: ${{ github.workspace }}/.phase1-counterparts/sdk',
+    '          OPENCOVEN_SDK_EVIDENCE_ROOT: ${{ github.workspace }}/.phase1-counterparts/sdk-evidence',
+    '          OPENCOVEN_SDK_VALIDATOR_ROOT: ${{ github.workspace }}/.phase1-counterparts/sdk-validator',
+    '          OPENCOVEN_CAVE_ROOT: ${{ github.workspace }}/.phase1-counterparts/coven-cave',
+    '          OPENCOVEN_COVEN_ROOT: ${{ github.workspace }}/.phase1-counterparts/coven',
     `        run: ${TEST_HARNESS_COMMAND}`,
     '      - name: Validate canonical platform record',
     `        run: ${yamlSingleQuoted(TEST_CANONICAL_VALIDATION_COMMAND)}`,
@@ -169,8 +241,36 @@ function createProducerWorkflow({
     'permissions:',
     '  contents: read',
     'jobs:',
+    '  windows-supervisor:',
+    '    name: build-windows-supervisor',
+    '    runs-on: macos-latest',
+    '    timeout-minutes: 30',
+    '    permissions:',
+    '      contents: read',
+    '    steps:',
+    `      - uses: ${CHECKOUT_ACTION}`,
+    '        with:',
+    '          fetch-depth: 0',
+    '          persist-credentials: false',
+    '          ref: ${{ github.sha }}',
+    `      - uses: ${SETUP_NODE_ACTION}`,
+    '        with:',
+    '          node-version: 24.18.1',
+    '      - name: Set up frozen Rust',
+    '        run: rustup toolchain install 1.95.0 --profile minimal && rustup default 1.95.0',
+    '      - name: Build frozen Windows supervisor',
+    '        run: bash scripts/phase1-windows-supervisor-build.sh',
+    `      - uses: ${UPLOAD_ARTIFACT_ACTION}`,
+    '        with:',
+    `          name: ${TEST_WINDOWS_SUPERVISOR_ARTIFACT}`,
+    '          path: tools/phase1-process-supervisor/target/x86_64-pc-windows-gnu/release/phase1-process-supervisor.exe',
+    '          if-no-files-found: error',
+    '          retention-days: 30',
+    '          overwrite: false',
+    '          include-hidden-files: false',
     '  platform-conformance:',
     '    name: platform-conformance (${{ matrix.platform }})',
+    '    needs: windows-supervisor',
     '    timeout-minutes: 60',
     '    strategy:',
     '      fail-fast: false',
@@ -963,29 +1063,29 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: 'a3012b205ff27dbce9a416042854185ed940e15b',
-      tree: '82d69258afb7c9230ddb45bd9187160c77c9af99',
+      commit: 'ebe662f8696489fe5e7480e03db552b6854c8992',
+      tree: 'b180cda792179c860aaf50483c15ada73796d18a',
       packageManifest: {
         path: 'package.json',
-        size: 3_286,
+        size: 3_849,
         sha256:
-          'b6ea2245b398f74e47e893068f4bf58b11f7e52e240209d5adcbb3c8c2144565',
+          'cff1008b666d3381ad1a68fc99a9334bab04d617efb7e0ea434428af3ac8603a',
       },
       harness: {
         path: 'scripts/phase1-conformance.mjs',
         version: '2.0.0',
-        size: 121_101,
+        size: 186_989,
         sha256:
-          '84cbf87182ba39af3c3a486927267aec244e56591ed8481c53f324abc408ece9',
+          'a94b76d45f23c4ad1fabf9e08c188c5da3d044e1aa8c1cc2cf1db269df0c3607',
       },
       command: 'test:phase1-conformance',
       recordSchemaVersion: 2,
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 4_914,
+        size: 9_481,
         sha256:
-          'adfb5fd10d8c9ebf888161d58092ee099545a5c7f279921119f2fb26d847438b',
+          '11efb9c3c3b86099749935636ae7f13e104fa9b698546dbd67ab46505771d923',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1004,8 +1104,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: 'a3012b205ff27dbce9a416042854185ed940e15b',
-        sourceDigest: 'a3012b205ff27dbce9a416042854185ed940e15b',
+        signerDigest: 'ebe662f8696489fe5e7480e03db552b6854c8992',
+        sourceDigest: 'ebe662f8696489fe5e7480e03db552b6854c8992',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1708,7 +1808,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       protection_rules: [
         {
           type: 'required_reviewers',
-          prevent_self_review: true,
+          prevent_self_review: false,
           reviewers: [
             {
               type: 'User',
@@ -1794,6 +1894,20 @@ describe('unresolved SDK #38 conformance gaps', () => {
             status: 'completed',
             conclusion: 'success',
           }));
+          jobs.push({
+            id: 24_000,
+            run_id: runId,
+            run_attempt: runAttempt,
+            head_sha: producer.commit,
+            html_url:
+              `https://github.com/${producer.repository}/actions/runs/`
+              + `${runId}/job/24000`,
+            name: 'build-windows-supervisor',
+            labels: ['macos-latest'],
+            workflow_name: producer.workflow.name,
+            status: 'completed',
+            conclusion: 'success',
+          });
           jobs.push({
             id: 25_000,
             run_id: runId,
@@ -2122,6 +2236,76 @@ describe('unresolved SDK #38 conformance gaps', () => {
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
           '        type: string',
           '        type: string\n        default: main',
+        ),
+      },
+      {
+        name: 'shallow Chat checkouts',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replaceAll(
+          '          fetch-depth: 0',
+          '          fetch-depth: 1',
+        ),
+      },
+      {
+        name: 'substituted Windows supervisor builder runner',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '    runs-on: macos-latest',
+          '    runs-on: macos-15',
+        ),
+      },
+      {
+        name: 'missing Windows supervisor dependency',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '    needs: windows-supervisor\n',
+          '',
+        ),
+      },
+      {
+        name: 'substituted Windows supervisor build helper',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '        run: bash scripts/phase1-windows-supervisor-build.sh',
+          '        run: bash scripts/unreviewed-supervisor-build.sh',
+        ),
+      },
+      {
+        name: 'substituted reviewed SDK checkout',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '          path: .phase1-counterparts/sdk',
+          '          path: .phase1-counterparts/unreviewed-sdk',
+        ),
+      },
+      {
+        name: 'validator checkout does not use dispatch revision',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '          ref: ${{ inputs.validator_revision }}',
+          '          ref: main',
+        ),
+      },
+      {
+        name: 'Windows-unsafe toolchain resolution',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          'resolveExecutableInvocation',
+          'unsafeExecutableInvocation',
+        ),
+      },
+      {
+        name: 'disabled Windows supervisor download',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          `      - uses: ${DOWNLOAD_ARTIFACT_ACTION}\n        if: matrix.platform == 'win32-x64'`,
+          `      - uses: ${DOWNLOAD_ARTIFACT_ACTION}\n        if: false`,
+        ),
+      },
+      {
+        name: 'substituted Windows supervisor installer',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '        run: pwsh -NoProfile -File scripts/phase1-windows-supervisor-install.ps1',
+          '        run: pwsh -NoProfile -File scripts/unreviewed-supervisor-install.ps1',
+        ),
+      },
+      {
+        name: 'missing evidence validator root',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '          OPENCOVEN_SDK_VALIDATOR_ROOT: ${{ github.workspace }}/.phase1-counterparts/sdk-validator\n',
+          '',
         ),
       },
       {
@@ -2537,7 +2721,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           protection_rules: [
             {
               type: 'required_reviewers',
-              prevent_self_review: true,
+              prevent_self_review: false,
               reviewers: [
                 {
                   type: 'User',
@@ -2550,13 +2734,13 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
       },
       {
-        name: 'self review',
+        name: 'self-review prevention',
         value: {
           ...structuredClone(protectedEnvironment),
           protection_rules: [
             {
               type: 'required_reviewers',
-              prevent_self_review: false,
+              prevent_self_review: true,
               reviewers: [
                 {
                   type: 'User',

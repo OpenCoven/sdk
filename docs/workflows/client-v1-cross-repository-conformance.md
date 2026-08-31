@@ -27,7 +27,7 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
-is the later commit `a3012b205ff27dbce9a416042854185ed940e15b`.
+is the later commit `ebe662f8696489fe5e7480e03db552b6854c8992`.
 Aggregation and release readiness remain fail closed until all three protected
 platform records exist and their live GitHub attestations are reviewed.
 
@@ -91,9 +91,10 @@ The selected checkout still supplies and binds the exact validator
 commit/tree, contract, schema, registry, and frozen-lock bytes in every record.
 The protected environment is `client-v1-conformance`, environment ID
 `20863036831`. GitHub must report administrator bypass disabled, exactly one
-required reviewer with immutable user ID `68980965`, self-review prevention
-enabled, no wait-timer rule (zero minutes), and protected-branch-only
-deployment policy. Aggregation rejects any policy drift.
+required reviewer with immutable user ID `68980965`, `prevent_self_review` set
+to `false` so the dispatcher and sole reviewer can approve, no wait-timer rule
+(zero minutes), and protected-branch-only deployment policy. Aggregation
+rejects any policy drift.
 
 ## Exact platform record
 

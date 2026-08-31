@@ -214,11 +214,13 @@ passing evidence record for each target.
 The frozen Chat production source
 `edd4728792321771496df58bfc0e6122908a96ec` is exercised by the compatible
 schema-v2 producer at
-`a3012b205ff27dbce9a416042854185ed940e15b`. Its protected workflow requires
+`ebe662f8696489fe5e7480e03db552b6854c8992`. Its protected workflow requires
 an exact SDK `validator_revision`, uses protected environment ID
 `20863036831`, and emits only complete observed-result records. That environment
-must disable administrator bypass, require reviewer user ID `68980965`, prevent
+must disable administrator bypass, require reviewer user ID `68980965`, permit
 self-review, have a zero-minute wait timer, and allow protected branches only.
+Its `required_reviewers` rule therefore has `prevent_self_review: false`; this
+is the authorized exception for the dispatcher and sole reviewer account.
 Aggregation and release readiness remain fail closed until all three protected
 records and their reviewed GitHub attestations exist, as documented in
 [`docs/workflows/client-v1-cross-repository-conformance.md`](docs/workflows/client-v1-cross-repository-conformance.md).

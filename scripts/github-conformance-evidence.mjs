@@ -36,9 +36,14 @@ const PNPM_SETUP_ACTION =
   'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86';
 const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
+const DOWNLOAD_ARTIFACT_ACTION =
+  'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093';
 const ATTEST_BUILD_PROVENANCE_ACTION =
   'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8';
 const CHAT_ENVIRONMENT_REVIEWER_ID = 68_980_965;
+const WINDOWS_SUPERVISOR_ARTIFACT = 'phase1-process-supervisor-win32-x64';
+const WINDOWS_SUPERVISOR_JOB_NAME = 'build-windows-supervisor';
+const WINDOWS_SUPERVISOR_RUNNER_LABELS = ['macos-latest'];
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -115,14 +120,36 @@ function countExactStringValues(value, expected) {
 function exactToolchainCommand(toolchain) {
   return [
     'node --input-type=module --eval "import { execFileSync }',
-    'from \'node:child_process\'; const run = (command, args) =>',
-    'execFileSync(command, args, { encoding: \'utf8\' }).trim();',
+    'from \'node:child_process\'; import { resolveExecutableInvocation }',
+    'from \'./scripts/executable-resolution.mjs\';',
+    'const run = (command, args) => { const invocation =',
+    'resolveExecutableInvocation(command, process.env, process.platform, args);',
+    'return execFileSync(invocation.executable, invocation.args,',
+    '{ encoding: \'utf8\' }).trim(); };',
     `if (process.version !== '${toolchain.nodeVersion}'`,
     `|| 'pnpm@' + run('pnpm', ['--version']) !== '${toolchain.pnpmVersion}'`,
     `|| !run('rustc', ['--version']).startsWith('rustc ${toolchain.rustVersion} ')`,
     `|| run('pnpm', ['exec', 'tauri', '--version'])`,
     `!== 'tauri-cli ${toolchain.tauriVersion}')`,
     'throw new Error(\'Frozen toolchain does not match\');"',
+  ].join(' ');
+}
+
+function exactPhase1RevisionsCommand() {
+  return [
+    'node --input-type=module --eval "import { appendFileSync }',
+    'from \'node:fs\'; import { readPhase1ConformanceLock }',
+    'from \'./scripts/phase1-conformance-lock.mjs\';',
+    'const lock = readPhase1ConformanceLock();',
+    'for (const repository of [\'sdk\', \'cave\', \'coven\']) {',
+    'appendFileSync(process.env.GITHUB_OUTPUT, repository +',
+    '\'_repository=\' + lock[repository].repository + \'\\n\');',
+    'appendFileSync(process.env.GITHUB_OUTPUT, repository +',
+    '\'_revision=\' + lock[repository].revision + \'\\n\'); }',
+    'appendFileSync(process.env.GITHUB_OUTPUT, \'evidence_repository=\' +',
+    'lock.evidence.repository + \'\\n\');',
+    'appendFileSync(process.env.GITHUB_OUTPUT, \'evidence_revision=\' +',
+    'lock.evidence.revision + \'\\n\');"',
   ].join(' ');
 }
 
@@ -199,11 +226,60 @@ function expectedProtectedWorkflow(producer, toolchain) {
       contents: 'read',
     },
     jobs: {
+      'windows-supervisor': {
+        name: 'build-windows-supervisor',
+        'runs-on': 'macos-latest',
+        'timeout-minutes': 30,
+        permissions: {
+          contents: 'read',
+        },
+        steps: [
+          {
+            uses: CHECKOUT_ACTION,
+            with: {
+              'fetch-depth': 0,
+              'persist-credentials': false,
+              ref: '${{ github.sha }}',
+            },
+          },
+          {
+            uses: SETUP_NODE_ACTION,
+            with: {
+              'node-version': toolchain.nodeVersion.slice(1),
+            },
+          },
+          {
+            name: 'Set up frozen Rust',
+            run:
+              `rustup toolchain install ${toolchain.rustVersion} `
+              + `--profile minimal && rustup default ${toolchain.rustVersion}`,
+          },
+          {
+            name: 'Build frozen Windows supervisor',
+            run: 'bash scripts/phase1-windows-supervisor-build.sh',
+          },
+          {
+            uses: UPLOAD_ARTIFACT_ACTION,
+            with: {
+              name: WINDOWS_SUPERVISOR_ARTIFACT,
+              path:
+                'tools/phase1-process-supervisor/target/'
+                + 'x86_64-pc-windows-gnu/release/'
+                + 'phase1-process-supervisor.exe',
+              'if-no-files-found': 'error',
+              'retention-days': 30,
+              overwrite: false,
+              'include-hidden-files': false,
+            },
+          },
+        ],
+      },
       [producer.workflow.job]: {
         name: producer.workflow.jobNameTemplate.replace(
           '{platform}',
           '${{ matrix.platform }}',
         ),
+        needs: 'windows-supervisor',
         'timeout-minutes': 60,
         strategy: {
           'fail-fast': false,
@@ -227,6 +303,7 @@ function expectedProtectedWorkflow(producer, toolchain) {
           {
             uses: CHECKOUT_ACTION,
             with: {
+              'fetch-depth': 0,
               'persist-credentials': false,
               ref: '${{ github.sha }}',
             },
@@ -235,6 +312,61 @@ function expectedProtectedWorkflow(producer, toolchain) {
             uses: SETUP_NODE_ACTION,
             with: {
               'node-version': toolchain.nodeVersion.slice(1),
+            },
+          },
+          {
+            id: 'phase1-revisions',
+            name: 'Read Phase 1 reviewed revisions',
+            run: exactPhase1RevisionsCommand(),
+          },
+          {
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository:
+                '${{ steps.phase1-revisions.outputs.sdk_repository }}',
+              ref: '${{ steps.phase1-revisions.outputs.sdk_revision }}',
+              path: '.phase1-counterparts/sdk',
+              'persist-credentials': false,
+            },
+          },
+          {
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository:
+                '${{ steps.phase1-revisions.outputs.evidence_repository }}',
+              ref:
+                '${{ steps.phase1-revisions.outputs.evidence_revision }}',
+              path: '.phase1-counterparts/sdk-evidence',
+              'persist-credentials': false,
+            },
+          },
+          {
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository: 'OpenCoven/sdk',
+              ref: '${{ inputs.validator_revision }}',
+              path: '.phase1-counterparts/sdk-validator',
+              'persist-credentials': false,
+            },
+          },
+          {
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository:
+                '${{ steps.phase1-revisions.outputs.cave_repository }}',
+              ref: '${{ steps.phase1-revisions.outputs.cave_revision }}',
+              path: '.phase1-counterparts/coven-cave',
+              'persist-credentials': false,
+            },
+          },
+          {
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository:
+                '${{ steps.phase1-revisions.outputs.coven_repository }}',
+              ref: '${{ steps.phase1-revisions.outputs.coven_revision }}',
+              path: '.phase1-counterparts/coven',
+              'persist-credentials': false,
             },
           },
           {
@@ -269,11 +401,38 @@ function expectedProtectedWorkflow(producer, toolchain) {
             run: exactHarnessDigestCommand(producer),
           },
           {
+            uses: DOWNLOAD_ARTIFACT_ACTION,
+            if: "matrix.platform == 'win32-x64'",
+            with: {
+              name: WINDOWS_SUPERVISOR_ARTIFACT,
+              path: 'windows-supervisor-artifact',
+            },
+          },
+          {
+            name: 'Install frozen Windows supervisor',
+            if: "matrix.platform == 'win32-x64'",
+            shell: 'pwsh',
+            run:
+              'pwsh -NoProfile -File '
+              + 'scripts/phase1-windows-supervisor-install.ps1',
+          },
+          {
             name: 'Produce platform evidence',
             shell: 'bash',
             env: {
               OPENCOVEN_VALIDATOR_REVISION:
                 '${{ inputs.validator_revision }}',
+              OPENCOVEN_CHAT_ROOT: '${{ github.workspace }}',
+              OPENCOVEN_SDK_ROOT:
+                '${{ github.workspace }}/.phase1-counterparts/sdk',
+              OPENCOVEN_SDK_EVIDENCE_ROOT:
+                '${{ github.workspace }}/.phase1-counterparts/sdk-evidence',
+              OPENCOVEN_SDK_VALIDATOR_ROOT:
+                '${{ github.workspace }}/.phase1-counterparts/sdk-validator',
+              OPENCOVEN_CAVE_ROOT:
+                '${{ github.workspace }}/.phase1-counterparts/coven-cave',
+              OPENCOVEN_COVEN_ROOT:
+                '${{ github.workspace }}/.phase1-counterparts/coven',
             },
             run: exactHarnessCommand(producer, recordPath),
           },
@@ -464,12 +623,39 @@ function expectSuccessfulAggregationJob(value, expected, label) {
   return value;
 }
 
+function expectSuccessfulWindowsSupervisorJob(value, expected, label) {
+  if (
+    !isRecord(value)
+    || !Number.isSafeInteger(value.id)
+    || value.id <= 0
+    || value.run_id !== Number(expected.runId)
+    || value.run_attempt !== expected.runAttempt
+    || value.head_sha !== expected.producer.commit
+    || value.html_url
+      !== (
+        `https://github.com/${expected.producer.repository}/actions/runs/`
+        + `${expected.runId}/job/${value.id}`
+      )
+    || value.name !== WINDOWS_SUPERVISOR_JOB_NAME
+    || value.workflow_name !== expected.producer.workflow.name
+    || value.status !== 'completed'
+    || value.conclusion !== 'success'
+    || !Array.isArray(value.labels)
+    || JSON.stringify(value.labels)
+      !== JSON.stringify(WINDOWS_SUPERVISOR_RUNNER_LABELS)
+    || value.labels.includes('self-hosted')
+  ) {
+    throw new Error(`${label} does not match the exact frozen Windows supervisor job`);
+  }
+  return value;
+}
+
 function expectAttemptJobGraph(value, expectedByPlatform, label) {
   if (
     !isRecord(value)
-    || value.total_count !== expectedByPlatform.length + 1
+    || value.total_count !== expectedByPlatform.length + 2
     || !Array.isArray(value.jobs)
-    || value.jobs.length !== expectedByPlatform.length + 1
+    || value.jobs.length !== expectedByPlatform.length + 2
   ) {
     throw new Error(`${label} does not match the exact frozen workflow job graph`);
   }
@@ -496,8 +682,22 @@ function expectAttemptJobGraph(value, expectedByPlatform, label) {
   const protectedIds = new Set(
     expectedByPlatform.map(({ jobId }) => Number(jobId)),
   );
-  const aggregationJobs = value.jobs.filter(
+  const supportJobs = value.jobs.filter(
     (job) => isRecord(job) && !protectedIds.has(job.id),
+  );
+  const windowsSupervisorJobs = supportJobs.filter(
+    (job) => job.name === WINDOWS_SUPERVISOR_JOB_NAME,
+  );
+  if (windowsSupervisorJobs.length !== 1) {
+    throw new Error(`${label} does not match the exact frozen workflow job graph`);
+  }
+  const windowsSupervisorJob = expectSuccessfulWindowsSupervisorJob(
+    windowsSupervisorJobs[0],
+    expectedByPlatform[0],
+    `${label} Windows supervisor job`,
+  );
+  const aggregationJobs = supportJobs.filter(
+    (job) => job.name !== WINDOWS_SUPERVISOR_JOB_NAME,
   );
   if (aggregationJobs.length !== 1) {
     throw new Error(`${label} does not match the exact frozen workflow job graph`);
@@ -507,7 +707,7 @@ function expectAttemptJobGraph(value, expectedByPlatform, label) {
     expectedByPlatform[0],
     `${label} aggregation job`,
   );
-  return { protectedJobs, aggregationJob };
+  return { protectedJobs, windowsSupervisorJob, aggregationJob };
 }
 
 function expectProtectedEnvironment(value, producer) {
@@ -537,7 +737,7 @@ function expectProtectedEnvironment(value, producer) {
     || requiredReviewerRules.length !== 1
     || branchRules.length !== 1
     || !isRecord(requiredReviewers)
-    || requiredReviewers.prevent_self_review !== true
+    || requiredReviewers.prevent_self_review !== false
     || !isRecord(reviewer)
     || reviewer.type !== 'User'
     || !isRecord(reviewer.reviewer)
