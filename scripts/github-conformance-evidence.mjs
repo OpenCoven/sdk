@@ -36,6 +36,8 @@ const PNPM_SETUP_ACTION =
   'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86';
 const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
+const DOWNLOAD_ARTIFACT_ACTION =
+  'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093';
 const ATTEST_BUILD_PROVENANCE_ACTION =
   'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8';
 
@@ -114,15 +116,36 @@ function countExactStringValues(value, expected) {
 function exactToolchainCommand(toolchain) {
   return [
     'node --input-type=module --eval "import { execFileSync }',
-    'from \'node:child_process\'; const run = (command, args) =>',
-    'execFileSync(command, args, { encoding: \'utf8\',',
-    'shell: process.platform === \'win32\' }).trim();',
+    'from \'node:child_process\'; import { resolveExecutableInvocation }',
+    'from \'./scripts/executable-resolution.mjs\';',
+    'const run = (command, args) => { const invocation =',
+    'resolveExecutableInvocation(command, process.env, process.platform, args);',
+    'return execFileSync(invocation.executable, invocation.args,',
+    '{ encoding: \'utf8\' }).trim(); };',
     `if (process.version !== '${toolchain.nodeVersion}'`,
     `|| 'pnpm@' + run('pnpm', ['--version']) !== '${toolchain.pnpmVersion}'`,
     `|| !run('rustc', ['--version']).startsWith('rustc ${toolchain.rustVersion} ')`,
     `|| run('pnpm', ['exec', 'tauri', '--version'])`,
     `!== 'tauri-cli ${toolchain.tauriVersion}')`,
     'throw new Error(\'Frozen toolchain does not match\');"',
+  ].join(' ');
+}
+
+function exactReviewedRevisionsCommand() {
+  return [
+    'node --input-type=module --eval "import { appendFileSync }',
+    'from \'node:fs\'; import { readPhase1ConformanceLock }',
+    'from \'./scripts/phase1-conformance-lock.mjs\';',
+    'const lock = readPhase1ConformanceLock();',
+    'for (const repository of [\'sdk\', \'cave\', \'coven\']) {',
+    'appendFileSync(process.env.GITHUB_OUTPUT, repository',
+    '+ \'_repository=\' + lock[repository].repository + \'\\n\');',
+    'appendFileSync(process.env.GITHUB_OUTPUT, repository',
+    '+ \'_revision=\' + lock[repository].revision + \'\\n\'); }',
+    'appendFileSync(process.env.GITHUB_OUTPUT, \'evidence_repository=\'',
+    '+ lock.evidence.repository + \'\\n\');',
+    'appendFileSync(process.env.GITHUB_OUTPUT, \'evidence_revision=\'',
+    '+ lock.evidence.revision + \'\\n\');"',
   ].join(' ');
 }
 
@@ -199,11 +222,59 @@ function expectedProtectedWorkflow(producer, toolchain) {
       contents: 'read',
     },
     jobs: {
+      'windows-supervisor': {
+        name: 'build-windows-supervisor',
+        'runs-on': 'macos-latest',
+        'timeout-minutes': 30,
+        permissions: {
+          contents: 'read',
+        },
+        steps: [
+          {
+            uses: CHECKOUT_ACTION,
+            with: {
+              'fetch-depth': 0,
+              'persist-credentials': false,
+              ref: '${{ github.sha }}',
+            },
+          },
+          {
+            uses: SETUP_NODE_ACTION,
+            with: {
+              'node-version': toolchain.nodeVersion.slice(1),
+            },
+          },
+          {
+            name: 'Set up frozen Rust',
+            run:
+              `rustup toolchain install ${toolchain.rustVersion} `
+              + `--profile minimal && rustup default ${toolchain.rustVersion}`,
+          },
+          {
+            name: 'Build frozen Windows supervisor',
+            run: 'bash scripts/phase1-windows-supervisor-build.sh',
+          },
+          {
+            uses: UPLOAD_ARTIFACT_ACTION,
+            with: {
+              name: 'phase1-process-supervisor-win32-x64',
+              path:
+                'tools/phase1-process-supervisor/target/'
+                + 'x86_64-pc-windows-gnu/release/phase1-process-supervisor.exe',
+              'if-no-files-found': 'error',
+              'retention-days': 30,
+              overwrite: false,
+              'include-hidden-files': false,
+            },
+          },
+        ],
+      },
       [producer.workflow.job]: {
         name: producer.workflow.jobNameTemplate.replace(
           '{platform}',
           '${{ matrix.platform }}',
         ),
+        needs: 'windows-supervisor',
         'timeout-minutes': 60,
         strategy: {
           'fail-fast': false,
@@ -239,72 +310,59 @@ function expectedProtectedWorkflow(producer, toolchain) {
             },
           },
           {
+            id: 'phase1-revisions',
+            name: 'Read Phase 1 reviewed revisions',
+            run: exactReviewedRevisionsCommand(),
+          },
+          {
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository: '${{ steps.phase1-revisions.outputs.sdk_repository }}',
+              ref: '${{ steps.phase1-revisions.outputs.sdk_revision }}',
+              path: '.phase1-counterparts/sdk',
+              'persist-credentials': false,
+            },
+          },
+          {
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository: '${{ steps.phase1-revisions.outputs.evidence_repository }}',
+              ref: '${{ steps.phase1-revisions.outputs.evidence_revision }}',
+              path: '.phase1-counterparts/sdk-evidence',
+              'persist-credentials': false,
+            },
+          },
+          {
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository: 'OpenCoven/sdk',
+              ref: '${{ inputs.validator_revision }}',
+              path: '.phase1-counterparts/sdk-validator',
+              'persist-credentials': false,
+            },
+          },
+          {
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository: '${{ steps.phase1-revisions.outputs.cave_repository }}',
+              ref: '${{ steps.phase1-revisions.outputs.cave_revision }}',
+              path: '.phase1-counterparts/coven-cave',
+              'persist-credentials': false,
+            },
+          },
+          {
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository: '${{ steps.phase1-revisions.outputs.coven_repository }}',
+              ref: '${{ steps.phase1-revisions.outputs.coven_revision }}',
+              path: '.phase1-counterparts/coven',
+              'persist-credentials': false,
+            },
+          },
+          {
             uses: PNPM_SETUP_ACTION,
             with: {
               version: pnpmVersion,
-            },
-          },
-          {
-            name: 'Read reviewed counterpart lock',
-            id: 'reviewed-revisions',
-            run:
-              'node --input-type=module --eval "import { appendFileSync, readFileSync } '
-              + 'from \'node:fs\'; const lock = JSON.parse(readFileSync('
-              + '\'phase1-conformance.lock.json\', \'utf8\')); '
-              + 'const output = process.env.GITHUB_OUTPUT; if (!output) '
-              + 'throw new Error(\'GITHUB_OUTPUT must be set\'); '
-              + 'for (const key of [\'sdk\', \'cave\', \'coven\', \'evidence\']) { '
-              + 'appendFileSync(output, `${key}_repository=${lock[key].repository}\\n`); '
-              + 'appendFileSync(output, `${key}_revision=${lock[key].revision}\\n`); }"',
-          },
-          {
-            name: 'Check out reviewed SDK candidate',
-            uses: CHECKOUT_ACTION,
-            with: {
-              repository: '${{ steps.reviewed-revisions.outputs.sdk_repository }}',
-              ref: '${{ steps.reviewed-revisions.outputs.sdk_revision }}',
-              path: '.cross-repo/sdk',
-              'persist-credentials': false,
-            },
-          },
-          {
-            name: 'Check out reviewed SDK evidence authority',
-            uses: CHECKOUT_ACTION,
-            with: {
-              repository: '${{ steps.reviewed-revisions.outputs.evidence_repository }}',
-              ref: '${{ steps.reviewed-revisions.outputs.evidence_revision }}',
-              path: '.cross-repo/sdk-evidence',
-              'persist-credentials': false,
-            },
-          },
-          {
-            name: 'Check out requested SDK validator',
-            uses: CHECKOUT_ACTION,
-            with: {
-              repository: '${{ steps.reviewed-revisions.outputs.sdk_repository }}',
-              ref: '${{ inputs.validator_revision }}',
-              path: '.cross-repo/sdk-validator',
-              'persist-credentials': false,
-            },
-          },
-          {
-            name: 'Check out reviewed Cave authority',
-            uses: CHECKOUT_ACTION,
-            with: {
-              repository: '${{ steps.reviewed-revisions.outputs.cave_repository }}',
-              ref: '${{ steps.reviewed-revisions.outputs.cave_revision }}',
-              path: '.cross-repo/coven-cave',
-              'persist-credentials': false,
-            },
-          },
-          {
-            name: 'Check out reviewed Coven authority',
-            uses: CHECKOUT_ACTION,
-            with: {
-              repository: '${{ steps.reviewed-revisions.outputs.coven_repository }}',
-              ref: '${{ steps.reviewed-revisions.outputs.coven_revision }}',
-              path: '.cross-repo/coven',
-              'persist-credentials': false,
             },
           },
           {
@@ -333,21 +391,38 @@ function expectedProtectedWorkflow(producer, toolchain) {
             run: exactHarnessDigestCommand(producer),
           },
           {
+            uses: DOWNLOAD_ARTIFACT_ACTION,
+            if: "matrix.platform == 'win32-x64'",
+            with: {
+              name: 'phase1-process-supervisor-win32-x64',
+              path: 'windows-supervisor-artifact',
+            },
+          },
+          {
+            name: 'Install frozen Windows supervisor',
+            if: "matrix.platform == 'win32-x64'",
+            shell: 'pwsh',
+            run:
+              'pwsh -NoProfile -File '
+              + 'scripts/phase1-windows-supervisor-install.ps1',
+          },
+          {
             name: 'Produce platform evidence',
             shell: 'bash',
             env: {
               OPENCOVEN_VALIDATOR_REVISION:
                 '${{ inputs.validator_revision }}',
+              OPENCOVEN_CHAT_ROOT: '${{ github.workspace }}',
               OPENCOVEN_SDK_ROOT:
-                '${{ github.workspace }}/.cross-repo/sdk',
+                '${{ github.workspace }}/.phase1-counterparts/sdk',
               OPENCOVEN_SDK_EVIDENCE_ROOT:
-                '${{ github.workspace }}/.cross-repo/sdk-evidence',
+                '${{ github.workspace }}/.phase1-counterparts/sdk-evidence',
               OPENCOVEN_SDK_VALIDATOR_ROOT:
-                '${{ github.workspace }}/.cross-repo/sdk-validator',
+                '${{ github.workspace }}/.phase1-counterparts/sdk-validator',
               OPENCOVEN_CAVE_ROOT:
-                '${{ github.workspace }}/.cross-repo/coven-cave',
+                '${{ github.workspace }}/.phase1-counterparts/coven-cave',
               OPENCOVEN_COVEN_ROOT:
-                '${{ github.workspace }}/.cross-repo/coven',
+                '${{ github.workspace }}/.phase1-counterparts/coven',
             },
             run: exactHarnessCommand(producer, recordPath),
           },
