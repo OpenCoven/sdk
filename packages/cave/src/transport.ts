@@ -1,6 +1,21 @@
 import type { OperationContext, PageOptions } from '@opencoven/sdk-core/browser';
 
 import type {
+  CaveAttentionResponseRequest,
+  CaveTaskHandoffRequest,
+} from './attention-handoff.js';
+import type {
+  CaveAttachmentDownloadRequest,
+  CaveAttachmentUploadRequest,
+} from './attachment-transfer.js';
+import type {
+  CaveConversationEventPageRequest,
+  CaveConversationOperationId,
+  CaveCreateConversationRequest,
+  CaveSendConversationMessageRequest,
+} from './conversation-control.js';
+import type { CaveGitHubActionRequest } from './github-actions.js';
+import type {
   CaveAuthorityBinding,
   CaveAuthorityBoundPairingExchange,
   CaveCredentialMetadata,
@@ -53,6 +68,65 @@ export interface CaveTransport {
   listConversationMessages?(
     conversationId: string,
     options: PageOptions,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  /**
+   * Conversational control is optional for every transport. The five Client
+   * v1 conversation-operation routes are not yet declared by the
+   * authoritative Cave contract fixture this SDK vendors, so no transport
+   * binds them today; the client reports a missing one as
+   * `unsupported_operation` rather than inventing a route. Results are
+   * `unknown` at this trust boundary and are validated by the client.
+   */
+  createConversation?(
+    request: CaveCreateConversationRequest,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  sendConversationMessage?(
+    conversationId: string,
+    request: CaveSendConversationMessageRequest,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  getConversationOperation?(
+    operationId: CaveConversationOperationId,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  readConversationOperationEvents?(
+    operationId: CaveConversationOperationId,
+    page: CaveConversationEventPageRequest,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  stopConversationOperation?(
+    operationId: CaveConversationOperationId,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  /**
+   * Privileged authority is optional for every transport. The attachment,
+   * attention, task-handoff, and GitHub action operations are not declared
+   * by the authoritative Cave contract fixture this SDK vendors, so no
+   * transport binds them today; the client gates every privileged call on
+   * the capability registry first and reports `unsupported_operation`
+   * rather than inventing a route. Results are `unknown` at this trust
+   * boundary and are validated by the client.
+   */
+  uploadAttachment?(
+    request: CaveAttachmentUploadRequest,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  downloadAttachment?(
+    request: CaveAttachmentDownloadRequest,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  respondToAttention?(
+    request: CaveAttentionResponseRequest,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  requestTaskHandoff?(
+    request: CaveTaskHandoffRequest,
+    context?: OperationContext,
+  ): Promise<unknown>;
+  submitGitHubAction?(
+    request: CaveGitHubActionRequest,
     context?: OperationContext,
   ): Promise<unknown>;
   /**

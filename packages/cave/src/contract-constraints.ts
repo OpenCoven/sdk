@@ -17,6 +17,7 @@ export const CAVE_CONTRACT_ERROR_CODES = [
 ] as const;
 
 export const CAVE_CONTRACT_LIMITS = Object.freeze({
+  cursorCharacters: 512,
   declarationIdCharacters: 64,
   errorDetailEntries: 16,
   errorDetailValueCharacters: 256,
