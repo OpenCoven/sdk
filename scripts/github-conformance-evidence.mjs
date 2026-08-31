@@ -115,7 +115,8 @@ function exactToolchainCommand(toolchain) {
   return [
     'node --input-type=module --eval "import { execFileSync }',
     'from \'node:child_process\'; const run = (command, args) =>',
-    'execFileSync(command, args, { encoding: \'utf8\' }).trim();',
+    'execFileSync(command, args, { encoding: \'utf8\',',
+    'shell: process.platform === \'win32\' }).trim();',
     `if (process.version !== '${toolchain.nodeVersion}'`,
     `|| 'pnpm@' + run('pnpm', ['--version']) !== '${toolchain.pnpmVersion}'`,
     `|| !run('rustc', ['--version']).startsWith('rustc ${toolchain.rustVersion} ')`,
@@ -244,6 +245,69 @@ function expectedProtectedWorkflow(producer, toolchain) {
             },
           },
           {
+            name: 'Read reviewed counterpart lock',
+            id: 'reviewed-revisions',
+            run:
+              'node --input-type=module --eval "import { appendFileSync, readFileSync } '
+              + 'from \'node:fs\'; const lock = JSON.parse(readFileSync('
+              + '\'phase1-conformance.lock.json\', \'utf8\')); '
+              + 'const output = process.env.GITHUB_OUTPUT; if (!output) '
+              + 'throw new Error(\'GITHUB_OUTPUT must be set\'); '
+              + 'for (const key of [\'sdk\', \'cave\', \'coven\', \'evidence\']) { '
+              + 'appendFileSync(output, `${key}_repository=${lock[key].repository}\\n`); '
+              + 'appendFileSync(output, `${key}_revision=${lock[key].revision}\\n`); }"',
+          },
+          {
+            name: 'Check out reviewed SDK candidate',
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository: '${{ steps.reviewed-revisions.outputs.sdk_repository }}',
+              ref: '${{ steps.reviewed-revisions.outputs.sdk_revision }}',
+              path: '.cross-repo/sdk',
+              'persist-credentials': false,
+            },
+          },
+          {
+            name: 'Check out reviewed SDK evidence authority',
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository: '${{ steps.reviewed-revisions.outputs.evidence_repository }}',
+              ref: '${{ steps.reviewed-revisions.outputs.evidence_revision }}',
+              path: '.cross-repo/sdk-evidence',
+              'persist-credentials': false,
+            },
+          },
+          {
+            name: 'Check out requested SDK validator',
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository: '${{ steps.reviewed-revisions.outputs.sdk_repository }}',
+              ref: '${{ inputs.validator_revision }}',
+              path: '.cross-repo/sdk-validator',
+              'persist-credentials': false,
+            },
+          },
+          {
+            name: 'Check out reviewed Cave authority',
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository: '${{ steps.reviewed-revisions.outputs.cave_repository }}',
+              ref: '${{ steps.reviewed-revisions.outputs.cave_revision }}',
+              path: '.cross-repo/coven-cave',
+              'persist-credentials': false,
+            },
+          },
+          {
+            name: 'Check out reviewed Coven authority',
+            uses: CHECKOUT_ACTION,
+            with: {
+              repository: '${{ steps.reviewed-revisions.outputs.coven_repository }}',
+              ref: '${{ steps.reviewed-revisions.outputs.coven_revision }}',
+              path: '.cross-repo/coven',
+              'persist-credentials': false,
+            },
+          },
+          {
             name: 'Install frozen dependencies',
             run:
               `corepack ${toolchain.pnpmVersion} install `
@@ -274,6 +338,16 @@ function expectedProtectedWorkflow(producer, toolchain) {
             env: {
               OPENCOVEN_VALIDATOR_REVISION:
                 '${{ inputs.validator_revision }}',
+              OPENCOVEN_SDK_ROOT:
+                '${{ github.workspace }}/.cross-repo/sdk',
+              OPENCOVEN_SDK_EVIDENCE_ROOT:
+                '${{ github.workspace }}/.cross-repo/sdk-evidence',
+              OPENCOVEN_SDK_VALIDATOR_ROOT:
+                '${{ github.workspace }}/.cross-repo/sdk-validator',
+              OPENCOVEN_CAVE_ROOT:
+                '${{ github.workspace }}/.cross-repo/coven-cave',
+              OPENCOVEN_COVEN_ROOT:
+                '${{ github.workspace }}/.cross-repo/coven',
             },
             run: exactHarnessCommand(producer, recordPath),
           },
