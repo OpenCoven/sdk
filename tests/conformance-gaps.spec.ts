@@ -1892,23 +1892,25 @@ describe('unresolved SDK #38 conformance gaps', () => {
         if (jobsMatch !== null) {
           const runId = Number(jobsMatch[1]);
           const runAttempt = Number(jobsMatch[2]);
-          const jobs = PLATFORMS.map((platform, index_) => ({
-            id: 20_000 + index_,
-            run_id: runId,
-            run_attempt: runAttempt,
-            head_sha: producer.commit,
-            html_url:
-              `https://github.com/${producer.repository}/actions/runs/`
-              + `${runId}/job/${20_000 + index_}`,
-            name: producer.workflow.jobNameTemplate.replace(
-              '{platform}',
-              platform,
-            ),
-            labels: producer.workflow.runnerLabels[platform],
-            workflow_name: producer.workflow.name,
-            status: 'completed',
-            conclusion: 'success',
-          }));
+          const jobs: Array<Record<string, unknown>> = PLATFORMS.map(
+            (platform, index_) => ({
+              id: 20_000 + index_,
+              run_id: runId,
+              run_attempt: runAttempt,
+              head_sha: producer.commit,
+              html_url:
+                `https://github.com/${producer.repository}/actions/runs/`
+                + `${runId}/job/${20_000 + index_}`,
+              name: producer.workflow.jobNameTemplate.replace(
+                '{platform}',
+                platform,
+              ),
+              labels: producer.workflow.runnerLabels[platform],
+              workflow_name: producer.workflow.name,
+              status: 'completed',
+              conclusion: 'success',
+            }),
+          );
           jobs.push({
             id: 24_000,
             run_id: runId,
