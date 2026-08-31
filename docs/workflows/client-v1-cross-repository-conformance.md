@@ -27,7 +27,7 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
-is the later commit `704c2644c2165e76bb175b49dd2a11fd28ae2d7c`.
+is the later commit `8ac6f5d5868676bc9e8b7a15ee2f74fbe2ebd989`.
 Aggregation and release readiness remain fail closed until all three protected
 platform records exist and their live GitHub attestations are reviewed.
 
