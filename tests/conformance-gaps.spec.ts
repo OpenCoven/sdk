@@ -123,6 +123,7 @@ function protectedProducerSteps(): string[] {
   return [
     `      - uses: ${CHECKOUT_ACTION}`,
     '        with:',
+    '          fetch-depth: 0',
     '          persist-credentials: false',
     '          ref: ${{ github.sha }}',
     `      - uses: ${SETUP_NODE_ACTION}`,
@@ -1015,6 +1016,21 @@ describe('unresolved SDK #38 conformance gaps', () => {
     ).toEqual(
       lock.evidenceProducer,
     );
+  });
+
+  test('requires full checkout history so the locked Chat harness revision is available', () => {
+    expect(() =>
+      verifyProtectedWorkflow(
+        TEST_PRODUCER_WORKFLOW_TEXT,
+        TEST_COMPATIBLE_PRODUCER as never,
+        {
+          nodeVersion: 'v24.18.1',
+          pnpmVersion: 'pnpm@10.34.0',
+          rustVersion: '1.95.0',
+          tauriVersion: '2.11.4',
+        },
+      ),
+    ).not.toThrow();
   });
 
   test('freezes the future protected workflow identity and runner graph', () => {
@@ -2310,6 +2326,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
           '          ref: ${{ github.sha }}',
           '          ref: ${{ github.ref }}',
         ),
+      },
+      {
+        name: 'shallow checkout missing the locked harness revision',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace('          fetch-depth: 0\n', ''),
       },
       {
         name: 'disabled required setup step',

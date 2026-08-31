@@ -226,6 +226,7 @@ function expectedProtectedWorkflow(producer, toolchain) {
           {
             uses: CHECKOUT_ACTION,
             with: {
+              'fetch-depth': 0,
               'persist-credentials': false,
               ref: '${{ github.sha }}',
             },
