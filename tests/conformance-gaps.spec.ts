@@ -1117,6 +1117,21 @@ describe('unresolved SDK #38 conformance gaps', () => {
     );
   });
 
+  test('requires full checkout history so the locked Chat harness revision is available', () => {
+    expect(() =>
+      verifyProtectedWorkflow(
+        TEST_PRODUCER_WORKFLOW_TEXT,
+        TEST_COMPATIBLE_PRODUCER as never,
+        {
+          nodeVersion: 'v24.18.1',
+          pnpmVersion: 'pnpm@10.34.0',
+          rustVersion: '1.95.0',
+          tauriVersion: '2.11.4',
+        },
+      ),
+    ).not.toThrow();
+  });
+
   test('freezes the future protected workflow identity and runner graph', () => {
     const mutations: Array<
       (workflow: Record<string, unknown>) => void
@@ -2498,6 +2513,25 @@ describe('unresolved SDK #38 conformance gaps', () => {
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
           '          ref: ${{ github.sha }}',
           '          ref: ${{ github.ref }}',
+        ),
+      },
+      {
+        name: 'shallow checkout missing the locked harness revision',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace('          fetch-depth: 0\n', ''),
+      },
+      {
+        name: 'missing reviewed SDK candidate checkout',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            `      - uses: ${CHECKOUT_ACTION}`,
+            '        with:',
+            '          repository: ${{ steps.phase1-revisions.outputs.sdk_repository }}',
+            '          ref: ${{ steps.phase1-revisions.outputs.sdk_revision }}',
+            '          path: .phase1-counterparts/sdk',
+            '          persist-credentials: false',
+            '',
+          ].join('\n'),
+          '',
         ),
       },
       {
