@@ -226,6 +226,7 @@
       "unixSupervisorPreparationScriptSha256": "20748878d28293006178804f3a2075b69eab7a98f88a49028e238069e30d8b11",
       "unixProductionScriptSha256": "1cbfaf8420970fc488424021dae04136891966fcce9a5a7493fe431a23376aa2",
       "unixValidationScriptSha256": "b0ce7139bdf365d420c7dde478282f117cce97c1bec63d07cd95b64057121a89",
+      "validationGuardScriptSha256": "9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9",
       "validationScriptSha256": "72a2c0810c535d4e3d5e2b0c76bfc1822dc43d54ee653bb034fb977125dbd734",
       "attestationScriptSha256": "24af6732396013e8c1f23404cf38b5332e5a276c034d530c80d02247cb2a7347",
       "validatorRevisionEnvironment": "CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION",

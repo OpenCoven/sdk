@@ -333,6 +333,8 @@ function createProducerWorkflow({
     '        env:',
     `          OPENCOVEN_VALIDATOR_REVISION_INPUT: ${TEST_VALIDATOR_INPUT}`,
     `          OPENCOVEN_PROTECTED_VALIDATOR_REVISION: ${TEST_PROTECTED_VALIDATOR_REVISION}`,
+    '          OPENCOVEN_CHAT_REPOSITORY: ${{ github.repository }}',
+    '          OPENCOVEN_CHAT_SHA: ${{ github.sha }}',
     "          OPENCOVEN_WINDOWS_IMAGE_OS: 'win25-vs2026'",
     "          OPENCOVEN_WINDOWS_IMAGE_VERSION: '20260824.214.3'",
     "          OPENCOVEN_WINDOWS_BUILD: '26100.33296'",
@@ -348,6 +350,10 @@ function createProducerWorkflow({
     "          OPENCOVEN_WINDOWS_LINK_PATH: 'C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\link.exe'",
     "          OPENCOVEN_WINDOWS_SDK_VERSION: '10.0.26100.0'",
     "          OPENCOVEN_WINDOWS_RC_PATH: 'C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64\\rc.exe'",
+    "          OPENCOVEN_WINDOWS_SUPERVISOR_ARTIFACT_ID: ${{ needs['windows-supervisor'].outputs.artifact_id }}",
+    '          OPENCOVEN_WINDOWS_GITHUB_API_URL: ${{ github.api_url }}',
+    '          OPENCOVEN_WINDOWS_GITHUB_REPOSITORY: ${{ github.repository }}',
+    '          OPENCOVEN_WINDOWS_GITHUB_TOKEN: ${{ github.token }}',
     "        run: '$validatorRevision -cne $protectedValidatorRevision'",
     ...(siblingSubstitute
       ? protectedProducerSteps().slice(0, -producerArtifactSteps().length)
@@ -414,6 +420,9 @@ function createProducerWorkflow({
     '        env:',
     `          OPENCOVEN_VALIDATOR_REVISION_INPUT: ${TEST_VALIDATOR_INPUT}`,
     `          OPENCOVEN_PROTECTED_VALIDATOR_REVISION: ${TEST_PROTECTED_VALIDATOR_REVISION}`,
+    '          OPENCOVEN_DARWIN_ARM64_SHA256: ${{ needs[\'validate-conformance-artifacts\'].outputs.darwin_arm64_sha256 }}',
+    '          OPENCOVEN_LINUX_X64_SHA256: ${{ needs[\'validate-conformance-artifacts\'].outputs.linux_x64_sha256 }}',
+    '          OPENCOVEN_WIN32_X64_SHA256: ${{ needs[\'validate-conformance-artifacts\'].outputs.win32_x64_sha256 }}',
     "        run: '[[ \"$OPENCOVEN_VALIDATOR_REVISION_INPUT\" != \"$OPENCOVEN_PROTECTED_VALIDATOR_REVISION\" ]] && exit 1; sha256sum .artifacts/client-v1-conformance-darwin-arm64.json; sha256sum .artifacts/client-v1-conformance-linux-x64.json; sha256sum .artifacts/client-v1-conformance-win32-x64.json'",
     ...staticAttestationSteps(),
     '  aggregate-conformance:',
@@ -511,6 +520,10 @@ const TEST_COMPATIBLE_PRODUCER = {
     unixValidationScriptSha256: testWorkflowScriptSha256(
       'platform-conformance',
       'Validate broker-owned Unix platform record',
+    ),
+    validationGuardScriptSha256: testWorkflowScriptSha256(
+      'validate-conformance-artifacts',
+      'Require protected validator revision',
     ),
     validationScriptSha256: testWorkflowScriptSha256(
       'validate-conformance-artifacts',
@@ -1292,6 +1305,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
           '1cbfaf8420970fc488424021dae04136891966fcce9a5a7493fe431a23376aa2',
         unixValidationScriptSha256:
           'b0ce7139bdf365d420c7dde478282f117cce97c1bec63d07cd95b64057121a89',
+        validationGuardScriptSha256:
+          '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         validationScriptSha256:
           '72a2c0810c535d4e3d5e2b0c76bfc1822dc43d54ee653bb034fb977125dbd734',
         attestationScriptSha256:
@@ -2618,6 +2633,22 @@ describe('unresolved SDK #38 conformance gaps', () => {
         ),
       },
       {
+        name: 'failure-tolerant validation control',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '      - name: Validate exact SDK schema, parser, and scanner',
+            '        id: validate',
+            '        shell: bash',
+          ].join('\n'),
+          [
+            '      - name: Validate exact SDK schema, parser, and scanner',
+            '        id: validate',
+            '        shell: bash',
+            '        continue-on-error: true',
+          ].join('\n'),
+        ),
+      },
+      {
         name: 'commented and unreachable validation controls',
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
           `        run: 'parsePlatformEvidence(text, \`\${platform} uploaded artifact\`, schema); scanConformanceEvidence(record); createHash(''sha256'').update(bytes).digest(''hex''); serializeCanonicalJson(record) !== text'`,
@@ -2629,6 +2660,20 @@ describe('unresolved SDK #38 conformance gaps', () => {
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
           '      - name: Compare freshly downloaded artifact digests\n        shell: bash',
           '      - name: Compare freshly downloaded artifact digests\n        if: false\n        shell: bash',
+        ),
+      },
+      {
+        name: 'failure-tolerant attestation control',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '      - name: Compare freshly downloaded artifact digests\n        shell: bash',
+          '      - name: Compare freshly downloaded artifact digests\n        shell: bash\n        continue-on-error: true',
+        ),
+      },
+      {
+        name: 'attestation digest detached from validation output',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '          OPENCOVEN_DARWIN_ARM64_SHA256: ${{ needs[\'validate-conformance-artifacts\'].outputs.darwin_arm64_sha256 }}',
+          `          OPENCOVEN_DARWIN_ARM64_SHA256: ${TEST_VALIDATOR_INPUT}`,
         ),
       },
       {
