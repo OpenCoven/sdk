@@ -37,13 +37,33 @@ const PNPM_SETUP_ACTION =
 const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
 const DOWNLOAD_ARTIFACT_ACTION =
-  'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093';
+  'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c';
 const ATTEST_BUILD_PROVENANCE_ACTION =
   'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8';
 const CHAT_ENVIRONMENT_REVIEWER_ID = 68_980_965;
 const WINDOWS_SUPERVISOR_ARTIFACT = 'phase1-process-supervisor-win32-x64';
 const WINDOWS_SUPERVISOR_JOB_NAME = 'build-windows-supervisor';
 const WINDOWS_SUPERVISOR_RUNNER_LABELS = ['macos-latest'];
+const PLATFORM_STEP_CONTRACT = Object.freeze([
+  ['Bootstrap supervised Windows conformance', ['name', 'if', 'shell', 'env', 'run']],
+  ['Require protected validator revision', ['name', 'if', 'shell', 'env', 'run']],
+  [CHECKOUT_ACTION, ['uses', 'if', 'with']],
+  [SETUP_NODE_ACTION, ['uses', 'if', 'with']],
+  ['Read Phase 1 reviewed revisions', ['id', 'name', 'if', 'run']],
+  [CHECKOUT_ACTION, ['uses', 'if', 'with']],
+  [CHECKOUT_ACTION, ['uses', 'if', 'with']],
+  [CHECKOUT_ACTION, ['uses', 'if', 'with']],
+  [CHECKOUT_ACTION, ['uses', 'if', 'with']],
+  [CHECKOUT_ACTION, ['uses', 'if', 'with']],
+  [PNPM_SETUP_ACTION, ['uses', 'if', 'with']],
+  ['Install frozen Linux Secret Service', ['name', 'if', 'shell', 'run']],
+  ['Install frozen Unix Rust', ['name', 'if', 'run']],
+  ['Require frozen toolchain', ['name', 'if', 'run']],
+  ['Prepare trusted Unix supervisor', ['name', 'if', 'shell', 'run']],
+  ['Run supervised Unix production and handoff', ['name', 'if', 'shell', 'env', 'run']],
+  ['Validate broker-owned Unix platform record', ['name', 'if', 'shell', 'run']],
+  [UPLOAD_ARTIFACT_ACTION, ['uses', 'with']],
+]);
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -98,25 +118,6 @@ function expectedBranch(sourceRef) {
   return sourceRef.slice(prefix.length);
 }
 
-function countExactStringValues(value, expected) {
-  if (typeof value === 'string') {
-    return value === expected ? 1 : 0;
-  }
-  if (Array.isArray(value)) {
-    return value.reduce(
-      (count, entry) => count + countExactStringValues(entry, expected),
-      0,
-    );
-  }
-  if (isRecord(value)) {
-    return Object.values(value).reduce(
-      (count, entry) => count + countExactStringValues(entry, expected),
-      0,
-    );
-  }
-  return 0;
-}
-
 function exactToolchainCommand(toolchain) {
   return [
     'node --input-type=module --eval "import { execFileSync }',
@@ -128,91 +129,98 @@ function exactToolchainCommand(toolchain) {
     '{ encoding: \'utf8\' }).trim(); };',
     `if (process.version !== '${toolchain.nodeVersion}'`,
     `|| 'pnpm@' + run('pnpm', ['--version']) !== '${toolchain.pnpmVersion}'`,
-    `|| !run('rustup', ['run', '${toolchain.rustVersion}', 'rustc', '--version']).startsWith('rustc ${toolchain.rustVersion} ')`,
+    `|| !run('rustc', ['--version']).startsWith('rustc ${toolchain.rustVersion} ')`,
     `|| run('pnpm', ['exec', 'tauri', '--version'])`,
     `!== 'tauri-cli ${toolchain.tauriVersion}')`,
     'throw new Error(\'Frozen toolchain does not match\');"',
   ].join(' ');
 }
 
-function exactPhase1RevisionsCommand() {
+function exactUnixRustInstallCommand(toolchain) {
   return [
-    'node --input-type=module --eval "import { appendFileSync }',
-    'from \'node:fs\'; import { readPhase1ConformanceLock }',
-    'from \'./scripts/phase1-conformance-lock.mjs\';',
-    'const lock = readPhase1ConformanceLock();',
-    'for (const repository of [\'sdk\', \'cave\', \'coven\']) {',
-    'appendFileSync(process.env.GITHUB_OUTPUT, repository +',
-    '\'_repository=\' + lock[repository].repository + \'\\n\');',
-    'appendFileSync(process.env.GITHUB_OUTPUT, repository +',
-    '\'_revision=\' + lock[repository].revision + \'\\n\'); }',
-    'appendFileSync(process.env.GITHUB_OUTPUT, \'evidence_repository=\' +',
-    'lock.evidence.repository + \'\\n\');',
-    'appendFileSync(process.env.GITHUB_OUTPUT, \'evidence_revision=\' +',
-    'lock.evidence.revision + \'\\n\');"',
+    'node --input-type=module --eval "import { execFileSync }',
+    'from \'node:child_process\'; import { resolveExecutableInvocation }',
+    'from \'./scripts/executable-resolution.mjs\';',
+    'const command = \'rustup\'; const invocation =',
+    'resolveExecutableInvocation(command, process.env, process.platform,',
+    `['toolchain', 'install', '${toolchain.rustVersion}', '--profile', 'minimal']);`,
+    'execFileSync(invocation.executable, invocation.args,',
+    '{ argv0: command, stdio: \'inherit\' });"',
   ].join(' ');
 }
 
-function exactHarnessDigestCommand(producer) {
-  return [
-    'node --input-type=module --eval "import { createHash }',
-    'from \'node:crypto\'; import { lstatSync, readFileSync }',
-    'from \'node:fs\';',
-    `const path = '${producer.harness.path}'; const stats = lstatSync(path);`,
-    'const bytes = readFileSync(path);',
-    'if (!stats.isFile() || stats.isSymbolicLink()',
-    `|| bytes.byteLength !== ${producer.harness.size}`,
-    '|| createHash(\'sha256\').update(bytes).digest(\'hex\')',
-    `!== '${producer.harness.sha256}')`,
-    'throw new Error(\'Frozen harness bytes do not match\');"',
-  ].join(' ');
+function workflowError(message) {
+  throw new Error(`Frozen Chat workflow ${message}`);
 }
 
-function exactHarnessCommand(producer, recordPath) {
-  return [
-    'if [[ "${{ matrix.platform }}" == "linux-x64" ]]; then',
-    'bash scripts/phase1-linux-secret-service.sh',
-    '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
-    '--platform "${{ matrix.platform }}"',
-    `--output "${recordPath}"; else`,
-    `node ${producer.harness.path}`,
-    '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
-    '--platform "${{ matrix.platform }}"',
-    `--output "${recordPath}"; fi`,
-  ].join(' ');
+function expectExactWorkflowValue(actual, expected, label) {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    workflowError(`does not use the exact reviewed ${label}`);
+  }
 }
 
-function exactCanonicalValidationCommand(recordPath, schemaVersion) {
-  return [
-    'node --input-type=module --eval "import { lstatSync, readFileSync }',
-    'from \'node:fs\'; const sort = (value) => Array.isArray(value)',
-    '? value.map(sort) : value !== null && typeof value === \'object\'',
-    '? Object.fromEntries(Object.keys(value).sort().map((key) =>',
-    '[key, sort(value[key])])) : value; const path = process.argv[1];',
-    'const stats = lstatSync(path); const text = readFileSync(path, \'utf8\');',
-    'const value = JSON.parse(text); if (!stats.isFile()',
-    '|| stats.isSymbolicLink() || stats.size < 1 || stats.size > 1048576',
-    `|| value === null || Array.isArray(value) || value.schemaVersion !== ${schemaVersion}`,
-    '|| value.platform !== process.argv[2]',
-    '|| JSON.stringify(sort(value), null, 2) + \'\\n\' !== text)',
-    'throw new Error(\'Platform record is not canonical\');"',
-    `"${recordPath}" "\${{ matrix.platform }}"`,
-  ].join(' ');
+function splitJob(job, label) {
+  if (!isRecord(job) || !Array.isArray(job.steps)) {
+    workflowError(`${label} job is malformed`);
+  }
+  const { steps, ...configuration } = job;
+  return { configuration, steps };
 }
 
-function expectedProtectedWorkflow(producer, toolchain) {
-  const artifactName = producer.workflow.artifactNameTemplate.replace(
-    '{platform}',
-    '${{ matrix.platform }}',
+function namedStep(steps, name, label) {
+  const matches = steps.filter(
+    (step) => isRecord(step) && step.name === name,
   );
-  const recordPath = producer.workflow.recordPathTemplate.replace(
-    '{platform}',
-    '${{ matrix.platform }}',
+  if (matches.length !== 1) {
+    workflowError(`${label} must contain exactly one "${name}" step`);
+  }
+  return matches[0];
+}
+
+function collectUses(value, uses = []) {
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectUses(entry, uses);
+    }
+  } else if (isRecord(value)) {
+    if (typeof value.uses === 'string') {
+      uses.push(value.uses);
+    }
+    for (const entry of Object.values(value)) {
+      collectUses(entry, uses);
+    }
+  }
+  return uses;
+}
+
+function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
+  const protectedExpression =
+    `\${{ vars.${producer.workflow.validatorRevisionEnvironment} }}`;
+  const inputExpression = '${{ inputs.validator_revision }}';
+  const matrixExpression = '${{ matrix.platform }}';
+  const expectedArtifacts = Object.fromEntries(
+    producer.workflow.artifacts.map((artifact) => [
+      artifact.platform,
+      artifact,
+    ]),
   );
-  const pnpmVersion = toolchain.pnpmVersion.slice('pnpm@'.length);
-  return {
-    name: producer.workflow.name,
-    on: {
+  const expectedJobIds = [
+    'windows-supervisor',
+    producer.workflow.job,
+    producer.workflow.validationJob,
+    producer.workflow.attestationJob,
+    producer.workflow.aggregationJob,
+  ];
+
+  expectExactWorkflowValue(
+    Object.keys(workflow),
+    ['name', 'on', 'permissions', 'jobs'],
+    'top-level keys',
+  );
+  expectExactWorkflowValue(workflow.name, producer.workflow.name, 'workflow name');
+  expectExactWorkflowValue(
+    workflow.on,
+    {
       workflow_dispatch: {
         inputs: {
           validator_revision: {
@@ -222,265 +230,672 @@ function expectedProtectedWorkflow(producer, toolchain) {
         },
       },
     },
-    permissions: {
-      contents: 'read',
-    },
-    jobs: {
-      'windows-supervisor': {
-        name: 'build-windows-supervisor',
-        'runs-on': 'macos-latest',
-        'timeout-minutes': 30,
-        permissions: {
-          contents: 'read',
-        },
-        steps: [
-          {
-            uses: CHECKOUT_ACTION,
-            with: {
-              'fetch-depth': 0,
-              'persist-credentials': false,
-              ref: '${{ github.sha }}',
-            },
-          },
-          {
-            uses: SETUP_NODE_ACTION,
-            with: {
-              'node-version': toolchain.nodeVersion.slice(1),
-            },
-          },
-          {
-            name: 'Set up frozen Rust',
-            run:
-              `rustup toolchain install ${toolchain.rustVersion} `
-              + `--profile minimal && rustup default ${toolchain.rustVersion}`,
-          },
-          {
-            name: 'Build frozen Windows supervisor',
-            run: 'bash scripts/phase1-windows-supervisor-build.sh',
-          },
-          {
-            uses: UPLOAD_ARTIFACT_ACTION,
-            with: {
-              name: WINDOWS_SUPERVISOR_ARTIFACT,
-              path:
-                'tools/phase1-process-supervisor/target/'
-                + 'x86_64-pc-windows-gnu/release/'
-                + 'phase1-process-supervisor.exe',
-              'if-no-files-found': 'error',
-              'retention-days': 30,
-              overwrite: false,
-              'include-hidden-files': false,
-            },
-          },
-        ],
-      },
-      [producer.workflow.job]: {
-        name: producer.workflow.jobNameTemplate.replace(
-          '{platform}',
-          '${{ matrix.platform }}',
-        ),
-        needs: 'windows-supervisor',
-        'timeout-minutes': 60,
-        strategy: {
-          'fail-fast': false,
-          matrix: {
-            include: Object.entries(producer.workflow.runnerLabels).map(
-              ([platform, labels]) => ({
-                platform,
-                runner: labels[0],
-              }),
-            ),
-          },
-        },
-        'runs-on': '${{ matrix.runner }}',
-        environment: producer.workflow.environment,
-        permissions: {
-          attestations: 'write',
-          contents: 'read',
-          'id-token': 'write',
-        },
-        env: {
-          GIT_CONFIG_COUNT: '1',
-          GIT_CONFIG_KEY_0: 'core.autocrlf',
-          GIT_CONFIG_VALUE_0: 'false',
-        },
-        steps: [
-          {
-            uses: CHECKOUT_ACTION,
-            with: {
-              'fetch-depth': 0,
-              'persist-credentials': false,
-              ref: '${{ github.sha }}',
-            },
-          },
-          {
-            uses: SETUP_NODE_ACTION,
-            with: {
-              'node-version': toolchain.nodeVersion.slice(1),
-            },
-          },
-          {
-            id: 'phase1-revisions',
-            name: 'Read Phase 1 reviewed revisions',
-            run: exactPhase1RevisionsCommand(),
-          },
-          {
-            uses: CHECKOUT_ACTION,
-            with: {
-              repository:
-                '${{ steps.phase1-revisions.outputs.sdk_repository }}',
-              ref: '${{ steps.phase1-revisions.outputs.sdk_revision }}',
-              path: '.phase1-counterparts/sdk',
-              'persist-credentials': false,
-            },
-          },
-          {
-            uses: CHECKOUT_ACTION,
-            with: {
-              repository:
-                '${{ steps.phase1-revisions.outputs.evidence_repository }}',
-              ref:
-                '${{ steps.phase1-revisions.outputs.evidence_revision }}',
-              path: '.phase1-counterparts/sdk-evidence',
-              'persist-credentials': false,
-            },
-          },
-          {
-            uses: CHECKOUT_ACTION,
-            with: {
-              repository: 'OpenCoven/sdk',
-              ref: '${{ inputs.validator_revision }}',
-              path: '.phase1-counterparts/sdk-validator',
-              'persist-credentials': false,
-            },
-          },
-          {
-            uses: CHECKOUT_ACTION,
-            with: {
-              repository:
-                '${{ steps.phase1-revisions.outputs.cave_repository }}',
-              ref: '${{ steps.phase1-revisions.outputs.cave_revision }}',
-              path: '.phase1-counterparts/coven-cave',
-              'persist-credentials': false,
-            },
-          },
-          {
-            uses: CHECKOUT_ACTION,
-            with: {
-              repository:
-                '${{ steps.phase1-revisions.outputs.coven_repository }}',
-              ref: '${{ steps.phase1-revisions.outputs.coven_revision }}',
-              path: '.phase1-counterparts/coven',
-              'persist-credentials': false,
-            },
-          },
-          {
-            uses: PNPM_SETUP_ACTION,
-            with: {
-              version: pnpmVersion,
-            },
-          },
-          {
-            name: 'Install frozen dependencies',
-            run:
-              `corepack ${toolchain.pnpmVersion} install `
-              + '--frozen-lockfile --ignore-scripts',
-          },
-          {
-            name: 'Set up frozen Rust',
-            run:
-              `rustup toolchain install ${toolchain.rustVersion} `
-              + `--profile minimal && rustup default ${toolchain.rustVersion}`,
-          },
-          {
-            name: 'Install frozen Linux Secret Service',
-            if: "matrix.platform == 'linux-x64'",
-            run: 'node scripts/phase1-linux-secret-service.mjs --install',
-          },
-          {
-            name: 'Require frozen toolchain',
-            run: exactToolchainCommand(toolchain),
-          },
-          {
-            name: 'Verify frozen harness bytes',
-            run: exactHarnessDigestCommand(producer),
-          },
-          {
-            uses: DOWNLOAD_ARTIFACT_ACTION,
-            if: "matrix.platform == 'win32-x64'",
-            with: {
-              name: WINDOWS_SUPERVISOR_ARTIFACT,
-              path: 'windows-supervisor-artifact',
-            },
-          },
-          {
-            name: 'Install frozen Windows supervisor',
-            if: "matrix.platform == 'win32-x64'",
-            shell: 'pwsh',
-            run:
-              'pwsh -NoProfile -File '
-              + 'scripts/phase1-windows-supervisor-install.ps1',
-          },
-          {
-            name: 'Produce platform evidence',
-            shell: 'bash',
-            env: {
-              OPENCOVEN_VALIDATOR_REVISION:
-                '${{ inputs.validator_revision }}',
-              OPENCOVEN_CHAT_ROOT: '${{ github.workspace }}',
-              OPENCOVEN_SDK_ROOT:
-                '${{ github.workspace }}/.phase1-counterparts/sdk',
-              OPENCOVEN_SDK_EVIDENCE_ROOT:
-                '${{ github.workspace }}/.phase1-counterparts/sdk-evidence',
-              OPENCOVEN_SDK_VALIDATOR_ROOT:
-                '${{ github.workspace }}/.phase1-counterparts/sdk-validator',
-              OPENCOVEN_CAVE_ROOT:
-                '${{ github.workspace }}/.phase1-counterparts/coven-cave',
-              OPENCOVEN_COVEN_ROOT:
-                '${{ github.workspace }}/.phase1-counterparts/coven',
-            },
-            run: exactHarnessCommand(producer, recordPath),
-          },
-          {
-            name: 'Validate canonical platform record',
-            run: exactCanonicalValidationCommand(
-              recordPath,
-              producer.recordSchemaVersion,
-            ),
-          },
-          {
-            uses: UPLOAD_ARTIFACT_ACTION,
-            with: {
-              name: artifactName,
-              path: recordPath,
-              'if-no-files-found': 'error',
-              'retention-days': 30,
-              overwrite: false,
-              'include-hidden-files': true,
-            },
-          },
-          {
-            uses: ATTEST_BUILD_PROVENANCE_ACTION,
-            with: {
-              'subject-path': recordPath,
-            },
-          },
-        ],
-      },
-      [producer.workflow.aggregationJob]: {
-        name: producer.workflow.aggregationJobName,
-        needs: producer.workflow.job,
-        'runs-on': producer.workflow.aggregationRunnerLabels[0],
-        permissions: {},
-        steps: [
-          {
-            name: 'Confirm protected evidence matrix',
-            run: 'echo "protected evidence matrix completed"',
-          },
-        ],
+    'workflow dispatch input',
+  );
+  expectExactWorkflowValue(
+    workflow.permissions,
+    { contents: 'read' },
+    'top-level permissions',
+  );
+  if (!isRecord(workflow.jobs)) {
+    workflowError('jobs are malformed');
+  }
+  expectExactWorkflowValue(
+    Object.keys(workflow.jobs),
+    expectedJobIds,
+    'five-job graph',
+  );
+
+  const windows = splitJob(
+    workflow.jobs['windows-supervisor'],
+    'Windows supervisor',
+  );
+  const platform = splitJob(
+    workflow.jobs[producer.workflow.job],
+    'platform producer',
+  );
+  const validation = splitJob(
+    workflow.jobs[producer.workflow.validationJob],
+    'validation',
+  );
+  const attestation = splitJob(
+    workflow.jobs[producer.workflow.attestationJob],
+    'attestation',
+  );
+  const aggregation = splitJob(
+    workflow.jobs[producer.workflow.aggregationJob],
+    'aggregation',
+  );
+  if (platform.steps.length !== PLATFORM_STEP_CONTRACT.length) {
+    workflowError('does not use the exact reviewed platform step count');
+  }
+  for (const [index, [identity, keys]] of PLATFORM_STEP_CONTRACT.entries()) {
+    const step = platform.steps[index];
+    if (!isRecord(step) || (step.name ?? step.uses) !== identity) {
+      workflowError(`does not use the reviewed platform step ${index + 1}`);
+    }
+    expectExactWorkflowValue(
+      Object.keys(step),
+      keys,
+      `platform step ${index + 1} keys`,
+    );
+  }
+
+  const mainRefCondition = `github.ref == '${producer.workflow.sourceRef}'`;
+  expectExactWorkflowValue(
+    windows.configuration,
+    {
+      name: WINDOWS_SUPERVISOR_JOB_NAME,
+      if: mainRefCondition,
+      'runs-on': WINDOWS_SUPERVISOR_RUNNER_LABELS[0],
+      'timeout-minutes': 30,
+      permissions: { contents: 'read' },
+      outputs: {
+        artifact_id: "${{ steps['upload-supervisor'].outputs['artifact-id'] }}",
       },
     },
+    'Windows supervisor job configuration',
+  );
+  expectExactWorkflowValue(
+    platform.configuration,
+    {
+      name: producer.workflow.jobNameTemplate.replace(
+        '{platform}',
+        matrixExpression,
+      ),
+      if: mainRefCondition,
+      needs: 'windows-supervisor',
+      'timeout-minutes': 60,
+      strategy: {
+        'fail-fast': false,
+        matrix: {
+          include: Object.entries(producer.workflow.runnerLabels).map(
+            ([platformName, labels]) => ({
+              platform: platformName,
+              runner: labels[0],
+            }),
+          ),
+        },
+      },
+      'runs-on': '${{ matrix.runner }}',
+      environment: producer.workflow.environment,
+      permissions: { actions: 'read', contents: 'read' },
+      env: {
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'core.autocrlf',
+        GIT_CONFIG_VALUE_0: 'false',
+      },
+    },
+    'platform producer job configuration',
+  );
+  const validationOutputs = Object.fromEntries(
+    producer.workflow.artifacts.map(({ platform: platformName }) => {
+      const output = `${platformName.replaceAll('-', '_')}_sha256`;
+      return [output, `\${{ steps.validate.outputs.${output} }}`];
+    }),
+  );
+  expectExactWorkflowValue(
+    validation.configuration,
+    {
+      name: producer.workflow.validationJobName,
+      if: mainRefCondition,
+      needs: producer.workflow.job,
+      'runs-on': producer.workflow.aggregationRunnerLabels[0],
+      environment: producer.workflow.environment,
+      permissions: { contents: 'read' },
+      outputs: validationOutputs,
+    },
+    'validation job configuration',
+  );
+  expectExactWorkflowValue(
+    attestation.configuration,
+    {
+      name: producer.workflow.attestationJobName,
+      if: mainRefCondition,
+      needs: producer.workflow.validationJob,
+      'runs-on': producer.workflow.aggregationRunnerLabels[0],
+      environment: producer.workflow.environment,
+      permissions: {
+        attestations: 'write',
+        contents: 'read',
+        'id-token': 'write',
+      },
+    },
+    'attestation job configuration',
+  );
+  expectExactWorkflowValue(
+    aggregation.configuration,
+    {
+      name: producer.workflow.aggregationJobName,
+      if: mainRefCondition,
+      needs: producer.workflow.attestationJob,
+      'runs-on': producer.workflow.aggregationRunnerLabels[0],
+      permissions: {},
+    },
+    'aggregation job configuration',
+  );
+  expectExactWorkflowValue(
+    aggregation.steps,
+    [
+      {
+        name: 'Confirm protected evidence matrix',
+        run: 'echo "protected evidence matrix completed"',
+      },
+    ],
+    'aggregation steps',
+  );
+
+  const expectedUses = new Map([
+    [CHECKOUT_ACTION, 8],
+    [SETUP_NODE_ACTION, 3],
+    [PNPM_SETUP_ACTION, 1],
+    [UPLOAD_ARTIFACT_ACTION, 2],
+    [producer.workflow.downloadArtifactAction, 6],
+    [producer.workflow.attestationAction, 3],
+  ]);
+  if (
+    producer.workflow.downloadArtifactAction !== DOWNLOAD_ARTIFACT_ACTION
+    || producer.workflow.attestationAction !== ATTEST_BUILD_PROVENANCE_ACTION
+  ) {
+    workflowError('metadata does not identify the reviewed action pins');
+  }
+  const uses = collectUses(workflow);
+  if (
+    uses.length !== [...expectedUses.values()].reduce((sum, count) => sum + count, 0)
+    || uses.some((action) => !expectedUses.has(action))
+    || [...expectedUses].some(
+      ([action, count]) =>
+        uses.filter((candidate) => candidate === action).length !== count,
+    )
+  ) {
+    workflowError('does not use only the exact reviewed action pins');
+  }
+
+  const windowsUpload = windows.steps.at(-1);
+  if (windows.steps.length !== 5) {
+    workflowError('does not isolate the Windows supervisor build');
+  }
+  expectExactWorkflowValue(
+    windows.steps[0],
+    {
+      uses: CHECKOUT_ACTION,
+      with: {
+        'fetch-depth': 0,
+        'persist-credentials': false,
+        ref: '${{ github.sha }}',
+      },
+    },
+    'Windows supervisor checkout',
+  );
+  expectExactWorkflowValue(
+    windows.steps[1],
+    {
+      uses: SETUP_NODE_ACTION,
+      with: {
+        'node-version': toolchain.nodeVersion.slice(1),
+      },
+    },
+    'Windows supervisor Node setup',
+  );
+  expectExactWorkflowValue(
+    windows.steps[2],
+    {
+      name: 'Set up frozen Rust',
+      run:
+        `rustup toolchain install ${toolchain.rustVersion} `
+        + `--profile minimal && rustup default ${toolchain.rustVersion}`,
+    },
+    'Windows supervisor Rust setup',
+  );
+  expectExactWorkflowValue(
+    windows.steps[3],
+    {
+      name: 'Build frozen Windows supervisor',
+      run: 'bash scripts/phase1-windows-supervisor-build.sh',
+    },
+    'Windows supervisor build',
+  );
+  expectExactWorkflowValue(
+    windowsUpload,
+    {
+      id: 'upload-supervisor',
+      uses: UPLOAD_ARTIFACT_ACTION,
+      with: {
+        name: WINDOWS_SUPERVISOR_ARTIFACT,
+        path:
+          'tools/phase1-process-supervisor/target/'
+          + 'x86_64-pc-windows-gnu/release/phase1-process-supervisor.exe',
+        'if-no-files-found': 'error',
+        'retention-days': 30,
+        overwrite: false,
+        'include-hidden-files': false,
+      },
+    },
+    'Windows supervisor upload',
+  );
+
+  const windowsBootstrap = namedStep(
+    platform.steps,
+    'Bootstrap supervised Windows conformance',
+    'platform producer',
+  );
+  if (
+    windowsBootstrap.if !== "matrix.platform == 'win32-x64'"
+    || windowsBootstrap.shell !== 'pwsh'
+    || !isRecord(windowsBootstrap.env)
+    || windowsBootstrap.env.OPENCOVEN_VALIDATOR_REVISION_INPUT
+      !== inputExpression
+    || windowsBootstrap.env.OPENCOVEN_PROTECTED_VALIDATOR_REVISION
+      !== protectedExpression
+    || typeof windowsBootstrap.run !== 'string'
+    || sha256(windowsBootstrap.run)
+      !== producer.workflow.windowsBootstrapScriptSha256
+    || !windowsBootstrap.run.includes(
+      '$validatorRevision -cne $protectedValidatorRevision',
+    )
+  ) {
+    workflowError('does not bind the Windows producer to the protected validator');
+  }
+  const validatorGuard = namedStep(
+    platform.steps,
+    'Require protected validator revision',
+    'platform producer',
+  );
+  if (
+    validatorGuard.if !== "matrix.platform != 'win32-x64'"
+    || validatorGuard.shell !== 'bash'
+    || !isRecord(validatorGuard.env)
+    || JSON.stringify(validatorGuard.env)
+      !== JSON.stringify({
+        OPENCOVEN_VALIDATOR_REVISION_INPUT: inputExpression,
+        OPENCOVEN_PROTECTED_VALIDATOR_REVISION: protectedExpression,
+      })
+    || typeof validatorGuard.run !== 'string'
+    || sha256(validatorGuard.run)
+      !== producer.workflow.validatorRevisionScriptSha256
+  ) {
+    workflowError('does not enforce the protected Unix validator revision');
+  }
+
+  const producerCheckout = platform.steps.filter(
+    (step) =>
+      isRecord(step)
+      && step.uses === CHECKOUT_ACTION
+      && isRecord(step.with)
+      && step.with.ref === '${{ github.sha }}',
+  );
+  if (
+    producerCheckout.length !== 1
+    || producerCheckout[0].if !== "matrix.platform != 'win32-x64'"
+    || producerCheckout[0].with['fetch-depth'] !== 0
+    || producerCheckout[0].with['persist-credentials'] !== false
+  ) {
+    workflowError('does not use the exact full-history Chat checkout');
+  }
+  const counterpartCheckouts = [
+    {
+      repository:
+        "${{ steps['phase1-revisions'].outputs.sdk_repository }}",
+      ref: "${{ steps['phase1-revisions'].outputs.sdk_revision }}",
+      path: '.phase1-counterparts/sdk',
+    },
+    {
+      repository:
+        "${{ steps['phase1-revisions'].outputs.evidence_repository }}",
+      ref: "${{ steps['phase1-revisions'].outputs.evidence_revision }}",
+      path: '.phase1-counterparts/sdk-evidence',
+    },
+    {
+      repository: 'OpenCoven/sdk',
+      ref: inputExpression,
+      path: '.phase1-counterparts/sdk-validator',
+    },
+    {
+      repository:
+        "${{ steps['phase1-revisions'].outputs.cave_repository }}",
+      ref: "${{ steps['phase1-revisions'].outputs.cave_revision }}",
+      path: '.phase1-counterparts/coven-cave',
+    },
+    {
+      repository:
+        "${{ steps['phase1-revisions'].outputs.coven_repository }}",
+      ref: "${{ steps['phase1-revisions'].outputs.coven_revision }}",
+      path: '.phase1-counterparts/coven',
+    },
+  ];
+  for (const checkout of counterpartCheckouts) {
+    const matches = platform.steps.filter(
+      (step) =>
+        isRecord(step)
+        && step.uses === CHECKOUT_ACTION
+        && isRecord(step.with)
+        && step.with.path === checkout.path,
+    );
+    expectExactWorkflowValue(
+      matches,
+      [
+        {
+          uses: CHECKOUT_ACTION,
+          if: "matrix.platform != 'win32-x64'",
+          with: {
+            ...checkout,
+            'persist-credentials': false,
+          },
+        },
+      ],
+      `${checkout.path} checkout`,
+    );
+  }
+  expectExactWorkflowValue(
+    platform.steps[3],
+    {
+      uses: SETUP_NODE_ACTION,
+      if: "matrix.platform != 'win32-x64'",
+      with: {
+        'node-version': toolchain.nodeVersion.slice(1),
+      },
+    },
+    'platform Node setup',
+  );
+  const phase1Revisions = namedStep(
+    platform.steps,
+    'Read Phase 1 reviewed revisions',
+    'platform producer',
+  );
+  if (
+    phase1Revisions.id !== 'phase1-revisions'
+    || phase1Revisions.if !== "matrix.platform != 'win32-x64'"
+    || typeof phase1Revisions.run !== 'string'
+    || sha256(phase1Revisions.run)
+      !== producer.workflow.phase1RevisionsScriptSha256
+  ) {
+    workflowError('does not read the exact reviewed Phase 1 revisions');
+  }
+  expectExactWorkflowValue(
+    platform.steps[10],
+    {
+      uses: PNPM_SETUP_ACTION,
+      if: "matrix.platform != 'win32-x64'",
+      with: {
+        version: toolchain.pnpmVersion.slice('pnpm@'.length),
+      },
+    },
+    'platform pnpm setup',
+  );
+  const requiredWindowsPins = {
+    OPENCOVEN_WINDOWS_IMAGE_OS: 'win25-vs2026',
+    OPENCOVEN_WINDOWS_IMAGE_VERSION: '20260824.214.3',
+    OPENCOVEN_WINDOWS_BUILD: '26100.33296',
+    OPENCOVEN_WINDOWS_KERNEL32_VERSION: '10.0.26100.33296',
+    OPENCOVEN_WINDOWS_POWERSHELL_VERSION: '7.6.5',
+    OPENCOVEN_WINDOWS_POWERSHELL_PATH:
+      'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+    OPENCOVEN_WINDOWS_DOTNET_VERSION: '10.0.11',
+    OPENCOVEN_WINDOWS_VS_VERSION: '18.9.12112.369',
+    OPENCOVEN_WINDOWS_VS_PATH:
+      'C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise',
+    OPENCOVEN_WINDOWS_MSVC_VERSION: '14.44.35207',
+    OPENCOVEN_WINDOWS_MSVC_PATH:
+      'C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.44.35207',
+    OPENCOVEN_WINDOWS_CL_PATH:
+      'C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe',
+    OPENCOVEN_WINDOWS_LINK_PATH:
+      'C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\link.exe',
+    OPENCOVEN_WINDOWS_SDK_VERSION: '10.0.26100.0',
+    OPENCOVEN_WINDOWS_RC_PATH:
+      'C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64\\rc.exe',
   };
+  for (const [name, value] of Object.entries(requiredWindowsPins)) {
+    if (windowsBootstrap.env[name] !== value) {
+      workflowError(`does not pin the reviewed Windows value ${name}`);
+    }
+  }
+
+  const unixRust = namedStep(
+    platform.steps,
+    'Install frozen Unix Rust',
+    'platform producer',
+  );
+  if (
+    unixRust.if !== "matrix.platform != 'win32-x64'"
+    || unixRust.run !== exactUnixRustInstallCommand(toolchain)
+  ) {
+    workflowError('does not install the reviewed Unix Rust toolchain');
+  }
+  const linuxSecretService = namedStep(
+    platform.steps,
+    'Install frozen Linux Secret Service',
+    'platform producer',
+  );
+  if (
+    linuxSecretService.if
+      !== "matrix.platform != 'win32-x64' && matrix.platform == 'linux-x64'"
+    || linuxSecretService.shell !== 'bash'
+    || typeof linuxSecretService.run !== 'string'
+    || sha256(linuxSecretService.run)
+      !== producer.workflow.linuxKeyringSetupScriptSha256
+    || !linuxSecretService.run.includes('sudo apt-get install')
+    || !linuxSecretService.run.includes('dbus-daemon=1.14.10-4ubuntu4.1')
+    || !linuxSecretService.run.includes('gnome-keyring=46.1-2ubuntu0.2')
+    || !linuxSecretService.run.includes('libsecret-tools=0.21.4-1build3')
+  ) {
+    workflowError('does not install the reviewed Linux Secret Service packages');
+  }
+  const toolchainStep = namedStep(
+    platform.steps,
+    'Require frozen toolchain',
+    'platform producer',
+  );
+  if (
+    toolchainStep.if !== "matrix.platform != 'win32-x64'"
+    || toolchainStep.run !== exactToolchainCommand(toolchain)
+    || toolchainStep.run.includes("run('rustup', ['run'")
+  ) {
+    workflowError('does not verify the exact proxy-safe frozen toolchain');
+  }
+  const unixSupervisorPreparation = namedStep(
+    platform.steps,
+    'Prepare trusted Unix supervisor',
+    'platform producer',
+  );
+  if (
+    unixSupervisorPreparation.if !== "matrix.platform != 'win32-x64'"
+    || unixSupervisorPreparation.shell !== 'bash'
+    || typeof unixSupervisorPreparation.run !== 'string'
+    || sha256(unixSupervisorPreparation.run)
+      !== producer.workflow.unixSupervisorPreparationScriptSha256
+  ) {
+    workflowError('does not prepare the exact trusted Unix supervisor');
+  }
+  const unixProduction = namedStep(
+    platform.steps,
+    'Run supervised Unix production and handoff',
+    'platform producer',
+  );
+  if (
+    unixProduction.if !== "matrix.platform != 'win32-x64'"
+    || unixProduction.shell !== 'bash'
+    || !isRecord(unixProduction.env)
+    || JSON.stringify(unixProduction.env)
+      !== JSON.stringify({
+        OPENCOVEN_VALIDATOR_REVISION: protectedExpression,
+      })
+    || typeof unixProduction.run !== 'string'
+    || sha256(unixProduction.run)
+      !== producer.workflow.unixProductionScriptSha256
+    || !unixProduction.run.includes(
+      'sudo --non-interactive scripts/unix-producer-supervisor.sh',
+    )
+    || !unixProduction.run.includes(
+      '--command scripts/unix-producer-command.sh',
+    )
+    || !unixProduction.run.includes(
+      '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
+    )
+    || !unixProduction.run.includes(
+      '--destination "$GITHUB_WORKSPACE/.artifacts/client-v1-conformance-${{ matrix.platform }}.json"',
+    )
+  ) {
+    workflowError('does not use supervised Unix evidence production');
+  }
+  const unixValidation = namedStep(
+    platform.steps,
+    'Validate broker-owned Unix platform record',
+    'platform producer',
+  );
+  if (
+    unixValidation.if !== "matrix.platform != 'win32-x64'"
+    || unixValidation.shell !== 'bash'
+    || typeof unixValidation.run !== 'string'
+    || sha256(unixValidation.run)
+      !== producer.workflow.unixValidationScriptSha256
+    || platform.steps.at(-2) !== unixValidation
+  ) {
+    workflowError('does not validate broker-owned evidence immediately before upload');
+  }
+  const platformUpload = platform.steps.at(-1);
+  expectExactWorkflowValue(
+    platformUpload,
+    {
+      uses: UPLOAD_ARTIFACT_ACTION,
+      with: {
+        name: producer.workflow.artifactNameTemplate.replace(
+          '{platform}',
+          matrixExpression,
+        ),
+        path: producer.workflow.recordPathTemplate.replace(
+          '{platform}',
+          matrixExpression,
+        ),
+        'if-no-files-found': 'error',
+        'retention-days': 30,
+        overwrite: false,
+        'include-hidden-files': true,
+      },
+    },
+    'platform artifact upload',
+  );
+
+  if (validation.steps.length !== 7 || attestation.steps.length !== 7) {
+    workflowError('does not isolate validation and attestation controls');
+  }
+  const validationGuard = validation.steps[0];
+  if (
+    !isRecord(validationGuard)
+    || validationGuard.name !== 'Require protected validator revision'
+    || validationGuard.shell !== 'bash'
+    || 'if' in validationGuard
+    || !isRecord(validationGuard.env)
+    || validationGuard.env.OPENCOVEN_VALIDATOR_REVISION_INPUT
+      !== inputExpression
+    || validationGuard.env.OPENCOVEN_PROTECTED_VALIDATOR_REVISION
+      !== protectedExpression
+    || typeof validationGuard.run !== 'string'
+    || !validationGuard.run.includes(
+      '"$OPENCOVEN_VALIDATOR_REVISION_INPUT" != "$OPENCOVEN_PROTECTED_VALIDATOR_REVISION"',
+    )
+  ) {
+    workflowError('validation does not require the protected validator revision');
+  }
+  for (const [index, artifact] of producer.workflow.artifacts.entries()) {
+    const expectedDownload = {
+      uses: producer.workflow.downloadArtifactAction,
+      with: { name: artifact.name, path: '.artifacts' },
+    };
+    expectExactWorkflowValue(
+      validation.steps[index + 1],
+      expectedDownload,
+      `${artifact.platform} validation download`,
+    );
+    expectExactWorkflowValue(
+      attestation.steps[index],
+      expectedDownload,
+      `${artifact.platform} attestation download`,
+    );
+  }
+  expectExactWorkflowValue(
+    validation.steps[4],
+    {
+      uses: CHECKOUT_ACTION,
+      with: {
+        repository: 'OpenCoven/sdk',
+        ref: protectedExpression,
+        path: 'validator',
+        'persist-credentials': false,
+      },
+    },
+    'protected validator checkout',
+  );
+  expectExactWorkflowValue(
+    validation.steps[5],
+    {
+      uses: SETUP_NODE_ACTION,
+      with: {
+        'node-version': toolchain.nodeVersion.slice(1),
+      },
+    },
+    'validation Node setup',
+  );
+  const validationStep = validation.steps[6];
+  if (
+    !isRecord(validationStep)
+    || validationStep.name
+      !== 'Validate exact SDK schema, parser, and scanner'
+    || validationStep.id !== 'validate'
+    || validationStep.shell !== 'bash'
+    || 'if' in validationStep
+    || typeof validationStep.run !== 'string'
+    || sha256(validationStep.run)
+      !== producer.workflow.validationScriptSha256
+    || !validationStep.run.includes('parsePlatformEvidence(')
+    || !validationStep.run.includes('scanConformanceEvidence(record)')
+    || !validationStep.run.includes('serializeCanonicalJson(record) !== text')
+    || !validationStep.run.includes(
+      "createHash('sha256').update(bytes).digest('hex')",
+    )
+  ) {
+    workflowError('fresh SDK validation is incomplete or conditional');
+  }
+
+  const digestStep = attestation.steps[3];
+  if (
+    !isRecord(digestStep)
+    || digestStep.name !== 'Compare freshly downloaded artifact digests'
+    || digestStep.shell !== 'bash'
+    || 'if' in digestStep
+    || !isRecord(digestStep.env)
+    || digestStep.env.OPENCOVEN_VALIDATOR_REVISION_INPUT
+      !== inputExpression
+    || digestStep.env.OPENCOVEN_PROTECTED_VALIDATOR_REVISION
+      !== protectedExpression
+    || typeof digestStep.run !== 'string'
+    || sha256(digestStep.run)
+      !== producer.workflow.attestationScriptSha256
+    || !digestStep.run.includes(
+      '"$OPENCOVEN_VALIDATOR_REVISION_INPUT" != "$OPENCOVEN_PROTECTED_VALIDATOR_REVISION"',
+    )
+    || producer.workflow.artifacts.some(
+      ({ recordPath }) =>
+        !digestStep.run.includes(recordPath)
+        || digestStep.run.split(recordPath).length - 1 < 1,
+    )
+    || digestStep.run.split('sha256sum').length - 1 !== 3
+  ) {
+    workflowError('attestation does not compare the exact validated digests');
+  }
+  for (const [index, artifact] of producer.workflow.artifacts.entries()) {
+    expectExactWorkflowValue(
+      attestation.steps[index + 4],
+      {
+        uses: producer.workflow.attestationAction,
+        with: { 'subject-path': artifact.recordPath },
+      },
+      `${artifact.platform} provenance attestation`,
+    );
+    if (expectedArtifacts[artifact.platform] !== artifact) {
+      workflowError('artifact metadata is not unique');
+    }
+  }
 }
 
 export function verifyProtectedWorkflow(text, producer, toolchain) {
@@ -510,10 +925,10 @@ export function verifyProtectedWorkflow(text, producer, toolchain) {
     );
   }
   if (
-    /^[ ]*[A-Za-z0-9_-]+:\s*[|>][+-]?\s*(?:#.*)?$/mu.test(text)
+    /^[ ]*[A-Za-z0-9_-]+:\s*>[+-]?\s*(?:#.*)?$/mu.test(text)
   ) {
     throw new Error(
-      'Frozen Chat workflow must not use multiline or folded YAML scalars',
+      'Frozen Chat workflow must not use folded YAML scalars',
     );
   }
   let workflow;
@@ -526,25 +941,7 @@ export function verifyProtectedWorkflow(text, producer, toolchain) {
       { cause: error },
     );
   }
-  const expected = expectedProtectedWorkflow(producer, toolchain);
-  const artifactName = producer.workflow.artifactNameTemplate.replace(
-    '{platform}',
-    '${{ matrix.platform }}',
-  );
-  if (
-    countExactStringValues(workflow, artifactName) !== 1
-  ) {
-    throw new Error(
-      'Frozen Chat workflow must contain the exact artifact name only once',
-    );
-  }
-  if (
-    JSON.stringify(workflow) !== JSON.stringify(expected)
-  ) {
-    throw new Error(
-      'Frozen Chat workflow must use the exact reviewed protected evidence graph',
-    );
-  }
+  verifyProtectedWorkflowGraph(workflow, producer, toolchain);
 }
 
 function expectSuccessfulRun(value, expected, label) {
@@ -628,6 +1025,37 @@ function expectSuccessfulAggregationJob(value, expected, label) {
   return value;
 }
 
+function expectSuccessfulWorkflowJob(
+  value,
+  expected,
+  { name, labels },
+  label,
+) {
+  if (
+    !isRecord(value)
+    || !Number.isSafeInteger(value.id)
+    || value.id <= 0
+    || value.run_id !== Number(expected.runId)
+    || value.run_attempt !== expected.runAttempt
+    || value.head_sha !== expected.producer.commit
+    || value.html_url
+      !== (
+        `https://github.com/${expected.producer.repository}/actions/runs/`
+        + `${expected.runId}/job/${value.id}`
+      )
+    || value.name !== name
+    || value.workflow_name !== expected.producer.workflow.name
+    || value.status !== 'completed'
+    || value.conclusion !== 'success'
+    || !Array.isArray(value.labels)
+    || JSON.stringify(value.labels) !== JSON.stringify(labels)
+    || value.labels.includes('self-hosted')
+  ) {
+    throw new Error(`${label} does not match the exact frozen successful job`);
+  }
+  return value;
+}
+
 function expectSuccessfulWindowsSupervisorJob(value, expected, label) {
   if (
     !isRecord(value)
@@ -658,9 +1086,9 @@ function expectSuccessfulWindowsSupervisorJob(value, expected, label) {
 function expectAttemptJobGraph(value, expectedByPlatform, label) {
   if (
     !isRecord(value)
-    || value.total_count !== expectedByPlatform.length + 2
+    || value.total_count !== expectedByPlatform.length + 4
     || !Array.isArray(value.jobs)
-    || value.jobs.length !== expectedByPlatform.length + 2
+    || value.jobs.length !== expectedByPlatform.length + 4
   ) {
     throw new Error(`${label} does not match the exact frozen workflow job graph`);
   }
@@ -701,8 +1129,40 @@ function expectAttemptJobGraph(value, expectedByPlatform, label) {
     expectedByPlatform[0],
     `${label} Windows supervisor job`,
   );
+  const validationJobs = supportJobs.filter(
+    (job) =>
+      job.name === expectedByPlatform[0].producer.workflow.validationJobName,
+  );
+  if (validationJobs.length !== 1) {
+    throw new Error(`${label} does not match the exact frozen workflow job graph`);
+  }
+  const validationJob = expectSuccessfulWorkflowJob(
+    validationJobs[0],
+    expectedByPlatform[0],
+    {
+      name: expectedByPlatform[0].producer.workflow.validationJobName,
+      labels: expectedByPlatform[0].producer.workflow.aggregationRunnerLabels,
+    },
+    `${label} validation job`,
+  );
+  const attestationJobs = supportJobs.filter(
+    (job) =>
+      job.name === expectedByPlatform[0].producer.workflow.attestationJobName,
+  );
+  if (attestationJobs.length !== 1) {
+    throw new Error(`${label} does not match the exact frozen workflow job graph`);
+  }
+  const attestationJob = expectSuccessfulWorkflowJob(
+    attestationJobs[0],
+    expectedByPlatform[0],
+    {
+      name: expectedByPlatform[0].producer.workflow.attestationJobName,
+      labels: expectedByPlatform[0].producer.workflow.aggregationRunnerLabels,
+    },
+    `${label} attestation job`,
+  );
   const aggregationJobs = supportJobs.filter(
-    (job) => job.name !== WINDOWS_SUPERVISOR_JOB_NAME,
+    (job) => job.name === expectedByPlatform[0].producer.workflow.aggregationJobName,
   );
   if (aggregationJobs.length !== 1) {
     throw new Error(`${label} does not match the exact frozen workflow job graph`);
@@ -712,7 +1172,13 @@ function expectAttemptJobGraph(value, expectedByPlatform, label) {
     expectedByPlatform[0],
     `${label} aggregation job`,
   );
-  return { protectedJobs, windowsSupervisorJob, aggregationJob };
+  return {
+    protectedJobs,
+    windowsSupervisorJob,
+    validationJob,
+    attestationJob,
+    aggregationJob,
+  };
 }
 
 function expectProtectedEnvironment(value, producer) {

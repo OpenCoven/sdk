@@ -214,13 +214,17 @@ passing evidence record for each target.
 The frozen Chat production source
 `edd4728792321771496df58bfc0e6122908a96ec` is exercised by the compatible
 schema-v2 producer at
-`e1813545c150e05dc9967aebfbd4a10bd2fc41ae`. Its protected workflow requires
+`a57cc2669aaa0383e46589dbf5ed13ea994eac48`. Its protected workflow requires
 an exact SDK `validator_revision`, uses protected environment ID
-`20863036831`, and emits only complete observed-result records. That environment
-must disable administrator bypass, require reviewer user ID `68980965`, permit
-self-review, have a zero-minute wait timer, and allow protected branches only.
-Its `required_reviewers` rule therefore has `prevent_self_review: false`; this
-is the authorized exception for the dispatcher and sole reviewer account.
+`20863036831`, validates the three static platform artifacts in
+`validate-conformance-artifacts`, and delegates OIDC provenance issuance only
+to `attest-conformance-artifacts`. The validator checkout is pinned by the
+protected `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` environment variable.
+That environment must disable administrator bypass, require reviewer user ID
+`68980965`, permit self-review, have a zero-minute wait timer, and allow
+protected branches only. Its `required_reviewers` rule therefore has
+`prevent_self_review: false`; this is the authorized exception for the
+dispatcher and sole reviewer account.
 Aggregation and release readiness remain fail closed until all three protected
 records and their reviewed GitHub attestations exist, as documented in
 [`docs/workflows/client-v1-cross-repository-conformance.md`](docs/workflows/client-v1-cross-repository-conformance.md).
