@@ -27,9 +27,16 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
-is the later commit `e1813545c150e05dc9967aebfbd4a10bd2fc41ae`.
-Aggregation and release readiness remain fail closed until all three protected
-platform records exist and their live GitHub attestations are reviewed.
+is the later commit `a57cc2669aaa0383e46589dbf5ed13ea994eac48`.
+The frozen workflow separates platform production, exact SDK validation,
+provenance attestation, and aggregation. Its lock records the validation and
+attestation job identities, the three static artifact names and record paths,
+the pinned download and attestation actions, the exact security-critical
+bootstrap, production, validation, and digest-comparison script hashes, and the
+protected
+`CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` variable. Aggregation and release
+readiness remain fail closed until all three protected platform records exist
+and their live GitHub attestations are reviewed.
 
 ## Frozen reviewed inputs
 

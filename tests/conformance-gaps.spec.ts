@@ -18,6 +18,9 @@ import {
   verifyGitHubConformanceEvidence,
   verifyProtectedWorkflow,
 } from '../scripts/github-conformance-evidence.mjs';
+import {
+  parseReleaseWorkflowDocument,
+} from '../scripts/release-readiness.mjs';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const lockPath = resolve(
@@ -42,7 +45,7 @@ const PNPM_SETUP_ACTION =
 const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
 const DOWNLOAD_ARTIFACT_ACTION =
-  'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093';
+  'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c';
 const ATTEST_BUILD_PROVENANCE_ACTION =
   'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8';
 const TEST_WINDOWS_SUPERVISOR_ARTIFACT =
@@ -52,8 +55,15 @@ const TEST_RECORD_PATH =
 const TEST_ARTIFACT_NAME =
   'client-v1-conformance-${{ matrix.platform }}';
 const TEST_VALIDATOR_INPUT = '${' + '{ inputs.validator_revision }}';
+const TEST_PROTECTED_VALIDATOR_REVISION =
+  '${' + '{ vars.CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION }}';
+const TEST_STATIC_ARTIFACTS = PLATFORMS.map((platform) => ({
+  platform,
+  name: `client-v1-conformance-${platform}`,
+  recordPath: `.artifacts/client-v1-conformance-${platform}.json`,
+}));
 const TEST_LINUX_SECRET_SERVICE_COMMAND =
-  'node scripts/phase1-linux-secret-service.mjs --install';
+  'sudo apt-get install --yes --no-install-recommends dbus-daemon=1.14.10-4ubuntu4.1 gnome-keyring=46.1-2ubuntu0.2 libsecret-tools=0.21.4-1build3';
 const TEST_PHASE1_REVISIONS_COMMAND = [
   'node --input-type=module --eval "import { appendFileSync }',
   'from \'node:fs\'; import { readPhase1ConformanceLock }',
@@ -79,32 +89,31 @@ const TEST_TOOLCHAIN_COMMAND = [
   '{ encoding: \'utf8\' }).trim(); };',
   'if (process.version !== \'v24.18.1\'',
   '|| \'pnpm@\' + run(\'pnpm\', [\'--version\']) !== \'pnpm@10.34.0\'',
-  '|| !run(\'rustup\', [\'run\', \'1.95.0\', \'rustc\', \'--version\']).startsWith(\'rustc 1.95.0 \')',
+  '|| !run(\'rustc\', [\'--version\']).startsWith(\'rustc 1.95.0 \')',
   '|| run(\'pnpm\', [\'exec\', \'tauri\', \'--version\'])',
   '!== \'tauri-cli 2.11.4\')',
   'throw new Error(\'Frozen toolchain does not match\');"',
 ].join(' ');
-const TEST_HARNESS_DIGEST_COMMAND = [
-  'node --input-type=module --eval "import { createHash }',
-  'from \'node:crypto\'; import { lstatSync, readFileSync }',
-  'from \'node:fs\'; const path = \'scripts/phase1-conformance.mjs\';',
-  'const stats = lstatSync(path); const bytes = readFileSync(path);',
-  'if (!stats.isFile() || stats.isSymbolicLink()',
-  '|| bytes.byteLength !== 120000',
-  '|| createHash(\'sha256\').update(bytes).digest(\'hex\')',
-  `!== '${'2'.repeat(64)}')`,
-  'throw new Error(\'Frozen harness bytes do not match\');"',
+const TEST_UNIX_RUST_INSTALL_COMMAND = [
+  'node --input-type=module --eval "import { execFileSync }',
+  'from \'node:child_process\'; import { resolveExecutableInvocation }',
+  'from \'./scripts/executable-resolution.mjs\';',
+  'const command = \'rustup\'; const invocation =',
+  'resolveExecutableInvocation(command, process.env, process.platform,',
+  '[\'toolchain\', \'install\', \'1.95.0\', \'--profile\', \'minimal\']);',
+  'execFileSync(invocation.executable, invocation.args,',
+  '{ argv0: command, stdio: \'inherit\' });"',
 ].join(' ');
-const TEST_HARNESS_COMMAND = [
-  'if [[ "${{ matrix.platform }}" == "linux-x64" ]]; then',
-  'bash scripts/phase1-linux-secret-service.sh',
-  '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
+const TEST_VALIDATOR_REVISION_COMMAND =
+  '[[ "$OPENCOVEN_VALIDATOR_REVISION_INPUT" == "$OPENCOVEN_PROTECTED_VALIDATOR_REVISION" ]]';
+const TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND =
+  'echo "Frozen harness module graph verified."';
+const TEST_UNIX_PRODUCTION_COMMAND = [
+  'sudo --non-interactive scripts/unix-producer-supervisor.sh',
   '--platform "${{ matrix.platform }}"',
-  `--output "${TEST_RECORD_PATH}"; else`,
-  'node scripts/phase1-conformance.mjs',
+  `--destination "$GITHUB_WORKSPACE/${TEST_RECORD_PATH}"`,
+  '--command scripts/unix-producer-command.sh',
   '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
-  '--platform "${{ matrix.platform }}"',
-  `--output "${TEST_RECORD_PATH}"; fi`,
 ].join(' ');
 const TEST_CANONICAL_VALIDATION_COMMAND = [
   'node --input-type=module --eval "import { lstatSync, readFileSync }',
@@ -136,93 +145,114 @@ function producerArtifactSteps(): string[] {
     '          retention-days: 30',
     '          overwrite: false',
     '          include-hidden-files: true',
-    `      - uses: ${ATTEST_BUILD_PROVENANCE_ACTION}`,
-    '        with:',
-    `          subject-path: ${TEST_RECORD_PATH}`,
   ];
 }
 
 function protectedProducerSteps(): string[] {
   return [
+    '      - name: Require protected validator revision',
+    "        if: matrix.platform != 'win32-x64'",
+    '        shell: bash',
+    '        env:',
+    `          OPENCOVEN_VALIDATOR_REVISION_INPUT: ${TEST_VALIDATOR_INPUT}`,
+    `          OPENCOVEN_PROTECTED_VALIDATOR_REVISION: ${TEST_PROTECTED_VALIDATOR_REVISION}`,
+    `        run: ${yamlSingleQuoted(TEST_VALIDATOR_REVISION_COMMAND)}`,
     `      - uses: ${CHECKOUT_ACTION}`,
+    "        if: matrix.platform != 'win32-x64'",
     '        with:',
     '          fetch-depth: 0',
     '          persist-credentials: false',
     '          ref: ${{ github.sha }}',
     `      - uses: ${SETUP_NODE_ACTION}`,
+    "        if: matrix.platform != 'win32-x64'",
     '        with:',
     '          node-version: 24.18.1',
     '      - id: phase1-revisions',
     '        name: Read Phase 1 reviewed revisions',
+    "        if: matrix.platform != 'win32-x64'",
     `        run: ${yamlSingleQuoted(TEST_PHASE1_REVISIONS_COMMAND)}`,
     `      - uses: ${CHECKOUT_ACTION}`,
+    "        if: matrix.platform != 'win32-x64'",
     '        with:',
-    '          repository: ${{ steps.phase1-revisions.outputs.sdk_repository }}',
-    '          ref: ${{ steps.phase1-revisions.outputs.sdk_revision }}',
+    "          repository: ${{ steps['phase1-revisions'].outputs.sdk_repository }}",
+    "          ref: ${{ steps['phase1-revisions'].outputs.sdk_revision }}",
     '          path: .phase1-counterparts/sdk',
     '          persist-credentials: false',
     `      - uses: ${CHECKOUT_ACTION}`,
+    "        if: matrix.platform != 'win32-x64'",
     '        with:',
-    '          repository: ${{ steps.phase1-revisions.outputs.evidence_repository }}',
-    '          ref: ${{ steps.phase1-revisions.outputs.evidence_revision }}',
+    "          repository: ${{ steps['phase1-revisions'].outputs.evidence_repository }}",
+    "          ref: ${{ steps['phase1-revisions'].outputs.evidence_revision }}",
     '          path: .phase1-counterparts/sdk-evidence',
     '          persist-credentials: false',
     `      - uses: ${CHECKOUT_ACTION}`,
+    "        if: matrix.platform != 'win32-x64'",
     '        with:',
     '          repository: OpenCoven/sdk',
-    '          ref: ${{ inputs.validator_revision }}',
+    `          ref: ${TEST_VALIDATOR_INPUT}`,
     '          path: .phase1-counterparts/sdk-validator',
     '          persist-credentials: false',
     `      - uses: ${CHECKOUT_ACTION}`,
+    "        if: matrix.platform != 'win32-x64'",
     '        with:',
-    '          repository: ${{ steps.phase1-revisions.outputs.cave_repository }}',
-    '          ref: ${{ steps.phase1-revisions.outputs.cave_revision }}',
+    "          repository: ${{ steps['phase1-revisions'].outputs.cave_repository }}",
+    "          ref: ${{ steps['phase1-revisions'].outputs.cave_revision }}",
     '          path: .phase1-counterparts/coven-cave',
     '          persist-credentials: false',
     `      - uses: ${CHECKOUT_ACTION}`,
+    "        if: matrix.platform != 'win32-x64'",
     '        with:',
-    '          repository: ${{ steps.phase1-revisions.outputs.coven_repository }}',
-    '          ref: ${{ steps.phase1-revisions.outputs.coven_revision }}',
+    "          repository: ${{ steps['phase1-revisions'].outputs.coven_repository }}",
+    "          ref: ${{ steps['phase1-revisions'].outputs.coven_revision }}",
     '          path: .phase1-counterparts/coven',
     '          persist-credentials: false',
     `      - uses: ${PNPM_SETUP_ACTION}`,
+    "        if: matrix.platform != 'win32-x64'",
     '        with:',
     '          version: 10.34.0',
-    '      - name: Install frozen dependencies',
-    '        run: corepack pnpm@10.34.0 install --frozen-lockfile --ignore-scripts',
-    '      - name: Set up frozen Rust',
-    '        run: rustup toolchain install 1.95.0 --profile minimal && rustup default 1.95.0',
     '      - name: Install frozen Linux Secret Service',
-    "        if: matrix.platform == 'linux-x64'",
-    `        run: ${TEST_LINUX_SECRET_SERVICE_COMMAND}`,
+    "        if: matrix.platform != 'win32-x64' && matrix.platform == 'linux-x64'",
+    '        shell: bash',
+    `        run: ${yamlSingleQuoted(TEST_LINUX_SECRET_SERVICE_COMMAND)}`,
+    '      - name: Install frozen Unix Rust',
+    "        if: matrix.platform != 'win32-x64'",
+    `        run: ${yamlSingleQuoted(TEST_UNIX_RUST_INSTALL_COMMAND)}`,
     '      - name: Require frozen toolchain',
+    "        if: matrix.platform != 'win32-x64'",
     `        run: ${yamlSingleQuoted(TEST_TOOLCHAIN_COMMAND)}`,
-    '      - name: Verify frozen harness bytes',
-    `        run: ${yamlSingleQuoted(TEST_HARNESS_DIGEST_COMMAND)}`,
-    `      - uses: ${DOWNLOAD_ARTIFACT_ACTION}`,
-    "        if: matrix.platform == 'win32-x64'",
-    '        with:',
-    `          name: ${TEST_WINDOWS_SUPERVISOR_ARTIFACT}`,
-    '          path: windows-supervisor-artifact',
-    '      - name: Install frozen Windows supervisor',
-    "        if: matrix.platform == 'win32-x64'",
-    '        shell: pwsh',
-    '        run: pwsh -NoProfile -File scripts/phase1-windows-supervisor-install.ps1',
-    '      - name: Produce platform evidence',
+    '      - name: Prepare trusted Unix supervisor',
+    "        if: matrix.platform != 'win32-x64'",
+    '        shell: bash',
+    `        run: ${yamlSingleQuoted(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND)}`,
+    '      - name: Run supervised Unix production and handoff',
+    "        if: matrix.platform != 'win32-x64'",
     '        shell: bash',
     '        env:',
-    `          OPENCOVEN_VALIDATOR_REVISION: ${TEST_VALIDATOR_INPUT}`,
-    '          OPENCOVEN_CHAT_ROOT: ${{ github.workspace }}',
-    '          OPENCOVEN_SDK_ROOT: ${{ github.workspace }}/.phase1-counterparts/sdk',
-    '          OPENCOVEN_SDK_EVIDENCE_ROOT: ${{ github.workspace }}/.phase1-counterparts/sdk-evidence',
-    '          OPENCOVEN_SDK_VALIDATOR_ROOT: ${{ github.workspace }}/.phase1-counterparts/sdk-validator',
-    '          OPENCOVEN_CAVE_ROOT: ${{ github.workspace }}/.phase1-counterparts/coven-cave',
-    '          OPENCOVEN_COVEN_ROOT: ${{ github.workspace }}/.phase1-counterparts/coven',
-    `        run: ${TEST_HARNESS_COMMAND}`,
-    '      - name: Validate canonical platform record',
+    `          OPENCOVEN_VALIDATOR_REVISION: ${TEST_PROTECTED_VALIDATOR_REVISION}`,
+    `        run: ${yamlSingleQuoted(TEST_UNIX_PRODUCTION_COMMAND)}`,
+    '      - name: Validate broker-owned Unix platform record',
+    "        if: matrix.platform != 'win32-x64'",
+    '        shell: bash',
     `        run: ${yamlSingleQuoted(TEST_CANONICAL_VALIDATION_COMMAND)}`,
     ...producerArtifactSteps(),
   ];
+}
+
+function staticDownloadSteps(): string[] {
+  return TEST_STATIC_ARTIFACTS.flatMap(({ name }) => [
+    `      - uses: ${DOWNLOAD_ARTIFACT_ACTION}`,
+    '        with:',
+    `          name: ${name}`,
+    '          path: .artifacts',
+  ]);
+}
+
+function staticAttestationSteps(): string[] {
+  return TEST_STATIC_ARTIFACTS.flatMap(({ recordPath }) => [
+    `      - uses: ${ATTEST_BUILD_PROVENANCE_ACTION}`,
+    '        with:',
+    `          subject-path: ${recordPath}`,
+  ]);
 }
 
 function createProducerWorkflow({
@@ -243,10 +273,13 @@ function createProducerWorkflow({
     'jobs:',
     '  windows-supervisor:',
     '    name: build-windows-supervisor',
+    "    if: github.ref == 'refs/heads/main'",
     '    runs-on: macos-latest',
     '    timeout-minutes: 30',
     '    permissions:',
     '      contents: read',
+    '    outputs:',
+    "      artifact_id: ${{ steps['upload-supervisor'].outputs['artifact-id'] }}",
     '    steps:',
     `      - uses: ${CHECKOUT_ACTION}`,
     '        with:',
@@ -260,7 +293,8 @@ function createProducerWorkflow({
     '        run: rustup toolchain install 1.95.0 --profile minimal && rustup default 1.95.0',
     '      - name: Build frozen Windows supervisor',
     '        run: bash scripts/phase1-windows-supervisor-build.sh',
-    `      - uses: ${UPLOAD_ARTIFACT_ACTION}`,
+    '      - id: upload-supervisor',
+    `        uses: ${UPLOAD_ARTIFACT_ACTION}`,
     '        with:',
     `          name: ${TEST_WINDOWS_SUPERVISOR_ARTIFACT}`,
     '          path: tools/phase1-process-supervisor/target/x86_64-pc-windows-gnu/release/phase1-process-supervisor.exe',
@@ -270,6 +304,7 @@ function createProducerWorkflow({
     '          include-hidden-files: false',
     '  platform-conformance:',
     '    name: platform-conformance (${{ matrix.platform }})',
+    "    if: github.ref == 'refs/heads/main'",
     '    needs: windows-supervisor',
     '    timeout-minutes: 60',
     '    strategy:',
@@ -285,14 +320,35 @@ function createProducerWorkflow({
     '    runs-on: ${{ matrix.runner }}',
     '    environment: client-v1-conformance',
     '    permissions:',
-    '      attestations: write',
+    '      actions: read',
     '      contents: read',
-    '      id-token: write',
     '    env:',
     "      GIT_CONFIG_COUNT: '1'",
     '      GIT_CONFIG_KEY_0: core.autocrlf',
     "      GIT_CONFIG_VALUE_0: 'false'",
     '    steps:',
+    '      - name: Bootstrap supervised Windows conformance',
+    "        if: matrix.platform == 'win32-x64'",
+    '        shell: pwsh',
+    '        env:',
+    `          OPENCOVEN_VALIDATOR_REVISION_INPUT: ${TEST_VALIDATOR_INPUT}`,
+    `          OPENCOVEN_PROTECTED_VALIDATOR_REVISION: ${TEST_PROTECTED_VALIDATOR_REVISION}`,
+    "          OPENCOVEN_WINDOWS_IMAGE_OS: 'win25-vs2026'",
+    "          OPENCOVEN_WINDOWS_IMAGE_VERSION: '20260824.214.3'",
+    "          OPENCOVEN_WINDOWS_BUILD: '26100.33296'",
+    "          OPENCOVEN_WINDOWS_KERNEL32_VERSION: '10.0.26100.33296'",
+    "          OPENCOVEN_WINDOWS_POWERSHELL_VERSION: '7.6.5'",
+    "          OPENCOVEN_WINDOWS_POWERSHELL_PATH: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'",
+    "          OPENCOVEN_WINDOWS_DOTNET_VERSION: '10.0.11'",
+    "          OPENCOVEN_WINDOWS_VS_VERSION: '18.9.12112.369'",
+    "          OPENCOVEN_WINDOWS_VS_PATH: 'C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise'",
+    "          OPENCOVEN_WINDOWS_MSVC_VERSION: '14.44.35207'",
+    "          OPENCOVEN_WINDOWS_MSVC_PATH: 'C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.44.35207'",
+    "          OPENCOVEN_WINDOWS_CL_PATH: 'C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\cl.exe'",
+    "          OPENCOVEN_WINDOWS_LINK_PATH: 'C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64\\link.exe'",
+    "          OPENCOVEN_WINDOWS_SDK_VERSION: '10.0.26100.0'",
+    "          OPENCOVEN_WINDOWS_RC_PATH: 'C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64\\rc.exe'",
+    "        run: '$validatorRevision -cne $protectedValidatorRevision'",
     ...(siblingSubstitute
       ? protectedProducerSteps().slice(0, -producerArtifactSteps().length)
       : protectedProducerSteps()),
@@ -305,9 +361,65 @@ function createProducerWorkflow({
           ...producerArtifactSteps(),
         ]
       : []),
+    '  validate-conformance-artifacts:',
+    '    name: validate-conformance-artifacts',
+    "    if: github.ref == 'refs/heads/main'",
+    '    needs: platform-conformance',
+    '    runs-on: ubuntu-24.04',
+    '    environment: client-v1-conformance',
+    '    permissions:',
+    '      contents: read',
+    '    outputs:',
+    '      darwin_arm64_sha256: ${{ steps.validate.outputs.darwin_arm64_sha256 }}',
+    '      linux_x64_sha256: ${{ steps.validate.outputs.linux_x64_sha256 }}',
+    '      win32_x64_sha256: ${{ steps.validate.outputs.win32_x64_sha256 }}',
+    '    steps:',
+    '      - name: Require protected validator revision',
+    '        shell: bash',
+    '        env:',
+    `          OPENCOVEN_VALIDATOR_REVISION_INPUT: ${TEST_VALIDATOR_INPUT}`,
+    `          OPENCOVEN_PROTECTED_VALIDATOR_REVISION: ${TEST_PROTECTED_VALIDATOR_REVISION}`,
+    '        run: |',
+    '          if [[ "$OPENCOVEN_VALIDATOR_REVISION_INPUT" != "$OPENCOVEN_PROTECTED_VALIDATOR_REVISION" ]]; then',
+    '            exit 1',
+    '          fi',
+    ...staticDownloadSteps(),
+    `      - uses: ${CHECKOUT_ACTION}`,
+    '        with:',
+    '          repository: OpenCoven/sdk',
+    `          ref: ${TEST_PROTECTED_VALIDATOR_REVISION}`,
+    '          path: validator',
+    '          persist-credentials: false',
+    `      - uses: ${SETUP_NODE_ACTION}`,
+    '        with:',
+    '          node-version: 24.18.1',
+    '      - name: Validate exact SDK schema, parser, and scanner',
+    '        id: validate',
+    '        shell: bash',
+    `        run: 'parsePlatformEvidence(text, \`\${platform} uploaded artifact\`, schema); scanConformanceEvidence(record); createHash(''sha256'').update(bytes).digest(''hex''); serializeCanonicalJson(record) !== text'`,
+    '  attest-conformance-artifacts:',
+    '    name: attest-conformance-artifacts',
+    "    if: github.ref == 'refs/heads/main'",
+    '    needs: validate-conformance-artifacts',
+    '    runs-on: ubuntu-24.04',
+    '    environment: client-v1-conformance',
+    '    permissions:',
+    '      attestations: write',
+    '      contents: read',
+    '      id-token: write',
+    '    steps:',
+    ...staticDownloadSteps(),
+    '      - name: Compare freshly downloaded artifact digests',
+    '        shell: bash',
+    '        env:',
+    `          OPENCOVEN_VALIDATOR_REVISION_INPUT: ${TEST_VALIDATOR_INPUT}`,
+    `          OPENCOVEN_PROTECTED_VALIDATOR_REVISION: ${TEST_PROTECTED_VALIDATOR_REVISION}`,
+    "        run: '[[ \"$OPENCOVEN_VALIDATOR_REVISION_INPUT\" != \"$OPENCOVEN_PROTECTED_VALIDATOR_REVISION\" ]] && exit 1; sha256sum .artifacts/client-v1-conformance-darwin-arm64.json; sha256sum .artifacts/client-v1-conformance-linux-x64.json; sha256sum .artifacts/client-v1-conformance-win32-x64.json'",
+    ...staticAttestationSteps(),
     '  aggregate-conformance:',
     '    name: aggregate-conformance',
-    '    needs: platform-conformance',
+    "    if: github.ref == 'refs/heads/main'",
+    '    needs: attest-conformance-artifacts',
     '    runs-on: ubuntu-24.04',
     '    permissions: {}',
     '    steps:',
@@ -318,6 +430,20 @@ function createProducerWorkflow({
 }
 
 const TEST_PRODUCER_WORKFLOW_TEXT = createProducerWorkflow();
+const TEST_PRODUCER_WORKFLOW = parseReleaseWorkflowDocument(
+  TEST_PRODUCER_WORKFLOW_TEXT,
+) as {
+  jobs: Record<string, { steps: Array<Record<string, unknown>> }>;
+};
+const testWorkflowScriptSha256 = (job: string, name: string) => {
+  const step = TEST_PRODUCER_WORKFLOW.jobs[job]?.steps.find(
+    (candidate) => candidate.name === name,
+  );
+  if (typeof step?.run !== 'string') {
+    throw new Error(`Missing ${job} test workflow script`);
+  }
+  return sha256(step.run);
+};
 const TEST_COMPATIBLE_PRODUCER = {
   status: 'compatible',
   repository: 'OpenCoven/chat',
@@ -346,11 +472,56 @@ const TEST_COMPATIBLE_PRODUCER = {
     aggregationJob: 'aggregate-conformance',
     aggregationJobName: 'aggregate-conformance',
     aggregationRunnerLabels: ['ubuntu-24.04'],
+    validationJob: 'validate-conformance-artifacts',
+    validationJobName: 'validate-conformance-artifacts',
+    attestationJob: 'attest-conformance-artifacts',
+    attestationJobName: 'attest-conformance-artifacts',
     environment: 'client-v1-conformance',
     environmentId: '20863036831',
     artifactNameTemplate: 'client-v1-conformance-{platform}',
     recordPathTemplate:
       '.artifacts/client-v1-conformance-{platform}.json',
+    artifacts: TEST_STATIC_ARTIFACTS,
+    downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
+    attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
+    windowsBootstrapScriptSha256: testWorkflowScriptSha256(
+      'platform-conformance',
+      'Bootstrap supervised Windows conformance',
+    ),
+    validatorRevisionScriptSha256: testWorkflowScriptSha256(
+      'platform-conformance',
+      'Require protected validator revision',
+    ),
+    phase1RevisionsScriptSha256: testWorkflowScriptSha256(
+      'platform-conformance',
+      'Read Phase 1 reviewed revisions',
+    ),
+    linuxKeyringSetupScriptSha256: testWorkflowScriptSha256(
+      'platform-conformance',
+      'Install frozen Linux Secret Service',
+    ),
+    unixSupervisorPreparationScriptSha256: testWorkflowScriptSha256(
+      'platform-conformance',
+      'Prepare trusted Unix supervisor',
+    ),
+    unixProductionScriptSha256: testWorkflowScriptSha256(
+      'platform-conformance',
+      'Run supervised Unix production and handoff',
+    ),
+    unixValidationScriptSha256: testWorkflowScriptSha256(
+      'platform-conformance',
+      'Validate broker-owned Unix platform record',
+    ),
+    validationScriptSha256: testWorkflowScriptSha256(
+      'validate-conformance-artifacts',
+      'Validate exact SDK schema, parser, and scanner',
+    ),
+    attestationScriptSha256: testWorkflowScriptSha256(
+      'attest-conformance-artifacts',
+      'Compare freshly downloaded artifact digests',
+    ),
+    validatorRevisionEnvironment:
+      'CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION',
     sourceRef: 'refs/heads/main',
     runnerLabels: {
       'darwin-arm64': ['macos-14'],
@@ -1067,8 +1238,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: 'e1813545c150e05dc9967aebfbd4a10bd2fc41ae',
-      tree: 'a45fb155404d782b6dda31b902758548035b932b',
+      commit: 'a57cc2669aaa0383e46589dbf5ed13ea994eac48',
+      tree: '4612ef136ba21bfae553edf6de49234ed2d267aa',
       packageManifest: {
         path: 'package.json',
         size: 3_849,
@@ -1078,28 +1249,55 @@ describe('unresolved SDK #38 conformance gaps', () => {
       harness: {
         path: 'scripts/phase1-conformance.mjs',
         version: '2.0.0',
-        size: 186_684,
+        size: 187_131,
         sha256:
-          '506230b789a4b83553509aafde9b6f6e37f18f783a497616e8649e6498319d9c',
+          'cc374d616d9de0a0cd94ce2ced5847fd877e124323acce3fca31f3df35d67d1b',
       },
       command: 'test:phase1-conformance',
       recordSchemaVersion: 2,
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 442_306,
+        size: 442_822,
         sha256:
-          '3eefe281345c1d411d0a0dc4d100d74d58295c6d005f1156c6fc9632e42a6c4c',
+          '79a73b778b04f47467d243e6bfb5e556f5f61a4cab9aee004c7b5e3f7595c9dc',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
         aggregationJobName: 'aggregate-conformance',
         aggregationRunnerLabels: ['ubuntu-24.04'],
+        validationJob: 'validate-conformance-artifacts',
+        validationJobName: 'validate-conformance-artifacts',
+        attestationJob: 'attest-conformance-artifacts',
+        attestationJobName: 'attest-conformance-artifacts',
         environment: 'client-v1-conformance',
         environmentId: '20863036831',
         artifactNameTemplate: 'client-v1-conformance-{platform}',
         recordPathTemplate:
           '.artifacts/client-v1-conformance-{platform}.json',
+        artifacts: TEST_STATIC_ARTIFACTS,
+        downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
+        attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
+        windowsBootstrapScriptSha256:
+          '033500c97f4c5b5a01e45c3d309543ccb384705b8591b11fca9a1aea113ec27d',
+        validatorRevisionScriptSha256:
+          '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
+        phase1RevisionsScriptSha256:
+          '507ce777b643d97154472eb23135f7965fd55cf0fcedcec30e93b23e6472d225',
+        linuxKeyringSetupScriptSha256:
+          '26e6bb6da4d80617c99d6edeb577c2026910ffc3b1ee70df03bed5fb8d149a51',
+        unixSupervisorPreparationScriptSha256:
+          '20748878d28293006178804f3a2075b69eab7a98f88a49028e238069e30d8b11',
+        unixProductionScriptSha256:
+          '1cbfaf8420970fc488424021dae04136891966fcce9a5a7493fe431a23376aa2',
+        unixValidationScriptSha256:
+          'b0ce7139bdf365d420c7dde478282f117cce97c1bec63d07cd95b64057121a89',
+        validationScriptSha256:
+          '72a2c0810c535d4e3d5e2b0c76bfc1822dc43d54ee653bb034fb977125dbd734',
+        attestationScriptSha256:
+          '24af6732396013e8c1f23404cf38b5332e5a276c034d530c80d02247cb2a7347',
+        validatorRevisionEnvironment:
+          'CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION',
         sourceRef: 'refs/heads/main',
         runnerLabels: {
           'darwin-arm64': ['macos-14'],
@@ -1108,8 +1306,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: 'e1813545c150e05dc9967aebfbd4a10bd2fc41ae',
-        sourceDigest: 'e1813545c150e05dc9967aebfbd4a10bd2fc41ae',
+        signerDigest: 'a57cc2669aaa0383e46589dbf5ed13ea994eac48',
+        sourceDigest: 'a57cc2669aaa0383e46589dbf5ed13ea994eac48',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1930,6 +2128,34 @@ describe('unresolved SDK #38 conformance gaps', () => {
             conclusion: 'success',
           });
           jobs.push({
+            id: 24_100,
+            run_id: runId,
+            run_attempt: runAttempt,
+            head_sha: producer.commit,
+            html_url:
+              `https://github.com/${producer.repository}/actions/runs/`
+              + `${runId}/job/24100`,
+            name: producer.workflow.validationJobName,
+            labels: ['ubuntu-24.04'],
+            workflow_name: producer.workflow.name,
+            status: 'completed',
+            conclusion: 'success',
+          });
+          jobs.push({
+            id: 24_200,
+            run_id: runId,
+            run_attempt: runAttempt,
+            head_sha: producer.commit,
+            html_url:
+              `https://github.com/${producer.repository}/actions/runs/`
+              + `${runId}/job/24200`,
+            name: producer.workflow.attestationJobName,
+            labels: ['ubuntu-24.04'],
+            workflow_name: producer.workflow.name,
+            status: 'completed',
+            conclusion: 'success',
+          });
+          jobs.push({
             id: 25_000,
             run_id: runId,
             run_attempt: runAttempt,
@@ -2169,11 +2395,23 @@ describe('unresolved SDK #38 conformance gaps', () => {
     const beforeProtectedUpload = (
       workflowText: string,
       insertedLines: string[],
-    ) =>
-      workflowText.replace(
-        `      - uses: ${UPLOAD_ARTIFACT_ACTION}`,
-        `${insertedLines.join('\n')}\n      - uses: ${UPLOAD_ARTIFACT_ACTION}`,
+    ) => {
+      const upload = producerArtifactSteps().join('\n');
+      expect(workflowText).toContain(upload);
+      return workflowText.replace(
+        upload,
+        `${insertedLines.join('\n')}\n${upload}`,
       );
+    };
+    const withoutJob = (workflowText: string, job: string) => {
+      const start = workflowText.indexOf(`  ${job}:\n`);
+      const next = workflowText.indexOf('\n  ', start + 3);
+      expect(start).toBeGreaterThanOrEqual(0);
+      return (
+        workflowText.slice(0, start)
+        + workflowText.slice(next < 0 ? workflowText.length : next + 1)
+      );
+    };
 
     expect(
       verifyGitHubConformanceEvidence(verificationInput as never).aggregate,
@@ -2246,6 +2484,168 @@ describe('unresolved SDK #38 conformance gaps', () => {
         ),
       },
       {
+        name: 'missing validation job',
+        workflow: withoutJob(
+          TEST_PRODUCER_WORKFLOW_TEXT,
+          'validate-conformance-artifacts',
+        ),
+      },
+      {
+        name: 'missing attestation job',
+        workflow: withoutJob(
+          TEST_PRODUCER_WORKFLOW_TEXT,
+          'attest-conformance-artifacts',
+        ),
+      },
+      {
+        name: 'validation skips platform completion',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '    needs: platform-conformance',
+          '    needs: windows-supervisor',
+        ),
+      },
+      {
+        name: 'attestation skips validation',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '    needs: validate-conformance-artifacts',
+          '    needs: platform-conformance',
+        ),
+      },
+      {
+        name: 'platform producer gains OIDC authority',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '    permissions:',
+            '      actions: read',
+            '      contents: read',
+          ].join('\n'),
+          [
+            '    permissions:',
+            '      actions: read',
+            '      contents: read',
+            '      id-token: write',
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'validation leaves protected environment',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '  validate-conformance-artifacts:',
+            '    name: validate-conformance-artifacts',
+            "    if: github.ref == 'refs/heads/main'",
+            '    needs: platform-conformance',
+            '    runs-on: ubuntu-24.04',
+            '    environment: client-v1-conformance',
+          ].join('\n'),
+          [
+            '  validate-conformance-artifacts:',
+            '    name: validate-conformance-artifacts',
+            "    if: github.ref == 'refs/heads/main'",
+            '    needs: platform-conformance',
+            '    runs-on: ubuntu-24.04',
+            '    environment: unprotected',
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'attestation leaves protected environment',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '  attest-conformance-artifacts:',
+            '    name: attest-conformance-artifacts',
+            "    if: github.ref == 'refs/heads/main'",
+            '    needs: validate-conformance-artifacts',
+            '    runs-on: ubuntu-24.04',
+            '    environment: client-v1-conformance',
+          ].join('\n'),
+          [
+            '  attest-conformance-artifacts:',
+            '    name: attest-conformance-artifacts',
+            "    if: github.ref == 'refs/heads/main'",
+            '    needs: validate-conformance-artifacts',
+            '    runs-on: ubuntu-24.04',
+            '    environment: unprotected',
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'validation checkout uses unprotected dispatch input',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '          repository: OpenCoven/sdk',
+            `          ref: ${TEST_PROTECTED_VALIDATOR_REVISION}`,
+            '          path: validator',
+          ].join('\n'),
+          [
+            '          repository: OpenCoven/sdk',
+            `          ref: ${TEST_VALIDATOR_INPUT}`,
+            '          path: validator',
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'wrong protected validator variable',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replaceAll(
+          'CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION',
+          'UNREVIEWED_VALIDATOR_REVISION',
+        ),
+      },
+      {
+        name: 'missing Unix Rust installation',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '      - name: Install frozen Unix Rust',
+            "        if: matrix.platform != 'win32-x64'",
+            `        run: ${yamlSingleQuoted(TEST_UNIX_RUST_INSTALL_COMMAND)}`,
+            '',
+          ].join('\n'),
+          '',
+        ),
+      },
+      {
+        name: 'conditional validation control',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '      - name: Validate exact SDK schema, parser, and scanner',
+            '        id: validate',
+          ].join('\n'),
+          [
+            '      - name: Validate exact SDK schema, parser, and scanner',
+            '        if: false',
+            '        id: validate',
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'commented and unreachable validation controls',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          `        run: 'parsePlatformEvidence(text, \`\${platform} uploaded artifact\`, schema); scanConformanceEvidence(record); createHash(''sha256'').update(bytes).digest(''hex''); serializeCanonicalJson(record) !== text'`,
+          `        run: '/* parsePlatformEvidence( */ JSON.parse(text); /* scanConformanceEvidence(record) */ false && serializeCanonicalJson(record) !== text; createHash(''sha256'').update(bytes).digest(''hex'')'`,
+        ),
+      },
+      {
+        name: 'conditional attestation control',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '      - name: Compare freshly downloaded artifact digests\n        shell: bash',
+          '      - name: Compare freshly downloaded artifact digests\n        if: false\n        shell: bash',
+        ),
+      },
+      {
+        name: 'wrong download action pin',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replaceAll(
+          DOWNLOAD_ARTIFACT_ACTION,
+          'actions/download-artifact@4444444444444444444444444444444444444444',
+        ),
+      },
+      {
+        name: 'wrong attestation action pin',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replaceAll(
+          ATTEST_BUILD_PROVENANCE_ACTION,
+          'actions/attest-build-provenance@5555555555555555555555555555555555555555',
+        ),
+      },
+      {
         name: 'optional validator revision input',
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
           '        required: true',
@@ -2311,8 +2711,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
       {
         name: 'POSIX rustc proxy canonicalized as rustup',
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
-          "run(''rustup'', [''run'', ''1.95.0'', ''rustc'', ''--version''])",
           "run(''rustc'', [''--version''])",
+          "run(''rustup'', [''run'', ''1.95.0'', ''rustc'', ''--version''])",
         ),
       },
       {
@@ -2328,23 +2728,44 @@ describe('unresolved SDK #38 conformance gaps', () => {
         ),
       },
       {
-        name: 'disabled Windows supervisor download',
+        name: 'disabled supervised Windows bootstrap',
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
-          `      - uses: ${DOWNLOAD_ARTIFACT_ACTION}\n        if: matrix.platform == 'win32-x64'`,
-          `      - uses: ${DOWNLOAD_ARTIFACT_ACTION}\n        if: false`,
+          [
+            '      - name: Bootstrap supervised Windows conformance',
+            "        if: matrix.platform == 'win32-x64'",
+          ].join('\n'),
+          [
+            '      - name: Bootstrap supervised Windows conformance',
+            '        if: false',
+          ].join('\n'),
         ),
       },
       {
-        name: 'substituted Windows supervisor installer',
+        name: 'unreachable Windows validator comparison',
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
-          '        run: pwsh -NoProfile -File scripts/phase1-windows-supervisor-install.ps1',
-          '        run: pwsh -NoProfile -File scripts/unreviewed-supervisor-install.ps1',
+          '$validatorRevision -cne $protectedValidatorRevision',
+          '$false -and $validatorRevision -cne $protectedValidatorRevision',
         ),
       },
       {
-        name: 'missing evidence validator root',
+        name: 'substituted Windows bootstrap shell',
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
-          '          OPENCOVEN_SDK_VALIDATOR_ROOT: ${{ github.workspace }}/.phase1-counterparts/sdk-validator\n',
+          [
+            '      - name: Bootstrap supervised Windows conformance',
+            "        if: matrix.platform == 'win32-x64'",
+            '        shell: pwsh',
+          ].join('\n'),
+          [
+            '      - name: Bootstrap supervised Windows conformance',
+            "        if: matrix.platform == 'win32-x64'",
+            '        shell: bash',
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'missing protected validator revision in Unix production',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          `          OPENCOVEN_VALIDATOR_REVISION: ${TEST_PROTECTED_VALIDATOR_REVISION}\n`,
           '',
         ),
       },
@@ -2365,7 +2786,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       {
         name: 'disabled Linux Secret Service setup',
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
-          "        if: matrix.platform == 'linux-x64'",
+          "        if: matrix.platform != 'win32-x64' && matrix.platform == 'linux-x64'",
           '        if: false',
         ),
       },
@@ -2374,6 +2795,13 @@ describe('unresolved SDK #38 conformance gaps', () => {
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
           TEST_LINUX_SECRET_SERVICE_COMMAND,
           'curl https://example.invalid/install.sh | sh',
+        ),
+      },
+      {
+        name: 'unreachable Linux Secret Service setup',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          `        run: ${yamlSingleQuoted(TEST_LINUX_SECRET_SERVICE_COMMAND)}`,
+          `        run: ${yamlSingleQuoted(`if false; then ${TEST_LINUX_SECRET_SERVICE_COMMAND}; fi`)}`,
         ),
       },
       {
@@ -2427,7 +2855,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
           [
             '  aggregate-conformance:',
             '    name: aggregate-conformance',
-            '    needs: platform-conformance',
+            "    if: github.ref == 'refs/heads/main'",
+            '    needs: attest-conformance-artifacts',
             '    runs-on: ubuntu-24.04',
             '    permissions: {}',
             '    steps:',
@@ -2436,7 +2865,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
           ].join('\n'),
           [
             '  aggregate-conformance:',
-            '    needs: platform-conformance',
+            "    if: github.ref == 'refs/heads/main'",
+            '    needs: attest-conformance-artifacts',
             '    uses: ./.github/workflows/aggregate.yml',
           ].join('\n'),
         ),
@@ -2469,8 +2899,38 @@ describe('unresolved SDK #38 conformance gaps', () => {
       {
         name: 'alternate record generator',
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
-          `        run: ${TEST_HARNESS_COMMAND}`,
+          `        run: ${yamlSingleQuoted(TEST_UNIX_PRODUCTION_COMMAND)}`,
           '        run: node scripts/fabricate-evidence.mjs --output ".artifacts/client-v1-conformance-${{ matrix.platform }}.json"',
+        ),
+      },
+      {
+        name: 'unreachable supervised Unix producer',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          `        run: ${yamlSingleQuoted(TEST_UNIX_PRODUCTION_COMMAND)}`,
+          `        run: ${yamlSingleQuoted(`if false; then ${TEST_UNIX_PRODUCTION_COMMAND}; fi`)}`,
+        ),
+      },
+      {
+        name: 'disabled broker-owned Unix validation',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          `        run: ${yamlSingleQuoted(TEST_CANONICAL_VALIDATION_COMMAND)}`,
+          '        run: true',
+        ),
+      },
+      {
+        name: 'failure-tolerant broker-owned Unix validation',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '      - name: Validate broker-owned Unix platform record',
+            "        if: matrix.platform != 'win32-x64'",
+            '        shell: bash',
+          ].join('\n'),
+          [
+            '      - name: Validate broker-owned Unix platform record',
+            "        if: matrix.platform != 'win32-x64'",
+            '        shell: bash',
+            '        continue-on-error: true',
+          ].join('\n'),
         ),
       },
       {
@@ -2549,9 +3009,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
           [
             `      - uses: ${CHECKOUT_ACTION}`,
+            "        if: matrix.platform != 'win32-x64'",
             '        with:',
-            '          repository: ${{ steps.phase1-revisions.outputs.sdk_repository }}',
-            '          ref: ${{ steps.phase1-revisions.outputs.sdk_revision }}',
+            "          repository: ${{ steps['phase1-revisions'].outputs.sdk_repository }}",
+            "          ref: ${{ steps['phase1-revisions'].outputs.sdk_revision }}",
             '          path: .phase1-counterparts/sdk',
             '          persist-credentials: false',
             '',
@@ -2663,7 +3124,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           return execute(command, arguments_, options);
         },
       } as never),
-    ).toThrow(/exact reviewed protected evidence graph/u);
+    ).toThrow(/workflow/u);
 
     const siblingSubstituteWorkflow = createProducerWorkflow({
       siblingSubstitute: true,
@@ -2687,7 +3148,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           return execute(command, arguments_, options);
         },
       } as never),
-    ).toThrow(/exact reviewed protected evidence graph/u);
+    ).toThrow(/workflow/u);
 
     const artifactAggregationWorkflow =
       TEST_PRODUCER_WORKFLOW_TEXT.replace(
@@ -2713,7 +3174,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           return execute(command, arguments_, options);
         },
       } as never),
-    ).toThrow(/exact reviewed protected evidence graph/u);
+    ).toThrow(/workflow/u);
 
     expect(() =>
       verifyGitHubConformanceEvidence({

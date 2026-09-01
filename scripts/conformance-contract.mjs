@@ -608,6 +608,53 @@ function expectRunnerLabels(value, label) {
   );
 }
 
+function expectWorkflowArtifacts(value, label) {
+  if (!Array.isArray(value) || value.length !== CANONICAL_PLATFORMS.length) {
+    throw new Error(`${label} must identify every canonical platform artifact`);
+  }
+  return value.map((entry, index) => {
+    const artifactLabel = `${label}[${index}]`;
+    const object = expectExactObject(
+      entry,
+      ['platform', 'name', 'recordPath'],
+      artifactLabel,
+    );
+    const platform = expectString(
+      object.platform,
+      `${artifactLabel}.platform`,
+      { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+    );
+    const expectedPlatform = CANONICAL_PLATFORMS[index];
+    const artifact = {
+      platform,
+      name: expectString(object.name, `${artifactLabel}.name`, {
+        pattern: IDENTIFIER_PATTERN,
+        maxBytes: 192,
+      }),
+      recordPath: expectRelativePath(
+        object.recordPath,
+        `${artifactLabel}.recordPath`,
+      ),
+    };
+    if (
+      platform !== expectedPlatform
+      || artifact.name !== `client-v1-conformance-${platform}`
+      || artifact.recordPath
+        !== `.artifacts/client-v1-conformance-${platform}.json`
+    ) {
+      throw new Error(`${artifactLabel} does not identify the static platform artifact`);
+    }
+    return artifact;
+  });
+}
+
+function expectPinnedAction(value, label) {
+  return expectString(value, label, {
+    pattern: /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@[0-9a-f]{40}$/u,
+    maxBytes: 192,
+  });
+}
+
 function expectEvidenceProducer(value, label) {
   if (!isPlainObject(value)) {
     throw new Error(`${label} must be a JSON object`);
@@ -700,10 +747,27 @@ function expectEvidenceProducer(value, label) {
         'aggregationJob',
         'aggregationJobName',
         'aggregationRunnerLabels',
+        'validationJob',
+        'validationJobName',
+        'attestationJob',
+        'attestationJobName',
         'environment',
         'environmentId',
         'artifactNameTemplate',
         'recordPathTemplate',
+        'artifacts',
+        'downloadArtifactAction',
+        'attestationAction',
+        'windowsBootstrapScriptSha256',
+        'validatorRevisionScriptSha256',
+        'phase1RevisionsScriptSha256',
+        'linuxKeyringSetupScriptSha256',
+        'unixSupervisorPreparationScriptSha256',
+        'unixProductionScriptSha256',
+        'unixValidationScriptSha256',
+        'validationScriptSha256',
+        'attestationScriptSha256',
+        'validatorRevisionEnvironment',
         'sourceRef',
         'runnerLabels',
         'signerWorkflow',
@@ -803,6 +867,26 @@ function expectEvidenceProducer(value, label) {
           workflow.aggregationRunnerLabels,
           `${label}.workflow.aggregationRunnerLabels`,
         ),
+        validationJob: expectString(
+          workflow.validationJob,
+          `${label}.workflow.validationJob`,
+          { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+        ),
+        validationJobName: expectString(
+          workflow.validationJobName,
+          `${label}.workflow.validationJobName`,
+          { maxBytes: 192 },
+        ),
+        attestationJob: expectString(
+          workflow.attestationJob,
+          `${label}.workflow.attestationJob`,
+          { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+        ),
+        attestationJobName: expectString(
+          workflow.attestationJobName,
+          `${label}.workflow.attestationJobName`,
+          { maxBytes: 192 },
+        ),
         environment: expectString(
           workflow.environment,
           `${label}.workflow.environment`,
@@ -822,6 +906,59 @@ function expectEvidenceProducer(value, label) {
           workflow.recordPathTemplate,
           `${label}.workflow.recordPathTemplate`,
           { maxBytes: 256 },
+        ),
+        artifacts: expectWorkflowArtifacts(
+          workflow.artifacts,
+          `${label}.workflow.artifacts`,
+        ),
+        downloadArtifactAction: expectPinnedAction(
+          workflow.downloadArtifactAction,
+          `${label}.workflow.downloadArtifactAction`,
+        ),
+        attestationAction: expectPinnedAction(
+          workflow.attestationAction,
+          `${label}.workflow.attestationAction`,
+        ),
+        windowsBootstrapScriptSha256: expectSha256(
+          workflow.windowsBootstrapScriptSha256,
+          `${label}.workflow.windowsBootstrapScriptSha256`,
+        ),
+        validatorRevisionScriptSha256: expectSha256(
+          workflow.validatorRevisionScriptSha256,
+          `${label}.workflow.validatorRevisionScriptSha256`,
+        ),
+        phase1RevisionsScriptSha256: expectSha256(
+          workflow.phase1RevisionsScriptSha256,
+          `${label}.workflow.phase1RevisionsScriptSha256`,
+        ),
+        linuxKeyringSetupScriptSha256: expectSha256(
+          workflow.linuxKeyringSetupScriptSha256,
+          `${label}.workflow.linuxKeyringSetupScriptSha256`,
+        ),
+        unixSupervisorPreparationScriptSha256: expectSha256(
+          workflow.unixSupervisorPreparationScriptSha256,
+          `${label}.workflow.unixSupervisorPreparationScriptSha256`,
+        ),
+        unixProductionScriptSha256: expectSha256(
+          workflow.unixProductionScriptSha256,
+          `${label}.workflow.unixProductionScriptSha256`,
+        ),
+        unixValidationScriptSha256: expectSha256(
+          workflow.unixValidationScriptSha256,
+          `${label}.workflow.unixValidationScriptSha256`,
+        ),
+        validationScriptSha256: expectSha256(
+          workflow.validationScriptSha256,
+          `${label}.workflow.validationScriptSha256`,
+        ),
+        attestationScriptSha256: expectSha256(
+          workflow.attestationScriptSha256,
+          `${label}.workflow.attestationScriptSha256`,
+        ),
+        validatorRevisionEnvironment: expectString(
+          workflow.validatorRevisionEnvironment,
+          `${label}.workflow.validatorRevisionEnvironment`,
+          { pattern: /^[A-Z][A-Z0-9_]*$/u, maxBytes: 128 },
         ),
         sourceRef: expectString(
           workflow.sourceRef,
@@ -876,11 +1013,25 @@ function expectEvidenceProducer(value, label) {
       || producer.workflow.aggregationJobName !== 'aggregate-conformance'
       || JSON.stringify(producer.workflow.aggregationRunnerLabels)
         !== JSON.stringify(['ubuntu-24.04'])
+      || producer.workflow.validationJob
+        !== 'validate-conformance-artifacts'
+      || producer.workflow.validationJobName
+        !== 'validate-conformance-artifacts'
+      || producer.workflow.attestationJob
+        !== 'attest-conformance-artifacts'
+      || producer.workflow.attestationJobName
+        !== 'attest-conformance-artifacts'
       || producer.workflow.environment !== 'client-v1-conformance'
       || producer.workflow.artifactNameTemplate
         !== 'client-v1-conformance-{platform}'
       || producer.workflow.recordPathTemplate
         !== '.artifacts/client-v1-conformance-{platform}.json'
+      || producer.workflow.downloadArtifactAction
+        !== 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c'
+      || producer.workflow.attestationAction
+        !== 'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8'
+      || producer.workflow.validatorRevisionEnvironment
+        !== 'CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION'
       || producer.workflow.sourceRef !== 'refs/heads/main'
       || JSON.stringify(producer.workflow.runnerLabels)
         !== JSON.stringify(PROTECTED_WORKFLOW_RUNNER_LABELS)
@@ -3307,10 +3458,27 @@ export function parseReviewedEvidenceIndex(
       'aggregationJob',
       'aggregationJobName',
       'aggregationRunnerLabels',
+      'validationJob',
+      'validationJobName',
+      'attestationJob',
+      'attestationJobName',
       'environment',
       'environmentId',
       'artifactNameTemplate',
       'recordPathTemplate',
+      'artifacts',
+      'downloadArtifactAction',
+      'attestationAction',
+      'windowsBootstrapScriptSha256',
+      'validatorRevisionScriptSha256',
+      'phase1RevisionsScriptSha256',
+      'linuxKeyringSetupScriptSha256',
+      'unixSupervisorPreparationScriptSha256',
+      'unixProductionScriptSha256',
+      'unixValidationScriptSha256',
+      'validationScriptSha256',
+      'attestationScriptSha256',
+      'validatorRevisionEnvironment',
       'sourceRef',
       'runnerLabels',
       'signerWorkflow',
@@ -3394,6 +3562,26 @@ export function parseReviewedEvidenceIndex(
         producerWorkflow.aggregationRunnerLabels,
         `${source}.producer.workflow.aggregationRunnerLabels`,
       ),
+      validationJob: expectString(
+        producerWorkflow.validationJob,
+        `${source}.producer.workflow.validationJob`,
+        { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+      ),
+      validationJobName: expectString(
+        producerWorkflow.validationJobName,
+        `${source}.producer.workflow.validationJobName`,
+        { maxBytes: 192 },
+      ),
+      attestationJob: expectString(
+        producerWorkflow.attestationJob,
+        `${source}.producer.workflow.attestationJob`,
+        { pattern: IDENTIFIER_PATTERN, maxBytes: 64 },
+      ),
+      attestationJobName: expectString(
+        producerWorkflow.attestationJobName,
+        `${source}.producer.workflow.attestationJobName`,
+        { maxBytes: 192 },
+      ),
       environment: expectString(
         producerWorkflow.environment,
         `${source}.producer.workflow.environment`,
@@ -3413,6 +3601,59 @@ export function parseReviewedEvidenceIndex(
         producerWorkflow.recordPathTemplate,
         `${source}.producer.workflow.recordPathTemplate`,
         { maxBytes: 256 },
+      ),
+      artifacts: expectWorkflowArtifacts(
+        producerWorkflow.artifacts,
+        `${source}.producer.workflow.artifacts`,
+      ),
+      downloadArtifactAction: expectPinnedAction(
+        producerWorkflow.downloadArtifactAction,
+        `${source}.producer.workflow.downloadArtifactAction`,
+      ),
+      attestationAction: expectPinnedAction(
+        producerWorkflow.attestationAction,
+        `${source}.producer.workflow.attestationAction`,
+      ),
+      windowsBootstrapScriptSha256: expectSha256(
+        producerWorkflow.windowsBootstrapScriptSha256,
+        `${source}.producer.workflow.windowsBootstrapScriptSha256`,
+      ),
+      validatorRevisionScriptSha256: expectSha256(
+        producerWorkflow.validatorRevisionScriptSha256,
+        `${source}.producer.workflow.validatorRevisionScriptSha256`,
+      ),
+      phase1RevisionsScriptSha256: expectSha256(
+        producerWorkflow.phase1RevisionsScriptSha256,
+        `${source}.producer.workflow.phase1RevisionsScriptSha256`,
+      ),
+      linuxKeyringSetupScriptSha256: expectSha256(
+        producerWorkflow.linuxKeyringSetupScriptSha256,
+        `${source}.producer.workflow.linuxKeyringSetupScriptSha256`,
+      ),
+      unixSupervisorPreparationScriptSha256: expectSha256(
+        producerWorkflow.unixSupervisorPreparationScriptSha256,
+        `${source}.producer.workflow.unixSupervisorPreparationScriptSha256`,
+      ),
+      unixProductionScriptSha256: expectSha256(
+        producerWorkflow.unixProductionScriptSha256,
+        `${source}.producer.workflow.unixProductionScriptSha256`,
+      ),
+      unixValidationScriptSha256: expectSha256(
+        producerWorkflow.unixValidationScriptSha256,
+        `${source}.producer.workflow.unixValidationScriptSha256`,
+      ),
+      validationScriptSha256: expectSha256(
+        producerWorkflow.validationScriptSha256,
+        `${source}.producer.workflow.validationScriptSha256`,
+      ),
+      attestationScriptSha256: expectSha256(
+        producerWorkflow.attestationScriptSha256,
+        `${source}.producer.workflow.attestationScriptSha256`,
+      ),
+      validatorRevisionEnvironment: expectString(
+        producerWorkflow.validatorRevisionEnvironment,
+        `${source}.producer.workflow.validatorRevisionEnvironment`,
+        { pattern: /^[A-Z][A-Z0-9_]*$/u, maxBytes: 128 },
       ),
       sourceRef: expectString(
         producerWorkflow.sourceRef,
