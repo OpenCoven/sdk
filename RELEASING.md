@@ -214,7 +214,7 @@ passing evidence record for each target.
 The frozen Chat production source
 `edd4728792321771496df58bfc0e6122908a96ec` is exercised by the compatible
 schema-v2 producer at
-`cc39a1f48f73d52940af070a72eb7297d88feb96`. Its protected workflow requires
+`e1813545c150e05dc9967aebfbd4a10bd2fc41ae`. Its protected workflow requires
 an exact SDK `validator_revision`, uses protected environment ID
 `20863036831`, and emits only complete observed-result records. That environment
 must disable administrator bypass, require reviewer user ID `68980965`, permit
