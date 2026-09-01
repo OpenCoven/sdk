@@ -128,7 +128,7 @@ function exactToolchainCommand(toolchain) {
     '{ encoding: \'utf8\' }).trim(); };',
     `if (process.version !== '${toolchain.nodeVersion}'`,
     `|| 'pnpm@' + run('pnpm', ['--version']) !== '${toolchain.pnpmVersion}'`,
-    `|| !run('rustc', ['--version']).startsWith('rustc ${toolchain.rustVersion} ')`,
+    `|| !run('rustup', ['run', '${toolchain.rustVersion}', 'rustc', '--version']).startsWith('rustc ${toolchain.rustVersion} ')`,
     `|| run('pnpm', ['exec', 'tauri', '--version'])`,
     `!== 'tauri-cli ${toolchain.tauriVersion}')`,
     'throw new Error(\'Frozen toolchain does not match\');"',
@@ -298,6 +298,11 @@ function expectedProtectedWorkflow(producer, toolchain) {
           attestations: 'write',
           contents: 'read',
           'id-token': 'write',
+        },
+        env: {
+          GIT_CONFIG_COUNT: '1',
+          GIT_CONFIG_KEY_0: 'core.autocrlf',
+          GIT_CONFIG_VALUE_0: 'false',
         },
         steps: [
           {
