@@ -79,7 +79,7 @@ const TEST_TOOLCHAIN_COMMAND = [
   '{ encoding: \'utf8\' }).trim(); };',
   'if (process.version !== \'v24.18.1\'',
   '|| \'pnpm@\' + run(\'pnpm\', [\'--version\']) !== \'pnpm@10.34.0\'',
-  '|| !run(\'rustc\', [\'--version\']).startsWith(\'rustc 1.95.0 \')',
+  '|| !run(\'rustup\', [\'run\', \'1.95.0\', \'rustc\', \'--version\']).startsWith(\'rustc 1.95.0 \')',
   '|| run(\'pnpm\', [\'exec\', \'tauri\', \'--version\'])',
   '!== \'tauri-cli 2.11.4\')',
   'throw new Error(\'Frozen toolchain does not match\');"',
@@ -288,6 +288,10 @@ function createProducerWorkflow({
     '      attestations: write',
     '      contents: read',
     '      id-token: write',
+    '    env:',
+    "      GIT_CONFIG_COUNT: '1'",
+    '      GIT_CONFIG_KEY_0: core.autocrlf',
+    "      GIT_CONFIG_VALUE_0: 'false'",
     '    steps:',
     ...(siblingSubstitute
       ? protectedProducerSteps().slice(0, -producerArtifactSteps().length)
@@ -1063,8 +1067,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: 'd987b9937972b9acb3fbf6f8fb7daf5af8480bc1',
-      tree: 'ffe1a9264d4d25375ac6eaf8f5d53e84a1f0ea1d',
+      commit: 'cc39a1f48f73d52940af070a72eb7297d88feb96',
+      tree: '6fa9d66e0f08ed18467a04e6a5a301caf16c073e',
       packageManifest: {
         path: 'package.json',
         size: 3_849,
@@ -1083,9 +1087,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 9_481,
+        size: 9_623,
         sha256:
-          'd8ab40cc1741c5253e72bbc86311589f85e4bd796ae68699466c71a0c0fbd940',
+          '190c9c50b268918841ec40be1308e8f9ee72a36cb47d39a05a51e82a081a5d24',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1104,8 +1108,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: 'd987b9937972b9acb3fbf6f8fb7daf5af8480bc1',
-        sourceDigest: 'd987b9937972b9acb3fbf6f8fb7daf5af8480bc1',
+        signerDigest: 'cc39a1f48f73d52940af070a72eb7297d88feb96',
+        sourceDigest: 'cc39a1f48f73d52940af070a72eb7297d88feb96',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -2302,6 +2306,25 @@ describe('unresolved SDK #38 conformance gaps', () => {
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
           'resolveExecutableInvocation',
           'unsafeExecutableInvocation',
+        ),
+      },
+      {
+        name: 'POSIX rustc proxy canonicalized as rustup',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          "run(''rustup'', [''run'', ''1.95.0'', ''rustc'', ''--version''])",
+          "run(''rustc'', [''--version''])",
+        ),
+      },
+      {
+        name: 'Windows checkout permits CRLF conversion',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '    env:',
+            "      GIT_CONFIG_COUNT: '1'",
+            '      GIT_CONFIG_KEY_0: core.autocrlf',
+            "      GIT_CONFIG_VALUE_0: 'false'",
+          ].join('\n'),
+          '',
         ),
       },
       {
