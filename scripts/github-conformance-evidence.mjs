@@ -44,6 +44,12 @@ const CHAT_ENVIRONMENT_REVIEWER_ID = 68_980_965;
 const WINDOWS_SUPERVISOR_ARTIFACT = 'phase1-process-supervisor-win32-x64';
 const WINDOWS_SUPERVISOR_JOB_NAME = 'build-windows-supervisor';
 const WINDOWS_SUPERVISOR_RUNNER_LABELS = ['macos-latest'];
+const REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256 =
+  'ea241e6beae71758484c2114416a7e493adc6375a874a84f8f91bf122a89400c';
+const REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256 =
+  '59db3558cb38e5e9204dbf684e5982e867a45bff782172d0cc1de400f2723f1f';
+const REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256 =
+  'dd20ff8eedba857ddf198cb2b8e80a7f5ffcecc4e367f1238be9e40bb2b743d9';
 const PLATFORM_STEP_CONTRACT = Object.freeze([
   ['Bootstrap supervised Windows conformance', ['name', 'if', 'shell', 'env', 'run']],
   ['Require protected validator revision', ['name', 'if', 'shell', 'env', 'run']],
@@ -398,48 +404,28 @@ function hasReviewedInvokeCheckedTargets(tokens, functionRange) {
   return true;
 }
 
-function extractPowerShellHereStrings(source) {
+function reviewedWindowsChildBootstrap(source) {
   const lines = source.split('\n');
-  const values = [];
+  const starts = [];
   for (let index = 0; index < lines.length; index += 1) {
-    const start = /@(['"])\s*$/u.exec(lines[index]);
-    if (start === null) {
-      continue;
+    if (lines[index] === "  $childBootstrap = @'") {
+      starts.push(index);
     }
-    const endPattern = new RegExp(`^\\s*${start[1]}@\\s*$`, 'u');
-    let end = index + 1;
-    while (end < lines.length && !endPattern.test(lines[end])) {
-      end += 1;
-    }
-    if (end >= lines.length) {
-      return null;
-    }
-    values.push(lines.slice(index + 1, end).join('\n'));
-    index = end;
   }
-  return values;
-}
-
-function reviewedWindowsLauncherScript(run) {
-  const hereStrings = extractPowerShellHereStrings(run);
-  if (hereStrings === null) {
+  if (starts.length !== 1) {
     return null;
   }
-  const candidates = hereStrings.filter((value) =>
-    /\bfunction\s+Invoke-Checked\s*\{/iu.test(value),
+  const end = lines.findIndex(
+    (line, index) => index > starts[0] && line === "'@",
   );
-  if (candidates.length > 1) {
+  if (end < 0) {
     return null;
   }
-  return candidates[0] ?? run;
+  return lines.slice(starts[0] + 1, end).join('\n');
 }
 
-function usesReviewedWindowsProcessLauncher(run) {
-  if (/\$lastexitcode\b/iu.test(run)) {
-    return false;
-  }
-  const launcherScript = reviewedWindowsLauncherScript(run);
-  if (launcherScript === null) {
+function usesReviewedWindowsProcessLauncher(run, launcherScript) {
+  if (/\$(?:[A-Za-z_][A-Za-z0-9_]*:)?lastexitcode\b/iu.test(run)) {
     return false;
   }
   const allLauncherReferences = run.match(/\bInvoke-Checked\b/giu) ?? [];
@@ -950,14 +936,37 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
     || windowsBootstrap.env.OPENCOVEN_PROTECTED_VALIDATOR_REVISION
       !== protectedExpression
     || typeof windowsBootstrap.run !== 'string'
-    || sha256(windowsBootstrap.run)
-      !== producer.workflow.windowsBootstrapScriptSha256
     || !windowsBootstrap.run.includes(
       '$validatorRevision -cne $protectedValidatorRevision',
     )
-    || !usesReviewedWindowsProcessLauncher(windowsBootstrap.run)
   ) {
     workflowError('does not bind the Windows producer to the protected validator');
+  }
+  const windowsChildBootstrap = reviewedWindowsChildBootstrap(
+    windowsBootstrap.run,
+  );
+  if (
+    windowsChildBootstrap === null
+    || sha256(windowsChildBootstrap)
+      !== REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256
+  ) {
+    workflowError('does not use the exact canonical Windows child bootstrap source');
+  }
+  if (
+    producer.workflow.windowsBootstrapScriptSha256
+      !== REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256
+    || sha256(windowsBootstrap.run)
+      !== REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256
+  ) {
+    workflowError('does not use the exact canonical Windows bootstrap source');
+  }
+  if (
+    !usesReviewedWindowsProcessLauncher(
+      windowsBootstrap.run,
+      windowsChildBootstrap,
+    )
+  ) {
+    workflowError('does not use the reviewed Windows process launcher');
   }
   const validatorGuard = namedStep(
     platform.steps,
@@ -1214,9 +1223,19 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
         OPENCOVEN_VALIDATOR_REVISION: protectedExpression,
       })
     || typeof unixProduction.run !== 'string'
+  ) {
+    workflowError('does not configure supervised Unix evidence production');
+  }
+  if (
+    producer.workflow.unixProductionScriptSha256
+      !== REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256
     || sha256(unixProduction.run)
-      !== producer.workflow.unixProductionScriptSha256
-    || !unixProduction.run.includes(
+      !== REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256
+  ) {
+    workflowError('does not use the exact canonical Unix production source');
+  }
+  if (
+    !unixProduction.run.includes(
       'sudo --non-interactive scripts/unix-producer-supervisor.sh',
     )
     || !unixProduction.run.includes(

@@ -261,8 +261,11 @@ reusable workflow, upload path, or attestation path is accepted. The
 aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
-only. The committed lock remains blocked until Chat contains the real reviewed
-schema-v2 producer and matching workflow bytes.
+only. The committed lock marks the reachable Chat producer at
+`95de47f7aa2bf8233f71a601ad16011a82905e41` compatible with the reviewed
+schema-v2 workflow bytes. Release readiness remains blocked until all three
+protected platform records and their GitHub attestations exist and are
+reviewed.
 
 The three records must come from one exact run attempt. The verifier fetches
 the attempt's complete job list and requires exactly the three successful
