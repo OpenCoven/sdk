@@ -129,9 +129,7 @@ function exactToolchainCommand(toolchain) {
     '{ encoding: \'utf8\' }).trim(); };',
     `if (process.version !== '${toolchain.nodeVersion}'`,
     `|| 'pnpm@' + run('pnpm', ['--version']) !== '${toolchain.pnpmVersion}'`,
-    `|| !run('rustc', ['--version']).startsWith('rustc ${toolchain.rustVersion} ')`,
-    `|| run('pnpm', ['exec', 'tauri', '--version'])`,
-    `!== 'tauri-cli ${toolchain.tauriVersion}')`,
+    `|| !run('rustc', ['--version']).startsWith('rustc ${toolchain.rustVersion} '))`,
     'throw new Error(\'Frozen toolchain does not match\');"',
   ].join(' ');
 }

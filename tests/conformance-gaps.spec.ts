@@ -89,9 +89,7 @@ const TEST_TOOLCHAIN_COMMAND = [
   '{ encoding: \'utf8\' }).trim(); };',
   'if (process.version !== \'v24.18.1\'',
   '|| \'pnpm@\' + run(\'pnpm\', [\'--version\']) !== \'pnpm@10.34.0\'',
-  '|| !run(\'rustc\', [\'--version\']).startsWith(\'rustc 1.95.0 \')',
-  '|| run(\'pnpm\', [\'exec\', \'tauri\', \'--version\'])',
-  '!== \'tauri-cli 2.11.4\')',
+  '|| !run(\'rustc\', [\'--version\']).startsWith(\'rustc 1.95.0 \'))',
   'throw new Error(\'Frozen toolchain does not match\');"',
 ].join(' ');
 const TEST_UNIX_RUST_INSTALL_COMMAND = [
@@ -1251,8 +1249,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: 'a57cc2669aaa0383e46589dbf5ed13ea994eac48',
-      tree: '4612ef136ba21bfae553edf6de49234ed2d267aa',
+      commit: '4dc8f64bb71634a01ee647542dcdafdd0888b4f9',
+      tree: '915232e3595196de447521d9fca59866aeade956',
       packageManifest: {
         path: 'package.json',
         size: 3_849,
@@ -1271,9 +1269,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 442_822,
+        size: 443_639,
         sha256:
-          '79a73b778b04f47467d243e6bfb5e556f5f61a4cab9aee004c7b5e3f7595c9dc',
+          'd4e4029cf667026463b63eed2a2965f1e9f8c0c34b4b2d796afbbacfc00d2042',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1292,7 +1290,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          '033500c97f4c5b5a01e45c3d309543ccb384705b8591b11fca9a1aea113ec27d',
+          'd237986c4370f42b32347be9eeb9c33e09c1f3c87f80563b3f11ec17053b91c7',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1321,8 +1319,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: 'a57cc2669aaa0383e46589dbf5ed13ea994eac48',
-        sourceDigest: 'a57cc2669aaa0383e46589dbf5ed13ea994eac48',
+        signerDigest: '4dc8f64bb71634a01ee647542dcdafdd0888b4f9',
+        sourceDigest: '4dc8f64bb71634a01ee647542dcdafdd0888b4f9',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -2758,6 +2756,17 @@ describe('unresolved SDK #38 conformance gaps', () => {
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
           "run(''rustc'', [''--version''])",
           "run(''rustup'', [''run'', ''1.95.0'', ''rustc'', ''--version''])",
+        ),
+      },
+      {
+        name: 'premature Tauri check before the frozen producer install',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          "|| !run(''rustc'', [''--version'']).startsWith(''rustc 1.95.0 ''))",
+          [
+            "|| !run(''rustc'', [''--version'']).startsWith(''rustc 1.95.0 '')",
+            "|| run(''pnpm'', [''exec'', ''tauri'', ''--version''])",
+            "!== ''tauri-cli 2.11.4'')",
+          ].join(' '),
         ),
       },
       {
