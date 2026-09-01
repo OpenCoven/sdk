@@ -159,28 +159,455 @@ function exactUnixToolPathCommand() {
   ].join(' ');
 }
 
-function usesReviewedWindowsProcessLauncher(run) {
-  const requiredFragments = [
-    '[Diagnostics.ProcessStartInfo]::new($FilePath)',
-    '$startInfo.UseShellExecute = $false',
-    '$startInfo.ArgumentList.Add($argument)',
-    '$process = [Diagnostics.Process]::new()',
-    '$process.StartInfo = $startInfo',
-    'if (-not $process.Start())',
-    '$process.WaitForExit()',
-    '$process.ExitCode',
-    '$process.Dispose()',
-    "$npmCli = Join-Path $nodeRoot 'node_modules\\npm\\bin\\npm-cli.js'",
-    "$pnpmCli = Join-Path $pnpmRoot 'node_modules\\pnpm\\bin\\pnpm.cjs'",
-    '(& $node $pnpmCli --version).Trim()',
-    '(& $node $pnpmCli exec tauri --version).Trim()',
-  ];
+const REVIEWED_WINDOWS_INVOKE_CHECKED_FUNCTION = [
+  'function Invoke-Checked {',
+  'param(',
+  '[Parameter(Mandatory)][string]$FilePath,',
+  '[Parameter(Mandatory)][string[]]$ArgumentList,',
+  '[Parameter(Mandatory)][string]$Label',
+  ')',
+  '$startInfo = [Diagnostics.ProcessStartInfo]::new($FilePath)',
+  '$startInfo.UseShellExecute = $false',
+  'foreach ($argument in $ArgumentList) {',
+  '$startInfo.ArgumentList.Add($argument)',
+  '}',
+  '$process = [Diagnostics.Process]::new()',
+  '$process.StartInfo = $startInfo',
+  'try {',
+  'if (-not $process.Start()) {',
+  'throw "$Label failed to start."',
+  '}',
+  '$process.WaitForExit()',
+  'if ($process.ExitCode -ne 0) {',
+  'throw "$Label failed with exit code $($process.ExitCode)."',
+  '}',
+  '} finally {',
+  '$process.Dispose()',
+  '}',
+  '}',
+].join('\n');
+
+function tokenizePowerShell(source) {
+  const tokens = [];
+  let index = 0;
+  while (index < source.length) {
+    const character = source[index];
+    if (character === '`' && source[index + 1] === '\n') {
+      index += 2;
+      continue;
+    }
+    if (character === '\n' || character === ';') {
+      tokens.push({ type: 'separator', value: character });
+      index += 1;
+      continue;
+    }
+    if (character === ' ' || character === '\t' || character === '\r') {
+      index += 1;
+      continue;
+    }
+    if (character === '#') {
+      const newline = source.indexOf('\n', index);
+      index = newline < 0 ? source.length : newline;
+      continue;
+    }
+    if (character === '\'' || character === '"') {
+      const quote = character;
+      const start = index;
+      index += 1;
+      let closed = false;
+      while (index < source.length) {
+        if (quote === '\'' && source[index] === '\'' && source[index + 1] === '\'') {
+          index += 2;
+          continue;
+        }
+        if (quote === '"' && source[index] === '`' && index + 1 < source.length) {
+          index += 2;
+          continue;
+        }
+        if (source[index] === quote) {
+          index += 1;
+          closed = true;
+          break;
+        }
+        index += 1;
+      }
+      if (!closed) {
+        return null;
+      }
+      tokens.push({
+        type: 'string',
+        value: source.slice(start, index),
+      });
+      continue;
+    }
+    if ('{}()[],.='.includes(character)) {
+      tokens.push({ type: 'symbol', value: character });
+      index += 1;
+      continue;
+    }
+    if (character === '$' && /[A-Za-z_]/u.test(source[index + 1] ?? '')) {
+      const start = index;
+      index += 2;
+      while (/[A-Za-z0-9_:]/u.test(source[index] ?? '')) {
+        index += 1;
+      }
+      tokens.push({
+        type: 'variable',
+        value: source.slice(start, index),
+      });
+      continue;
+    }
+    const start = index;
+    while (
+      index < source.length
+      && !/[\s#'"`;{}()[\],.=]/u.test(source[index])
+    ) {
+      index += 1;
+    }
+    if (start === index) {
+      tokens.push({ type: 'symbol', value: character });
+      index += 1;
+    } else {
+      tokens.push({
+        type: 'word',
+        value: source.slice(start, index),
+      });
+    }
+  }
+  return tokens;
+}
+
+function powerShellFunctionRange(tokens, name) {
+  const matches = [];
+  for (let index = 0; index < tokens.length - 2; index += 1) {
+    if (
+      tokens[index].type !== 'word'
+      || tokens[index].value.toLowerCase() !== 'function'
+      || tokens[index + 1].type !== 'word'
+      || tokens[index + 1].value.toLowerCase() !== name.toLowerCase()
+      || tokens[index + 2].value !== '{'
+    ) {
+      continue;
+    }
+    let depth = 0;
+    let end = -1;
+    for (let cursor = index + 2; cursor < tokens.length; cursor += 1) {
+      if (tokens[cursor].value === '{') {
+        depth += 1;
+      } else if (tokens[cursor].value === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          end = cursor;
+          break;
+        }
+      }
+    }
+    if (end < 0) {
+      return null;
+    }
+    matches.push({ start: index, end });
+  }
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function normalizedPowerShellTokens(tokens) {
+  return tokens
+    .filter(({ type }) => type !== 'separator')
+    .map(({ type, value }) => [type, value]);
+}
+
+function singleQuotedPowerShellValue(token) {
+  if (
+    token?.type !== 'string'
+    || !token.value.startsWith('\'')
+    || !token.value.endsWith('\'')
+  ) {
+    return null;
+  }
+  return token.value.slice(1, -1).replaceAll('\'\'', '\'');
+}
+
+function isReviewedWindowsExecutablePath(path) {
+  const leaf = path.split(/[\\/]/u).at(-1)?.toLowerCase();
   return (
-    requiredFragments.every((fragment) => run.includes(fragment))
-    && !run.includes('$LASTEXITCODE')
-    && !run.includes('& $FilePath @ArgumentList')
+    typeof leaf === 'string'
+    && leaf.endsWith('.exe')
+    && leaf !== 'cmd.exe'
+    && !leaf.endsWith('.cmd')
+    && !leaf.endsWith('.bat')
+  );
+}
+
+function powerShellVariableName(value) {
+  return value.toLowerCase().split(':').at(-1)?.replace(/^\$/u, '');
+}
+
+function hasReviewedInvokeCheckedTargets(tokens, functionRange) {
+  const invocationIndexes = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (
+      (index < functionRange.start || index > functionRange.end)
+      && tokens[index].type === 'word'
+      && tokens[index].value.toLowerCase() === 'invoke-checked'
+    ) {
+      invocationIndexes.push(index);
+    }
+  }
+  if (invocationIndexes.length === 0) {
+    return false;
+  }
+  for (const invocationIndex of invocationIndexes) {
+    const option = tokens[invocationIndex + 1];
+    const target = tokens[invocationIndex + 2];
+    if (
+      option?.type !== 'word'
+      || option.value.toLowerCase() !== '-filepath'
+      || target?.type !== 'variable'
+    ) {
+      return false;
+    }
+    const targetName = powerShellVariableName(target.value);
+    const assignments = [];
+    for (let index = 0; index < tokens.length - 4; index += 1) {
+      if (
+        (index < functionRange.start || index > functionRange.end)
+        && tokens[index].type === 'variable'
+        && powerShellVariableName(tokens[index].value) === targetName
+        && tokens[index + 1].value === '='
+      ) {
+        assignments.push(index);
+      }
+    }
+    if (assignments.length !== 1) {
+      return false;
+    }
+    const assignmentIndex = assignments[0];
+    const path = singleQuotedPowerShellValue(tokens[assignmentIndex + 4]);
+    const terminator = tokens[assignmentIndex + 5];
+    if (
+      tokens[assignmentIndex + 2].type !== 'word'
+      || tokens[assignmentIndex + 2].value.toLowerCase() !== 'join-path'
+      || tokens[assignmentIndex + 3].type !== 'variable'
+      || path === null
+      || (terminator !== undefined && terminator.type !== 'separator')
+      || !isReviewedWindowsExecutablePath(path)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function extractPowerShellHereStrings(source) {
+  const lines = source.split('\n');
+  const values = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const start = /@(['"])\s*$/u.exec(lines[index]);
+    if (start === null) {
+      continue;
+    }
+    const endPattern = new RegExp(`^\\s*${start[1]}@\\s*$`, 'u');
+    let end = index + 1;
+    while (end < lines.length && !endPattern.test(lines[end])) {
+      end += 1;
+    }
+    if (end >= lines.length) {
+      return null;
+    }
+    values.push(lines.slice(index + 1, end).join('\n'));
+    index = end;
+  }
+  return values;
+}
+
+function reviewedWindowsLauncherScript(run) {
+  const hereStrings = extractPowerShellHereStrings(run);
+  if (hereStrings === null) {
+    return null;
+  }
+  const candidates = hereStrings.filter((value) =>
+    /\bfunction\s+Invoke-Checked\s*\{/iu.test(value),
+  );
+  if (candidates.length > 1) {
+    return null;
+  }
+  return candidates[0] ?? run;
+}
+
+function usesReviewedWindowsProcessLauncher(run) {
+  if (/\$lastexitcode\b/iu.test(run)) {
+    return false;
+  }
+  const launcherScript = reviewedWindowsLauncherScript(run);
+  if (launcherScript === null) {
+    return false;
+  }
+  const allLauncherReferences = run.match(/\bInvoke-Checked\b/giu) ?? [];
+  const parsedLauncherReferences =
+    launcherScript.match(/\bInvoke-Checked\b/giu) ?? [];
+  if (
+    allLauncherReferences.length !== parsedLauncherReferences.length
+    || /\$\{/u.test(launcherScript)
+    || /\b(?:Clear|New|Remove|Set)-Variable\b/iu.test(launcherScript)
+  ) {
+    return false;
+  }
+  const tokens = tokenizePowerShell(launcherScript);
+  const reviewedTokens = tokenizePowerShell(
+    REVIEWED_WINDOWS_INVOKE_CHECKED_FUNCTION,
+  );
+  if (tokens === null || reviewedTokens === null) {
+    return false;
+  }
+  const functionRange = powerShellFunctionRange(tokens, 'Invoke-Checked');
+  if (functionRange === null) {
+    return false;
+  }
+  const functionTokens = tokens.slice(
+    functionRange.start,
+    functionRange.end + 1,
+  );
+  return (
+    JSON.stringify(normalizedPowerShellTokens(functionTokens))
+      === JSON.stringify(normalizedPowerShellTokens(reviewedTokens))
+    && hasReviewedInvokeCheckedTargets(tokens, functionRange)
+    && run.includes(
+      "$npmCli = Join-Path $nodeRoot 'node_modules\\npm\\bin\\npm-cli.js'",
+    )
+    && run.includes(
+      "$pnpmCli = Join-Path $pnpmRoot 'node_modules\\pnpm\\bin\\pnpm.cjs'",
+    )
+    && run.includes('(& $node $pnpmCli --version).Trim()')
+    && run.includes('(& $node $pnpmCli exec tauri --version).Trim()')
     && /-FilePath \$node(?: `)?\s*-ArgumentList @\(\s*\$npmCli,\s*'install',/u.test(run)
     && /-FilePath \$node(?: `)?\s*-ArgumentList @\(\s*\$pnpmCli,\s*'install',/u.test(run)
+  );
+}
+
+function tokenizeShellScript(source) {
+  const tokens = [];
+  let index = 0;
+  while (index < source.length) {
+    const character = source[index];
+    if (character === '\\' && source[index + 1] === '\n') {
+      index += 2;
+      continue;
+    }
+    if (character === '\n' || ';|&'.includes(character)) {
+      tokens.push({ type: 'separator', raw: character, value: character });
+      index += 1;
+      continue;
+    }
+    if (character === ' ' || character === '\t' || character === '\r') {
+      index += 1;
+      continue;
+    }
+    if (character === '#') {
+      const newline = source.indexOf('\n', index);
+      index = newline < 0 ? source.length : newline;
+      continue;
+    }
+    const start = index;
+    let raw = '';
+    let value = '';
+    while (index < source.length) {
+      const current = source[index];
+      if (
+        current === '\n'
+        || current === ';'
+        || current === '|'
+        || current === '&'
+        || current === ' '
+        || current === '\t'
+        || current === '\r'
+      ) {
+        break;
+      }
+      if (current === '\\' && source[index + 1] === '\n') {
+        index += 2;
+        continue;
+      }
+      if (current === '\'' || current === '"') {
+        const quote = current;
+        const quoteStart = index;
+        index += 1;
+        let closed = false;
+        while (index < source.length) {
+          if (quote === '"' && source[index] === '\\' && index + 1 < source.length) {
+            index += 2;
+            continue;
+          }
+          if (source[index] === quote) {
+            value += source.slice(quoteStart + 1, index);
+            index += 1;
+            raw += source.slice(quoteStart, index);
+            closed = true;
+            break;
+          }
+          index += 1;
+        }
+        if (!closed) {
+          return null;
+        }
+        continue;
+      }
+      raw += current;
+      value += current;
+      index += 1;
+    }
+    if (start === index) {
+      return null;
+    }
+    tokens.push({ type: 'word', raw, value });
+  }
+  return tokens;
+}
+
+function hasExactReviewedUnixToolPathArgument(run) {
+  const tokens = tokenizeShellScript(run);
+  if (tokens === null) {
+    return false;
+  }
+  const starts = [];
+  for (let index = 0; index < tokens.length - 2; index += 1) {
+    if (
+      tokens[index].type === 'word'
+      && tokens[index].raw === 'sudo'
+      && tokens[index + 1].type === 'word'
+      && tokens[index + 1].raw === '--non-interactive'
+      && tokens[index + 2].type === 'word'
+      && tokens[index + 2].raw === 'scripts/unix-producer-supervisor.sh'
+    ) {
+      starts.push(index);
+    }
+  }
+  if (starts.length !== 1) {
+    return false;
+  }
+  const command = [];
+  for (let index = starts[0]; index < tokens.length; index += 1) {
+    if (tokens[index].type === 'separator') {
+      break;
+    }
+    command.push(tokens[index]);
+  }
+  const optionIndexes = [];
+  for (let index = 0; index < command.length; index += 1) {
+    if (
+      command[index].value === '--tool-path'
+      || command[index].value.startsWith('--tool-path=')
+    ) {
+      optionIndexes.push(index);
+    }
+  }
+  if (optionIndexes.length !== 1) {
+    return false;
+  }
+  const optionIndex = optionIndexes[0];
+  return (
+    command[optionIndex].raw === '--tool-path'
+    && command[optionIndex + 1]?.raw
+      === '"${{ steps[\'unix-tool-path\'].outputs.tool_path }}"'
   );
 }
 
@@ -795,10 +1222,7 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
     || !unixProduction.run.includes(
       '--command scripts/unix-producer-command.sh',
     )
-    || !unixProduction.run.includes(
-      '--tool-path "${{ steps[\'unix-tool-path\'].outputs.tool_path }}"',
-    )
-    || unixProduction.run.includes('--tool-path "$PATH"')
+    || !hasExactReviewedUnixToolPathArgument(unixProduction.run)
     || !unixProduction.run.includes(
       '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
     )

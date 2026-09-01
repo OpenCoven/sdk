@@ -450,6 +450,10 @@ export interface ReviewedEvidenceIndex {
       recordPathTemplate: string;
       sourceRef: string;
       runnerLabels: Record<CanonicalPlatform, string[]>;
+      unixToolPathSource: FileMetadata & {
+        path: 'scripts/executable-resolution.mjs';
+      };
+      unixToolPathScriptSha256: string;
       signerWorkflow: string;
       signerDigest: string;
       sourceDigest: string;

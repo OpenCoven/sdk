@@ -21,6 +21,9 @@ import {
 import {
   parseReleaseWorkflowDocument,
 } from '../scripts/release-readiness.mjs';
+import type {
+  ReviewedEvidenceIndex,
+} from '../scripts/conformance-contract.mjs';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const lockPath = resolve(
@@ -107,6 +110,11 @@ const TEST_VALIDATOR_REVISION_COMMAND =
 const TEST_WINDOWS_BOOTSTRAP_COMMAND = [
   '$validatorRevision -cne $protectedValidatorRevision;',
   'function Invoke-Checked {',
+  'param(',
+  '[Parameter(Mandatory)][string]$FilePath,',
+  '[Parameter(Mandatory)][string[]]$ArgumentList,',
+  '[Parameter(Mandatory)][string]$Label',
+  ');',
   '$startInfo = [Diagnostics.ProcessStartInfo]::new($FilePath);',
   '$startInfo.UseShellExecute = $false;',
   'foreach ($argument in $ArgumentList) {',
@@ -478,13 +486,15 @@ function createProducerWorkflow({
 }
 
 const TEST_PRODUCER_WORKFLOW_TEXT = createProducerWorkflow();
-const TEST_PRODUCER_WORKFLOW = parseReleaseWorkflowDocument(
-  TEST_PRODUCER_WORKFLOW_TEXT,
-) as {
-  jobs: Record<string, { steps: Array<Record<string, unknown>> }>;
-};
-const testWorkflowScriptSha256 = (job: string, name: string) => {
-  const step = TEST_PRODUCER_WORKFLOW.jobs[job]?.steps.find(
+const workflowScriptSha256 = (
+  workflowText: string,
+  job: string,
+  name: string,
+) => {
+  const workflow = parseReleaseWorkflowDocument(workflowText) as {
+    jobs: Record<string, { steps: Array<Record<string, unknown>> }>;
+  };
+  const step = workflow.jobs[job]?.steps.find(
     (candidate) => candidate.name === name,
   );
   if (typeof step?.run !== 'string') {
@@ -492,6 +502,8 @@ const testWorkflowScriptSha256 = (job: string, name: string) => {
   }
   return sha256(step.run);
 };
+const testWorkflowScriptSha256 = (job: string, name: string) =>
+  workflowScriptSha256(TEST_PRODUCER_WORKFLOW_TEXT, job, name);
 const TEST_COMPATIBLE_PRODUCER = {
   status: 'compatible',
   repository: 'OpenCoven/chat',
@@ -606,6 +618,19 @@ function requiredFunction(name: string): (...args: never[]) => unknown {
   const value = (contract as unknown as Record<string, unknown>)[name];
   expect(value, `${name} must be exported`).toBeTypeOf('function');
   return value as (...args: never[]) => unknown;
+}
+
+function compileReviewedEvidenceIndexWorkflowDeclaration(
+  workflow: ReviewedEvidenceIndex['producer']['workflow'],
+): void {
+  const source: {
+    path: 'scripts/executable-resolution.mjs';
+    size: number;
+    sha256: string;
+  } = workflow.unixToolPathSource;
+  const scriptSha256: string = workflow.unixToolPathScriptSha256;
+  void source;
+  void scriptSha256;
 }
 
 function readLock(): Record<string, unknown> {
@@ -1056,6 +1081,12 @@ function aggregate(records: Array<Record<string, unknown>>) {
 }
 
 describe('unresolved SDK #38 conformance gaps', () => {
+  test('declares reviewed Unix tool-path metadata in evidence indexes', () => {
+    expect(compileReviewedEvidenceIndexWorkflowDeclaration).toBeTypeOf(
+      'function',
+    );
+  });
+
   test('freezes the exact candidate, manifest, package, source, and consumer bytes', () => {
     const lock = readLock() as {
       candidate: {
@@ -2896,6 +2927,108 @@ describe('unresolved SDK #38 conformance gaps', () => {
         ),
       },
       {
+        name: 'braced ambient PATH forwarded to the Unix producer',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_PRODUCTION_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_PRODUCTION_COMMAND.replace(
+              '--tool-path "${{ steps[\'unix-tool-path\'].outputs.tool_path }}"',
+              '--tool-path "${PATH}"',
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'unixProductionScriptSha256',
+          step: 'Run supervised Unix production and handoff',
+        },
+      },
+      {
+        name: 'duplicate last-write-wins ambient Unix tool-path override',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_PRODUCTION_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_PRODUCTION_COMMAND.replace(
+              '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
+              [
+                '--tool-path "${PATH}"',
+                '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
+              ].join(' '),
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'unixProductionScriptSha256',
+          step: 'Run supervised Unix production and handoff',
+        },
+      },
+      {
+        name: 'duplicate fallback Unix tool-path override',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_PRODUCTION_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_PRODUCTION_COMMAND.replace(
+              '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
+              [
+                '--tool-path "${PATH:-/usr/bin}"',
+                '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
+              ].join(' '),
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'unixProductionScriptSha256',
+          step: 'Run supervised Unix production and handoff',
+        },
+      },
+      {
+        name: 'environment-indirected Unix tool path',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_PRODUCTION_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_PRODUCTION_COMMAND.replace(
+              '--tool-path "${{ steps[\'unix-tool-path\'].outputs.tool_path }}"',
+              '--tool-path "$OPENCOVEN_TOOL_PATH"',
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'unixProductionScriptSha256',
+          step: 'Run supervised Unix production and handoff',
+        },
+      },
+      {
+        name: 'alternately quoted reviewed Unix tool path',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_PRODUCTION_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_PRODUCTION_COMMAND.replace(
+              '--tool-path "${{ steps[\'unix-tool-path\'].outputs.tool_path }}"',
+              '--tool-path \'${{ steps[\'unix-tool-path\'].outputs.tool_path }}\'',
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'unixProductionScriptSha256',
+          step: 'Run supervised Unix production and handoff',
+        },
+      },
+      {
+        name: 'equals-spelled reviewed Unix tool path',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_PRODUCTION_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_PRODUCTION_COMMAND.replace(
+              '--tool-path "${{ steps[\'unix-tool-path\'].outputs.tool_path }}"',
+              '--tool-path="${{ steps[\'unix-tool-path\'].outputs.tool_path }}"',
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'unixProductionScriptSha256',
+          step: 'Run supervised Unix production and handoff',
+        },
+      },
+      {
         name: 'missing reviewed Unix tool-path computation',
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
           [
@@ -3104,6 +3237,165 @@ describe('unresolved SDK #38 conformance gaps', () => {
         ),
       },
       {
+        name: 'Windows bootstrap uses lowercase LASTEXITCODE',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND),
+          yamlSingleQuoted(
+            TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(
+              'if ($process.ExitCode -ne 0)',
+              'if ($lastExitCode -ne 0)',
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+      },
+      {
+        name: 'Windows bootstrap uses mixed-case LASTEXITCODE',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND),
+          yamlSingleQuoted(
+            TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(
+              'if ($process.ExitCode -ne 0)',
+              'if ($LaStExItCoDe -ne 0)',
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+      },
+      {
+        name: 'Windows process launcher quotes disposal as inert text',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND),
+          yamlSingleQuoted(
+            TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(
+              '$process.Dispose()',
+              '\'$process.Dispose()\'',
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+      },
+      {
+        name: 'Windows process launcher invokes cmd.exe',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND),
+          yamlSingleQuoted(
+            TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(
+              '(& $node $pnpmCli --version).Trim();',
+              [
+                "Invoke-Checked -FilePath cmd.exe -ArgumentList @('/c', 'exit 0') -Label 'Command interpreter';",
+                '(& $node $pnpmCli --version).Trim();',
+              ].join(' '),
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+      },
+      {
+        name: 'Windows process launcher variable resolves to cmd.exe',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND),
+          yamlSingleQuoted(
+            TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(
+              "$node = Join-Path $nodeRoot 'node.exe';",
+              "$node = Join-Path $nodeRoot 'cmd.exe';",
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+      },
+      {
+        name: 'Windows process launcher variable is later overridden by cmd.exe',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND),
+          yamlSingleQuoted(
+            TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(
+              "$node = Join-Path $nodeRoot 'node.exe';",
+              [
+                "$node = Join-Path $nodeRoot 'node.exe';",
+                "$script:node = 'cmd.exe';",
+              ].join(' '),
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+      },
+      {
+        name: 'Windows process launcher invokes cmd',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND),
+          yamlSingleQuoted(
+            TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(
+              '(& $node $pnpmCli --version).Trim();',
+              [
+                "Invoke-Checked -FilePath cmd -ArgumentList @('/c', 'exit 0') -Label 'Command interpreter';",
+                '(& $node $pnpmCli --version).Trim();',
+              ].join(' '),
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+      },
+      {
+        name: 'Windows process launcher invokes a cmd shim',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND),
+          yamlSingleQuoted(
+            TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(
+              '(& $node $pnpmCli --version).Trim();',
+              [
+                "Invoke-Checked -FilePath 'pnpm.cmd' -ArgumentList @('--version') -Label 'Command shim';",
+                '(& $node $pnpmCli --version).Trim();',
+              ].join(' '),
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+      },
+      {
+        name: 'Windows process launcher invokes a batch file',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND),
+          yamlSingleQuoted(
+            TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(
+              '(& $node $pnpmCli --version).Trim();',
+              [
+                "Invoke-Checked -FilePath 'setup.bat' -ArgumentList @() -Label 'Batch file';",
+                '(& $node $pnpmCli --version).Trim();',
+              ].join(' '),
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+      },
+      {
         name: 'Windows process launcher executes an npm cmd shim',
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
           yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND),
@@ -3119,6 +3411,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
               ),
           ),
         ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
       },
       {
         name: 'Windows process launcher executes a pnpm bat shim',
@@ -3136,6 +3432,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
               ),
           ),
         ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
       },
       {
         name: 'missing protected validator revision in Unix production',
@@ -3437,6 +3737,16 @@ describe('unresolved SDK #38 conformance gaps', () => {
       },
     ];
     for (const variant of invalidWorkflowVariants) {
+      const synchronizedScriptDigest =
+        'synchronizedScriptDigest' in variant
+          ? {
+              [variant.synchronizedScriptDigest.field]: workflowScriptSha256(
+                variant.workflow,
+                'platform-conformance',
+                variant.synchronizedScriptDigest.step,
+              ),
+            }
+          : {};
       const workflowProducer: Parameters<
         typeof verifyProtectedWorkflow
       >[1] = {
@@ -3459,6 +3769,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
               ...producer.workflow.runnerLabels['win32-x64'],
             ],
           },
+          ...synchronizedScriptDigest,
         },
       };
       expect(
