@@ -89,9 +89,7 @@ const TEST_TOOLCHAIN_COMMAND = [
   '{ encoding: \'utf8\' }).trim(); };',
   'if (process.version !== \'v24.18.1\'',
   '|| \'pnpm@\' + run(\'pnpm\', [\'--version\']) !== \'pnpm@10.34.0\'',
-  '|| !run(\'rustc\', [\'--version\']).startsWith(\'rustc 1.95.0 \')',
-  '|| run(\'pnpm\', [\'exec\', \'tauri\', \'--version\'])',
-  '!== \'tauri-cli 2.11.4\')',
+  '|| !run(\'rustc\', [\'--version\']).startsWith(\'rustc 1.95.0 \'))',
   'throw new Error(\'Frozen toolchain does not match\');"',
 ].join(' ');
 const TEST_UNIX_RUST_INSTALL_COMMAND = [
@@ -1251,8 +1249,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: 'a57cc2669aaa0383e46589dbf5ed13ea994eac48',
-      tree: '4612ef136ba21bfae553edf6de49234ed2d267aa',
+      commit: 'fa2f9bfeca25a5d9a91660448d18c062ca22a14d',
+      tree: 'a9e119f5ab526ec377236d48337ac4860308afd1',
       packageManifest: {
         path: 'package.json',
         size: 3_849,
@@ -1271,9 +1269,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 442_822,
+        size: 442_868,
         sha256:
-          '79a73b778b04f47467d243e6bfb5e556f5f61a4cab9aee004c7b5e3f7595c9dc',
+          '6c3fcc8f0c9b34c918b241597cf97cc25a5e31fef991e1f915d71ea7a85b06cb',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1292,7 +1290,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          '033500c97f4c5b5a01e45c3d309543ccb384705b8591b11fca9a1aea113ec27d',
+          '65699ece724a2c713239a98224087ecc290ea178e1d4ad125221a928f45cf76c',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1321,8 +1319,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: 'a57cc2669aaa0383e46589dbf5ed13ea994eac48',
-        sourceDigest: 'a57cc2669aaa0383e46589dbf5ed13ea994eac48',
+        signerDigest: 'fa2f9bfeca25a5d9a91660448d18c062ca22a14d',
+        sourceDigest: 'fa2f9bfeca25a5d9a91660448d18c062ca22a14d',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
