@@ -139,6 +139,20 @@ The [implementation design](superpowers/specs/2026-08-28-sdk-offline-reads-and-t
 requires real producer revisions and keeps the CLI private unless a separate
 distribution gate is approved.
 
+## Future — Coven Automations
+
+[#80](https://github.com/OpenCoven/sdk/issues/80) adds a constrained Automations
+SDK after the canonical `coven.automations.v1` artifacts are stable. Its first
+read/verify/subscribe phase is blocked by
+[OpenCoven/coven#855](https://github.com/OpenCoven/coven/issues/855).
+Authority-bearing commands remain additionally blocked by
+[OpenCoven/coven#857](https://github.com/OpenCoven/coven/issues/857) and
+[OpenCoven/coven#858](https://github.com/OpenCoven/coven/issues/858).
+
+Automations are not part of the 0.1 release bar. The SDK will consume pinned
+Coven-owned contracts and evidence rather than defining scheduling, authority,
+or run state independently.
+
 ## Parallel maintenance
 
 [#45](https://github.com/OpenCoven/sdk/issues/45) audits legacy branches, worktrees, and stash state. Cleanup is separately authorized and does not block 0.1 unless unique work or release/provenance risk is discovered.
