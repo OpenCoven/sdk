@@ -650,6 +650,22 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
       workflowError(`does not pin the reviewed Windows value ${name}`);
     }
   }
+  expectExactWorkflowValue(
+    windowsBootstrap.env,
+    {
+      OPENCOVEN_VALIDATOR_REVISION_INPUT: inputExpression,
+      OPENCOVEN_PROTECTED_VALIDATOR_REVISION: protectedExpression,
+      OPENCOVEN_CHAT_REPOSITORY: '${{ github.repository }}',
+      OPENCOVEN_CHAT_SHA: '${{ github.sha }}',
+      ...requiredWindowsPins,
+      OPENCOVEN_WINDOWS_SUPERVISOR_ARTIFACT_ID:
+        "${{ needs['windows-supervisor'].outputs.artifact_id }}",
+      OPENCOVEN_WINDOWS_GITHUB_API_URL: '${{ github.api_url }}',
+      OPENCOVEN_WINDOWS_GITHUB_REPOSITORY: '${{ github.repository }}',
+      OPENCOVEN_WINDOWS_GITHUB_TOKEN: '${{ github.token }}',
+    },
+    'Windows bootstrap environment',
+  );
 
   const unixRust = namedStep(
     platform.steps,
@@ -782,15 +798,20 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
   const validationGuard = validation.steps[0];
   if (
     !isRecord(validationGuard)
+    || JSON.stringify(Object.keys(validationGuard))
+      !== JSON.stringify(['name', 'shell', 'env', 'run'])
     || validationGuard.name !== 'Require protected validator revision'
     || validationGuard.shell !== 'bash'
     || 'if' in validationGuard
     || !isRecord(validationGuard.env)
-    || validationGuard.env.OPENCOVEN_VALIDATOR_REVISION_INPUT
-      !== inputExpression
-    || validationGuard.env.OPENCOVEN_PROTECTED_VALIDATOR_REVISION
-      !== protectedExpression
+    || JSON.stringify(validationGuard.env)
+      !== JSON.stringify({
+        OPENCOVEN_VALIDATOR_REVISION_INPUT: inputExpression,
+        OPENCOVEN_PROTECTED_VALIDATOR_REVISION: protectedExpression,
+      })
     || typeof validationGuard.run !== 'string'
+    || sha256(validationGuard.run)
+      !== producer.workflow.validationGuardScriptSha256
     || !validationGuard.run.includes(
       '"$OPENCOVEN_VALIDATOR_REVISION_INPUT" != "$OPENCOVEN_PROTECTED_VALIDATOR_REVISION"',
     )
@@ -839,6 +860,8 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
   const validationStep = validation.steps[6];
   if (
     !isRecord(validationStep)
+    || JSON.stringify(Object.keys(validationStep))
+      !== JSON.stringify(['name', 'id', 'shell', 'run'])
     || validationStep.name
       !== 'Validate exact SDK schema, parser, and scanner'
     || validationStep.id !== 'validate'
@@ -860,14 +883,23 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
   const digestStep = attestation.steps[3];
   if (
     !isRecord(digestStep)
+    || JSON.stringify(Object.keys(digestStep))
+      !== JSON.stringify(['name', 'shell', 'env', 'run'])
     || digestStep.name !== 'Compare freshly downloaded artifact digests'
     || digestStep.shell !== 'bash'
     || 'if' in digestStep
     || !isRecord(digestStep.env)
-    || digestStep.env.OPENCOVEN_VALIDATOR_REVISION_INPUT
-      !== inputExpression
-    || digestStep.env.OPENCOVEN_PROTECTED_VALIDATOR_REVISION
-      !== protectedExpression
+    || JSON.stringify(digestStep.env)
+      !== JSON.stringify({
+        OPENCOVEN_VALIDATOR_REVISION_INPUT: inputExpression,
+        OPENCOVEN_PROTECTED_VALIDATOR_REVISION: protectedExpression,
+        OPENCOVEN_DARWIN_ARM64_SHA256:
+          `\${{ needs['${producer.workflow.validationJob}'].outputs.darwin_arm64_sha256 }}`,
+        OPENCOVEN_LINUX_X64_SHA256:
+          `\${{ needs['${producer.workflow.validationJob}'].outputs.linux_x64_sha256 }}`,
+        OPENCOVEN_WIN32_X64_SHA256:
+          `\${{ needs['${producer.workflow.validationJob}'].outputs.win32_x64_sha256 }}`,
+      })
     || typeof digestStep.run !== 'string'
     || sha256(digestStep.run)
       !== producer.workflow.attestationScriptSha256

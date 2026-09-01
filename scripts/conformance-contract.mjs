@@ -765,6 +765,7 @@ function expectEvidenceProducer(value, label) {
         'unixSupervisorPreparationScriptSha256',
         'unixProductionScriptSha256',
         'unixValidationScriptSha256',
+        'validationGuardScriptSha256',
         'validationScriptSha256',
         'attestationScriptSha256',
         'validatorRevisionEnvironment',
@@ -946,6 +947,10 @@ function expectEvidenceProducer(value, label) {
         unixValidationScriptSha256: expectSha256(
           workflow.unixValidationScriptSha256,
           `${label}.workflow.unixValidationScriptSha256`,
+        ),
+        validationGuardScriptSha256: expectSha256(
+          workflow.validationGuardScriptSha256,
+          `${label}.workflow.validationGuardScriptSha256`,
         ),
         validationScriptSha256: expectSha256(
           workflow.validationScriptSha256,
@@ -3476,6 +3481,7 @@ export function parseReviewedEvidenceIndex(
       'unixSupervisorPreparationScriptSha256',
       'unixProductionScriptSha256',
       'unixValidationScriptSha256',
+      'validationGuardScriptSha256',
       'validationScriptSha256',
       'attestationScriptSha256',
       'validatorRevisionEnvironment',
@@ -3641,6 +3647,10 @@ export function parseReviewedEvidenceIndex(
       unixValidationScriptSha256: expectSha256(
         producerWorkflow.unixValidationScriptSha256,
         `${source}.producer.workflow.unixValidationScriptSha256`,
+      ),
+      validationGuardScriptSha256: expectSha256(
+        producerWorkflow.validationGuardScriptSha256,
+        `${source}.producer.workflow.validationGuardScriptSha256`,
       ),
       validationScriptSha256: expectSha256(
         producerWorkflow.validationScriptSha256,
