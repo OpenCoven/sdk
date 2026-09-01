@@ -27,13 +27,15 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
-is the later commit `4dc8f64bb71634a01ee647542dcdafdd0888b4f9`.
+is the reachable commit `95de47f7aa2bf8233f71a601ad16011a82905e41`,
+whose protected-producer behavior is the parent authority
+`19f6c6793556d768e3e523ea34dafbd945a7f266`.
 The frozen workflow separates platform production, exact SDK validation,
 provenance attestation, and aggregation. Its lock records the validation and
 attestation job identities, the three static artifact names and record paths,
 the pinned download and attestation actions, the exact security-critical
-bootstrap, production, validation, and digest-comparison script hashes, and the
-protected
+bootstrap, reviewed Unix tool-path source and step, production, validation, and
+digest-comparison script hashes, and the protected
 `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` variable. Aggregation and release
 readiness remain fail closed until all three protected platform records exist
 and their live GitHub attestations are reviewed.
@@ -236,19 +238,23 @@ The parsed document must equal the complete reviewed structure: only a manual
 dispatch trigger with one required string input named `validator_revision`,
 top-level `contents: read`, the exact ordered
 platform/runner matrix, the protected environment, the exact job permissions,
-and exactly two jobs. The protected matrix job has one fixed sequence:
+and exactly five jobs. The protected matrix job has exactly 19 ordered steps:
 pinned checkout without persisted credentials, pinned Node and pnpm setup,
 frozen dependency and Rust setup, a Linux-only exact package setup for
 `dbus-daemon`, `gnome-keyring`, and `libsecret-tools`, exact
 Node/pnpm/Rust/Tauri verification, exact harness size/SHA-256 verification,
-and invocation of the frozen harness with the selected validator SHA. The
-Linux invocation runs inside Chat's committed private D-Bus/Secret Service
-wrapper. The remaining steps perform read-only canonical JSON and platform
-validation, pinned official artifact upload, and pinned official provenance
-attestation. The Linux-only setup is the sole reviewed step condition. The
-artifact name occurs as a scalar exactly once, and the record path is identical
-across generation, validation, upload, and attestation. There is no mutable
-step after validation.
+reviewed resolution of only `node`, `pnpm`, and `rustup` into a minimal Unix
+tool path, and invocation of the frozen harness with the selected validator
+SHA. The supervised Unix step must consume that exact step output and cannot
+forward ambient `PATH` or fall back to it. Windows bootstrap uses
+`ProcessStartInfo` and `Process.ExitCode`, never `$LASTEXITCODE`, and launches
+the pinned npm and pnpm JavaScript entrypoints directly through pinned Node
+rather than `.cmd` or `.bat` shims. Linux production runs inside Chat's
+committed private D-Bus/Secret Service wrapper. The remaining steps perform
+read-only canonical JSON and platform validation, pinned official artifact
+upload, and pinned official provenance attestation. The artifact name occurs
+as a scalar exactly once, and the record path is identical across generation,
+validation, upload, and attestation. There is no mutable step after validation.
 
 No other action, command, permission, output, condition, expression, local or
 reusable workflow, upload path, or attestation path is accepted. The

@@ -60,6 +60,7 @@ const PLATFORM_STEP_CONTRACT = Object.freeze([
   ['Install frozen Unix Rust', ['name', 'if', 'run']],
   ['Require frozen toolchain', ['name', 'if', 'run']],
   ['Prepare trusted Unix supervisor', ['name', 'if', 'shell', 'run']],
+  ['Compute reviewed Unix tool path', ['name', 'id', 'if', 'run']],
   ['Run supervised Unix production and handoff', ['name', 'if', 'shell', 'env', 'run']],
   ['Validate broker-owned Unix platform record', ['name', 'if', 'shell', 'run']],
   [UPLOAD_ARTIFACT_ACTION, ['uses', 'with']],
@@ -145,6 +146,42 @@ function exactUnixRustInstallCommand(toolchain) {
     'execFileSync(invocation.executable, invocation.args,',
     '{ argv0: command, stdio: \'inherit\' });"',
   ].join(' ');
+}
+
+function exactUnixToolPathCommand() {
+  return [
+    'node --input-type=module --eval "import { appendFileSync }',
+    'from \'node:fs\'; import { resolveUnixToolPath }',
+    'from \'./scripts/executable-resolution.mjs\';',
+    'const toolPath = resolveUnixToolPath([\'node\', \'pnpm\', \'rustup\']);',
+    'appendFileSync(process.env.GITHUB_OUTPUT,',
+    '\'tool_path=\' + toolPath + \'\\n\');"',
+  ].join(' ');
+}
+
+function usesReviewedWindowsProcessLauncher(run) {
+  const requiredFragments = [
+    '[Diagnostics.ProcessStartInfo]::new($FilePath)',
+    '$startInfo.UseShellExecute = $false',
+    '$startInfo.ArgumentList.Add($argument)',
+    '$process = [Diagnostics.Process]::new()',
+    '$process.StartInfo = $startInfo',
+    'if (-not $process.Start())',
+    '$process.WaitForExit()',
+    '$process.ExitCode',
+    '$process.Dispose()',
+    "$npmCli = Join-Path $nodeRoot 'node_modules\\npm\\bin\\npm-cli.js'",
+    "$pnpmCli = Join-Path $pnpmRoot 'node_modules\\pnpm\\bin\\pnpm.cjs'",
+    '(& $node $pnpmCli --version).Trim()',
+    '(& $node $pnpmCli exec tauri --version).Trim()',
+  ];
+  return (
+    requiredFragments.every((fragment) => run.includes(fragment))
+    && !run.includes('$LASTEXITCODE')
+    && !run.includes('& $FilePath @ArgumentList')
+    && /-FilePath \$node(?: `)?\s*-ArgumentList @\(\s*\$npmCli,\s*'install',/u.test(run)
+    && /-FilePath \$node(?: `)?\s*-ArgumentList @\(\s*\$pnpmCli,\s*'install',/u.test(run)
+  );
 }
 
 function workflowError(message) {
@@ -491,6 +528,7 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
     || !windowsBootstrap.run.includes(
       '$validatorRevision -cne $protectedValidatorRevision',
     )
+    || !usesReviewedWindowsProcessLauncher(windowsBootstrap.run)
   ) {
     workflowError('does not bind the Windows producer to the protected validator');
   }
@@ -721,6 +759,20 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
   ) {
     workflowError('does not prepare the exact trusted Unix supervisor');
   }
+  const unixToolPath = namedStep(
+    platform.steps,
+    'Compute reviewed Unix tool path',
+    'platform producer',
+  );
+  if (
+    unixToolPath.id !== 'unix-tool-path'
+    || unixToolPath.if !== "matrix.platform != 'win32-x64'"
+    || unixToolPath.run !== exactUnixToolPathCommand()
+    || sha256(unixToolPath.run)
+      !== producer.workflow.unixToolPathScriptSha256
+  ) {
+    workflowError('does not compute the exact reviewed Unix tool path');
+  }
   const unixProduction = namedStep(
     platform.steps,
     'Run supervised Unix production and handoff',
@@ -743,6 +795,10 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
     || !unixProduction.run.includes(
       '--command scripts/unix-producer-command.sh',
     )
+    || !unixProduction.run.includes(
+      '--tool-path "${{ steps[\'unix-tool-path\'].outputs.tool_path }}"',
+    )
+    || unixProduction.run.includes('--tool-path "$PATH"')
     || !unixProduction.run.includes(
       '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
     )

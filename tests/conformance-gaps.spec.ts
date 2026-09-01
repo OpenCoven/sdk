@@ -104,13 +104,50 @@ const TEST_UNIX_RUST_INSTALL_COMMAND = [
 ].join(' ');
 const TEST_VALIDATOR_REVISION_COMMAND =
   '[[ "$OPENCOVEN_VALIDATOR_REVISION_INPUT" == "$OPENCOVEN_PROTECTED_VALIDATOR_REVISION" ]]';
+const TEST_WINDOWS_BOOTSTRAP_COMMAND = [
+  '$validatorRevision -cne $protectedValidatorRevision;',
+  'function Invoke-Checked {',
+  '$startInfo = [Diagnostics.ProcessStartInfo]::new($FilePath);',
+  '$startInfo.UseShellExecute = $false;',
+  'foreach ($argument in $ArgumentList) {',
+  '$startInfo.ArgumentList.Add($argument)',
+  '};',
+  '$process = [Diagnostics.Process]::new();',
+  '$process.StartInfo = $startInfo;',
+  'try {',
+  'if (-not $process.Start()) { throw "$Label failed to start." };',
+  '$process.WaitForExit();',
+  'if ($process.ExitCode -ne 0) {',
+  'throw "$Label failed with exit code $($process.ExitCode)."',
+  '}',
+  '} finally {',
+  '$process.Dispose()',
+  '}',
+  '};',
+  "$node = Join-Path $nodeRoot 'node.exe';",
+  "$npmCli = Join-Path $nodeRoot 'node_modules\\npm\\bin\\npm-cli.js';",
+  "$pnpmCli = Join-Path $pnpmRoot 'node_modules\\pnpm\\bin\\pnpm.cjs';",
+  "Invoke-Checked -FilePath $node -ArgumentList @($npmCli, 'install', '--global') -Label 'Pinned pnpm installation';",
+  "Invoke-Checked -FilePath $node -ArgumentList @($pnpmCli, 'install', '--frozen-lockfile') -Label 'Pinned dependency installation';",
+  '(& $node $pnpmCli --version).Trim();',
+  '(& $node $pnpmCli exec tauri --version).Trim();',
+].join(' ');
 const TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND =
   'echo "Frozen harness module graph verified."';
+const TEST_UNIX_TOOL_PATH_COMMAND = [
+  'node --input-type=module --eval "import { appendFileSync }',
+  'from \'node:fs\'; import { resolveUnixToolPath }',
+  'from \'./scripts/executable-resolution.mjs\';',
+  'const toolPath = resolveUnixToolPath([\'node\', \'pnpm\', \'rustup\']);',
+  'appendFileSync(process.env.GITHUB_OUTPUT,',
+  '\'tool_path=\' + toolPath + \'\\n\');"',
+].join(' ');
 const TEST_UNIX_PRODUCTION_COMMAND = [
   'sudo --non-interactive scripts/unix-producer-supervisor.sh',
   '--platform "${{ matrix.platform }}"',
   `--destination "$GITHUB_WORKSPACE/${TEST_RECORD_PATH}"`,
   '--command scripts/unix-producer-command.sh',
+  '--tool-path "${{ steps[\'unix-tool-path\'].outputs.tool_path }}"',
   '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
 ].join(' ');
 const TEST_CANONICAL_VALIDATION_COMMAND = [
@@ -222,6 +259,10 @@ function protectedProducerSteps(): string[] {
     "        if: matrix.platform != 'win32-x64'",
     '        shell: bash',
     `        run: ${yamlSingleQuoted(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND)}`,
+    '      - name: Compute reviewed Unix tool path',
+    '        id: unix-tool-path',
+    "        if: matrix.platform != 'win32-x64'",
+    `        run: ${yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND)}`,
     '      - name: Run supervised Unix production and handoff',
     "        if: matrix.platform != 'win32-x64'",
     '        shell: bash',
@@ -352,7 +393,7 @@ function createProducerWorkflow({
     '          OPENCOVEN_WINDOWS_GITHUB_API_URL: ${{ github.api_url }}',
     '          OPENCOVEN_WINDOWS_GITHUB_REPOSITORY: ${{ github.repository }}',
     '          OPENCOVEN_WINDOWS_GITHUB_TOKEN: ${{ github.token }}',
-    "        run: '$validatorRevision -cne $protectedValidatorRevision'",
+    `        run: ${yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND)}`,
     ...(siblingSubstitute
       ? protectedProducerSteps().slice(0, -producerArtifactSteps().length)
       : protectedProducerSteps()),
@@ -510,6 +551,15 @@ const TEST_COMPATIBLE_PRODUCER = {
     unixSupervisorPreparationScriptSha256: testWorkflowScriptSha256(
       'platform-conformance',
       'Prepare trusted Unix supervisor',
+    ),
+    unixToolPathSource: {
+      path: 'scripts/executable-resolution.mjs',
+      size: 9_154,
+      sha256: '4'.repeat(64),
+    },
+    unixToolPathScriptSha256: testWorkflowScriptSha256(
+      'platform-conformance',
+      'Compute reviewed Unix tool path',
     ),
     unixProductionScriptSha256: testWorkflowScriptSha256(
       'platform-conformance',
@@ -1249,13 +1299,13 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '4dc8f64bb71634a01ee647542dcdafdd0888b4f9',
-      tree: '915232e3595196de447521d9fca59866aeade956',
+      commit: '95de47f7aa2bf8233f71a601ad16011a82905e41',
+      tree: '09a2f50c320e4de2b8ed24a3e5f796153a232ff5',
       packageManifest: {
         path: 'package.json',
         size: 3_849,
         sha256:
-          'cff1008b666d3381ad1a68fc99a9334bab04d617efb7e0ea434428af3ac8603a',
+          'b4cf6d7045e4d955b66ac8ca6cccc83a0d62d5e3ee439454c939980e56d93103',
       },
       harness: {
         path: 'scripts/phase1-conformance.mjs',
@@ -1269,9 +1319,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 443_639,
+        size: 445_413,
         sha256:
-          'd4e4029cf667026463b63eed2a2965f1e9f8c0c34b4b2d796afbbacfc00d2042',
+          '244343b76309705c3e6f5681c66a83232421a00844ccb72d9ca5e481e57fe4b9',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1290,7 +1340,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          'd237986c4370f42b32347be9eeb9c33e09c1f3c87f80563b3f11ec17053b91c7',
+          'ea241e6beae71758484c2114416a7e493adc6375a874a84f8f91bf122a89400c',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1298,9 +1348,17 @@ describe('unresolved SDK #38 conformance gaps', () => {
         linuxKeyringSetupScriptSha256:
           '26e6bb6da4d80617c99d6edeb577c2026910ffc3b1ee70df03bed5fb8d149a51',
         unixSupervisorPreparationScriptSha256:
-          '20748878d28293006178804f3a2075b69eab7a98f88a49028e238069e30d8b11',
+          '6f471ce7f1ecbee7730eeaea5bc6bffb3909f79b2dda091a6e808d39dd940505',
+        unixToolPathSource: {
+          path: 'scripts/executable-resolution.mjs',
+          size: 9_154,
+          sha256:
+            '31e3c412ff8c835f14522f36a59e91f4a4ba82913210ae8e3b4455217503f430',
+        },
+        unixToolPathScriptSha256:
+          'd1d669bd0f6f774a57b6b48b37f3526927b5e969c0bf56bdfeb2b8c8180ac813',
         unixProductionScriptSha256:
-          '1cbfaf8420970fc488424021dae04136891966fcce9a5a7493fe431a23376aa2',
+          'dd20ff8eedba857ddf198cb2b8e80a7f5ffcecc4e367f1238be9e40bb2b743d9',
         unixValidationScriptSha256:
           'b0ce7139bdf365d420c7dde478282f117cce97c1bec63d07cd95b64057121a89',
         validationGuardScriptSha256:
@@ -1319,8 +1377,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '4dc8f64bb71634a01ee647542dcdafdd0888b4f9',
-        sourceDigest: '4dc8f64bb71634a01ee647542dcdafdd0888b4f9',
+        signerDigest: '95de47f7aa2bf8233f71a601ad16011a82905e41',
+        sourceDigest: '95de47f7aa2bf8233f71a601ad16011a82905e41',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1863,6 +1921,62 @@ describe('unresolved SDK #38 conformance gaps', () => {
         } as never,
       ),
     ).toEqual(index);
+
+    const producerMetadataSubstitutions: Array<{
+      name: string;
+      mutate: (producer: typeof index.producer) => void;
+    }> = [
+      {
+        name: 'commit',
+        mutate: (producer) => {
+          producer.commit = 'a'.repeat(40);
+        },
+      },
+      {
+        name: 'tree',
+        mutate: (producer) => {
+          producer.tree = 'b'.repeat(40);
+        },
+      },
+      {
+        name: 'harness file metadata',
+        mutate: (producer) => {
+          producer.harness.sha256 = '3'.repeat(64);
+        },
+      },
+      {
+        name: 'workflow byte metadata',
+        mutate: (producer) => {
+          (producer.workflow as { size: number }).size += 1;
+        },
+      },
+      {
+        name: 'reviewed Unix tool-path source metadata',
+        mutate: (producer) => {
+          (
+            producer.workflow.unixToolPathSource as { sha256: string }
+          ).sha256 = '5'.repeat(64);
+        },
+      },
+    ];
+    for (const substitution of producerMetadataSubstitutions) {
+      const substitutedProducer = structuredClone(index);
+      substitution.mutate(substitutedProducer.producer);
+      expect(
+        () =>
+          parseReviewedEvidenceIndex(
+            contract.serializeCanonicalJson(substitutedProducer) as never,
+            `substituted producer ${substitution.name} index` as never,
+            {
+              frozenLock: compatibleLock,
+              aggregate: aggregateRecord,
+              aggregatePath,
+              aggregateText,
+            } as never,
+          ),
+        substitution.name,
+      ).toThrow(/producer does not match the frozen producer/u);
+    }
 
     const fabricated = structuredClone(index);
     fabricated.platforms[0]!.record.sha256 = 'f'.repeat(64);
@@ -2770,6 +2884,167 @@ describe('unresolved SDK #38 conformance gaps', () => {
         ),
       },
       {
+        name: 'ambient PATH forwarded to the Unix producer',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_PRODUCTION_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_PRODUCTION_COMMAND.replace(
+              '--tool-path "${{ steps[\'unix-tool-path\'].outputs.tool_path }}"',
+              '--tool-path "$PATH"',
+            ),
+          ),
+        ),
+      },
+      {
+        name: 'missing reviewed Unix tool-path computation',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '      - name: Compute reviewed Unix tool path',
+            '        id: unix-tool-path',
+            "        if: matrix.platform != 'win32-x64'",
+            `        run: ${yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND)}`,
+            '',
+          ].join('\n'),
+          '',
+        ),
+      },
+      {
+        name: 'renamed reviewed Unix tool-path step',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '      - name: Compute reviewed Unix tool path',
+          '      - name: Compute unreviewed Unix tool path',
+        ),
+      },
+      {
+        name: 'renamed reviewed Unix tool-path step id',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '        id: unix-tool-path',
+          '        id: reviewed-tool-path',
+        ),
+      },
+      {
+        name: 'renamed reviewed Unix tool-path output',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_TOOL_PATH_COMMAND.replace(
+              '\'tool_path=\' + toolPath',
+              '\'reviewed_path=\' + toolPath',
+            ),
+          ),
+        ),
+      },
+      {
+        name: 'detached reviewed Unix tool-path output',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_PRODUCTION_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_PRODUCTION_COMMAND.replace(
+              'steps[\'unix-tool-path\'].outputs.tool_path',
+              'steps[\'unix-tool-path\'].outputs.reviewed_path',
+            ),
+          ),
+        ),
+      },
+      {
+        name: 'disabled reviewed Unix tool-path computation',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '      - name: Compute reviewed Unix tool path',
+            '        id: unix-tool-path',
+            "        if: matrix.platform != 'win32-x64'",
+          ].join('\n'),
+          [
+            '      - name: Compute reviewed Unix tool path',
+            '        id: unix-tool-path',
+            '        if: false',
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'reordered reviewed Unix tool-path computation',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '      - name: Prepare trusted Unix supervisor',
+            "        if: matrix.platform != 'win32-x64'",
+            '        shell: bash',
+            `        run: ${yamlSingleQuoted(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND)}`,
+            '      - name: Compute reviewed Unix tool path',
+            '        id: unix-tool-path',
+            "        if: matrix.platform != 'win32-x64'",
+            `        run: ${yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND)}`,
+          ].join('\n'),
+          [
+            '      - name: Compute reviewed Unix tool path',
+            '        id: unix-tool-path',
+            "        if: matrix.platform != 'win32-x64'",
+            `        run: ${yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND)}`,
+            '      - name: Prepare trusted Unix supervisor',
+            "        if: matrix.platform != 'win32-x64'",
+            '        shell: bash',
+            `        run: ${yamlSingleQuoted(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND)}`,
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'duplicated reviewed Unix tool-path computation',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          [
+            '      - name: Compute reviewed Unix tool path',
+            '        id: unix-tool-path',
+            "        if: matrix.platform != 'win32-x64'",
+            `        run: ${yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND)}`,
+          ].join('\n'),
+          [
+            '      - name: Compute reviewed Unix tool path',
+            '        id: unix-tool-path',
+            "        if: matrix.platform != 'win32-x64'",
+            `        run: ${yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND)}`,
+            '      - name: Compute reviewed Unix tool path',
+            '        id: unix-tool-path-copy',
+            "        if: matrix.platform != 'win32-x64'",
+            `        run: ${yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND)}`,
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'extra Unix tool-path computation',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          '      - name: Run supervised Unix production and handoff',
+          [
+            '      - name: Compute alternate Unix tool path',
+            '        id: alternate-unix-tool-path',
+            "        if: matrix.platform != 'win32-x64'",
+            `        run: ${yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND)}`,
+            '      - name: Run supervised Unix production and handoff',
+          ].join('\n'),
+        ),
+      },
+      {
+        name: 'unsafe Unix executable-resolution substitution',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_TOOL_PATH_COMMAND.replace(
+              'resolveUnixToolPath',
+              'resolveExecutableInvocation',
+            ),
+          ),
+        ),
+      },
+      {
+        name: 'altered reviewed Unix required-command list',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_TOOL_PATH_COMMAND.replace(
+              '[\'node\', \'pnpm\', \'rustup\']',
+              '[\'node\', \'pnpm\', \'cargo\']',
+            ),
+          ),
+        ),
+      },
+      {
         name: 'Windows checkout permits CRLF conversion',
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
           [
@@ -2814,6 +3089,52 @@ describe('unresolved SDK #38 conformance gaps', () => {
             "        if: matrix.platform == 'win32-x64'",
             '        shell: bash',
           ].join('\n'),
+        ),
+      },
+      {
+        name: 'Windows bootstrap falls back to LASTEXITCODE',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND),
+          yamlSingleQuoted(
+            TEST_WINDOWS_BOOTSTRAP_COMMAND.replaceAll(
+              '$process.ExitCode',
+              '$LASTEXITCODE',
+            ),
+          ),
+        ),
+      },
+      {
+        name: 'Windows process launcher executes an npm cmd shim',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND),
+          yamlSingleQuoted(
+            TEST_WINDOWS_BOOTSTRAP_COMMAND
+              .replace(
+                "$npmCli = Join-Path $nodeRoot 'node_modules\\npm\\bin\\npm-cli.js';",
+                "$npmCli = Join-Path $nodeRoot 'npm.cmd';",
+              )
+              .replace(
+                '-FilePath $node -ArgumentList @($npmCli,',
+                '-FilePath $npmCli -ArgumentList @(',
+              ),
+          ),
+        ),
+      },
+      {
+        name: 'Windows process launcher executes a pnpm bat shim',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_WINDOWS_BOOTSTRAP_COMMAND),
+          yamlSingleQuoted(
+            TEST_WINDOWS_BOOTSTRAP_COMMAND
+              .replace(
+                "$pnpmCli = Join-Path $pnpmRoot 'node_modules\\pnpm\\bin\\pnpm.cjs';",
+                "$pnpmCli = Join-Path $pnpmRoot 'pnpm.bat';",
+              )
+              .replace(
+                '-FilePath $node -ArgumentList @($pnpmCli,',
+                '-FilePath $pnpmCli -ArgumentList @(',
+              ),
+          ),
         ),
       },
       {
