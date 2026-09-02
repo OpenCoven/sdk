@@ -1318,6 +1318,12 @@ async function runConformanceAggregationWithScrubbedEnvironment(argv) {
     evidenceProducer.harness,
     'Chat conformance harness',
   );
+  assertCommittedFileMetadata(
+    harnessCheckout.root,
+    harnessCheckout.commit,
+    evidenceProducer.workflow.unixToolPathSource,
+    'Chat reviewed Unix tool-path source',
+  );
   if (caveEngineFile === undefined) {
     throw new Error('Frozen Cave assertion engine metadata is missing');
   }

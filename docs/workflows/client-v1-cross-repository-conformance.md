@@ -27,16 +27,20 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
-is the later commit `4dc8f64bb71634a01ee647542dcdafdd0888b4f9`.
+is the reachable commit `df77381023283779358a071ea0a5871208b4e618`,
+whose protected-producer behavior is the parent authority
+`a9d72cae6b300cddbf24294dbbb741f441a71df5`.
 The frozen workflow separates platform production, exact SDK validation,
 provenance attestation, and aggregation. Its lock records the validation and
 attestation job identities, the three static artifact names and record paths,
 the pinned download and attestation actions, the exact security-critical
-bootstrap, production, validation, and digest-comparison script hashes, and the
-protected
+bootstrap, reviewed Unix tool-path source and step, production, validation, and
+digest-comparison script hashes, and the protected
 `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` variable. Aggregation and release
 readiness remain fail closed until all three protected platform records exist
-and their live GitHub attestations are reviewed.
+and their live GitHub attestations are reviewed. Those records remain pending
+until this SDK validator merges and the protected environment revision is
+rotated to that merged SDK commit.
 
 ## Frozen reviewed inputs
 
@@ -236,27 +240,35 @@ The parsed document must equal the complete reviewed structure: only a manual
 dispatch trigger with one required string input named `validator_revision`,
 top-level `contents: read`, the exact ordered
 platform/runner matrix, the protected environment, the exact job permissions,
-and exactly two jobs. The protected matrix job has one fixed sequence:
+and exactly five jobs. The protected matrix job has exactly 19 ordered steps:
 pinned checkout without persisted credentials, pinned Node and pnpm setup,
 frozen dependency and Rust setup, a Linux-only exact package setup for
 `dbus-daemon`, `gnome-keyring`, and `libsecret-tools`, exact
 Node/pnpm/Rust/Tauri verification, exact harness size/SHA-256 verification,
-and invocation of the frozen harness with the selected validator SHA. The
-Linux invocation runs inside Chat's committed private D-Bus/Secret Service
-wrapper. The remaining steps perform read-only canonical JSON and platform
-validation, pinned official artifact upload, and pinned official provenance
-attestation. The Linux-only setup is the sole reviewed step condition. The
-artifact name occurs as a scalar exactly once, and the record path is identical
-across generation, validation, upload, and attestation. There is no mutable
-step after validation.
+reviewed resolution of only `node`, `pnpm`, and `rustup` into a minimal Unix
+tool path, and invocation of the frozen harness with the selected validator
+SHA. The supervised Unix step must consume that exact step output and cannot
+forward ambient `PATH` or fall back to it. Windows bootstrap uses
+`ProcessStartInfo` and `Process.ExitCode`, never `$LASTEXITCODE`, and launches
+the pinned npm and pnpm JavaScript entrypoints directly through pinned Node
+rather than `.cmd` or `.bat` shims. Linux production runs inside Chat's
+committed private D-Bus/Secret Service wrapper. The remaining steps perform
+read-only canonical JSON and platform validation, pinned official artifact
+upload, and pinned official provenance attestation. The artifact name occurs
+as a scalar exactly once, and the record path is identical across generation,
+validation, upload, and attestation. There is no mutable step after validation.
 
 No other action, command, permission, output, condition, expression, local or
 reusable workflow, upload path, or attestation path is accepted. The
 aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
-only. The committed lock remains blocked until Chat contains the real reviewed
-schema-v2 producer and matching workflow bytes.
+only. The committed lock marks the reachable Chat producer at
+`df77381023283779358a071ea0a5871208b4e618` compatible with the reviewed
+schema-v2 workflow bytes. Release readiness remains blocked until this SDK
+validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
+merged revision, and all three protected platform records and their GitHub
+attestations exist and are reviewed.
 
 The three records must come from one exact run attempt. The verifier fetches
 the attempt's complete job list and requires exactly the three successful

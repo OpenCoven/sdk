@@ -763,6 +763,8 @@ function expectEvidenceProducer(value, label) {
         'phase1RevisionsScriptSha256',
         'linuxKeyringSetupScriptSha256',
         'unixSupervisorPreparationScriptSha256',
+        'unixToolPathSource',
+        'unixToolPathScriptSha256',
         'unixProductionScriptSha256',
         'unixValidationScriptSha256',
         'validationGuardScriptSha256',
@@ -939,6 +941,15 @@ function expectEvidenceProducer(value, label) {
         unixSupervisorPreparationScriptSha256: expectSha256(
           workflow.unixSupervisorPreparationScriptSha256,
           `${label}.workflow.unixSupervisorPreparationScriptSha256`,
+        ),
+        unixToolPathSource: expectFileMetadata(
+          workflow.unixToolPathSource,
+          `${label}.workflow.unixToolPathSource`,
+          'scripts/executable-resolution.mjs',
+        ),
+        unixToolPathScriptSha256: expectSha256(
+          workflow.unixToolPathScriptSha256,
+          `${label}.workflow.unixToolPathScriptSha256`,
         ),
         unixProductionScriptSha256: expectSha256(
           workflow.unixProductionScriptSha256,
@@ -3479,6 +3490,8 @@ export function parseReviewedEvidenceIndex(
       'phase1RevisionsScriptSha256',
       'linuxKeyringSetupScriptSha256',
       'unixSupervisorPreparationScriptSha256',
+      'unixToolPathSource',
+      'unixToolPathScriptSha256',
       'unixProductionScriptSha256',
       'unixValidationScriptSha256',
       'validationGuardScriptSha256',
@@ -3639,6 +3652,15 @@ export function parseReviewedEvidenceIndex(
       unixSupervisorPreparationScriptSha256: expectSha256(
         producerWorkflow.unixSupervisorPreparationScriptSha256,
         `${source}.producer.workflow.unixSupervisorPreparationScriptSha256`,
+      ),
+      unixToolPathSource: expectFileMetadata(
+        producerWorkflow.unixToolPathSource,
+        `${source}.producer.workflow.unixToolPathSource`,
+        'scripts/executable-resolution.mjs',
+      ),
+      unixToolPathScriptSha256: expectSha256(
+        producerWorkflow.unixToolPathScriptSha256,
+        `${source}.producer.workflow.unixToolPathScriptSha256`,
       ),
       unixProductionScriptSha256: expectSha256(
         producerWorkflow.unixProductionScriptSha256,

@@ -44,6 +44,12 @@ const CHAT_ENVIRONMENT_REVIEWER_ID = 68_980_965;
 const WINDOWS_SUPERVISOR_ARTIFACT = 'phase1-process-supervisor-win32-x64';
 const WINDOWS_SUPERVISOR_JOB_NAME = 'build-windows-supervisor';
 const WINDOWS_SUPERVISOR_RUNNER_LABELS = ['macos-latest'];
+const REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256 =
+  '10bff1d53efd639ce113705b48ce9e5b57c8baecb7f4abc8f374cd0c3a3dc75f';
+const REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256 =
+  '92d3c242dad7fc89ff36ba8df1e9f38c98e8a52bb310e35a811b61885e552e6b';
+const REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256 =
+  'dd20ff8eedba857ddf198cb2b8e80a7f5ffcecc4e367f1238be9e40bb2b743d9';
 const PLATFORM_STEP_CONTRACT = Object.freeze([
   ['Bootstrap supervised Windows conformance', ['name', 'if', 'shell', 'env', 'run']],
   ['Require protected validator revision', ['name', 'if', 'shell', 'env', 'run']],
@@ -60,6 +66,7 @@ const PLATFORM_STEP_CONTRACT = Object.freeze([
   ['Install frozen Unix Rust', ['name', 'if', 'run']],
   ['Require frozen toolchain', ['name', 'if', 'run']],
   ['Prepare trusted Unix supervisor', ['name', 'if', 'shell', 'run']],
+  ['Compute reviewed Unix tool path', ['name', 'id', 'if', 'run']],
   ['Run supervised Unix production and handoff', ['name', 'if', 'shell', 'env', 'run']],
   ['Validate broker-owned Unix platform record', ['name', 'if', 'shell', 'run']],
   [UPLOAD_ARTIFACT_ACTION, ['uses', 'with']],
@@ -145,6 +152,449 @@ function exactUnixRustInstallCommand(toolchain) {
     'execFileSync(invocation.executable, invocation.args,',
     '{ argv0: command, stdio: \'inherit\' });"',
   ].join(' ');
+}
+
+function exactUnixToolPathCommand() {
+  return [
+    'node --input-type=module --eval "import { appendFileSync }',
+    'from \'node:fs\'; import { resolveUnixToolPath }',
+    'from \'./scripts/executable-resolution.mjs\';',
+    'const toolPath = resolveUnixToolPath([\'node\', \'pnpm\', \'rustup\']);',
+    'appendFileSync(process.env.GITHUB_OUTPUT,',
+    '\'tool_path=\' + toolPath + \'\\n\');"',
+  ].join(' ');
+}
+
+const REVIEWED_WINDOWS_INVOKE_CHECKED_FUNCTION = [
+  'function Invoke-Checked {',
+  'param(',
+  '[Parameter(Mandatory)][string]$FilePath,',
+  '[Parameter(Mandatory)][string[]]$ArgumentList,',
+  '[Parameter(Mandatory)][string]$Label',
+  ')',
+  '$startInfo = [Diagnostics.ProcessStartInfo]::new($FilePath)',
+  '$startInfo.UseShellExecute = $false',
+  'foreach ($argument in $ArgumentList) {',
+  '$startInfo.ArgumentList.Add($argument)',
+  '}',
+  '$process = [Diagnostics.Process]::new()',
+  '$process.StartInfo = $startInfo',
+  'try {',
+  'if (-not $process.Start()) {',
+  'throw "$Label failed to start."',
+  '}',
+  '$process.WaitForExit()',
+  'if ($process.ExitCode -ne 0) {',
+  'throw "$Label failed with exit code $($process.ExitCode)."',
+  '}',
+  '} finally {',
+  '$process.Dispose()',
+  '}',
+  '}',
+].join('\n');
+
+function tokenizePowerShell(source) {
+  const tokens = [];
+  let index = 0;
+  while (index < source.length) {
+    const character = source[index];
+    if (character === '`' && source[index + 1] === '\n') {
+      index += 2;
+      continue;
+    }
+    if (character === '\n' || character === ';') {
+      tokens.push({ type: 'separator', value: character });
+      index += 1;
+      continue;
+    }
+    if (character === ' ' || character === '\t' || character === '\r') {
+      index += 1;
+      continue;
+    }
+    if (character === '#') {
+      const newline = source.indexOf('\n', index);
+      index = newline < 0 ? source.length : newline;
+      continue;
+    }
+    if (character === '\'' || character === '"') {
+      const quote = character;
+      const start = index;
+      index += 1;
+      let closed = false;
+      while (index < source.length) {
+        if (quote === '\'' && source[index] === '\'' && source[index + 1] === '\'') {
+          index += 2;
+          continue;
+        }
+        if (quote === '"' && source[index] === '`' && index + 1 < source.length) {
+          index += 2;
+          continue;
+        }
+        if (source[index] === quote) {
+          index += 1;
+          closed = true;
+          break;
+        }
+        index += 1;
+      }
+      if (!closed) {
+        return null;
+      }
+      tokens.push({
+        type: 'string',
+        value: source.slice(start, index),
+      });
+      continue;
+    }
+    if ('{}()[],.='.includes(character)) {
+      tokens.push({ type: 'symbol', value: character });
+      index += 1;
+      continue;
+    }
+    if (character === '$' && /[A-Za-z_]/u.test(source[index + 1] ?? '')) {
+      const start = index;
+      index += 2;
+      while (/[A-Za-z0-9_:]/u.test(source[index] ?? '')) {
+        index += 1;
+      }
+      tokens.push({
+        type: 'variable',
+        value: source.slice(start, index),
+      });
+      continue;
+    }
+    const start = index;
+    while (
+      index < source.length
+      && !/[\s#'"`;{}()[\],.=]/u.test(source[index])
+    ) {
+      index += 1;
+    }
+    if (start === index) {
+      tokens.push({ type: 'symbol', value: character });
+      index += 1;
+    } else {
+      tokens.push({
+        type: 'word',
+        value: source.slice(start, index),
+      });
+    }
+  }
+  return tokens;
+}
+
+function powerShellFunctionRange(tokens, name) {
+  const matches = [];
+  for (let index = 0; index < tokens.length - 2; index += 1) {
+    if (
+      tokens[index].type !== 'word'
+      || tokens[index].value.toLowerCase() !== 'function'
+      || tokens[index + 1].type !== 'word'
+      || tokens[index + 1].value.toLowerCase() !== name.toLowerCase()
+      || tokens[index + 2].value !== '{'
+    ) {
+      continue;
+    }
+    let depth = 0;
+    let end = -1;
+    for (let cursor = index + 2; cursor < tokens.length; cursor += 1) {
+      if (tokens[cursor].value === '{') {
+        depth += 1;
+      } else if (tokens[cursor].value === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          end = cursor;
+          break;
+        }
+      }
+    }
+    if (end < 0) {
+      return null;
+    }
+    matches.push({ start: index, end });
+  }
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function normalizedPowerShellTokens(tokens) {
+  return tokens
+    .filter(({ type }) => type !== 'separator')
+    .map(({ type, value }) => [type, value]);
+}
+
+function singleQuotedPowerShellValue(token) {
+  if (
+    token?.type !== 'string'
+    || !token.value.startsWith('\'')
+    || !token.value.endsWith('\'')
+  ) {
+    return null;
+  }
+  return token.value.slice(1, -1).replaceAll('\'\'', '\'');
+}
+
+function isReviewedWindowsExecutablePath(path) {
+  const leaf = path.split(/[\\/]/u).at(-1)?.toLowerCase();
+  return (
+    typeof leaf === 'string'
+    && leaf.endsWith('.exe')
+    && leaf !== 'cmd.exe'
+    && !leaf.endsWith('.cmd')
+    && !leaf.endsWith('.bat')
+  );
+}
+
+function powerShellVariableName(value) {
+  return value.toLowerCase().split(':').at(-1)?.replace(/^\$/u, '');
+}
+
+function hasReviewedInvokeCheckedTargets(tokens, functionRange) {
+  const invocationIndexes = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (
+      (index < functionRange.start || index > functionRange.end)
+      && tokens[index].type === 'word'
+      && tokens[index].value.toLowerCase() === 'invoke-checked'
+    ) {
+      invocationIndexes.push(index);
+    }
+  }
+  if (invocationIndexes.length === 0) {
+    return false;
+  }
+  for (const invocationIndex of invocationIndexes) {
+    const option = tokens[invocationIndex + 1];
+    const target = tokens[invocationIndex + 2];
+    if (
+      option?.type !== 'word'
+      || option.value.toLowerCase() !== '-filepath'
+      || target?.type !== 'variable'
+    ) {
+      return false;
+    }
+    const targetName = powerShellVariableName(target.value);
+    const assignments = [];
+    for (let index = 0; index < tokens.length - 4; index += 1) {
+      if (
+        (index < functionRange.start || index > functionRange.end)
+        && tokens[index].type === 'variable'
+        && powerShellVariableName(tokens[index].value) === targetName
+        && tokens[index + 1].value === '='
+      ) {
+        assignments.push(index);
+      }
+    }
+    if (assignments.length !== 1) {
+      return false;
+    }
+    const assignmentIndex = assignments[0];
+    const path = singleQuotedPowerShellValue(tokens[assignmentIndex + 4]);
+    const terminator = tokens[assignmentIndex + 5];
+    if (
+      tokens[assignmentIndex + 2].type !== 'word'
+      || tokens[assignmentIndex + 2].value.toLowerCase() !== 'join-path'
+      || tokens[assignmentIndex + 3].type !== 'variable'
+      || path === null
+      || (terminator !== undefined && terminator.type !== 'separator')
+      || !isReviewedWindowsExecutablePath(path)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function reviewedWindowsChildBootstrap(source) {
+  const lines = source.split('\n');
+  const starts = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index] === "  $childBootstrap = @'") {
+      starts.push(index);
+    }
+  }
+  if (starts.length !== 1) {
+    return null;
+  }
+  const end = lines.findIndex(
+    (line, index) => index > starts[0] && line === "'@",
+  );
+  if (end < 0) {
+    return null;
+  }
+  return lines.slice(starts[0] + 1, end).join('\n');
+}
+
+function usesReviewedWindowsProcessLauncher(run, launcherScript) {
+  if (/\$(?:[A-Za-z_][A-Za-z0-9_]*:)?lastexitcode\b/iu.test(run)) {
+    return false;
+  }
+  const allLauncherReferences = run.match(/\bInvoke-Checked\b/giu) ?? [];
+  const parsedLauncherReferences =
+    launcherScript.match(/\bInvoke-Checked\b/giu) ?? [];
+  if (
+    allLauncherReferences.length !== parsedLauncherReferences.length
+    || /\$\{/u.test(launcherScript)
+    || /\b(?:Clear|New|Remove|Set)-Variable\b/iu.test(launcherScript)
+  ) {
+    return false;
+  }
+  const tokens = tokenizePowerShell(launcherScript);
+  const reviewedTokens = tokenizePowerShell(
+    REVIEWED_WINDOWS_INVOKE_CHECKED_FUNCTION,
+  );
+  if (tokens === null || reviewedTokens === null) {
+    return false;
+  }
+  const functionRange = powerShellFunctionRange(tokens, 'Invoke-Checked');
+  if (functionRange === null) {
+    return false;
+  }
+  const functionTokens = tokens.slice(
+    functionRange.start,
+    functionRange.end + 1,
+  );
+  return (
+    JSON.stringify(normalizedPowerShellTokens(functionTokens))
+      === JSON.stringify(normalizedPowerShellTokens(reviewedTokens))
+    && hasReviewedInvokeCheckedTargets(tokens, functionRange)
+    && run.includes(
+      "$npmCli = Join-Path $nodeRoot 'node_modules\\npm\\bin\\npm-cli.js'",
+    )
+    && run.includes(
+      "$pnpmCli = Join-Path $pnpmRoot 'node_modules\\pnpm\\bin\\pnpm.cjs'",
+    )
+    && run.includes('(& $node $pnpmCli --version).Trim()')
+    && run.includes('(& $node $pnpmCli exec tauri --version).Trim()')
+    && /-FilePath \$node(?: `)?\s*-ArgumentList @\(\s*\$npmCli,\s*'install',/u.test(run)
+    && /-FilePath \$node(?: `)?\s*-ArgumentList @\(\s*\$pnpmCli,\s*'install',/u.test(run)
+  );
+}
+
+function tokenizeShellScript(source) {
+  const tokens = [];
+  let index = 0;
+  while (index < source.length) {
+    const character = source[index];
+    if (character === '\\' && source[index + 1] === '\n') {
+      index += 2;
+      continue;
+    }
+    if (character === '\n' || ';|&'.includes(character)) {
+      tokens.push({ type: 'separator', raw: character, value: character });
+      index += 1;
+      continue;
+    }
+    if (character === ' ' || character === '\t' || character === '\r') {
+      index += 1;
+      continue;
+    }
+    if (character === '#') {
+      const newline = source.indexOf('\n', index);
+      index = newline < 0 ? source.length : newline;
+      continue;
+    }
+    const start = index;
+    let raw = '';
+    let value = '';
+    while (index < source.length) {
+      const current = source[index];
+      if (
+        current === '\n'
+        || current === ';'
+        || current === '|'
+        || current === '&'
+        || current === ' '
+        || current === '\t'
+        || current === '\r'
+      ) {
+        break;
+      }
+      if (current === '\\' && source[index + 1] === '\n') {
+        index += 2;
+        continue;
+      }
+      if (current === '\'' || current === '"') {
+        const quote = current;
+        const quoteStart = index;
+        index += 1;
+        let closed = false;
+        while (index < source.length) {
+          if (quote === '"' && source[index] === '\\' && index + 1 < source.length) {
+            index += 2;
+            continue;
+          }
+          if (source[index] === quote) {
+            value += source.slice(quoteStart + 1, index);
+            index += 1;
+            raw += source.slice(quoteStart, index);
+            closed = true;
+            break;
+          }
+          index += 1;
+        }
+        if (!closed) {
+          return null;
+        }
+        continue;
+      }
+      raw += current;
+      value += current;
+      index += 1;
+    }
+    if (start === index) {
+      return null;
+    }
+    tokens.push({ type: 'word', raw, value });
+  }
+  return tokens;
+}
+
+function hasExactReviewedUnixToolPathArgument(run) {
+  const tokens = tokenizeShellScript(run);
+  if (tokens === null) {
+    return false;
+  }
+  const starts = [];
+  for (let index = 0; index < tokens.length - 2; index += 1) {
+    if (
+      tokens[index].type === 'word'
+      && tokens[index].raw === 'sudo'
+      && tokens[index + 1].type === 'word'
+      && tokens[index + 1].raw === '--non-interactive'
+      && tokens[index + 2].type === 'word'
+      && tokens[index + 2].raw === 'scripts/unix-producer-supervisor.sh'
+    ) {
+      starts.push(index);
+    }
+  }
+  if (starts.length !== 1) {
+    return false;
+  }
+  const command = [];
+  for (let index = starts[0]; index < tokens.length; index += 1) {
+    if (tokens[index].type === 'separator') {
+      break;
+    }
+    command.push(tokens[index]);
+  }
+  const optionIndexes = [];
+  for (let index = 0; index < command.length; index += 1) {
+    if (
+      command[index].value === '--tool-path'
+      || command[index].value.startsWith('--tool-path=')
+    ) {
+      optionIndexes.push(index);
+    }
+  }
+  if (optionIndexes.length !== 1) {
+    return false;
+  }
+  const optionIndex = optionIndexes[0];
+  return (
+    command[optionIndex].raw === '--tool-path'
+    && command[optionIndex + 1]?.raw
+      === '"${{ steps[\'unix-tool-path\'].outputs.tool_path }}"'
+  );
 }
 
 function workflowError(message) {
@@ -486,13 +936,37 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
     || windowsBootstrap.env.OPENCOVEN_PROTECTED_VALIDATOR_REVISION
       !== protectedExpression
     || typeof windowsBootstrap.run !== 'string'
-    || sha256(windowsBootstrap.run)
-      !== producer.workflow.windowsBootstrapScriptSha256
     || !windowsBootstrap.run.includes(
       '$validatorRevision -cne $protectedValidatorRevision',
     )
   ) {
     workflowError('does not bind the Windows producer to the protected validator');
+  }
+  const windowsChildBootstrap = reviewedWindowsChildBootstrap(
+    windowsBootstrap.run,
+  );
+  if (
+    windowsChildBootstrap === null
+    || sha256(windowsChildBootstrap)
+      !== REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256
+  ) {
+    workflowError('does not use the exact canonical Windows child bootstrap source');
+  }
+  if (
+    producer.workflow.windowsBootstrapScriptSha256
+      !== REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256
+    || sha256(windowsBootstrap.run)
+      !== REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256
+  ) {
+    workflowError('does not use the exact canonical Windows bootstrap source');
+  }
+  if (
+    !usesReviewedWindowsProcessLauncher(
+      windowsBootstrap.run,
+      windowsChildBootstrap,
+    )
+  ) {
+    workflowError('does not use the reviewed Windows process launcher');
   }
   const validatorGuard = namedStep(
     platform.steps,
@@ -721,6 +1195,20 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
   ) {
     workflowError('does not prepare the exact trusted Unix supervisor');
   }
+  const unixToolPath = namedStep(
+    platform.steps,
+    'Compute reviewed Unix tool path',
+    'platform producer',
+  );
+  if (
+    unixToolPath.id !== 'unix-tool-path'
+    || unixToolPath.if !== "matrix.platform != 'win32-x64'"
+    || unixToolPath.run !== exactUnixToolPathCommand()
+    || sha256(unixToolPath.run)
+      !== producer.workflow.unixToolPathScriptSha256
+  ) {
+    workflowError('does not compute the exact reviewed Unix tool path');
+  }
   const unixProduction = namedStep(
     platform.steps,
     'Run supervised Unix production and handoff',
@@ -735,14 +1223,25 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
         OPENCOVEN_VALIDATOR_REVISION: protectedExpression,
       })
     || typeof unixProduction.run !== 'string'
+  ) {
+    workflowError('does not configure supervised Unix evidence production');
+  }
+  if (
+    producer.workflow.unixProductionScriptSha256
+      !== REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256
     || sha256(unixProduction.run)
-      !== producer.workflow.unixProductionScriptSha256
-    || !unixProduction.run.includes(
+      !== REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256
+  ) {
+    workflowError('does not use the exact canonical Unix production source');
+  }
+  if (
+    !unixProduction.run.includes(
       'sudo --non-interactive scripts/unix-producer-supervisor.sh',
     )
     || !unixProduction.run.includes(
       '--command scripts/unix-producer-command.sh',
     )
+    || !hasExactReviewedUnixToolPathArgument(unixProduction.run)
     || !unixProduction.run.includes(
       '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
     )
