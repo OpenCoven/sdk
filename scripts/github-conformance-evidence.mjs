@@ -45,7 +45,7 @@ const WINDOWS_SUPERVISOR_ARTIFACT = 'phase1-process-supervisor-win32-x64';
 const WINDOWS_SUPERVISOR_JOB_NAME = 'build-windows-supervisor';
 const WINDOWS_SUPERVISOR_RUNNER_LABELS = ['macos-latest'];
 const REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256 =
-  '9a5e969bbf7ad2c557ef2db3829f044332486ed70b7fb97b8b5f2d255bdb2957';
+  '6369a4e7c94bed2e3236c509e07e8cd56694d94e747116378b5c90705304ead6';
 const REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256 =
   '92d3c242dad7fc89ff36ba8df1e9f38c98e8a52bb310e35a811b61885e552e6b';
 const REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256 =
@@ -159,7 +159,7 @@ function exactUnixToolPathCommand() {
     'node --input-type=module --eval "import { appendFileSync }',
     'from \'node:fs\'; import { resolveUnixToolPath }',
     'from \'./scripts/executable-resolution.mjs\';',
-    'const toolPath = resolveUnixToolPath([\'node\', \'pnpm\', \'rustup\']);',
+    'const toolPath = resolveUnixToolPath([\'node\', \'corepack\', \'rustup\']);',
     'appendFileSync(process.env.GITHUB_OUTPUT,',
     '\'tool_path=\' + toolPath + \'\\n\');"',
   ].join(' ');
