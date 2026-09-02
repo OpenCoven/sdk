@@ -214,7 +214,9 @@ passing evidence record for each target.
 The frozen Chat production source
 `edd4728792321771496df58bfc0e6122908a96ec` is exercised by the compatible
 schema-v2 producer at
-`95de47f7aa2bf8233f71a601ad16011a82905e41`. Its protected workflow requires
+`df77381023283779358a071ea0a5871208b4e618`, whose source-lock behavior is
+bound by parent commit `a9d72cae6b300cddbf24294dbbb741f441a71df5`.
+Its protected workflow requires
 an exact SDK `validator_revision`, uses protected environment ID
 `20863036831`, validates the three static platform artifacts in
 `validate-conformance-artifacts`, and delegates OIDC provenance issuance only
@@ -229,7 +231,10 @@ protected branches only. Its `required_reviewers` rule therefore has
 `prevent_self_review: false`; this is the authorized exception for the
 dispatcher and sole reviewer account.
 Aggregation and release readiness remain fail closed until all three protected
-records and their reviewed GitHub attestations exist, as documented in
+records and their reviewed GitHub attestations exist. That protected evidence
+remains pending until this SDK validator merges and
+`CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the merged revision,
+as documented in
 [`docs/workflows/client-v1-cross-repository-conformance.md`](docs/workflows/client-v1-cross-repository-conformance.md).
 
 Before advancing this candidate after that blocker is resolved, copy the

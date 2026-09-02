@@ -27,9 +27,9 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
-is the reachable commit `95de47f7aa2bf8233f71a601ad16011a82905e41`,
+is the reachable commit `df77381023283779358a071ea0a5871208b4e618`,
 whose protected-producer behavior is the parent authority
-`19f6c6793556d768e3e523ea34dafbd945a7f266`.
+`a9d72cae6b300cddbf24294dbbb741f441a71df5`.
 The frozen workflow separates platform production, exact SDK validation,
 provenance attestation, and aggregation. Its lock records the validation and
 attestation job identities, the three static artifact names and record paths,
@@ -38,7 +38,9 @@ bootstrap, reviewed Unix tool-path source and step, production, validation, and
 digest-comparison script hashes, and the protected
 `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` variable. Aggregation and release
 readiness remain fail closed until all three protected platform records exist
-and their live GitHub attestations are reviewed.
+and their live GitHub attestations are reviewed. Those records remain pending
+until this SDK validator merges and the protected environment revision is
+rotated to that merged SDK commit.
 
 ## Frozen reviewed inputs
 
@@ -262,10 +264,11 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`95de47f7aa2bf8233f71a601ad16011a82905e41` compatible with the reviewed
-schema-v2 workflow bytes. Release readiness remains blocked until all three
-protected platform records and their GitHub attestations exist and are
-reviewed.
+`df77381023283779358a071ea0a5871208b4e618` compatible with the reviewed
+schema-v2 workflow bytes. Release readiness remains blocked until this SDK
+validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
+merged revision, and all three protected platform records and their GitHub
+attestations exist and are reviewed.
 
 The three records must come from one exact run attempt. The verifier fetches
 the attempt's complete job list and requires exactly the three successful
