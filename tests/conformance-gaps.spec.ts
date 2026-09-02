@@ -9,6 +9,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliDecompressSync } from 'node:zlib';
 
+import * as ts from 'typescript';
 import { describe, expect, test } from 'vitest';
 
 import {
@@ -23,10 +24,20 @@ import {
   parseReleaseWorkflowDocument,
 } from '../scripts/release-readiness.mjs';
 import type {
+  CompatibleConformanceWorkflow,
+  FrozenConformanceLock,
   ReviewedEvidenceIndex,
 } from '../scripts/conformance-contract.mjs';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const conformanceContractRuntimePath = resolve(
+  workspaceRoot,
+  'scripts/conformance-contract.mjs',
+);
+const conformanceContractDeclarationPath = resolve(
+  workspaceRoot,
+  'scripts/conformance-contract.d.mts',
+);
 const lockPath = resolve(
   workspaceRoot,
   'conformance/client-v1-cross-repository-lock.json',
@@ -65,11 +76,23 @@ const TEST_ARTIFACT_NAME =
 const TEST_VALIDATOR_INPUT = '${' + '{ inputs.validator_revision }}';
 const TEST_PROTECTED_VALIDATOR_REVISION =
   '${' + '{ vars.CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION }}';
-const TEST_STATIC_ARTIFACTS = PLATFORMS.map((platform) => ({
-  platform,
-  name: `client-v1-conformance-${platform}`,
-  recordPath: `.artifacts/client-v1-conformance-${platform}.json`,
-}));
+const TEST_STATIC_ARTIFACTS: CompatibleConformanceWorkflow['artifacts'] = [
+  {
+    platform: 'darwin-arm64',
+    name: 'client-v1-conformance-darwin-arm64',
+    recordPath: '.artifacts/client-v1-conformance-darwin-arm64.json',
+  },
+  {
+    platform: 'linux-x64',
+    name: 'client-v1-conformance-linux-x64',
+    recordPath: '.artifacts/client-v1-conformance-linux-x64.json',
+  },
+  {
+    platform: 'win32-x64',
+    name: 'client-v1-conformance-win32-x64',
+    recordPath: '.artifacts/client-v1-conformance-win32-x64.json',
+  },
+];
 const TEST_LINUX_SECRET_SERVICE_COMMAND =
   'sudo apt-get install --yes --no-install-recommends dbus-daemon=1.14.10-4ubuntu4.1 gnome-keyring=46.1-2ubuntu0.2 libsecret-tools=0.21.4-1build3';
 const TEST_PHASE1_REVISIONS_COMMAND = [
@@ -678,17 +701,216 @@ function requiredFunction(name: string): (...args: never[]) => unknown {
   return value as (...args: never[]) => unknown;
 }
 
-function compileReviewedEvidenceIndexWorkflowDeclaration(
-  workflow: ReviewedEvidenceIndex['producer']['workflow'],
+type CompatibleEvidenceProducer = Extract<
+  FrozenConformanceLock['evidenceProducer'],
+  { status: 'compatible' }
+>;
+type EqualTypes<Left, Right> =
+  (<Value>() => Value extends Left ? 1 : 2) extends
+  (<Value>() => Value extends Right ? 1 : 2)
+    ? true
+    : false;
+
+const COMPATIBLE_WORKFLOW_DECLARATIONS_MATCH: EqualTypes<
+  CompatibleEvidenceProducer['workflow'],
+  ReviewedEvidenceIndex['producer']['workflow']
+> = true;
+
+function compileCompatibleWorkflowDeclaration(
+  workflow: CompatibleConformanceWorkflow,
 ): void {
+  const name: 'client-v1 conformance' = workflow.name;
+  const path: '.github/workflows/client-v1-conformance.yml' = workflow.path;
+  const job: 'platform-conformance' = workflow.job;
+  const jobNameTemplate: 'platform-conformance ({platform})' =
+    workflow.jobNameTemplate;
+  const aggregationJob: 'aggregate-conformance' = workflow.aggregationJob;
+  const aggregationJobName: 'aggregate-conformance' =
+    workflow.aggregationJobName;
+  const aggregationRunner: 'ubuntu-24.04' =
+    workflow.aggregationRunnerLabels[0];
+  const validationJob: 'validate-conformance-artifacts' =
+    workflow.validationJob;
+  const validationJobName: 'validate-conformance-artifacts' =
+    workflow.validationJobName;
+  const attestationJob: 'attest-conformance-artifacts' =
+    workflow.attestationJob;
+  const attestationJobName: 'attest-conformance-artifacts' =
+    workflow.attestationJobName;
+  const downloadArtifactAction:
+    'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c' =
+      workflow.downloadArtifactAction;
+  const attestationAction:
+    'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8' =
+      workflow.attestationAction;
+  const validatorRevisionEnvironment:
+    'CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION' =
+      workflow.validatorRevisionEnvironment;
+  const environment: 'client-v1-conformance' = workflow.environment;
+  const artifactNameTemplate: 'client-v1-conformance-{platform}' =
+    workflow.artifactNameTemplate;
+  const recordPathTemplate:
+    '.artifacts/client-v1-conformance-{platform}.json' =
+      workflow.recordPathTemplate;
+  const sourceRef: 'refs/heads/main' = workflow.sourceRef;
+  const darwinRunner: 'macos-14' =
+    workflow.runnerLabels['darwin-arm64'][0];
+  const linuxRunner: 'ubuntu-24.04' =
+    workflow.runnerLabels['linux-x64'][0];
+  const windowsRunner: 'windows-2025' =
+    workflow.runnerLabels['win32-x64'][0];
+  const signerWorkflow:
+    'OpenCoven/chat/.github/workflows/client-v1-conformance.yml' =
+      workflow.signerWorkflow;
+  const predicateType: 'https://slsa.dev/provenance/v1' =
+    workflow.predicateType;
+  const denySelfHostedRunners: true = workflow.denySelfHostedRunners;
+  const darwinArtifact:
+    'client-v1-conformance-darwin-arm64' = workflow.artifacts[0].name;
+  const linuxArtifact:
+    '.artifacts/client-v1-conformance-linux-x64.json' =
+      workflow.artifacts[1].recordPath;
+  const windowsPlatform: 'win32-x64' = workflow.artifacts[2].platform;
   const source: {
     path: 'scripts/executable-resolution.mjs';
     size: number;
     sha256: string;
   } = workflow.unixToolPathSource;
-  const scriptSha256: string = workflow.unixToolPathScriptSha256;
+  const scriptSha256Fields: string[] = [
+    workflow.windowsBootstrapScriptSha256,
+    workflow.validatorRevisionScriptSha256,
+    workflow.phase1RevisionsScriptSha256,
+    workflow.linuxKeyringSetupScriptSha256,
+    workflow.unixSupervisorPreparationScriptSha256,
+    workflow.unixToolPathScriptSha256,
+    workflow.unixProductionScriptSha256,
+    workflow.unixValidationScriptSha256,
+    workflow.validationGuardScriptSha256,
+    workflow.validationScriptSha256,
+    workflow.attestationScriptSha256,
+  ];
+  void name;
+  void path;
+  void job;
+  void jobNameTemplate;
+  void aggregationJob;
+  void aggregationJobName;
+  void aggregationRunner;
+  void validationJob;
+  void validationJobName;
+  void attestationJob;
+  void attestationJobName;
+  void downloadArtifactAction;
+  void attestationAction;
+  void validatorRevisionEnvironment;
+  void environment;
+  void artifactNameTemplate;
+  void recordPathTemplate;
+  void sourceRef;
+  void darwinRunner;
+  void linuxRunner;
+  void windowsRunner;
+  void signerWorkflow;
+  void predicateType;
+  void denySelfHostedRunners;
+  void darwinArtifact;
+  void linuxArtifact;
+  void windowsPlatform;
   void source;
-  void scriptSha256;
+  void scriptSha256Fields;
+}
+
+function compatibleWorkflowRuntimeKeys(): string[][] {
+  const source = readFileSync(conformanceContractRuntimePath, 'utf8');
+  const sourceFile = ts.createSourceFile(
+    conformanceContractRuntimePath,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const workflowKeySets: string[][] = [];
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node)
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === 'expectExactObject'
+      && node.arguments.length >= 2
+    ) {
+      const keys = node.arguments[1];
+      if (
+        keys !== undefined
+        && ts.isArrayLiteralExpression(keys)
+        && keys.elements.some(
+          (element) =>
+            ts.isStringLiteral(element)
+            && element.text === 'validatorRevisionEnvironment',
+        )
+      ) {
+        workflowKeySets.push(keys.elements.map((element) => {
+          if (!ts.isStringLiteral(element)) {
+            throw new Error(
+              'Compatible workflow exact-object keys must be string literals',
+            );
+          }
+          return element.text;
+        }));
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return workflowKeySets;
+}
+
+function compatibleWorkflowDeclarationKeys(): {
+  keys: string[];
+  references: number;
+} {
+  const source = readFileSync(conformanceContractDeclarationPath, 'utf8');
+  const sourceFile = ts.createSourceFile(
+    conformanceContractDeclarationPath,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  let keys: string[] | undefined;
+  let references = 0;
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isInterfaceDeclaration(node)
+      && node.name.text === 'CompatibleConformanceWorkflow'
+    ) {
+      keys = node.members.map((member) => {
+        if (
+          !ts.isPropertySignature(member)
+          || member.name === undefined
+          || !ts.isIdentifier(member.name)
+        ) {
+          throw new Error(
+            'CompatibleConformanceWorkflow members must be properties',
+          );
+        }
+        return member.name.text;
+      });
+    }
+    if (
+      ts.isPropertySignature(node)
+      && node.name !== undefined
+      && ts.isIdentifier(node.name)
+      && node.name.text === 'workflow'
+      && node.type !== undefined
+      && ts.isTypeReferenceNode(node.type)
+      && ts.isIdentifier(node.type.typeName)
+      && node.type.typeName.text === 'CompatibleConformanceWorkflow'
+    ) {
+      references += 1;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return { keys: keys ?? [], references };
 }
 
 function readLock(): Record<string, unknown> {
@@ -1139,10 +1361,16 @@ function aggregate(records: Array<Record<string, unknown>>) {
 }
 
 describe('unresolved SDK #38 conformance gaps', () => {
-  test('declares reviewed Unix tool-path metadata in evidence indexes', () => {
-    expect(compileReviewedEvidenceIndexWorkflowDeclaration).toBeTypeOf(
-      'function',
-    );
+  test('keeps compatible workflow declarations in parity with both runtime parsers', () => {
+    const runtimeKeySets = compatibleWorkflowRuntimeKeys();
+    const declaration = compatibleWorkflowDeclarationKeys();
+
+    expect(runtimeKeySets).toHaveLength(2);
+    expect(runtimeKeySets[1]).toEqual(runtimeKeySets[0]);
+    expect(declaration.keys).toEqual(runtimeKeySets[0]);
+    expect(declaration.references).toBe(2);
+    expect(COMPATIBLE_WORKFLOW_DECLARATIONS_MATCH).toBe(true);
+    expect(compileCompatibleWorkflowDeclaration).toBeTypeOf('function');
   });
 
   test('freezes the exact candidate, manifest, package, source, and consumer bytes', () => {

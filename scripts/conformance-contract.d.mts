@@ -49,6 +49,67 @@ export interface ValidatorIdentity extends CheckoutIdentity {
   schema: FileMetadata;
 }
 
+export interface ConformanceWorkflowArtifact<
+  Platform extends CanonicalPlatform,
+> {
+  platform: Platform;
+  name: `client-v1-conformance-${Platform}`;
+  recordPath: `.artifacts/client-v1-conformance-${Platform}.json`;
+}
+
+export interface CompatibleConformanceWorkflow {
+  name: 'client-v1 conformance';
+  path: '.github/workflows/client-v1-conformance.yml';
+  size: number;
+  sha256: string;
+  job: 'platform-conformance';
+  jobNameTemplate: 'platform-conformance ({platform})';
+  aggregationJob: 'aggregate-conformance';
+  aggregationJobName: 'aggregate-conformance';
+  aggregationRunnerLabels: ['ubuntu-24.04'];
+  validationJob: 'validate-conformance-artifacts';
+  validationJobName: 'validate-conformance-artifacts';
+  attestationJob: 'attest-conformance-artifacts';
+  attestationJobName: 'attest-conformance-artifacts';
+  environment: 'client-v1-conformance';
+  environmentId: string;
+  artifactNameTemplate: 'client-v1-conformance-{platform}';
+  recordPathTemplate: '.artifacts/client-v1-conformance-{platform}.json';
+  artifacts: [
+    ConformanceWorkflowArtifact<'darwin-arm64'>,
+    ConformanceWorkflowArtifact<'linux-x64'>,
+    ConformanceWorkflowArtifact<'win32-x64'>,
+  ];
+  downloadArtifactAction: 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c';
+  attestationAction: 'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8';
+  windowsBootstrapScriptSha256: string;
+  validatorRevisionScriptSha256: string;
+  phase1RevisionsScriptSha256: string;
+  linuxKeyringSetupScriptSha256: string;
+  unixSupervisorPreparationScriptSha256: string;
+  unixToolPathSource: FileMetadata & {
+    path: 'scripts/executable-resolution.mjs';
+  };
+  unixToolPathScriptSha256: string;
+  unixProductionScriptSha256: string;
+  unixValidationScriptSha256: string;
+  validationGuardScriptSha256: string;
+  validationScriptSha256: string;
+  attestationScriptSha256: string;
+  validatorRevisionEnvironment: 'CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION';
+  sourceRef: 'refs/heads/main';
+  runnerLabels: {
+    'darwin-arm64': ['macos-14'];
+    'linux-x64': ['ubuntu-24.04'];
+    'win32-x64': ['windows-2025'];
+  };
+  signerWorkflow: 'OpenCoven/chat/.github/workflows/client-v1-conformance.yml';
+  signerDigest: string;
+  sourceDigest: string;
+  predicateType: 'https://slsa.dev/provenance/v1';
+  denySelfHostedRunners: true;
+}
+
 export interface FrozenConformanceLock {
   schemaVersion: 2;
   issue: 'OpenCoven/sdk#38';
@@ -104,32 +165,7 @@ export interface FrozenConformanceLock {
         };
         command: 'test:phase1-conformance';
         recordSchemaVersion: 2;
-        workflow: {
-          name: string;
-          path: string;
-          size: number;
-          sha256: string;
-          job: string;
-          jobNameTemplate: string;
-          aggregationJob: string;
-          aggregationJobName: string;
-          aggregationRunnerLabels: string[];
-          environment: string;
-          environmentId: string;
-          artifactNameTemplate: string;
-          recordPathTemplate: string;
-          sourceRef: string;
-          runnerLabels: Record<CanonicalPlatform, string[]>;
-          unixToolPathSource: FileMetadata & {
-            path: 'scripts/executable-resolution.mjs';
-          };
-          unixToolPathScriptSha256: string;
-          signerWorkflow: string;
-          signerDigest: string;
-          sourceDigest: string;
-          predicateType: 'https://slsa.dev/provenance/v1';
-          denySelfHostedRunners: true;
-        };
+        workflow: CompatibleConformanceWorkflow;
       });
   toolchain: {
     nodeVersion: string;
@@ -434,32 +470,7 @@ export interface ReviewedEvidenceIndex {
       path: 'scripts/phase1-conformance.mjs';
       version: string;
     };
-    workflow: {
-      name: string;
-      path: string;
-      size: number;
-      sha256: string;
-      job: string;
-      jobNameTemplate: string;
-      aggregationJob: string;
-      aggregationJobName: string;
-      aggregationRunnerLabels: string[];
-      environment: string;
-      environmentId: string;
-      artifactNameTemplate: string;
-      recordPathTemplate: string;
-      sourceRef: string;
-      runnerLabels: Record<CanonicalPlatform, string[]>;
-      unixToolPathSource: FileMetadata & {
-        path: 'scripts/executable-resolution.mjs';
-      };
-      unixToolPathScriptSha256: string;
-      signerWorkflow: string;
-      signerDigest: string;
-      sourceDigest: string;
-      predicateType: 'https://slsa.dev/provenance/v1';
-      denySelfHostedRunners: true;
-    };
+    workflow: CompatibleConformanceWorkflow;
   };
   platforms: Array<{
     platform: CanonicalPlatform;
