@@ -588,7 +588,10 @@ describe('cave familiars', () => {
     });
 
     // An instance that does not advertise the family is refused here, before
-    // the client ever sees a contract-shaped object.
+    // the client ever sees a contract-shaped object. Asserted on the field the
+    // envelope check names, so an unrelated throw fails the test rather than
+    // satisfying it: this envelope omits the operation, so `operations` is
+    // what must be refused.
     expect(() =>
       canonicalFamiliarContractData(
         envelope(
@@ -596,7 +599,21 @@ describe('cave familiars', () => {
           { capabilities: ['familiars'], operations: ['familiars.list'] },
         ),
       ),
-    ).toThrow();
+    ).toThrow(
+      expect.objectContaining({ name: 'CaveCanonicalSchemaError', field: 'operations' }),
+    );
+    // And the same read with the operation advertised but the family withheld
+    // is refused on `capabilities`, so the two declarations are not conflated.
+    expect(() =>
+      canonicalFamiliarContractData(
+        envelope(
+          { contract: { id: 'cody', present: PRESENT, report: CONTRACT_REPORT } },
+          { capabilities: ['familiars'], operations: ['familiars.contract.read'] },
+        ),
+      ),
+    ).toThrow(
+      expect.objectContaining({ name: 'CaveCanonicalSchemaError', field: 'capabilities' }),
+    );
   });
 
   test('surfaces the reason code on a contract refusal', async () => {

@@ -17,7 +17,7 @@
   "entrypoints": {
     ".": {
       "declarationFiles": [
-        "dist/canonical-reads-BKthC-Oj.d.ts",
+        "dist/canonical-reads-D4L8o5FD.d.ts",
         "dist/index.d.ts"
       ],
       "runtimeExports": {
@@ -49,7 +49,7 @@
     },
     "./managed": {
       "declarationFiles": [
-        "dist/canonical-reads-BKthC-Oj.d.ts",
+        "dist/canonical-reads-D4L8o5FD.d.ts",
         "dist/managed.d.ts"
       ],
       "runtimeExports": {
