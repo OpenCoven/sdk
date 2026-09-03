@@ -1,4 +1,9 @@
-import { CaveClient, isCaveClientError } from '@opencoven/cave-client';
+import {
+  CaveClient,
+  canonicalFamiliarAnalyticsData,
+  canonicalFamiliarContractData,
+  isCaveClientError,
+} from '@opencoven/cave-client';
 import type { OperationContext } from '@opencoven/sdk-core';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
@@ -533,6 +538,65 @@ describe('cave familiars', () => {
     expect(contract.identity).toEqual({});
     expect(contract.ward?.version).toBeUndefined();
     expect(contract.ward?.approvalTiers).toEqual({ auto: [], humanReview: [] });
+  });
+
+  test('lets a host-owned transport hand over the canonical envelope it received', async () => {
+    // A native bridge returns what Cave sent. The exported envelope readers
+    // are how it becomes the response these operations consume, so the
+    // declaration check happens once in the SDK rather than being
+    // reimplemented against the same wire by every host.
+    const envelope = (data: Record<string, unknown>, declarations: {
+      capabilities: string[];
+      operations: string[];
+    }) => ({
+      apiVersion: '1.0',
+      minimumClientVersion: '0.1.0',
+      capabilities: declarations.capabilities,
+      operations: declarations.operations,
+      data,
+    });
+    const client = clientWith({
+      familiarContract: () =>
+        Promise.resolve({
+          ok: true,
+          ...canonicalFamiliarContractData(
+            envelope(
+              { contract: { id: 'cody', present: PRESENT, ward: WARD, report: CONTRACT_REPORT } },
+              { capabilities: ['familiar-contract'], operations: ['familiars.contract.read'] },
+            ),
+          ),
+        }),
+      familiarAnalytics: () =>
+        Promise.resolve({
+          ok: true,
+          analytics: canonicalFamiliarAnalyticsData(
+            envelope(
+              { analytics: ANALYTICS },
+              { capabilities: ['familiar-analytics'], operations: ['familiars.analytics.read'] },
+            ),
+          ),
+        }),
+    });
+
+    const contract = await client.familiarContract('cody');
+    expect(contract.ward?.approvalTiers.humanReview).toEqual([
+      'push a branch',
+      'merge a pull request',
+    ]);
+    await expect(client.familiarAnalytics('cody')).resolves.toMatchObject({
+      backfill: { state: 'partial' },
+    });
+
+    // An instance that does not advertise the family is refused here, before
+    // the client ever sees a contract-shaped object.
+    expect(() =>
+      canonicalFamiliarContractData(
+        envelope(
+          { contract: { id: 'cody', present: PRESENT, report: CONTRACT_REPORT } },
+          { capabilities: ['familiars'], operations: ['familiars.list'] },
+        ),
+      ),
+    ).toThrow();
   });
 
   test('surfaces the reason code on a contract refusal', async () => {

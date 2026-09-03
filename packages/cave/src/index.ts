@@ -62,6 +62,10 @@ export type {
   CaveContractRevision,
 } from './contract-fixture.js';
 export {
+  canonicalFamiliarAnalyticsData,
+  canonicalFamiliarContractData,
+} from './canonical-reads.js';
+export {
   CAVE_ANALYTICS_WINDOWS,
   CAVE_FAMILIAR_PROPERTIES,
   CAVE_PAIRING_SCOPES,

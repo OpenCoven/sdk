@@ -139,11 +139,15 @@ describe('packed API baselines', () => {
     if (rootEntrypoint === undefined) {
       throw new Error('Cave root entrypoint was missing.');
     }
+    // The baseline has to cover the shared declaration chunk, not just
+    // `index.d.ts`. The chunk's NAME is tsup's business -- it follows whichever
+    // module the chunk is rooted at, so it moves whenever the entrypoint's
+    // re-export graph does -- and pinning it here would fail a reviewed export
+    // change for a reason that has nothing to do with the surface. What must
+    // hold is that a hashed shared chunk exists and is baselined.
     expect(
-      rootEntrypoint.declarationFiles.some((file) =>
-        /^dist\/client-[A-Za-z0-9]+\.d\.ts$/u.test(file),
-      ),
-    ).toBe(true);
+      rootEntrypoint.declarationFiles.filter((file) => file !== 'dist/index.d.ts'),
+    ).toEqual([expect.stringMatching(/^dist\/[A-Za-z0-9-]+-[A-Za-z0-9_-]+\.d\.ts$/u)]);
     expect(() =>
       assertApiBaseline(expected, {
         ...surface,
