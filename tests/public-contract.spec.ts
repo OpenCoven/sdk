@@ -441,6 +441,8 @@ describe('public package entry points', () => {
       'CaveClientError',
       'CaveDiscoveryError',
       'CavePairingSession',
+      'canonicalFamiliarAnalyticsData',
+      'canonicalFamiliarContractData',
       'createCaveClient',
       'createDiscoveredCaveClient',
       'createManagedCaveClient',

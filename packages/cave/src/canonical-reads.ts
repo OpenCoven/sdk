@@ -656,7 +656,9 @@ export function parseConversationMessagesEnvelope(
  * the familiar contract DTO for every transport, so a transport hands them
  * over as they arrived.
  */
-export function canonicalFamiliarContractData(value: unknown): JsonObject {
+export function canonicalFamiliarContractData(
+  value: unknown,
+): Record<string, unknown> {
   const envelope = parseEnvelope(
     value,
     CAVE_CANONICAL_FAMILIAR_CONTRACT_REQUIREMENTS,
@@ -667,7 +669,9 @@ export function canonicalFamiliarContractData(value: unknown): JsonObject {
 }
 
 /** The `data.analytics` record of a `familiars.analytics.read` envelope; see above. */
-export function canonicalFamiliarAnalyticsData(value: unknown): JsonObject {
+export function canonicalFamiliarAnalyticsData(
+  value: unknown,
+): Record<string, unknown> {
   const envelope = parseEnvelope(
     value,
     CAVE_CANONICAL_FAMILIAR_ANALYTICS_REQUIREMENTS,
