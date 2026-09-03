@@ -17,7 +17,7 @@
   "entrypoints": {
     ".": {
       "declarationFiles": [
-        "dist/client-BbxpTVKf.d.ts",
+        "dist/client-BYvwJMQL.d.ts",
         "dist/index.d.ts"
       ],
       "runtimeExports": {
@@ -47,7 +47,7 @@
     },
     "./managed": {
       "declarationFiles": [
-        "dist/client-BbxpTVKf.d.ts",
+        "dist/client-BYvwJMQL.d.ts",
         "dist/managed.d.ts"
       ],
       "runtimeExports": {

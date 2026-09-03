@@ -35,6 +35,21 @@ const CONTRACT_REPORT = {
   warnings: [{ file: 'MEMORY.md', field: 'memory', message: 'No MEMORY.md' }],
 } as const;
 
+const PRESENT = { soul: true, identity: true, ward: true, memory: false } as const;
+
+const WARD = {
+  version: '0.1.0',
+  familiar: 'cody',
+  person: 'val',
+  protectedFiles: ['SOUL.md', 'IDENTITY.md', 'MEMORY.md', 'ward.toml'],
+  invariants: ["familiar.name == 'Cody'"],
+  editablePaths: ['TOOLS.md', 'scratch/'],
+  approvalTiers: {
+    auto: ['run tests', 'read files'],
+    humanReview: ['push a branch', 'merge a pull request'],
+  },
+} as const;
+
 const ANALYTICS = {
   generatedAt: '2026-08-19T07:00:00Z',
   windows: {
@@ -216,12 +231,12 @@ describe('cave familiars', () => {
   test('returns the contract report, warnings and all', async () => {
     const client = clientWith({
       familiarContract: () =>
-        Promise.resolve({ ok: true, id: 'cody', present: true, report: CONTRACT_REPORT }),
+        Promise.resolve({ ok: true, id: 'cody', present: PRESENT, report: CONTRACT_REPORT }),
     });
 
     const contract = await client.familiarContract('cody');
 
-    expect(contract.present).toBe(true);
+    expect(contract.present).toEqual(PRESENT);
     expect(contract.report.pass).toBe(true);
     // A warning does not fail a contract, and must survive to the caller.
     expect(contract.report.warnings).toHaveLength(1);
@@ -233,7 +248,7 @@ describe('cave familiars', () => {
       familiarContract: () =>
         Promise.resolve({
           ok: true,
-          present: true,
+          present: PRESENT,
           report: { pass: true, properties: [], violations: [] },
         }),
     });
@@ -300,7 +315,7 @@ describe('cave familiars', () => {
 
     const client = clientWith({
       familiarContract: () =>
-        Promise.resolve({ ok: true, present: true, report: withoutWarnings }),
+        Promise.resolve({ ok: true, present: PRESENT, report: withoutWarnings }),
     });
 
     expect(await codeOf(() => client.familiarContract('cody'))).toBe('invalid_response');
@@ -311,7 +326,7 @@ describe('cave familiars', () => {
       familiarContract: () =>
         Promise.resolve({
           ok: true,
-          present: true,
+          present: PRESENT,
           report: { ...CONTRACT_REPORT, violations: [{ file: 'SOUL.md' }] },
         }),
     });
@@ -356,6 +371,168 @@ describe('cave familiars', () => {
     });
 
     expect(await codeOf(() => client.familiarAnalytics('cody'))).toBe('invalid_response');
+  });
+
+  test('carries the ward and identity through when the files exist', async () => {
+    const client = clientWith({
+      familiarContract: () =>
+        Promise.resolve({
+          ok: true,
+          id: 'cody',
+          present: PRESENT,
+          identity: { name: 'Cody', creature: 'Implementation familiar', person: 'Val' },
+          ward: WARD,
+          report: CONTRACT_REPORT,
+        }),
+    });
+
+    const contract = await client.familiarContract('cody');
+
+    expect(contract.identity).toEqual({ name: 'Cody', creature: 'Implementation familiar', person: 'Val' });
+    // The must-ask list is what a composer matches a draft against.
+    expect(contract.ward?.approvalTiers.humanReview).toEqual(['push a branch', 'merge a pull request']);
+    expect(contract.ward?.editablePaths).toEqual(['TOOLS.md', 'scratch/']);
+  });
+
+  test('leaves identity and ward absent when their files are', async () => {
+    const client = clientWith({
+      familiarContract: () =>
+        Promise.resolve({
+          ok: true,
+          id: 'cody',
+          present: { soul: true, identity: false, ward: false, memory: false },
+          report: CONTRACT_REPORT,
+        }),
+    });
+
+    const contract = await client.familiarContract('cody');
+
+    expect('identity' in contract).toBe(false);
+    expect('ward' in contract).toBe(false);
+    expect(contract.present.ward).toBe(false);
+  });
+
+  test('refuses the retired boolean presence rather than reading it as complete', async () => {
+    // A transport still answering the private route's old shape. Reading
+    // `true` as "every file exists" would hide exactly what the field is for.
+    const client = clientWith({
+      familiarContract: () =>
+        Promise.resolve({ ok: true, id: 'cody', present: true, report: CONTRACT_REPORT }),
+    });
+
+    expect(await codeOf(() => client.familiarContract('cody'))).toBe('invalid_response');
+  });
+
+  test('rejects a ward whose tiers are not string lists', async () => {
+    const client = clientWith({
+      familiarContract: () =>
+        Promise.resolve({
+          ok: true,
+          id: 'cody',
+          present: PRESENT,
+          ward: { ...WARD, approvalTiers: { auto: 'read files', humanReview: [] } },
+          report: CONTRACT_REPORT,
+        }),
+    });
+
+    expect(await codeOf(() => client.familiarContract('cody'))).toBe('invalid_response');
+  });
+
+  test('keeps the day series on a window and forwards the window narrowing', async () => {
+    const seen: unknown[] = [];
+    const days = [
+      { date: '2026-08-17', completed: 1, failed: 0, cancelled: 0 },
+      { date: '2026-08-18', completed: 2, failed: 1, cancelled: 0 },
+    ];
+    const client = clientWith({
+      familiarAnalytics: (_familiarId: string, options: unknown) => {
+        seen.push(options);
+        return Promise.resolve({
+          ok: true,
+          analytics: {
+            ...ANALYTICS,
+            windows: { '7d': { ...ANALYTICS.windows['7d'], days } },
+          },
+        });
+      },
+    });
+
+    const analytics = await client.familiarAnalytics('cody', { window: '7d', recentLimit: 5 });
+
+    expect(analytics.windows['7d']?.days).toEqual(days);
+    expect(seen).toEqual([{ recentLimit: 5, window: '7d' }]);
+  });
+
+  test('rejects a day series entry that is not one', async () => {
+    const client = clientWith({
+      familiarAnalytics: () =>
+        Promise.resolve({
+          ok: true,
+          analytics: {
+            ...ANALYTICS,
+            windows: { '7d': { ...ANALYTICS.windows['7d'], days: [{ date: '2026-08-18' }] } },
+          },
+        }),
+    });
+
+    expect(await codeOf(() => client.familiarAnalytics('cody'))).toBe('invalid_response');
+  });
+
+  test('rejects an identity field that is not a string', async () => {
+    const client = clientWith({
+      familiarContract: () =>
+        Promise.resolve({
+          ok: true,
+          id: 'cody',
+          present: PRESENT,
+          identity: { name: 'Cody', creature: 42 },
+          report: CONTRACT_REPORT,
+        }),
+    });
+
+    expect(await codeOf(() => client.familiarContract('cody'))).toBe('invalid_response');
+  });
+
+  test('rejects a ward whose invariants are not a string list', async () => {
+    const client = clientWith({
+      familiarContract: () =>
+        Promise.resolve({
+          ok: true,
+          id: 'cody',
+          present: PRESENT,
+          ward: { ...WARD, invariants: [{ rule: 'familiar.name' }] },
+          report: CONTRACT_REPORT,
+        }),
+    });
+
+    expect(await codeOf(() => client.familiarContract('cody'))).toBe('invalid_response');
+  });
+
+  test('accepts a ward and identity that state only what the files carry', async () => {
+    // Every optional field absent: the ward names no [meta], the identity no
+    // fields. Absence is a real answer, not a malformed one.
+    const client = clientWith({
+      familiarContract: () =>
+        Promise.resolve({
+          ok: true,
+          id: 'cody',
+          present: PRESENT,
+          identity: {},
+          ward: {
+            protectedFiles: [],
+            invariants: [],
+            editablePaths: [],
+            approvalTiers: { auto: [], humanReview: [] },
+          },
+          report: CONTRACT_REPORT,
+        }),
+    });
+
+    const contract = await client.familiarContract('cody');
+
+    expect(contract.identity).toEqual({});
+    expect(contract.ward?.version).toBeUndefined();
+    expect(contract.ward?.approvalTiers).toEqual({ auto: [], humanReview: [] });
   });
 
   test('surfaces the reason code on a contract refusal', async () => {

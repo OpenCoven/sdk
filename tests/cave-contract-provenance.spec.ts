@@ -52,10 +52,10 @@ describe('Cave contract provenance', () => {
 
     expect(provenance).toEqual({
       repository: 'https://github.com/OpenCoven/coven-cave',
-      commit: '4adc97b1bdafd1012ce4c66de598e82f49329f79',
+      commit: '53cd5bf0986a6df92f66dc6622441c74e31af5db',
       fixturePath: 'src/lib/server/client-v1/contract-fixture.json',
       digestPath: 'src/lib/server/client-v1/contract-fixture.sha256',
-      sha256: 'b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd',
+      sha256: '806d647f5969e646080713dabaa9d86ac897637e2a823c75085093c5a210a7fe',
     });
   });
 
@@ -80,12 +80,12 @@ describe('Cave contract provenance', () => {
     expect(
       verifyCaveContractAuthority({
         caveRoot,
-        expectedCommit: '4adc97b1bdafd1012ce4c66de598e82f49329f79',
-        resolveCommit: () => '4adc97b1bdafd1012ce4c66de598e82f49329f79',
+        expectedCommit: '53cd5bf0986a6df92f66dc6622441c74e31af5db',
+        resolveCommit: () => '53cd5bf0986a6df92f66dc6622441c74e31af5db',
       }),
     ).toEqual({
-      commit: '4adc97b1bdafd1012ce4c66de598e82f49329f79',
-      sha256: 'b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd',
+      commit: '53cd5bf0986a6df92f66dc6622441c74e31af5db',
+      sha256: '806d647f5969e646080713dabaa9d86ac897637e2a823c75085093c5a210a7fe',
     });
   });
 
@@ -95,6 +95,6 @@ describe('Cave contract provenance', () => {
         caveRoot: '/tmp/not-read',
         resolveCommit: () => '0000000000000000000000000000000000000000',
       }),
-    ).toThrowError(/expected 4adc97b1bdafd1012ce4c66de598e82f49329f79/u);
+    ).toThrowError(/expected 53cd5bf0986a6df92f66dc6622441c74e31af5db/u);
   });
 });

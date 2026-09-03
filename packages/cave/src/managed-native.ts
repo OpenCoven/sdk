@@ -8,9 +8,13 @@ import { parseCaveAuthorityBinding } from './authority-binding.js';
 import {
   CAVE_CANONICAL_CONVERSATION_REQUIREMENTS,
   CAVE_CANONICAL_CONVERSATIONS_REQUIREMENTS,
+  CAVE_CANONICAL_FAMILIAR_ANALYTICS_REQUIREMENTS,
+  CAVE_CANONICAL_FAMILIAR_CONTRACT_REQUIREMENTS,
   CAVE_CANONICAL_FAMILIARS_REQUIREMENTS,
   CAVE_CANONICAL_MESSAGES_REQUIREMENTS,
   CAVE_CANONICAL_PROJECTS_REQUIREMENTS,
+  canonicalFamiliarAnalyticsData,
+  canonicalFamiliarContractData,
   type CaveCanonicalEnvelopeRequirements,
 } from './canonical-reads.js';
 import { createCaveClient, type CaveClient } from './client.js';
@@ -22,10 +26,12 @@ import {
   parsePairingStatus,
 } from './pairing.js';
 import type {
+  CaveFamiliarAnalyticsResponse,
   CaveHealthResponse,
   CavePairingRequest,
 } from './schemas.js';
 import type {
+  CaveFamiliarAnalyticsTransportOptions,
   CaveStagedManagedCredentialState,
   CaveStagedManagedCredentialTransport,
 } from './transport.js';
@@ -101,6 +107,21 @@ export interface CaveManagedNativeTransport {
   listConversationMessages(
     conversationId: string,
     options: PageOptions,
+    context?: OperationContext,
+  ): Promise<CaveManagedNativeResponse>;
+  /**
+   * The two familiar detail reads, `familiars.contract.read` and
+   * `familiars.analytics.read`. Optional so a bridge written against a Cave
+   * that does not serve them still satisfies this interface; the client
+   * reports the gap as `unsupported_operation`.
+   */
+  familiarContract?(
+    familiarId: string,
+    context?: OperationContext,
+  ): Promise<CaveManagedNativeResponse>;
+  familiarAnalytics?(
+    familiarId: string,
+    options: CaveFamiliarAnalyticsTransportOptions,
     context?: OperationContext,
   ): Promise<CaveManagedNativeResponse>;
 }
@@ -672,6 +693,40 @@ export function createManagedCaveClient(
         ),
         CAVE_CANONICAL_MESSAGES_REQUIREMENTS,
       );
+    },
+    // The canonical envelope is unwrapped here into the shape the client's
+    // familiar operations already validate, so one validator serves the
+    // direct, discovered, and managed transports alike. Field validation and
+    // managed reconstruction stay in the client; this only proves the envelope.
+    async familiarContract(familiarId, context) {
+      const payload = parseResponse(
+        await invokeNative(
+          native,
+          'familiarContract',
+          [familiarId, context],
+          'familiarContract',
+        ),
+        CAVE_CANONICAL_FAMILIAR_CONTRACT_REQUIREMENTS,
+      );
+      return {
+        ok: true,
+        ...canonicalFamiliarContractData(payload),
+      };
+    },
+    async familiarAnalytics(familiarId, options, context) {
+      const payload = parseResponse(
+        await invokeNative(
+          native,
+          'familiarAnalytics',
+          [familiarId, options ?? {}, context],
+          'familiarAnalytics',
+        ),
+        CAVE_CANONICAL_FAMILIAR_ANALYTICS_REQUIREMENTS,
+      );
+      return {
+        ok: true,
+        analytics: canonicalFamiliarAnalyticsData(payload),
+      } as unknown as CaveFamiliarAnalyticsResponse;
     },
   };
 

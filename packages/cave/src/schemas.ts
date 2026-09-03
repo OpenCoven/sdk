@@ -295,10 +295,55 @@ export interface CaveContractReport {
   warnings: CaveContractViolation[];
 }
 
+/** Which of the four contract files the familiar has authored. */
+export interface CaveFamiliarContractPresence {
+  soul: boolean;
+  identity: boolean;
+  ward: boolean;
+  memory: boolean;
+}
+
+/** IDENTITY.md-derived fields. Served only when the file exists. */
+export interface CaveFamiliarIdentity {
+  name?: string;
+  creature?: string;
+  person?: string;
+}
+
+/**
+ * The ward parsed from `ward.toml`, served only when the file exists.
+ *
+ * `approvalTiers.auto` is what the familiar may do without asking and
+ * `approvalTiers.humanReview` what a person must approve -- the action lists
+ * the ward names, whichever spelling its author used. A client matches a
+ * draft against `humanReview` to warn before it crosses the must-ask tier.
+ */
+export interface CaveFamiliarWard {
+  version?: string;
+  familiar?: string;
+  person?: string;
+  protectedFiles: string[];
+  invariants: string[];
+  editablePaths: string[];
+  approvalTiers: {
+    auto: string[];
+    humanReview: string[];
+  };
+}
+
+/**
+ * `present` is per file, never a single boolean: a familiar with a SOUL.md and
+ * no ward.toml is a real, common state, and the report names what is missing.
+ * `identity` and `ward` are absent exactly when their file is. `workspace` is
+ * served by the Studio's private route only; the canonical client-v1 read
+ * withholds it.
+ */
 export interface CaveFamiliarContract {
   id: string;
   workspace?: string;
-  present: boolean;
+  present: CaveFamiliarContractPresence;
+  identity?: CaveFamiliarIdentity;
+  ward?: CaveFamiliarWard;
   report: CaveContractReport;
 }
 
@@ -308,7 +353,9 @@ export interface CaveFamiliarContractResponse {
   reason?: string;
   id?: string;
   workspace?: string;
-  present?: boolean;
+  present?: CaveFamiliarContractPresence;
+  identity?: CaveFamiliarIdentity;
+  ward?: CaveFamiliarWard;
   report?: CaveContractReport;
   error?: string;
 }
@@ -339,6 +386,19 @@ export interface CaveExecutionCoverage {
   ratio: number;
 }
 
+/**
+ * One UTC calendar day of a window's runs-per-day series. The three counts are
+ * kept apart: folding cancellations into failures would report an operator's
+ * own interruptions as the familiar's mistakes.
+ */
+export interface CaveExecutionDay {
+  /** `YYYY-MM-DD`, in UTC. */
+  date: string;
+  completed: number;
+  failed: number;
+  cancelled: number;
+}
+
 export interface CaveExecutionWindow {
   attempts: number;
   completed: number;
@@ -355,6 +415,12 @@ export interface CaveExecutionWindow {
   models: CaveExecutionSlice[];
   harnesses: CaveExecutionSlice[];
   coverage: Record<string, CaveExecutionCoverage>;
+  /**
+   * Runs per UTC day, oldest first, on the day-shaped windows (`7d`, `14d`):
+   * exactly 7 or 14 entries ending on the day `generatedAt` falls in. Absent
+   * on `8w` and `all`.
+   */
+  days?: CaveExecutionDay[];
 }
 
 export interface CaveExecutionAttempt {

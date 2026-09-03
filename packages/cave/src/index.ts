@@ -84,13 +84,17 @@ export type {
   CaveExecutionAttempt,
   CaveExecutionBackfill,
   CaveExecutionCoverage,
+  CaveExecutionDay,
   CaveExecutionSlice,
   CaveExecutionWindow,
   CaveFamiliar,
   CaveFamiliarAnalytics,
   CaveFamiliarAnalyticsResponse,
   CaveFamiliarContract,
+  CaveFamiliarContractPresence,
   CaveFamiliarContractResponse,
+  CaveFamiliarIdentity,
+  CaveFamiliarWard,
   CaveFamiliarProperty,
   CaveFamiliarsResponse,
   CaveFamiliarWire,
@@ -113,6 +117,7 @@ export type {
 export type {
   CaveCredentialPersistingTransport,
   CaveManagedCredentialTransport,
+  CaveFamiliarAnalyticsTransportOptions,
   CaveTransport,
 } from './transport.js';
 export { CAVE_CLIENT_VERSION } from './version.js';

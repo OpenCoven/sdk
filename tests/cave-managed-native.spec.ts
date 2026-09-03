@@ -891,7 +891,18 @@ describe('managed native Cave credential custody', () => {
           ok: true,
           id: 'cody',
           workspace: '/cody',
-          present: true,
+          present: { soul: true, identity: true, ward: true, memory: true, bearer: nestedBearer },
+          identity: { name: 'Cody', creature: 'Implementation familiar', bearer: nestedBearer },
+          ward: {
+            version: '0.1.0',
+            familiar: 'cody',
+            person: 'val',
+            protectedFiles: ['SOUL.md'],
+            invariants: [],
+            editablePaths: ['scratch/'],
+            approvalTiers: { auto: ['run tests'], humanReview: ['push a branch'] },
+            bearer: nestedBearer,
+          },
           bearer: nestedBearer,
           report: {
             specVersion: '1',
@@ -955,6 +966,15 @@ describe('managed native Cave credential custody', () => {
                 coverage: {
                   all: { known: 1, total: 1, ratio: 1, bearer: nestedBearer },
                 },
+                days: [
+                  {
+                    date: '2026-08-18',
+                    completed: 1,
+                    failed: 0,
+                    cancelled: 0,
+                    bearer: nestedBearer,
+                  },
+                ],
               },
             },
             recentAttempts: [{
@@ -1001,8 +1021,97 @@ describe('managed native Cave credential custody', () => {
 
     expectRedacted({ contract, analytics, familiars });
     expect(Object.isFrozen(contract.report)).toBe(true);
+    // The ward and the day series are reconstructed field by field, so the
+    // native object's extras cannot ride along into a caller's hands.
+    expect(contract.ward).toEqual({
+      version: '0.1.0',
+      familiar: 'cody',
+      person: 'val',
+      protectedFiles: ['SOUL.md'],
+      invariants: [],
+      editablePaths: ['scratch/'],
+      approvalTiers: { auto: ['run tests'], humanReview: ['push a branch'] },
+    });
+    expect(analytics.windows['7d']?.days).toEqual([
+      { date: '2026-08-18', completed: 1, failed: 0, cancelled: 0 },
+    ]);
     expect(Object.isFrozen(analytics.windows['7d'])).toBe(true);
     expect(Object.isFrozen(familiars.data[0])).toBe(true);
+  });
+
+  test('refuses malformed managed ward, identity, and day series before they reach a caller', async () => {
+    // The managed path reconstructs every field rather than passing the
+    // native object through, so a malformed one has to fail there -- not be
+    // handed to the caller as a partially trusted object.
+    const report = {
+      specVersion: '0.1.0',
+      pass: true,
+      properties: [],
+      violations: [],
+      warnings: [],
+    };
+    const present = { soul: true, identity: true, ward: true, memory: true };
+    const contractWith = (overrides: Record<string, unknown>) =>
+      managedClient(
+        managedTransport({
+          familiarContract: vi.fn(() =>
+            Promise.resolve({
+              ok: true,
+              id: 'cody',
+              present,
+              report,
+              ...overrides,
+            } as unknown as cave.CaveFamiliarContractResponse),
+          ),
+        }),
+      );
+
+    await expect(
+      contractWith({ identity: { name: 'Cody', person: 7 } }).familiarContract('cody'),
+    ).rejects.toMatchObject({ normalized: { code: 'invalid_response' } });
+    await expect(
+      contractWith({
+        ward: {
+          protectedFiles: ['SOUL.md'],
+          invariants: [],
+          editablePaths: [],
+          approvalTiers: { auto: [], humanReview: [null] },
+        },
+      }).familiarContract('cody'),
+    ).rejects.toMatchObject({ normalized: { code: 'invalid_response' } });
+
+    const analyticsClient = managedClient(
+      managedTransport({
+        familiarAnalytics: vi.fn(() =>
+          Promise.resolve({
+            ok: true,
+            analytics: {
+              generatedAt: '2026-08-24T02:03:51.419Z',
+              windows: {
+                '7d': {
+                  attempts: 0,
+                  completed: 0,
+                  failed: 0,
+                  cancelled: 0,
+                  successRate: null,
+                  toolCalls: 0,
+                  toolFailures: 0,
+                  models: [],
+                  harnesses: [],
+                  coverage: {},
+                  days: [{ date: '2026-08-18', completed: 0, failed: 'one', cancelled: 0 }],
+                },
+              },
+              recentAttempts: [],
+              backfill: { state: 'complete', imported: 0 },
+            },
+          } as unknown as cave.CaveFamiliarAnalyticsResponse),
+        ),
+      }),
+    );
+    await expect(analyticsClient.familiarAnalytics('cody')).rejects.toMatchObject({
+      normalized: { code: 'invalid_response' },
+    });
   });
 
   test('uses direct pairing exchange accessors only once before returning or persisting', async () => {

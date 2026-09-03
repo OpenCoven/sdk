@@ -314,9 +314,10 @@ are strict nonnegative safe integers.
 `reconcile_required` means the caller must discard derived paging state and
 reload canonical state; it is never automatically retried. This is especially
 important for message branch drift with
-`details.reason: "resume_from_canonical_state"`. The legacy `familiars()`,
-`familiarContract()`, and `familiarAnalytics()` methods remain a separate
-compatible extension surface.
+`details.reason: "resume_from_canonical_state"`. The legacy `familiars()`
+method remains a separate compatible extension surface; `familiarContract()`
+and `familiarAnalytics()` are canonical Client v1 reads
+(`familiars.contract.read`, `familiars.analytics.read`).
 
 ## Explicit Coven discovery
 
@@ -414,7 +415,7 @@ secure-store, and platform-security errors require repair before rerunning.
 Reviewed Cave and Coven fixture bytes are committed under their client
 packages and verified locally. The Cave fixture provenance manifest pins
 `OpenCoven/coven-cave` commit
-`4adc97b1bdafd1012ce4c66de598e82f49329f79`, producer paths, and SHA-256.
+`53cd5bf0986a6df92f66dc6622441c74e31af5db`, producer paths, and SHA-256.
 Refresh fixture bytes with
 `pnpm sync:contracts -- --cave-root <path> --coven-root <path>` before running
 the offline contract verifier. Explicitly prove a checkout is at the pinned
