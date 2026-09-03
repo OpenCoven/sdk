@@ -20,6 +20,8 @@ const CAVE_CAPABILITIES = [
   'pairing',
   'credentials',
   'familiars',
+  'familiar-contract',
+  'familiar-analytics',
   'projects',
   'conversations',
   'conversation-messages',
@@ -36,6 +38,8 @@ const CAVE_OPERATIONS = [
   'credentials.admin.list',
   'credentials.admin.revoke',
   'familiars.list',
+  'familiars.contract.read',
+  'familiars.analytics.read',
   'projects.list',
   'conversations.list',
   'conversations.read',
@@ -77,6 +81,47 @@ const CANONICAL_PROJECT = {
   root: '/workspace/chat',
   createdAt: '2026-08-24T00:00:00.000Z',
   updatedAt: '2026-08-24T01:00:00.000Z',
+} as const;
+
+const CANONICAL_FAMILIAR_CONTRACT = {
+  id: 'familiar/one?#',
+  present: { soul: true, identity: true, ward: true, memory: false },
+  identity: { name: 'One', creature: 'Test familiar' },
+  ward: {
+    version: '0.1.0',
+    protectedFiles: ['SOUL.md'],
+    invariants: [],
+    editablePaths: ['notes/'],
+    approvalTiers: { auto: ['read files'], humanReview: ['publish a finding'] },
+  },
+  report: {
+    specVersion: '0.1.0',
+    pass: true,
+    properties: [{ property: 'Named Identity', pass: true }],
+    violations: [],
+    warnings: [],
+  },
+} as const;
+
+const CANONICAL_FAMILIAR_ANALYTICS = {
+  generatedAt: '2026-08-18T10:00:00.000Z',
+  windows: {
+    '7d': {
+      attempts: 1,
+      completed: 1,
+      failed: 0,
+      cancelled: 0,
+      successRate: 1,
+      toolCalls: 0,
+      toolFailures: 0,
+      models: [],
+      harnesses: [],
+      coverage: {},
+      days: [{ date: '2026-08-18', completed: 1, failed: 0, cancelled: 0 }],
+    },
+  },
+  recentAttempts: [],
+  backfill: { state: 'not-started', imported: 0 },
 } as const;
 
 const CANONICAL_CONVERSATION = {
@@ -1309,6 +1354,20 @@ describe('discovered Cave pairing helpers', () => {
         invoke: (client: ReturnType<typeof createDiscoveredCaveClient>) =>
           client.listConversationMessages('conversation-1'),
       },
+      {
+        clientOperation: 'familiarContract',
+        expectedOperation: 'familiars.contract.read',
+        requiredCapabilities: ['familiar-contract'],
+        invoke: (client: ReturnType<typeof createDiscoveredCaveClient>) =>
+          client.familiarContract('scribe'),
+      },
+      {
+        clientOperation: 'familiarAnalytics',
+        expectedOperation: 'familiars.analytics.read',
+        requiredCapabilities: ['familiar-analytics'],
+        invoke: (client: ReturnType<typeof createDiscoveredCaveClient>) =>
+          client.familiarAnalytics('scribe', { window: '7d' }),
+      },
     ] as const;
 
     test.each([
@@ -1435,6 +1494,34 @@ describe('discovered Cave pairing helpers', () => {
             successEnvelope({ messages: [CANONICAL_MESSAGE] }),
           );
         },
+        (url, init) => {
+          expect(url).toBe(
+            `${DEFAULT_DISCOVERY_ENDPOINT}/api/client/v1/familiars/familiar%2Fone%3F%23/contract`,
+          );
+          expect(init?.method).toBe('GET');
+          expect(init?.redirect).toBe('error');
+          expect(header(init, 'authorization')).toBe(
+            ['Bearer', BEARER].join(' '),
+          );
+          return jsonResponse(
+            200,
+            successEnvelope({ contract: CANONICAL_FAMILIAR_CONTRACT }),
+          );
+        },
+        (url, init) => {
+          expect(url).toBe(
+            `${DEFAULT_DISCOVERY_ENDPOINT}/api/client/v1/familiars/familiar%2Fone%3F%23/analytics?window=7d&recent=5`,
+          );
+          expect(init?.method).toBe('GET');
+          expect(init?.redirect).toBe('error');
+          expect(header(init, 'authorization')).toBe(
+            ['Bearer', BEARER].join(' '),
+          );
+          return jsonResponse(
+            200,
+            successEnvelope({ analytics: CANONICAL_FAMILIAR_ANALYTICS }),
+          );
+        },
       ]);
       const { client } = discoveredClient(root, fetchImplementation);
 
@@ -1457,12 +1544,23 @@ describe('discovered Cave pairing helpers', () => {
           cursor: 'eyJ2IjoxfQ',
         }),
       ).resolves.toEqual({ data: [CANONICAL_MESSAGE] });
+      await expect(client.familiarContract('familiar/one?#')).resolves.toEqual(
+        CANONICAL_FAMILIAR_CONTRACT,
+      );
+      await expect(
+        client.familiarAnalytics('familiar/one?#', { window: '7d', recentLimit: 5 }),
+      ).resolves.toEqual(CANONICAL_FAMILIAR_ANALYTICS);
 
       const authenticatedRequests = fetchImplementation.mock.calls.filter(
         ([, init]) => header(init, 'authorization') !== null,
       );
-      expect(authenticatedRequests).toHaveLength(5);
-      expect(fetchImplementation).toHaveBeenCalledTimes(14);
+      expect(authenticatedRequests).toHaveLength(7);
+      const fetchedUrls = fetchImplementation.mock.calls.map(([input]) =>
+        input instanceof Request ? input.url : input instanceof URL ? input.toString() : input,
+      );
+      // Seven bearer reads, each preceded by its authority health check, after
+      // the four pairing requests.
+      expect(fetchedUrls).toHaveLength(18);
     });
 
     test('keeps legacy familiars separate from the canonical familiar page', async () => {
@@ -1756,7 +1854,7 @@ describe('discovered Cave pairing helpers', () => {
     test.each(
       routeInventories.map((route, index) => ({
         ...route,
-        status: [401, 403, 500, 401, 500][index] as 401 | 403 | 500,
+        status: [401, 403, 500, 401, 500, 403, 500][index] as 401 | 403 | 500,
       })),
     )(
       'rejects a $clientOperation legacy proxy envelope at HTTP $status without retrying or invalidating credentials',
