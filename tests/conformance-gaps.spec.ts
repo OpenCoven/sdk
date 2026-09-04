@@ -54,6 +54,10 @@ const windowsBootstrapFixturePath = resolve(
   workspaceRoot,
   'tests/fixtures/chat-b406-windows-bootstrap.ps1.br',
 );
+const unixSupervisorPreparationFixturePath = resolve(
+  workspaceRoot,
+  'tests/fixtures/chat-9198-unix-supervisor-preparation.sh.br',
+);
 const windowsSupervisorTestFixturePath = resolve(
   workspaceRoot,
   'tests/fixtures/chat-55071-windows-supervisor.test.ps1.br',
@@ -209,8 +213,22 @@ const TEST_WINDOWS_SESSION_ZERO_QUARANTINE = [
 ].join('\n');
 const TEST_UNIX_SUPERVISOR_SOURCE_BINDING =
   "['scripts/unix-producer-supervisor.sh', [28757, '141c2cc95f2a73a70df70536ca83e825b0bd043f5cdab6ca0f7a92ee2f4b8dff']]";
-const TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND =
-  `node --input-type=module --eval "const expected = new Map([${TEST_UNIX_SUPERVISOR_SOURCE_BINDING}]);"`;
+const TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND = brotliDecompressSync(
+  readFileSync(unixSupervisorPreparationFixturePath),
+).toString('utf8');
+if (
+  !TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND.endsWith('\n')
+  || TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND.includes('\r')
+) {
+  throw new Error('Canonical Unix supervisor preparation fixture is not LF-normalized');
+}
+if (
+  TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND.split(
+    TEST_UNIX_SUPERVISOR_SOURCE_BINDING,
+  ).length - 1 !== 1
+) {
+  throw new Error('Canonical Unix supervisor preparation fixture has the wrong source binding');
+}
 const TEST_UNIX_TOOL_PATH_COMMAND = [
   'node --input-type=module --eval "import { appendFileSync }',
   'from \'node:fs\'; import { resolveExecutableInvocation, resolveUnixToolPath }',
@@ -419,7 +437,7 @@ function protectedProducerSteps(): string[] {
     '      - name: Prepare trusted Unix supervisor',
     "        if: matrix.platform != 'win32-x64'",
     '        shell: bash',
-    `        run: ${yamlSingleQuoted(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND)}`,
+    yamlLiteralRun(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND),
     '      - name: Compute reviewed Unix tool path',
     '        id: unix-tool-path',
     "        if: matrix.platform != 'win32-x64'",
@@ -3515,7 +3533,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
             '      - name: Prepare trusted Unix supervisor',
             "        if: matrix.platform != 'win32-x64'",
             '        shell: bash',
-            `        run: ${yamlSingleQuoted(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND)}`,
+            yamlLiteralRun(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND),
             '      - name: Compute reviewed Unix tool path',
             '        id: unix-tool-path',
             "        if: matrix.platform != 'win32-x64'",
@@ -3529,20 +3547,31 @@ describe('unresolved SDK #38 conformance gaps', () => {
             '      - name: Prepare trusted Unix supervisor',
             "        if: matrix.platform != 'win32-x64'",
             '        shell: bash',
-            `        run: ${yamlSingleQuoted(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND)}`,
+            yamlLiteralRun(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND),
           ].join('\n'),
         ),
       },
       {
         name: 'detached reviewed Unix supervisor source binding',
         workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
-          yamlSingleQuoted(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND),
-          yamlSingleQuoted(
+          yamlLiteralRun(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND),
+          yamlLiteralRun(
             TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND.replace(
               '141c2cc95f2a73a70df70536ca83e825b0bd043f5cdab6ca0f7a92ee2f4b8dff',
               '0'.repeat(64),
             ),
           ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'unixSupervisorPreparationScriptSha256',
+          step: 'Prepare trusted Unix supervisor',
+        },
+      },
+      {
+        name: 'synchronized substituted Unix supervisor preparation',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlLiteralRun(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND),
+          yamlLiteralRun(`${TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND}echo substituted\n`),
         ),
         synchronizedScriptDigest: {
           field: 'unixSupervisorPreparationScriptSha256',

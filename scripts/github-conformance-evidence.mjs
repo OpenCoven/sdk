@@ -48,6 +48,8 @@ const REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256 =
   '71e519f72f298fd3e9f06ea463db59f2a74dc1ec1df3fe0a7b92af4296f1f359';
 const REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256 =
   '60279c8ba0968d964b0fe2f407c7c4fd2258cac9cddf65c08cae4d4c2dd4d0eb';
+const REVIEWED_UNIX_SUPERVISOR_PREPARATION_SCRIPT_SHA256 =
+  'ccdae2cc17e49ddf91d4444e2d1d9b67cba13e7789d73a20fbc0d1474e0b705e';
 const REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256 =
   '043066be50d0c3fa66f7151224242734cb2e9f39ffa9cf1c6f8106ab88c75a02';
 const REVIEWED_UNIX_SUPERVISOR_SOURCE_BINDING =
@@ -1238,8 +1240,10 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
     unixSupervisorPreparation.if !== "matrix.platform != 'win32-x64'"
     || unixSupervisorPreparation.shell !== 'bash'
     || typeof unixSupervisorPreparation.run !== 'string'
+    || producer.workflow.unixSupervisorPreparationScriptSha256
+      !== REVIEWED_UNIX_SUPERVISOR_PREPARATION_SCRIPT_SHA256
     || sha256(unixSupervisorPreparation.run)
-      !== producer.workflow.unixSupervisorPreparationScriptSha256
+      !== REVIEWED_UNIX_SUPERVISOR_PREPARATION_SCRIPT_SHA256
     || unixSupervisorPreparation.run.split(
       REVIEWED_UNIX_SUPERVISOR_SOURCE_BINDING,
     ).length - 1 !== 1
