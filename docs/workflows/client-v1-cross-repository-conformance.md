@@ -27,9 +27,11 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
-is the reachable commit `cac7d8eb2516b1a74a3357582513bfef1623f17a`,
-whose protected-producer behavior is bound by reachable authority commit
-`0bf1387b277cc0d0745493f77d152a91e1392de9`.
+is the current `refs/heads/main` commit
+`b5c37569877856c106ee2646b1f992da09dfab1c`. Its source lock was pinned by
+reachable authority commit `cb8d46d57052446fcf894f5e156b4243a482db92`
+to executable harness behavior revision
+`55071f4200d312911ff5f6e5220873ae6f6197f2`.
 The frozen workflow separates platform production, exact SDK validation,
 provenance attestation, and aggregation. Its lock records the validation and
 attestation job identities, the three static artifact names and record paths,
@@ -251,12 +253,17 @@ SHA. The supervised Unix step must consume that exact step output and cannot
 forward ambient `PATH` or fall back to it. Windows bootstrap uses
 `ProcessStartInfo` and `Process.ExitCode`, never `$LASTEXITCODE`, and launches
 the pinned npm and pnpm JavaScript entrypoints directly through pinned Node
-rather than `.cmd` or `.bat` shims. Linux production runs inside Chat's
-committed private D-Bus/Secret Service wrapper. The remaining steps perform
-read-only canonical JSON and platform validation, pinned official artifact
-upload, and pinned official provenance attestation. The artifact name occurs
-as a scalar exactly once, and the record path is identical across generation,
-validation, upload, and attestation. There is no mutable step after validation.
+rather than `.cmd` or `.bat` shims. Its exact embedded supervisor skips
+unreadable primary-token owners only for Idle or session 0, while every
+nonzero-session ambiguity still refuses with the process and session IDs.
+The exact supervisor test source prints bounded nested exception diagnostics
+and uses the reviewed 60-second bounds at all eight spawned-process readiness
+sites. Linux production runs inside Chat's committed private D-Bus/Secret
+Service wrapper. The remaining steps perform read-only canonical JSON and
+platform validation, pinned official artifact upload, and pinned official
+provenance attestation. The artifact name occurs as a scalar exactly once, and
+the record path is identical across generation, validation, upload, and
+attestation. There is no mutable step after validation.
 
 No other action, command, permission, output, condition, expression, local or
 reusable workflow, upload path, or attestation path is accepted. The
@@ -264,7 +271,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`cac7d8eb2516b1a74a3357582513bfef1623f17a` compatible with the reviewed
+`b5c37569877856c106ee2646b1f992da09dfab1c` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub

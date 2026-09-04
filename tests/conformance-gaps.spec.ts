@@ -54,6 +54,10 @@ const windowsBootstrapFixturePath = resolve(
   workspaceRoot,
   'tests/fixtures/chat-b406-windows-bootstrap.ps1.br',
 );
+const windowsSupervisorTestFixturePath = resolve(
+  workspaceRoot,
+  'tests/fixtures/chat-55071-windows-supervisor.test.ps1.br',
+);
 const PLATFORMS = ['darwin-arm64', 'linux-x64', 'win32-x64'] as const;
 const CHECKOUT_ACTION =
   'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1';
@@ -148,6 +152,61 @@ if (
 const TEST_WINDOWS_CHILD_BOOTSTRAP = requireTestWindowsChildBootstrap(
   TEST_WINDOWS_BOOTSTRAP_COMMAND,
 );
+const TEST_WINDOWS_SUPERVISOR_TEST = brotliDecompressSync(
+  readFileSync(windowsSupervisorTestFixturePath),
+).toString('utf8');
+if (
+  !TEST_WINDOWS_SUPERVISOR_TEST.endsWith('\n')
+  || TEST_WINDOWS_SUPERVISOR_TEST.includes('\r')
+) {
+  throw new Error('Canonical Windows supervisor test fixture is not LF-normalized');
+}
+const TEST_WINDOWS_DIAGNOSTIC_TRAP = [
+  'function Write-ExceptionChain {',
+  '  param([Parameter(Mandatory)][AllowNull()][object]$Failure)',
+  '',
+  '  $exception = if ($Failure -is [Management.Automation.ErrorRecord]) {',
+  '    $Failure.Exception',
+  '  } else {',
+  '    $Failure',
+  '  }',
+  '  $depth = 0',
+  '  while ($null -ne $exception -and $depth -lt 12) {',
+  '    Write-Host "cause[$depth] $($exception.GetType().FullName): $($exception.Message)"',
+  '    if ($exception -is [AggregateException]) {',
+  '      $index = 0',
+  '      foreach ($inner in $exception.InnerExceptions) {',
+  '        Write-Host "  aggregate[$index] $($inner.GetType().FullName): $($inner.Message)"',
+  '        $index++',
+  '      }',
+  '    }',
+  '    $exception = $exception.InnerException',
+  '    $depth++',
+  '  }',
+  '}',
+  '',
+  'trap {',
+  "  Write-Host '--- windows-job-supervisor.test.ps1 failure ---'",
+  '  Write-ExceptionChain -Failure $_',
+  '  if ($null -ne $_.ScriptStackTrace) {',
+  '    Write-Host $_.ScriptStackTrace',
+  '  }',
+  '  break',
+  '}',
+].join('\n');
+const TEST_WINDOWS_SESSION_ZERO_QUARANTINE = [
+  '                        if (information.ProcessId == 0 ||',
+  '                            information.SessionId == 0)',
+  '                        {',
+  '                            continue;',
+  '                        }',
+  '                        throw new InvalidOperationException(String.Format(',
+  '                            CultureInfo.InvariantCulture,',
+  '                            "WTS process primary token SID query was ambiguous "',
+  '                                + "for process {0} in session {1}.",',
+  '                            information.ProcessId,',
+  '                            information.SessionId));',
+].join('\n');
 const TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND =
   'echo "Frozen harness module graph verified."';
 const TEST_UNIX_TOOL_PATH_COMMAND = [
@@ -1616,13 +1675,13 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: 'cac7d8eb2516b1a74a3357582513bfef1623f17a',
-      tree: 'b8e7ef47a3edca101cbda165853b36f975305249',
+      commit: 'b5c37569877856c106ee2646b1f992da09dfab1c',
+      tree: '93baa83862004b81f3a64ae0154cdcade49d8c5e',
       packageManifest: {
         path: 'package.json',
-        size: 3_944,
+        size: 4_044,
         sha256:
-          'edcca437eafe9600c526515c89f551113179b4152699b52f337bdb0cf07614bf',
+          'ed23998109c7762c18120ecbe31ef517f24ab7a1630239e0ca65a56112aa619b',
       },
       harness: {
         path: 'scripts/phase1-conformance.mjs',
@@ -1636,9 +1695,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 457_825,
+        size: 459_800,
         sha256:
-          '1904746089bfa3fe079efdc686a9a12dd0f836f4bcfdc4a0df214f9e7e6c52a4',
+          '047ae05690461530e609370b3d2d5c90817d5a2ff06484f13ffef9f4d5c775f2',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1657,7 +1716,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          '6369a4e7c94bed2e3236c509e07e8cd56694d94e747116378b5c90705304ead6',
+          'a14d86cd8b8a2974343412774b93b39f54d98de240ea1d960663b06937f87a0c',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1694,8 +1753,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: 'cac7d8eb2516b1a74a3357582513bfef1623f17a',
-        sourceDigest: 'cac7d8eb2516b1a74a3357582513bfef1623f17a',
+        signerDigest: 'b5c37569877856c106ee2646b1f992da09dfab1c',
+        sourceDigest: 'b5c37569877856c106ee2646b1f992da09dfab1c',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1719,7 +1778,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       lock.evidenceProducer.workflow.unixProductionScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_BOOTSTRAP_COMMAND)).toBe(
-      '6369a4e7c94bed2e3236c509e07e8cd56694d94e747116378b5c90705304ead6',
+      'a14d86cd8b8a2974343412774b93b39f54d98de240ea1d960663b06937f87a0c',
     );
     expect(sha256(TEST_WINDOWS_CHILD_BOOTSTRAP)).toBe(
       '92d3c242dad7fc89ff36ba8df1e9f38c98e8a52bb310e35a811b61885e552e6b',
@@ -1736,6 +1795,33 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
       ),
     ).not.toThrow();
+  });
+
+  test('freezes the exact Windows supervisor diagnostics and quarantine contract', () => {
+    expect(Buffer.byteLength(TEST_WINDOWS_SUPERVISOR_TEST, 'utf8')).toBe(
+      171_179,
+    );
+    expect(sha256(TEST_WINDOWS_SUPERVISOR_TEST)).toBe(
+      '55e9cf065e2dc7cc656c6aa8cc9ea53542259d3d7eee55c368c6cf0fc6356ab9',
+    );
+    expect(TEST_WINDOWS_SUPERVISOR_TEST).toContain(
+      TEST_WINDOWS_DIAGNOSTIC_TRAP,
+    );
+    expect(
+      [
+        ...TEST_WINDOWS_SUPERVISOR_TEST.matchAll(
+          /\[DateTime\]::UtcNow\.AddSeconds\((\d+)\)/gu,
+        ),
+      ].map((match) => Number(match[1])),
+    ).toEqual([60, 60, 60, 60, 2, 60, 60, 2, 60, 60, 6]);
+    expect(
+      TEST_WINDOWS_BOOTSTRAP_COMMAND.split(
+        TEST_WINDOWS_SESSION_ZERO_QUARANTINE,
+      ),
+    ).toHaveLength(2);
+    expect(TEST_WINDOWS_BOOTSTRAP_COMMAND).not.toContain(
+      '"WTS process primary token SID query was ambiguous.");',
+    );
   });
 
   test('freezes the future protected workflow identity and runner graph', () => {
@@ -3523,6 +3609,41 @@ describe('unresolved SDK #38 conformance gaps', () => {
           '$validatorRevision -cne $protectedValidatorRevision',
           '$false -and $validatorRevision -cne $protectedValidatorRevision',
         ),
+      },
+      {
+        name: 'Windows quarantine skips an unreadable nonzero-session owner',
+        workflow: replaceWorkflowRun(
+          TEST_PRODUCER_WORKFLOW_TEXT,
+          TEST_WINDOWS_BOOTSTRAP_COMMAND,
+          TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(
+            'information.SessionId == 0)',
+            'information.SessionId != 0)',
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+        expectedError: /exact canonical Windows bootstrap source/u,
+      },
+      {
+        name: 'Windows quarantine drops ambiguous owner process diagnostics',
+        workflow: replaceWorkflowRun(
+          TEST_PRODUCER_WORKFLOW_TEXT,
+          TEST_WINDOWS_BOOTSTRAP_COMMAND,
+          TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(
+            [
+              '"WTS process primary token SID query was ambiguous "',
+              '                                + "for process {0} in session {1}.",',
+            ].join('\n'),
+            '"WTS process primary token SID query was ambiguous.",',
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+        expectedError: /exact canonical Windows bootstrap source/u,
       },
       {
         name: 'substituted Windows bootstrap shell',
