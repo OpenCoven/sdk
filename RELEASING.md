@@ -214,18 +214,20 @@ passing evidence record for each target.
 The frozen Chat production source
 `edd4728792321771496df58bfc0e6122908a96ec` is exercised by the compatible
 schema-v2 producer at
-`78d86add9e974d2f4800478ab2a7948a7e20fc1d`. Its source lock was pinned by
-reachable authority commit `47832936831823f60324d4eb128f63210e840b8b`
+`0488a867dc61571d57f82c78e02ccf97ed2f94e6`. Its source lock was pinned by
+reachable authority commit `0cf03f96c9972737c02f11936bea337165d253ad`
 to executable harness behavior revision
-`95d00af123e1fa8670f29e9ddf7f9dec246beb0c`.
+`c4d0bf31763b70e1266439ff2ef1984b543e04fd`.
 Its protected workflow requires
 an exact SDK `validator_revision`, uses protected environment ID
 `20863036831`, validates the three static platform artifacts in
 `validate-conformance-artifacts`, and delegates OIDC provenance issuance only
 to `attest-conformance-artifacts`. The validator checkout is pinned by the
 protected `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` environment variable.
-Unix production receives only the reviewed tool path computed for `node`,
-`pnpm`, and `rustup`; Windows bootstrap launches pinned npm/pnpm JavaScript
+Unix production receives the reviewed tool path computed for `node` and
+`corepack`, plus the canonical regular-file `rustup` target copied into the
+root-owned supervisor directory under the `rustup`, `cargo`, and `rustc`
+multicall names. Windows bootstrap launches pinned npm/pnpm JavaScript
 entrypoints through Node and reads the explicit child `Process.ExitCode`.
 That environment must disable administrator bypass, require reviewer user ID
 `68980965`, permit self-review, have a zero-minute wait timer, and allow

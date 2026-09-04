@@ -45,11 +45,11 @@ const WINDOWS_SUPERVISOR_ARTIFACT = 'phase1-process-supervisor-win32-x64';
 const WINDOWS_SUPERVISOR_JOB_NAME = 'build-windows-supervisor';
 const WINDOWS_SUPERVISOR_RUNNER_LABELS = ['macos-latest'];
 const REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256 =
-  'f94d8ff32ae23858d66dd61d4d6ee704a398a024d11c7f526114863ecdc9ecb3';
+  'd9df6b2f34832a35e912060d4ea62e34a8e703004976d1f31c9ec63532dc7b26';
 const REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256 =
-  '3281c701d9b0405e2193df9054b7df49a751349c7684fc569dc7908b29f8989c';
+  '2c6b7c8b270d3302c46fbf709b6be37df68d5bcc91f5ccfca11ffbaaa249d54e';
 const REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256 =
-  '54d3046d2927cf6e0eb29e75dc3c89ccbd8dd458913de1fbc7689621269cb96d';
+  'ea48c6fb4b107c4a4446ea81bb8395b182bc5a1fd950397d70b9237025b053e1';
 const PLATFORM_STEP_CONTRACT = Object.freeze([
   ['Bootstrap supervised Windows conformance', ['name', 'if', 'shell', 'env', 'run']],
   ['Require protected validator revision', ['name', 'if', 'shell', 'env', 'run']],
@@ -157,11 +157,14 @@ function exactUnixRustInstallCommand(toolchain) {
 function exactUnixToolPathCommand() {
   return [
     'node --input-type=module --eval "import { appendFileSync }',
-    'from \'node:fs\'; import { resolveUnixToolPath }',
+    'from \'node:fs\'; import { resolveExecutableInvocation, resolveUnixToolPath }',
     'from \'./scripts/executable-resolution.mjs\';',
-    'const toolPath = resolveUnixToolPath([\'node\', \'corepack\', \'rustup\']);',
+    'const toolPath = resolveUnixToolPath([\'node\', \'corepack\']);',
+    'const rustupExecutable = resolveExecutableInvocation(',
+    '\'rustup\', process.env, process.platform, []).resolvedCommand;',
     'appendFileSync(process.env.GITHUB_OUTPUT,',
-    '\'tool_path=\' + toolPath + \'\\n\');"',
+    '\'tool_path=\' + toolPath + \'\\nrustup_executable=\' +',
+    'rustupExecutable + \'\\n\');"',
   ].join(' ');
 }
 
@@ -562,7 +565,7 @@ function tokenizeShellScript(source) {
   return tokens;
 }
 
-function hasExactReviewedUnixToolPathArgument(run) {
+function hasExactReviewedUnixSupervisorArguments(run) {
   const tokens = tokenizeShellScript(run);
   if (tokens === null) {
     return false;
@@ -590,23 +593,37 @@ function hasExactReviewedUnixToolPathArgument(run) {
     }
     command.push(tokens[index]);
   }
-  const optionIndexes = [];
+  const toolPathIndexes = [];
+  const rustupExecutableIndexes = [];
   for (let index = 0; index < command.length; index += 1) {
     if (
       command[index].value === '--tool-path'
       || command[index].value.startsWith('--tool-path=')
     ) {
-      optionIndexes.push(index);
+      toolPathIndexes.push(index);
+    }
+    if (
+      command[index].value === '--rustup-executable'
+      || command[index].value.startsWith('--rustup-executable=')
+    ) {
+      rustupExecutableIndexes.push(index);
     }
   }
-  if (optionIndexes.length !== 1) {
+  if (
+    toolPathIndexes.length !== 1
+    || rustupExecutableIndexes.length !== 1
+  ) {
     return false;
   }
-  const optionIndex = optionIndexes[0];
+  const toolPathIndex = toolPathIndexes[0];
+  const rustupExecutableIndex = rustupExecutableIndexes[0];
   return (
-    command[optionIndex].raw === '--tool-path'
-    && command[optionIndex + 1]?.raw
+    command[toolPathIndex].raw === '--tool-path'
+    && command[toolPathIndex + 1]?.raw
       === '"${{ steps[\'unix-tool-path\'].outputs.tool_path }}"'
+    && command[rustupExecutableIndex].raw === '--rustup-executable'
+    && command[rustupExecutableIndex + 1]?.raw
+      === '"${{ steps[\'unix-tool-path\'].outputs.rustup_executable }}"'
   );
 }
 
@@ -1254,7 +1271,7 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
     || !unixProduction.run.includes(
       '--command scripts/unix-producer-command.sh',
     )
-    || !hasExactReviewedUnixToolPathArgument(unixProduction.run)
+    || !hasExactReviewedUnixSupervisorArguments(unixProduction.run)
     || !unixProduction.run.includes(
       '--validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
     )
