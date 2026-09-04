@@ -214,21 +214,24 @@ passing evidence record for each target.
 The frozen Chat production source
 `edd4728792321771496df58bfc0e6122908a96ec` is exercised by the compatible
 schema-v2 producer at
-`0488a867dc61571d57f82c78e02ccf97ed2f94e6`. Its source lock was pinned by
-reachable authority commit `0cf03f96c9972737c02f11936bea337165d253ad`
+`fbe8caf1860f26b95b453c356e389e120acfaf6e`. Its source lock was pinned by
+reachable authority commit `62c4b72044538aec541bdc0129208c47d566325e`
 to executable harness behavior revision
-`c4d0bf31763b70e1266439ff2ef1984b543e04fd`.
+`f839004c51118425b73710100b8b02fe42501872`.
 Its protected workflow requires
 an exact SDK `validator_revision`, uses protected environment ID
 `20863036831`, validates the three static platform artifacts in
 `validate-conformance-artifacts`, and delegates OIDC provenance issuance only
 to `attest-conformance-artifacts`. The validator checkout is pinned by the
 protected `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` environment variable.
-Unix production receives the reviewed tool path computed for `node` and
-`corepack`, plus the canonical regular-file `rustup` target copied into the
-root-owned supervisor directory under the `rustup`, `cargo`, and `rustc`
-multicall names. Windows bootstrap launches pinned npm/pnpm JavaScript
-entrypoints through Node and reads the explicit child `Process.ExitCode`.
+Unix production receives a reviewed tool path containing only exact Git/system
+directories plus canonical regular-file `node`, `pnpm`, and `rustup` inputs.
+The supervisor copies those inputs into its root-owned trusted directory,
+including `rustup` under the `rustup`, `cargo`, and `rustc` multicall names.
+The governed harness invokes trusted `pnpm` directly; Corepack and private
+runner-home directories are absent from restricted execution. Windows
+bootstrap launches pinned npm/pnpm JavaScript entrypoints through Node and
+reads the explicit child `Process.ExitCode`.
 That environment must disable administrator bypass, require reviewer user ID
 `68980965`, permit self-review, have a zero-minute wait timer, and allow
 protected branches only. Its `required_reviewers` rule therefore has

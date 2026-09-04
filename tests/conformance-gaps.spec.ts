@@ -213,12 +213,17 @@ const TEST_UNIX_TOOL_PATH_COMMAND = [
   'node --input-type=module --eval "import { appendFileSync }',
   'from \'node:fs\'; import { resolveExecutableInvocation, resolveUnixToolPath }',
   'from \'./scripts/executable-resolution.mjs\';',
-  'const toolPath = resolveUnixToolPath([\'node\', \'corepack\']);',
+  'const toolPath = resolveUnixToolPath([\'git\']);',
+  'const nodeExecutable = resolveExecutableInvocation(',
+  '\'node\', process.env, process.platform, []).resolvedCommand;',
+  'const pnpmExecutable = resolveExecutableInvocation(',
+  '\'pnpm\', process.env, process.platform, []).resolvedCommand;',
   'const rustupExecutable = resolveExecutableInvocation(',
   '\'rustup\', process.env, process.platform, []).resolvedCommand;',
   'appendFileSync(process.env.GITHUB_OUTPUT,',
-  '\'tool_path=\' + toolPath + \'\\nrustup_executable=\' +',
-  'rustupExecutable + \'\\n\');"',
+  '\'tool_path=\' + toolPath + \'\\nnode_executable=\' +',
+  'nodeExecutable + \'\\npnpm_executable=\' + pnpmExecutable +',
+  '\'\\nrustup_executable=\' + rustupExecutable + \'\\n\');"',
 ].join(' ');
 const TEST_UNIX_PRODUCTION_COMMAND = [
   'set -euo pipefail',
@@ -239,6 +244,8 @@ const TEST_UNIX_PRODUCTION_COMMAND = [
   '  --temp-root "$broker_root" \\',
   '  --handoff-helper "/tmp/opencoven-unix-broker/unix-artifact-handoff" \\',
   '  --command scripts/unix-producer-command.sh \\',
+  '  --node-executable "${{ steps[\'unix-tool-path\'].outputs.node_executable }}" \\',
+  '  --pnpm-executable "${{ steps[\'unix-tool-path\'].outputs.pnpm_executable }}" \\',
   '  --rustup-executable "${{ steps[\'unix-tool-path\'].outputs.rustup_executable }}" \\',
   '  --tool-path "${{ steps[\'unix-tool-path\'].outputs.tool_path }}" \\',
   '  --validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
@@ -1679,8 +1686,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '0488a867dc61571d57f82c78e02ccf97ed2f94e6',
-      tree: 'a468178045a5d071ad7e3b49358b5caedaab2fce',
+      commit: 'fbe8caf1860f26b95b453c356e389e120acfaf6e',
+      tree: '6bdd9f1665ca08a46b5a94e6df176c5f7f3833c9',
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -1690,18 +1697,18 @@ describe('unresolved SDK #38 conformance gaps', () => {
       harness: {
         path: 'scripts/phase1-conformance.mjs',
         version: '2.0.0',
-        size: 187_131,
+        size: 187_001,
         sha256:
-          'cc374d616d9de0a0cd94ce2ced5847fd877e124323acce3fca31f3df35d67d1b',
+          '663d0259e359fe87e57792617ba7c8e990ef4aff0cdeddbb0ff85c441688efb0',
       },
       command: 'test:phase1-conformance',
       recordSchemaVersion: 2,
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 460_690,
+        size: 462_094,
         sha256:
-          '824b74b0638f60862e567d5498a526162b279a5a870bb774154ec73c96c6dde9',
+          '567b3645b7bf03557b179c18bf506d177518de085ec403d559974f6230721123',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1720,7 +1727,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          'd9df6b2f34832a35e912060d4ea62e34a8e703004976d1f31c9ec63532dc7b26',
+          'c721f312ba7b3895f8881236186d55429846cf73e0aee9caa9a3b05f323d7339',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1728,7 +1735,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         linuxKeyringSetupScriptSha256:
           '26e6bb6da4d80617c99d6edeb577c2026910ffc3b1ee70df03bed5fb8d149a51',
         unixSupervisorPreparationScriptSha256:
-          'b7b012600c193bcf8d96da40a7e551aa152c3e185447470bae3cedb1014dcb47',
+          'a890ffa49b3f74f4fe81fc4e209341134bd4e3561d6fc9648a3f45e31f4b54c0',
         unixToolPathSource: {
           path: 'scripts/executable-resolution.mjs',
           size: 9_154,
@@ -1736,9 +1743,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
             '31e3c412ff8c835f14522f36a59e91f4a4ba82913210ae8e3b4455217503f430',
         },
         unixToolPathScriptSha256:
-          'dbff8c28251eadde8d657006bdde812966c54636492be9bb2492e7074b770e6c',
+          '72ddd8865c68c5dde15d08decb771914d903f752d4909a52d1a10440eaadf36e',
         unixProductionScriptSha256:
-          'ea48c6fb4b107c4a4446ea81bb8395b182bc5a1fd950397d70b9237025b053e1',
+          '043066be50d0c3fa66f7151224242734cb2e9f39ffa9cf1c6f8106ab88c75a02',
         unixValidationScriptSha256:
           'b0ce7139bdf365d420c7dde478282f117cce97c1bec63d07cd95b64057121a89',
         validationGuardScriptSha256:
@@ -1757,8 +1764,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '0488a867dc61571d57f82c78e02ccf97ed2f94e6',
-        sourceDigest: '0488a867dc61571d57f82c78e02ccf97ed2f94e6',
+        signerDigest: 'fbe8caf1860f26b95b453c356e389e120acfaf6e',
+        sourceDigest: 'fbe8caf1860f26b95b453c356e389e120acfaf6e',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1782,10 +1789,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
       lock.evidenceProducer.workflow.unixProductionScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_BOOTSTRAP_COMMAND)).toBe(
-      'd9df6b2f34832a35e912060d4ea62e34a8e703004976d1f31c9ec63532dc7b26',
+      'c721f312ba7b3895f8881236186d55429846cf73e0aee9caa9a3b05f323d7339',
     );
     expect(sha256(TEST_WINDOWS_CHILD_BOOTSTRAP)).toBe(
-      '2c6b7c8b270d3302c46fbf709b6be37df68d5bcc91f5ccfca11ffbaaa249d54e',
+      '60279c8ba0968d964b0fe2f407c7c4fd2258cac9cddf65c08cae4d4c2dd4d0eb',
     );
     expect(() =>
       verifyProtectedWorkflow(
@@ -3576,8 +3583,32 @@ describe('unresolved SDK #38 conformance gaps', () => {
           yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND),
           yamlSingleQuoted(
             TEST_UNIX_TOOL_PATH_COMMAND.replace(
-              '[\'node\', \'corepack\']',
-              '[\'node\', \'corepack\', \'rustup\']',
+              '[\'git\']',
+              '[\'git\', \'node\']',
+            ),
+          ),
+        ),
+      },
+      {
+        name: 'symlink-preserving Unix node executable',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_TOOL_PATH_COMMAND.replace(
+              "'node', process.env, process.platform, []).resolvedCommand",
+              "'node', process.env, process.platform, []).executable",
+            ),
+          ),
+        ),
+      },
+      {
+        name: 'symlink-preserving Unix pnpm executable',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_TOOL_PATH_COMMAND.replace(
+              "'pnpm', process.env, process.platform, []).resolvedCommand",
+              "'pnpm', process.env, process.platform, []).executable",
             ),
           ),
         ),
@@ -3588,11 +3619,41 @@ describe('unresolved SDK #38 conformance gaps', () => {
           yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND),
           yamlSingleQuoted(
             TEST_UNIX_TOOL_PATH_COMMAND.replace(
-              '.resolvedCommand',
-              '.executable',
+              "'rustup', process.env, process.platform, []).resolvedCommand",
+              "'rustup', process.env, process.platform, []).executable",
             ),
           ),
         ),
+      },
+      {
+        name: 'detached reviewed Unix node executable output',
+        workflow: replaceWorkflowRun(
+          TEST_PRODUCER_WORKFLOW_TEXT,
+          TEST_UNIX_PRODUCTION_COMMAND,
+          TEST_UNIX_PRODUCTION_COMMAND.replace(
+            'steps[\'unix-tool-path\'].outputs.node_executable',
+            'steps[\'unix-tool-path\'].outputs.tool_path',
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'unixProductionScriptSha256',
+          step: 'Run supervised Unix production and handoff',
+        },
+      },
+      {
+        name: 'detached reviewed Unix pnpm executable output',
+        workflow: replaceWorkflowRun(
+          TEST_PRODUCER_WORKFLOW_TEXT,
+          TEST_UNIX_PRODUCTION_COMMAND,
+          TEST_UNIX_PRODUCTION_COMMAND.replace(
+            'steps[\'unix-tool-path\'].outputs.pnpm_executable',
+            'steps[\'unix-tool-path\'].outputs.tool_path',
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'unixProductionScriptSha256',
+          step: 'Run supervised Unix production and handoff',
+        },
       },
       {
         name: 'detached reviewed Unix rustup executable output',

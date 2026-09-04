@@ -45,11 +45,11 @@ const WINDOWS_SUPERVISOR_ARTIFACT = 'phase1-process-supervisor-win32-x64';
 const WINDOWS_SUPERVISOR_JOB_NAME = 'build-windows-supervisor';
 const WINDOWS_SUPERVISOR_RUNNER_LABELS = ['macos-latest'];
 const REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256 =
-  'd9df6b2f34832a35e912060d4ea62e34a8e703004976d1f31c9ec63532dc7b26';
+  'c721f312ba7b3895f8881236186d55429846cf73e0aee9caa9a3b05f323d7339';
 const REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256 =
-  '2c6b7c8b270d3302c46fbf709b6be37df68d5bcc91f5ccfca11ffbaaa249d54e';
+  '60279c8ba0968d964b0fe2f407c7c4fd2258cac9cddf65c08cae4d4c2dd4d0eb';
 const REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256 =
-  'ea48c6fb4b107c4a4446ea81bb8395b182bc5a1fd950397d70b9237025b053e1';
+  '043066be50d0c3fa66f7151224242734cb2e9f39ffa9cf1c6f8106ab88c75a02';
 const PLATFORM_STEP_CONTRACT = Object.freeze([
   ['Bootstrap supervised Windows conformance', ['name', 'if', 'shell', 'env', 'run']],
   ['Require protected validator revision', ['name', 'if', 'shell', 'env', 'run']],
@@ -159,12 +159,17 @@ function exactUnixToolPathCommand() {
     'node --input-type=module --eval "import { appendFileSync }',
     'from \'node:fs\'; import { resolveExecutableInvocation, resolveUnixToolPath }',
     'from \'./scripts/executable-resolution.mjs\';',
-    'const toolPath = resolveUnixToolPath([\'node\', \'corepack\']);',
+    'const toolPath = resolveUnixToolPath([\'git\']);',
+    'const nodeExecutable = resolveExecutableInvocation(',
+    '\'node\', process.env, process.platform, []).resolvedCommand;',
+    'const pnpmExecutable = resolveExecutableInvocation(',
+    '\'pnpm\', process.env, process.platform, []).resolvedCommand;',
     'const rustupExecutable = resolveExecutableInvocation(',
     '\'rustup\', process.env, process.platform, []).resolvedCommand;',
     'appendFileSync(process.env.GITHUB_OUTPUT,',
-    '\'tool_path=\' + toolPath + \'\\nrustup_executable=\' +',
-    'rustupExecutable + \'\\n\');"',
+    '\'tool_path=\' + toolPath + \'\\nnode_executable=\' +',
+    'nodeExecutable + \'\\npnpm_executable=\' + pnpmExecutable +',
+    '\'\\nrustup_executable=\' + rustupExecutable + \'\\n\');"',
   ].join(' ');
 }
 
@@ -594,7 +599,11 @@ function hasExactReviewedUnixSupervisorArguments(run) {
     command.push(tokens[index]);
   }
   const toolPathIndexes = [];
-  const rustupExecutableIndexes = [];
+  const executableIndexes = new Map([
+    ['--node-executable', []],
+    ['--pnpm-executable', []],
+    ['--rustup-executable', []],
+  ]);
   for (let index = 0; index < command.length; index += 1) {
     if (
       command[index].value === '--tool-path'
@@ -602,28 +611,35 @@ function hasExactReviewedUnixSupervisorArguments(run) {
     ) {
       toolPathIndexes.push(index);
     }
-    if (
-      command[index].value === '--rustup-executable'
-      || command[index].value.startsWith('--rustup-executable=')
-    ) {
-      rustupExecutableIndexes.push(index);
+    for (const [flag, indexes] of executableIndexes) {
+      if (
+        command[index].value === flag
+        || command[index].value.startsWith(`${flag}=`)
+      ) {
+        indexes.push(index);
+      }
     }
   }
   if (
     toolPathIndexes.length !== 1
-    || rustupExecutableIndexes.length !== 1
+    || [...executableIndexes.values()].some((indexes) => indexes.length !== 1)
   ) {
     return false;
   }
   const toolPathIndex = toolPathIndexes[0];
-  const rustupExecutableIndex = rustupExecutableIndexes[0];
   return (
     command[toolPathIndex].raw === '--tool-path'
     && command[toolPathIndex + 1]?.raw
       === '"${{ steps[\'unix-tool-path\'].outputs.tool_path }}"'
-    && command[rustupExecutableIndex].raw === '--rustup-executable'
-    && command[rustupExecutableIndex + 1]?.raw
-      === '"${{ steps[\'unix-tool-path\'].outputs.rustup_executable }}"'
+    && [...executableIndexes].every(([flag, indexes]) => {
+      const index = indexes[0];
+      const output = flag.slice(2).replaceAll('-', '_');
+      return (
+        command[index].raw === flag
+        && command[index + 1]?.raw
+          === '"${{ steps[\'unix-tool-path\'].outputs.' + output + ' }}"'
+      );
+    })
   );
 }
 

@@ -28,10 +28,10 @@ There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
 is the current `refs/heads/main` commit
-`0488a867dc61571d57f82c78e02ccf97ed2f94e6`. Its source lock was pinned by
-reachable authority commit `0cf03f96c9972737c02f11936bea337165d253ad`
+`fbe8caf1860f26b95b453c356e389e120acfaf6e`. Its source lock was pinned by
+reachable authority commit `62c4b72044538aec541bdc0129208c47d566325e`
 to executable harness behavior revision
-`c4d0bf31763b70e1266439ff2ef1984b543e04fd`.
+`f839004c51118425b73710100b8b02fe42501872`.
 The frozen workflow separates platform production, exact SDK validation,
 provenance attestation, and aggregation. Its lock records the validation and
 attestation job identities, the three static artifact names and record paths,
@@ -247,10 +247,14 @@ pinned checkout without persisted credentials, pinned Node and pnpm setup,
 frozen dependency and Rust setup, a Linux-only exact package setup for
 `dbus-daemon`, `gnome-keyring`, and `libsecret-tools`, exact
 Node/pnpm/Rust/Tauri verification, exact harness size/SHA-256 verification,
-reviewed resolution of only `node`, `pnpm`, and `rustup` into a minimal Unix
-tool path, and invocation of the frozen harness with the selected validator
-SHA. The supervised Unix step must consume that exact step output and cannot
-forward ambient `PATH` or fall back to it. Windows bootstrap uses
+reviewed resolution of exact `node`, `pnpm`, and `rustup` real files plus a
+minimal Unix tool path containing only exact Git/system directories, and
+invocation of the frozen harness with the selected validator SHA. The
+supervisor copies the three executables into a root-owned trusted directory;
+the governed harness invokes `pnpm` directly, with Corepack and private
+runner-home directories excluded. The supervised Unix step must consume those
+exact step outputs and cannot forward ambient `PATH` or fall back to it.
+Windows bootstrap uses
 `ProcessStartInfo` and `Process.ExitCode`, never `$LASTEXITCODE`, and launches
 the pinned npm and pnpm JavaScript entrypoints directly through pinned Node
 rather than `.cmd` or `.bat` shims. Its exact embedded supervisor skips
@@ -271,7 +275,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`0488a867dc61571d57f82c78e02ccf97ed2f94e6` compatible with the reviewed
+`fbe8caf1860f26b95b453c356e389e120acfaf6e` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
