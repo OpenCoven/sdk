@@ -2906,9 +2906,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
         if (arguments_[0] === 'run') {
           return arguments_.includes('github.com/OpenCoven/chat');
         }
+        const hostnameIndex = arguments_.indexOf('--hostname');
         return (
-          arguments_.includes('--hostname')
-          && arguments_.includes('github.com')
+          hostnameIndex >= 0
+          && arguments_[hostnameIndex + 1] === 'github.com'
         );
       }),
     ).toBe(true);
