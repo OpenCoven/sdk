@@ -79,7 +79,7 @@ const EXPECTED_WORKSPACE_DEPENDENCIES = {
     '@hpke/core': '1.9.0',
     '@hpke/dhkem-x25519': '1.8.0',
     '@opencoven/sdk-core': 'workspace:0.1.0',
-    canonicalize: '3.0.0',
+    canonicalize: '4.0.0',
   },
   coven: {
     '@opencoven/sdk-core': 'workspace:0.1.0',
