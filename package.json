@@ -19,6 +19,7 @@
   "scripts": {
     "api:baseline:update": "node ./scripts/update-api-baselines.mjs",
     "build": "corepack pnpm@10.34.0 --recursive --filter './packages/*' build && corepack pnpm@10.34.0 --recursive --filter './examples/*' build",
+    "canary:automations-v1": "node ./scripts/verify-automations-v1-artifact.mjs",
     "clean:public-dist": "node ./scripts/clean-public-package-dist.mjs",
     "changeset": "changeset",
     "cleanup:merged": "node ./scripts/cleanup-merged-branch.mjs",
@@ -35,6 +36,7 @@
     "release:version": "changeset version",
     "sync:contracts": "node ./scripts/import-contract-fixtures.mjs",
     "pack:public": "node ./scripts/pack-public-packages.mjs",
+    "verify:automations-v1-evidence": "node ./scripts/verify-automations-v1-artifact-evidence.mjs",
     "verify-contracts": "node ./scripts/verify-contracts.mjs",
     "verify-package": "node ./scripts/verify-package.mjs",
     "verify:contracts": "node ./scripts/verify-contracts.mjs",

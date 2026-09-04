@@ -35,6 +35,14 @@ jobs:
           path: .artifacts/cave-authority
           fetch-depth: 1
           persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: matrix.node == '24.18.1'
+        with:
+          repository: OpenCoven/coven
+          ref: 8a796807b37d4ad33eaeca37498debf1ca55dd49
+          path: .artifacts/coven-automations-authority
+          fetch-depth: 1
+          persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 10.34.0
@@ -44,6 +52,24 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Reproduce and verify pinned Automations v1 artifact
+        if: matrix.node == '24.18.1'
+        env:
+          SOURCE_COMMIT: 8a796807b37d4ad33eaeca37498debf1ca55dd49
+          AUTOMATIONS_ARTIFACT_DIR: ${{ runner.temp }}/coven-automations-v1-contract
+        run: |
+          set -euo pipefail
+          node ./.artifacts/coven-automations-authority/scripts/package-automations-protocol.mjs \
+            --output "$AUTOMATIONS_ARTIFACT_DIR"
+          printf '%s  %s\n' \
+            '449d79f0a47fd299d0c560bf4a5f63be383e9825067d3ac992cb97ce067c86d2' \
+            "$AUTOMATIONS_ARTIFACT_DIR/manifest.json" | sha256sum --check --strict
+          test "$(wc -c < "$AUTOMATIONS_ARTIFACT_DIR/manifest.json")" -eq 2964
+          corepack pnpm@10.34.0 canary:automations-v1 -- \
+            --archive "$AUTOMATIONS_ARTIFACT_DIR/coven-automations-v1-contract-${SOURCE_COMMIT}.tar.gz" \
+            --bundle-sha256 512460db71d4257d7a4d33ea306578e66d9ac499d9384eb9c2b8e2b4e2e32363 \
+            --source-commit "$SOURCE_COMMIT" \
+            --content-sha256 3c145eb92a93426ed64631f6487a8cd12903b0a49a6e752269f594ac50a779f5
       # The frozen runtime exercises the complete local verification contract.
       - name: Verify exact release runtime
         if: matrix.node == '24.18.1'

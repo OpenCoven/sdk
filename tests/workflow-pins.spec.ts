@@ -208,7 +208,7 @@ describe('workflow action pins', () => {
 
   test('checks out complete SDK history anywhere full security tests run', () => {
     const ciSdkCheckouts = checkoutSteps(workflow).filter(
-      (step) => !step.includes('repository: OpenCoven/coven-cave'),
+      (step) => !step.includes('repository:'),
     );
     expect(ciSdkCheckouts).toHaveLength(1);
     expect(ciSdkCheckouts[0]).toContain('fetch-depth: 0');
@@ -227,6 +227,20 @@ describe('workflow action pins', () => {
       (step) => step.includes('repository: OpenCoven/coven-cave'),
     );
     expect(caveCheckout).toBeDefined();
+    const automationsCheckout = checkoutSteps(workflow).find(
+      (step) => step.includes('repository: OpenCoven/coven\n'),
+    );
+    expect(automationsCheckout).toContain(
+      "if: matrix.node == '24.18.1'",
+    );
+    expect(automationsCheckout).toContain(
+      'ref: 8a796807b37d4ad33eaeca37498debf1ca55dd49',
+    );
+    expect(automationsCheckout).toContain(
+      'path: .artifacts/coven-automations-authority',
+    );
+    expect(automationsCheckout).toContain('fetch-depth: 1');
+    expect(automationsCheckout).toContain('persist-credentials: false');
     const swappedDepths = workflow
       .replace(
         ciSdkCheckouts[0] ?? '',

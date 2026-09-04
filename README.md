@@ -83,6 +83,45 @@ where Node cannot prove connected-peer or pipe identity. The coordination
 package composes both systems without pretending they share one endpoint,
 credential, or failure model.
 
+## Automations v1 artifact canary
+
+The repository can verify an immutable Coven Automations v1 contract bundle
+without a sibling Coven checkout or a committed copy of the authority files.
+Supply the downloaded archive and all externally recorded identity values:
+
+```bash
+corepack pnpm@10.34.0 canary:automations-v1 -- \
+  --archive /path/to/coven-automations-v1-contract-<commit>.tar.gz \
+  --bundle-sha256 <archive-sha256> \
+  --source-commit <40-character-commit> \
+  --content-sha256 <contract-content-sha256>
+```
+
+The canary verifies gzip and tar structure, the exact 17-file manifest, every
+file size and digest, the content digest, and the expected v1 contract shape.
+It extracts only into an owned temporary directory, typechecks a consumer
+fixture against the bundled declaration, and runs the bundled duplicate,
+out-of-order, and reconnect/replay golden vectors through SDK-side reducer
+logic.
+
+The exact-runtime CI job checks out Coven at the locked source commit,
+reproduces the deterministic bundle into runner temporary storage, verifies
+that its bytes and sidecar manifest match the artifact pins, and runs the full
+canary. This remains durable after GitHub Actions artifact retention expires.
+
+While GitHub retains the original workflow artifact, the supplemental live
+verifier checks
+[`conformance/automations-v1-artifact-lock.json`](conformance/automations-v1-artifact-lock.json)
+against GitHub's live repository, producer-workflow, successful run/job, and
+artifact metadata. The lock binds Coven artifact `9909975069`, its GitHub
+archive digest, the exact source workflow bytes, the contained bundle and
+manifest sizes/digests, source commit, content digest, and 17-file count. The
+tarball remains an external immutable artifact rather than a committed binary:
+
+```bash
+corepack pnpm@10.34.0 verify:automations-v1-evidence
+```
+
 ## Choosing a package
 
 | Need | Package |
