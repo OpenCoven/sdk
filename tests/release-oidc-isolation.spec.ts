@@ -44,7 +44,7 @@ const DOWNLOAD_ARTIFACT =
 const UPLOAD_ARTIFACT =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
 const ATTEST =
-  'actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d';
+  'actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6';
 
 function job(name: string): WorkflowJob {
   const value = workflow.jobs[name];
