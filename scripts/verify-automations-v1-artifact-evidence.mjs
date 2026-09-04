@@ -256,11 +256,12 @@ function assertEqual(actual, expected, message) {
 }
 
 function assertLabels(actual, expected) {
-  if (
-    !Array.isArray(actual) ||
-    actual.length !== expected.length ||
-    actual.some((label, index) => label !== expected[index])
-  ) {
+  if (!Array.isArray(actual) || actual.length !== expected.length) {
+    fail('Live producer job runner labels do not match the lock.');
+  }
+  const actualSorted = [...actual].sort();
+  const expectedSorted = [...expected].sort();
+  if (actualSorted.some((label, index) => label !== expectedSorted[index])) {
     fail('Live producer job runner labels do not match the lock.');
   }
 }

@@ -227,9 +227,12 @@ describe('workflow action pins', () => {
       (step) => step.includes('repository: OpenCoven/coven-cave'),
     );
     expect(caveCheckout).toBeDefined();
-    const automationsCheckout = checkoutSteps(workflow).find(
-      (step) => step.includes('repository: OpenCoven/coven\n'),
+    const automationsCheckout = checkoutSteps(workflow).find((step) =>
+      /(?:^|\n)\s+repository: OpenCoven\/coven\s*(?:\n|$)/u.test(step),
     );
+    if (automationsCheckout === undefined) {
+      throw new Error('Expected an OpenCoven/coven checkout step in CI.');
+    }
     expect(automationsCheckout).toContain(
       "if: matrix.node == '24.18.1'",
     );

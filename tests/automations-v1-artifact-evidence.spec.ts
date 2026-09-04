@@ -316,6 +316,29 @@ describe('Automations v1 artifact evidence', () => {
     );
   });
 
+  test('accepts the live producer job runner labels in any order', async () => {
+    const lock = readLock();
+    lock.producer.job.runnerLabels = ['ubuntu-latest', 'x64'];
+    const apiUrl = await startApi(lock, {
+      jobs: {
+        total_count: 1,
+        jobs: [
+          {
+            id: lock.producer.job.id,
+            name: lock.producer.job.name,
+            status: 'completed',
+            conclusion: 'success',
+            labels: ['x64', 'ubuntu-latest'],
+          },
+        ],
+      },
+    });
+
+    const result = await runEvidence(lock, apiUrl);
+
+    expect(result.status, result.stderr).toBe(0);
+  });
+
   test('rejects live artifact archive digest drift', async () => {
     const lock = readLock();
     const artifact = {
