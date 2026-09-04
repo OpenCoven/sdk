@@ -214,10 +214,10 @@ passing evidence record for each target.
 The frozen Chat production source
 `edd4728792321771496df58bfc0e6122908a96ec` is exercised by the compatible
 schema-v2 producer at
-`7ef76ad28fcfaf45971298f5df4f6a229da2c5bd`. Its source lock was pinned by
-reachable authority commit `cb8d46d57052446fcf894f5e156b4243a482db92`
+`78d86add9e974d2f4800478ab2a7948a7e20fc1d`. Its source lock was pinned by
+reachable authority commit `47832936831823f60324d4eb128f63210e840b8b`
 to executable harness behavior revision
-`55071f4200d312911ff5f6e5220873ae6f6197f2`.
+`95d00af123e1fa8670f29e9ddf7f9dec246beb0c`.
 Its protected workflow requires
 an exact SDK `validator_revision`, uses protected environment ID
 `20863036831`, validates the three static platform artifacts in

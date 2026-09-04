@@ -45,9 +45,9 @@ const WINDOWS_SUPERVISOR_ARTIFACT = 'phase1-process-supervisor-win32-x64';
 const WINDOWS_SUPERVISOR_JOB_NAME = 'build-windows-supervisor';
 const WINDOWS_SUPERVISOR_RUNNER_LABELS = ['macos-latest'];
 const REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256 =
-  'a14d86cd8b8a2974343412774b93b39f54d98de240ea1d960663b06937f87a0c';
+  'f94d8ff32ae23858d66dd61d4d6ee704a398a024d11c7f526114863ecdc9ecb3';
 const REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256 =
-  '92d3c242dad7fc89ff36ba8df1e9f38c98e8a52bb310e35a811b61885e552e6b';
+  '3281c701d9b0405e2193df9054b7df49a751349c7684fc569dc7908b29f8989c';
 const REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256 =
   '54d3046d2927cf6e0eb29e75dc3c89ccbd8dd458913de1fbc7689621269cb96d';
 const PLATFORM_STEP_CONTRACT = Object.freeze([
@@ -172,8 +172,21 @@ const REVIEWED_WINDOWS_INVOKE_CHECKED_FUNCTION = [
   '[Parameter(Mandatory)][string[]]$ArgumentList,',
   '[Parameter(Mandatory)][string]$Label',
   ')',
+  '$location = Get-Location',
+  '$workingDirectory = $location.ProviderPath',
+  'if (',
+  "$location.Provider.Name -cne 'FileSystem' -or",
+  '[String]::IsNullOrWhiteSpace($workingDirectory) -or',
+  '-not [IO.Path]::IsPathFullyQualified($workingDirectory)',
+  ') {',
+  'throw "$Label working directory is not an absolute filesystem path."',
+  '}',
+  '[OpenCoven.WindowsJobSupervisor]::RequireCurrentIdentityOwnsIsolatedDirectory(',
+  '$workingDirectory',
+  ')',
   '$startInfo = [Diagnostics.ProcessStartInfo]::new($FilePath)',
   '$startInfo.UseShellExecute = $false',
+  '$startInfo.WorkingDirectory = $workingDirectory',
   'foreach ($argument in $ArgumentList) {',
   '$startInfo.ArgumentList.Add($argument)',
   '}',
