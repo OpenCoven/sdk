@@ -54,6 +54,10 @@ const windowsBootstrapFixturePath = resolve(
   workspaceRoot,
   'tests/fixtures/chat-b406-windows-bootstrap.ps1.br',
 );
+const unixSupervisorPreparationFixturePath = resolve(
+  workspaceRoot,
+  'tests/fixtures/chat-9198-unix-supervisor-preparation.sh.br',
+);
 const windowsSupervisorTestFixturePath = resolve(
   workspaceRoot,
   'tests/fixtures/chat-55071-windows-supervisor.test.ps1.br',
@@ -207,8 +211,24 @@ const TEST_WINDOWS_SESSION_ZERO_QUARANTINE = [
   '                            information.ProcessId,',
   '                            information.SessionId));',
 ].join('\n');
-const TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND =
-  'echo "Frozen harness module graph verified."';
+const TEST_UNIX_SUPERVISOR_SOURCE_BINDING =
+  "['scripts/unix-producer-supervisor.sh', [28757, '141c2cc95f2a73a70df70536ca83e825b0bd043f5cdab6ca0f7a92ee2f4b8dff']]";
+const TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND = brotliDecompressSync(
+  readFileSync(unixSupervisorPreparationFixturePath),
+).toString('utf8');
+if (
+  !TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND.endsWith('\n')
+  || TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND.includes('\r')
+) {
+  throw new Error('Canonical Unix supervisor preparation fixture is not LF-normalized');
+}
+if (
+  TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND.split(
+    TEST_UNIX_SUPERVISOR_SOURCE_BINDING,
+  ).length - 1 !== 1
+) {
+  throw new Error('Canonical Unix supervisor preparation fixture has the wrong source binding');
+}
 const TEST_UNIX_TOOL_PATH_COMMAND = [
   'node --input-type=module --eval "import { appendFileSync }',
   'from \'node:fs\'; import { resolveExecutableInvocation, resolveUnixToolPath }',
@@ -417,7 +437,7 @@ function protectedProducerSteps(): string[] {
     '      - name: Prepare trusted Unix supervisor',
     "        if: matrix.platform != 'win32-x64'",
     '        shell: bash',
-    `        run: ${yamlSingleQuoted(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND)}`,
+    yamlLiteralRun(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND),
     '      - name: Compute reviewed Unix tool path',
     '        id: unix-tool-path',
     "        if: matrix.platform != 'win32-x64'",
@@ -1686,8 +1706,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: 'fbe8caf1860f26b95b453c356e389e120acfaf6e',
-      tree: '6bdd9f1665ca08a46b5a94e6df176c5f7f3833c9',
+      commit: 'bbecbd89f14a7a35b1e1eec0e0aff3db8b365f9b',
+      tree: '29fc33c1f1b411e280c791d050815921c2f8d533',
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -1706,9 +1726,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 462_094,
+        size: 462_104,
         sha256:
-          '567b3645b7bf03557b179c18bf506d177518de085ec403d559974f6230721123',
+          '256441056fabb6668875f56e1e1aa7a38300e254f4cd6e70946a37937d46f00a',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1727,7 +1747,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          'c721f312ba7b3895f8881236186d55429846cf73e0aee9caa9a3b05f323d7339',
+          '71e519f72f298fd3e9f06ea463db59f2a74dc1ec1df3fe0a7b92af4296f1f359',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1735,7 +1755,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         linuxKeyringSetupScriptSha256:
           '26e6bb6da4d80617c99d6edeb577c2026910ffc3b1ee70df03bed5fb8d149a51',
         unixSupervisorPreparationScriptSha256:
-          'a890ffa49b3f74f4fe81fc4e209341134bd4e3561d6fc9648a3f45e31f4b54c0',
+          'ccdae2cc17e49ddf91d4444e2d1d9b67cba13e7789d73a20fbc0d1474e0b705e',
         unixToolPathSource: {
           path: 'scripts/executable-resolution.mjs',
           size: 9_154,
@@ -1764,8 +1784,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: 'fbe8caf1860f26b95b453c356e389e120acfaf6e',
-        sourceDigest: 'fbe8caf1860f26b95b453c356e389e120acfaf6e',
+        signerDigest: 'bbecbd89f14a7a35b1e1eec0e0aff3db8b365f9b',
+        sourceDigest: 'bbecbd89f14a7a35b1e1eec0e0aff3db8b365f9b',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1789,7 +1809,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       lock.evidenceProducer.workflow.unixProductionScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_BOOTSTRAP_COMMAND)).toBe(
-      'c721f312ba7b3895f8881236186d55429846cf73e0aee9caa9a3b05f323d7339',
+      '71e519f72f298fd3e9f06ea463db59f2a74dc1ec1df3fe0a7b92af4296f1f359',
     );
     expect(sha256(TEST_WINDOWS_CHILD_BOOTSTRAP)).toBe(
       '60279c8ba0968d964b0fe2f407c7c4fd2258cac9cddf65c08cae4d4c2dd4d0eb',
@@ -3513,7 +3533,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
             '      - name: Prepare trusted Unix supervisor',
             "        if: matrix.platform != 'win32-x64'",
             '        shell: bash',
-            `        run: ${yamlSingleQuoted(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND)}`,
+            yamlLiteralRun(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND),
             '      - name: Compute reviewed Unix tool path',
             '        id: unix-tool-path',
             "        if: matrix.platform != 'win32-x64'",
@@ -3527,9 +3547,36 @@ describe('unresolved SDK #38 conformance gaps', () => {
             '      - name: Prepare trusted Unix supervisor',
             "        if: matrix.platform != 'win32-x64'",
             '        shell: bash',
-            `        run: ${yamlSingleQuoted(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND)}`,
+            yamlLiteralRun(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND),
           ].join('\n'),
         ),
+      },
+      {
+        name: 'detached reviewed Unix supervisor source binding',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlLiteralRun(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND),
+          yamlLiteralRun(
+            TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND.replace(
+              '141c2cc95f2a73a70df70536ca83e825b0bd043f5cdab6ca0f7a92ee2f4b8dff',
+              '0'.repeat(64),
+            ),
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'unixSupervisorPreparationScriptSha256',
+          step: 'Prepare trusted Unix supervisor',
+        },
+      },
+      {
+        name: 'synchronized substituted Unix supervisor preparation',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlLiteralRun(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND),
+          yamlLiteralRun(`${TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND}echo substituted\n`),
+        ),
+        synchronizedScriptDigest: {
+          field: 'unixSupervisorPreparationScriptSha256',
+          step: 'Prepare trusted Unix supervisor',
+        },
       },
       {
         name: 'duplicated reviewed Unix tool-path computation',
