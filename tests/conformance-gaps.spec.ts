@@ -211,11 +211,14 @@ const TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND =
   'echo "Frozen harness module graph verified."';
 const TEST_UNIX_TOOL_PATH_COMMAND = [
   'node --input-type=module --eval "import { appendFileSync }',
-  'from \'node:fs\'; import { resolveUnixToolPath }',
+  'from \'node:fs\'; import { resolveExecutableInvocation, resolveUnixToolPath }',
   'from \'./scripts/executable-resolution.mjs\';',
-  'const toolPath = resolveUnixToolPath([\'node\', \'corepack\', \'rustup\']);',
+  'const toolPath = resolveUnixToolPath([\'node\', \'corepack\']);',
+  'const rustupExecutable = resolveExecutableInvocation(',
+  '\'rustup\', process.env, process.platform, []).resolvedCommand;',
   'appendFileSync(process.env.GITHUB_OUTPUT,',
-  '\'tool_path=\' + toolPath + \'\\n\');"',
+  '\'tool_path=\' + toolPath + \'\\nrustup_executable=\' +',
+  'rustupExecutable + \'\\n\');"',
 ].join(' ');
 const TEST_UNIX_PRODUCTION_COMMAND = [
   'set -euo pipefail',
@@ -236,6 +239,7 @@ const TEST_UNIX_PRODUCTION_COMMAND = [
   '  --temp-root "$broker_root" \\',
   '  --handoff-helper "/tmp/opencoven-unix-broker/unix-artifact-handoff" \\',
   '  --command scripts/unix-producer-command.sh \\',
+  '  --rustup-executable "${{ steps[\'unix-tool-path\'].outputs.rustup_executable }}" \\',
   '  --tool-path "${{ steps[\'unix-tool-path\'].outputs.tool_path }}" \\',
   '  --validator-revision "$OPENCOVEN_VALIDATOR_REVISION"',
   '',
@@ -1675,8 +1679,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '78d86add9e974d2f4800478ab2a7948a7e20fc1d',
-      tree: '0b150ee55ceebf692bef5ce11623bd9b781f4583',
+      commit: '0488a867dc61571d57f82c78e02ccf97ed2f94e6',
+      tree: 'a468178045a5d071ad7e3b49358b5caedaab2fce',
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -1695,9 +1699,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 460_415,
+        size: 460_690,
         sha256:
-          'a8c56b1bf9a943012b80c92fb62c6829e118db536d4238d87a5ad0dc8f5ee62e',
+          '824b74b0638f60862e567d5498a526162b279a5a870bb774154ec73c96c6dde9',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1716,7 +1720,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          'f94d8ff32ae23858d66dd61d4d6ee704a398a024d11c7f526114863ecdc9ecb3',
+          'd9df6b2f34832a35e912060d4ea62e34a8e703004976d1f31c9ec63532dc7b26',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1724,7 +1728,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         linuxKeyringSetupScriptSha256:
           '26e6bb6da4d80617c99d6edeb577c2026910ffc3b1ee70df03bed5fb8d149a51',
         unixSupervisorPreparationScriptSha256:
-          'ba93212f6cc7cb61c4867a61112554d31e4c3e698283fa6e3d99089f7f58b325',
+          'b7b012600c193bcf8d96da40a7e551aa152c3e185447470bae3cedb1014dcb47',
         unixToolPathSource: {
           path: 'scripts/executable-resolution.mjs',
           size: 9_154,
@@ -1732,9 +1736,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
             '31e3c412ff8c835f14522f36a59e91f4a4ba82913210ae8e3b4455217503f430',
         },
         unixToolPathScriptSha256:
-          '209d2d6035b7608f8ddd613f0abb0dd972eb9302648a7c4ff9cd2b9d7a208ab6',
+          'dbff8c28251eadde8d657006bdde812966c54636492be9bb2492e7074b770e6c',
         unixProductionScriptSha256:
-          '54d3046d2927cf6e0eb29e75dc3c89ccbd8dd458913de1fbc7689621269cb96d',
+          'ea48c6fb4b107c4a4446ea81bb8395b182bc5a1fd950397d70b9237025b053e1',
         unixValidationScriptSha256:
           'b0ce7139bdf365d420c7dde478282f117cce97c1bec63d07cd95b64057121a89',
         validationGuardScriptSha256:
@@ -1753,8 +1757,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '78d86add9e974d2f4800478ab2a7948a7e20fc1d',
-        sourceDigest: '78d86add9e974d2f4800478ab2a7948a7e20fc1d',
+        signerDigest: '0488a867dc61571d57f82c78e02ccf97ed2f94e6',
+        sourceDigest: '0488a867dc61571d57f82c78e02ccf97ed2f94e6',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1778,10 +1782,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
       lock.evidenceProducer.workflow.unixProductionScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_BOOTSTRAP_COMMAND)).toBe(
-      'f94d8ff32ae23858d66dd61d4d6ee704a398a024d11c7f526114863ecdc9ecb3',
+      'd9df6b2f34832a35e912060d4ea62e34a8e703004976d1f31c9ec63532dc7b26',
     );
     expect(sha256(TEST_WINDOWS_CHILD_BOOTSTRAP)).toBe(
-      '3281c701d9b0405e2193df9054b7df49a751349c7684fc569dc7908b29f8989c',
+      '2c6b7c8b270d3302c46fbf709b6be37df68d5bcc91f5ccfca11ffbaaa249d54e',
     );
     expect(() =>
       verifyProtectedWorkflow(
@@ -3572,11 +3576,38 @@ describe('unresolved SDK #38 conformance gaps', () => {
           yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND),
           yamlSingleQuoted(
             TEST_UNIX_TOOL_PATH_COMMAND.replace(
+              '[\'node\', \'corepack\']',
               '[\'node\', \'corepack\', \'rustup\']',
-              '[\'node\', \'corepack\', \'cargo\']',
             ),
           ),
         ),
+      },
+      {
+        name: 'symlink-preserving Unix rustup executable',
+        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+          yamlSingleQuoted(TEST_UNIX_TOOL_PATH_COMMAND),
+          yamlSingleQuoted(
+            TEST_UNIX_TOOL_PATH_COMMAND.replace(
+              '.resolvedCommand',
+              '.executable',
+            ),
+          ),
+        ),
+      },
+      {
+        name: 'detached reviewed Unix rustup executable output',
+        workflow: replaceWorkflowRun(
+          TEST_PRODUCER_WORKFLOW_TEXT,
+          TEST_UNIX_PRODUCTION_COMMAND,
+          TEST_UNIX_PRODUCTION_COMMAND.replace(
+            'steps[\'unix-tool-path\'].outputs.rustup_executable',
+            'steps[\'unix-tool-path\'].outputs.tool_path',
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'unixProductionScriptSha256',
+          step: 'Run supervised Unix production and handoff',
+        },
       },
       {
         name: 'Windows checkout permits CRLF conversion',
