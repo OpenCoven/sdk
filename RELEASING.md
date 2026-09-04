@@ -214,10 +214,10 @@ passing evidence record for each target.
 The frozen Chat production source
 `edd4728792321771496df58bfc0e6122908a96ec` is exercised by the compatible
 schema-v2 producer at
-`fbe8caf1860f26b95b453c356e389e120acfaf6e`. Its source lock was pinned by
-reachable authority commit `62c4b72044538aec541bdc0129208c47d566325e`
+`bbecbd89f14a7a35b1e1eec0e0aff3db8b365f9b`. Its source lock was pinned by
+reachable authority commit `6c739f6097876e0c24d7f3bdd31091f5eb0951c1`
 to executable harness behavior revision
-`f839004c51118425b73710100b8b02fe42501872`.
+`9198890a35bf8bd0623e6f82e0ee2e2f34634881`.
 Its protected workflow requires
 an exact SDK `validator_revision`, uses protected environment ID
 `20863036831`, validates the three static platform artifacts in
@@ -226,8 +226,10 @@ to `attest-conformance-artifacts`. The validator checkout is pinned by the
 protected `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` environment variable.
 Unix production receives a reviewed tool path containing only exact Git/system
 directories plus canonical regular-file `node`, `pnpm`, and `rustup` inputs.
-The supervisor copies those inputs into its root-owned trusted directory,
-including `rustup` under the `rustup`, `cargo`, and `rustc` multicall names.
+The supervisor validates and copies pnpm's complete package runtime into its
+root-owned trusted directory, installs a fixed wrapper through the trusted
+Node copy, and copies `rustup` under the `rustup`, `cargo`, and `rustc`
+multicall names.
 The governed harness invokes trusted `pnpm` directly; Corepack and private
 runner-home directories are absent from restricted execution. Windows
 bootstrap launches pinned npm/pnpm JavaScript entrypoints through Node and
