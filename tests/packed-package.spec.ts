@@ -108,7 +108,7 @@ function expectedPackedDependencies(workspaceDirectory: string, version: string)
         '@hpke/core': '1.9.0',
         '@hpke/dhkem-x25519': '1.8.0',
         '@opencoven/sdk-core': version,
-        canonicalize: '4.0.0',
+        canonicalize: '3.0.0',
       };
     case 'coven':
       return {

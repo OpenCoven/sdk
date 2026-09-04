@@ -17,14 +17,9 @@ import {
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import {
-  CaveCanonicalSchemaError,
   canonicalConversationMessagesRoute,
   canonicalConversationRoute,
   canonicalConversationsRoute,
-  canonicalFamiliarAnalyticsData,
-  canonicalFamiliarAnalyticsRoute,
-  canonicalFamiliarContractData,
-  canonicalFamiliarContractRoute,
   canonicalFamiliarsRoute,
   canonicalProjectsRoute,
 } from '../packages/cave/src/canonical-reads.js';
@@ -194,77 +189,6 @@ afterEach(() => {
 });
 
 describe('Cave canonical route construction', () => {
-  test('constructs the familiar detail routes with only the narrowing asked for', () => {
-    expect(canonicalFamiliarContractRoute('scribe')).toBe(
-      '/api/client/v1/familiars/scribe/contract',
-    );
-    expect(canonicalFamiliarContractRoute('familiar/one?#')).toBe(
-      '/api/client/v1/familiars/familiar%2Fone%3F%23/contract',
-    );
-    expect(canonicalFamiliarAnalyticsRoute('scribe')).toBe(
-      '/api/client/v1/familiars/scribe/analytics',
-    );
-    // `window` before `recent`, and nothing the caller did not set: Cave
-    // refuses an unknown or repeated parameter rather than correcting it.
-    expect(canonicalFamiliarAnalyticsRoute('scribe', { recentLimit: 5, window: '7d' })).toBe(
-      '/api/client/v1/familiars/scribe/analytics?window=7d&recent=5',
-    );
-    expect(canonicalFamiliarAnalyticsRoute('scribe', { recentLimit: 0 })).toBe(
-      '/api/client/v1/familiars/scribe/analytics?recent=0',
-    );
-  });
-
-  test('unwraps the familiar detail envelopes only when they advertise their operation', () => {
-    const contractEnvelope = {
-      apiVersion: '1.0',
-      minimumClientVersion: '0.1.0',
-      capabilities: ['familiars', 'familiar-contract'],
-      operations: ['familiars.list', 'familiars.contract.read'],
-      data: { contract: { id: 'scribe', present: { soul: true } } },
-    };
-    expect(canonicalFamiliarContractData(contractEnvelope)).toEqual({
-      id: 'scribe',
-      present: { soul: true },
-    });
-
-    const analyticsEnvelope = {
-      ...contractEnvelope,
-      capabilities: ['familiar-analytics'],
-      operations: ['familiars.analytics.read'],
-      data: { analytics: { generatedAt: '2026-08-18T10:00:00.000Z' } },
-    };
-    expect(canonicalFamiliarAnalyticsData(analyticsEnvelope)).toEqual({
-      generatedAt: '2026-08-18T10:00:00.000Z',
-    });
-
-    // A Cave that lists familiars but does not serve their wards: the
-    // envelope names neither the operation nor the family, and the read is
-    // refused as a schema error rather than read as an empty contract.
-    expect(() =>
-      canonicalFamiliarContractData({
-        ...contractEnvelope,
-        capabilities: ['familiars'],
-        operations: ['familiars.list'],
-      }),
-    ).toThrow(CaveCanonicalSchemaError);
-    expect(() =>
-      canonicalFamiliarContractData({
-        ...contractEnvelope,
-        capabilities: ['familiars'],
-      }),
-    ).toThrow(expect.objectContaining({ field: 'capabilities' }));
-    expect(() =>
-      canonicalFamiliarContractData({ ...contractEnvelope, data: { analytics: {} } }),
-    ).toThrow(expect.objectContaining({ field: 'data.contract' }));
-    expect(() =>
-      canonicalFamiliarAnalyticsData({
-        ...analyticsEnvelope,
-        data: undefined,
-        error: { code: 'not_found', message: 'Familiar not found.', retryable: false },
-      }),
-    ).toThrow(expect.objectContaining({ code: 'not_found' }));
-  });
-
   test('constructs only the five fixed routes with deterministic query order', () => {
     expect(canonicalFamiliarsRoute({ limit: 50 })).toBe(
       '/api/client/v1/familiars?limit=50',

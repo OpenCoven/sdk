@@ -1,7 +1,6 @@
 import type { OperationContext, PageOptions } from '@opencoven/sdk-core/browser';
 
 import type {
-  CaveAnalyticsWindowKey,
   CaveAuthorityBinding,
   CaveAuthorityBoundPairingExchange,
   CaveCredentialMetadata,
@@ -68,15 +67,9 @@ export interface CaveTransport {
   ): Promise<CaveFamiliarContractResponse>;
   familiarAnalytics?(
     familiarId: string,
-    options?: CaveFamiliarAnalyticsTransportOptions,
+    options?: { recentLimit?: number },
     context?: OperationContext,
   ): Promise<CaveFamiliarAnalyticsResponse>;
-}
-
-/** The narrowing a transport forwards to `familiars.analytics.read`. */
-export interface CaveFamiliarAnalyticsTransportOptions {
-  recentLimit?: number;
-  window?: CaveAnalyticsWindowKey;
 }
 
 export interface CaveCredentialPersistingTransport extends CaveTransport {
