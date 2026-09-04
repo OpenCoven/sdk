@@ -516,9 +516,9 @@ describe('release readiness contract', () => {
     expect(config.conformanceEvidence).toEqual({
       issue: 'OpenCoven/sdk#38',
       artifactSet: 'conformance-candidate',
-      candidateCommit: 'acc38488f00860d246c3c553375634d64806eabb',
+      candidateCommit: '6efceb20ddc2eabfaccb2a4904fbca1c056525bd',
       runtimeManifestSha256:
-        '1cf387f4f53f456c87a51ab09ab68f7ff7291480f9a7cd3a4fe3bb70f907e56a',
+        '059c03b1318daedd9d8008cbf3b33fddf64dc0295ccb302269328551f8527098',
       aggregateRecord: null,
     });
     expect(config.publicationCandidate).toEqual({
@@ -561,7 +561,7 @@ describe('release readiness contract', () => {
   test('rejects a fabricated untracked aggregate at the configured path', () => {
     const fixture = createReleaseFixture();
     const recordPath =
-      'docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json';
+      'docs/client-v1-cross-repository-results/6efceb20ddc2eabfaccb2a4904fbca1c056525bd.json';
     updateJson<MutableReleaseConfig>(
       resolve(fixture, 'release.config.json'),
       (config) => {
@@ -588,7 +588,7 @@ describe('release readiness contract', () => {
   test('rejects working-tree drift in a configured committed aggregate', () => {
     const fixture = createReleaseFixture();
     const recordPath =
-      'docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json';
+      'docs/client-v1-cross-repository-results/6efceb20ddc2eabfaccb2a4904fbca1c056525bd.json';
     mkdirSync(resolve(fixture, dirname(recordPath)), { recursive: true });
     writeFileSync(resolve(fixture, recordPath), '{}\n');
     updateJson<MutableReleaseConfig>(
@@ -616,7 +616,7 @@ describe('release readiness contract', () => {
   test('keeps explicit non-release verification usable after evidence is configured', () => {
     const fixture = createReleaseFixture();
     const recordPath =
-      'docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json';
+      'docs/client-v1-cross-repository-results/6efceb20ddc2eabfaccb2a4904fbca1c056525bd.json';
     updateJson<MutableReleaseConfig>(
       resolve(fixture, 'release.config.json'),
       (config) => {
