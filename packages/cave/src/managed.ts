@@ -122,19 +122,6 @@ export {
   isCaveClientError,
   normalizeCaveError,
 } from './client.js';
-/**
- * The two familiar detail envelope readers.
- *
- * A host that owns its own transport -- a native bridge that returns what Cave
- * sent -- has to turn a canonical envelope into the response
- * `familiarContract()` and `familiarAnalytics()` consume. These are that step,
- * exported so the check happens once, here, rather than being reimplemented
- * against the same wire by every host.
- */
-export {
-  canonicalFamiliarAnalyticsData,
-  canonicalFamiliarContractData,
-} from './canonical-reads.js';
 export {
   CAVE_ANALYTICS_WINDOWS,
   CAVE_FAMILIAR_PROPERTIES,

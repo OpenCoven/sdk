@@ -274,10 +274,8 @@ The same controls apply to `createPairing()`, `session.poll()`,
 `session.exchange()`, `credentialStatus()`, `forgetCredential()`, canonical
 reads, `familiars()`, `familiarContract()`, and `familiarAnalytics()`. The
 discovered helper owns Client v1 health, pairing, credential status, canonical
-reads, the legacy familiar roster, and — since Cave promoted them into
-Client v1 — the familiar contract (`familiars.contract.read`) and analytics
-(`familiars.analytics.read`) reads; custom transports may still provide those
-two independently.
+reads, and the legacy familiar roster; custom transports can continue to
+provide the familiar contract and analytics routes independently.
 `session.exchange()` requires an injected credential store; the client never
 falls back to implicit in-memory storage. A
 caller-supplied transport that uses `credentials` must satisfy
@@ -454,32 +452,9 @@ console.log(
 );
 ```
 
-The legacy `familiars()` and `CaveFamiliar` contracts remain separate and
-unchanged; the canonical `listFamiliars()` method coexists with the legacy
-plural `familiars()` method. `familiarContract()` and `familiarAnalytics()`
-are served canonically as `familiars.contract.read` and
-`familiars.analytics.read` (families `familiar-contract` and
-`familiar-analytics`, `chat:read`, `hpke-bound-v1`), by the discovered
-transport and by a managed-native bridge that implements the optional
-`familiarContract` / `familiarAnalytics` methods:
-
-```ts
-const contract = await client.familiarContract('scribe');
-contract.present;                    // { soul, identity, ward, memory } — per file
-contract.identity?.creature;         // from IDENTITY.md, when present
-contract.ward?.approvalTiers.humanReview; // what a person must approve
-contract.report.pass;                // the v0.1.0 adherence report
-
-const analytics = await client.familiarAnalytics('scribe', {
-  window: '7d',                       // one window instead of all four
-  recentLimit: 20,
-});
-analytics.windows['7d']?.days;       // runs per UTC day, oldest first
-```
-
-`present` is per file rather than a boolean: a familiar with a `SOUL.md` and
-no `ward.toml` is a real state, and the report names what is missing. The
-canonical read withholds the familiar's `workspace` path.
+The legacy `familiars()`, `familiarContract()`, `familiarAnalytics()`, and
+`CaveFamiliar` contracts remain separate and unchanged. The canonical
+`listFamiliars()` method coexists with the legacy plural `familiars()` method.
 
 Public-contract and packed-package tests import the canonical methods,
 iterators, and types from `@opencoven/cave-client`'s package root and exercise
@@ -489,7 +464,7 @@ Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,
 `verifyCaveContractFixtureDigest`, and `digestCaveContractFixture`.
 The vendored fixture is byte-identical to `OpenCoven/coven-cave` commit
-`53cd5bf0986a6df92f66dc6622441c74e31af5db`; its source paths and SHA-256 are
+`4adc97b1bdafd1012ce4c66de598e82f49329f79`; its source paths and SHA-256 are
 recorded in `fixtures/contract-fixture.provenance.json`.
 
 Migration note: transports that returned `{ data: { status: "ok" } }` must now

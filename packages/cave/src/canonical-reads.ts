@@ -7,7 +7,6 @@ import {
 } from '@opencoven/sdk-core/browser';
 
 import type {
-  CaveAnalyticsWindowKey,
   CaveCanonicalFamiliar,
   CaveConversation,
   CaveConversationMessage,
@@ -57,22 +56,6 @@ export const CAVE_CANONICAL_MESSAGES_REQUIREMENTS = {
   capabilities: ['conversation-messages', 'cursors'],
 } as const satisfies CaveCanonicalEnvelopeRequirements;
 
-export const CAVE_CANONICAL_FAMILIAR_CONTRACT_REQUIREMENTS = {
-  operation: 'familiars.contract.read',
-  capabilities: ['familiar-contract'],
-} as const satisfies CaveCanonicalEnvelopeRequirements;
-
-export const CAVE_CANONICAL_FAMILIAR_ANALYTICS_REQUIREMENTS = {
-  operation: 'familiars.analytics.read',
-  capabilities: ['familiar-analytics'],
-} as const satisfies CaveCanonicalEnvelopeRequirements;
-
-/** The narrowing `familiars.analytics.read` accepts on its query. */
-export interface CaveCanonicalFamiliarAnalyticsOptions {
-  recentLimit?: number;
-  window?: CaveAnalyticsWindowKey;
-}
-
 function canonicalPageQuery(options: PageOptions): string {
   const normalized = normalizePageOptions(options);
   const query = new URLSearchParams();
@@ -119,34 +102,6 @@ export function canonicalConversationMessagesRoute(
   options: PageOptions,
 ): string {
   return `${encodedConversationPath(conversationId)}/messages?${canonicalPageQuery(options)}`;
-}
-
-function encodedFamiliarPath(familiarId: string): string {
-  return `${CANONICAL_FAMILIARS_PATH}/${encodeURIComponent(familiarId)}`;
-}
-
-export function canonicalFamiliarContractRoute(familiarId: string): string {
-  return `${encodedFamiliarPath(familiarId)}/contract`;
-}
-
-/**
- * `window` before `recent`, and only the parameters the caller set: Cave
- * refuses a repeated or unknown parameter rather than correcting it, so the
- * query is exactly the narrowing asked for and nothing implied.
- */
-export function canonicalFamiliarAnalyticsRoute(
-  familiarId: string,
-  options: CaveCanonicalFamiliarAnalyticsOptions = {},
-): string {
-  const query = new URLSearchParams();
-  if (options.window !== undefined) {
-    query.append('window', options.window);
-  }
-  if (options.recentLimit !== undefined) {
-    query.append('recent', String(options.recentLimit));
-  }
-  const encoded = query.toString();
-  return `${encodedFamiliarPath(familiarId)}/analytics${encoded.length === 0 ? '' : `?${encoded}`}`;
 }
 
 export class CaveCanonicalSchemaError extends TypeError {
@@ -647,36 +602,4 @@ export function parseConversationMessagesEnvelope(
     parseMessage,
     CAVE_CANONICAL_MESSAGES_REQUIREMENTS,
   );
-}
-
-/**
- * The `data.contract` record of a `familiars.contract.read` envelope, after
- * the envelope itself -- version, declarations, error branch -- has been
- * checked. The record's own fields are validated by `CaveClient`, which owns
- * the familiar contract DTO for every transport, so a transport hands them
- * over as they arrived.
- */
-export function canonicalFamiliarContractData(
-  value: unknown,
-): Record<string, unknown> {
-  const envelope = parseEnvelope(
-    value,
-    CAVE_CANONICAL_FAMILIAR_CONTRACT_REQUIREMENTS,
-  );
-  parseCursor(envelope.cursor);
-  const data = canonicalObject(envelope.data, 'data');
-  return canonicalObject(data.contract, 'data.contract');
-}
-
-/** The `data.analytics` record of a `familiars.analytics.read` envelope; see above. */
-export function canonicalFamiliarAnalyticsData(
-  value: unknown,
-): Record<string, unknown> {
-  const envelope = parseEnvelope(
-    value,
-    CAVE_CANONICAL_FAMILIAR_ANALYTICS_REQUIREMENTS,
-  );
-  parseCursor(envelope.cursor);
-  const data = canonicalObject(envelope.data, 'data');
-  return canonicalObject(data.analytics, 'data.analytics');
 }

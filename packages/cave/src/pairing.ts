@@ -23,18 +23,12 @@ import {
 import {
   CAVE_CANONICAL_CONVERSATION_REQUIREMENTS,
   CAVE_CANONICAL_CONVERSATIONS_REQUIREMENTS,
-  CAVE_CANONICAL_FAMILIAR_ANALYTICS_REQUIREMENTS,
-  CAVE_CANONICAL_FAMILIAR_CONTRACT_REQUIREMENTS,
   CAVE_CANONICAL_FAMILIARS_REQUIREMENTS,
   CAVE_CANONICAL_MESSAGES_REQUIREMENTS,
   CAVE_CANONICAL_PROJECTS_REQUIREMENTS,
   canonicalConversationMessagesRoute,
   canonicalConversationRoute,
   canonicalConversationsRoute,
-  canonicalFamiliarAnalyticsData,
-  canonicalFamiliarAnalyticsRoute,
-  canonicalFamiliarContractData,
-  canonicalFamiliarContractRoute,
   canonicalFamiliarsRoute,
   canonicalProjectsRoute,
   type CaveCanonicalEnvelopeRequirements,
@@ -52,7 +46,6 @@ import {
 import type {
   CaveAuthorityBoundPairingExchange,
   CaveCredentialMetadata,
-  CaveFamiliarAnalyticsResponse,
   CaveFamiliarsResponse,
   CaveFamiliarWire,
   CaveHealthData,
@@ -1176,32 +1169,6 @@ function createDiscoveredTransport(
         context,
         CAVE_CANONICAL_MESSAGES_REQUIREMENTS,
       );
-    },
-    // The familiar detail reads are canonical client-v1 routes since the
-    // Familiars integration's Stage 1. The envelope is proven here and
-    // unwrapped into the shape CaveClient's familiar operations validate, so
-    // the direct and managed transports share one validator.
-    async familiarContract(familiarId, context) {
-      const payload = await canonicalRead(
-        canonicalFamiliarContractRoute(familiarId),
-        context,
-        CAVE_CANONICAL_FAMILIAR_CONTRACT_REQUIREMENTS,
-      );
-      return {
-        ok: true,
-        ...canonicalFamiliarContractData(payload),
-      };
-    },
-    async familiarAnalytics(familiarId, analyticsOptions, context) {
-      const payload = await canonicalRead(
-        canonicalFamiliarAnalyticsRoute(familiarId, analyticsOptions ?? {}),
-        context,
-        CAVE_CANONICAL_FAMILIAR_ANALYTICS_REQUIREMENTS,
-      );
-      return {
-        ok: true,
-        analytics: canonicalFamiliarAnalyticsData(payload),
-      } as unknown as CaveFamiliarAnalyticsResponse;
     },
     async familiars(context) {
       const { payload } = await requestJson('GET', '/api/client/v1/familiars', {

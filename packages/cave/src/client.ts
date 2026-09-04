@@ -52,7 +52,6 @@ import {
   type CaveCanonicalFamiliar,
   type CaveConversation,
   type CaveConversationMessage,
-  type CaveAnalyticsWindowKey,
   type CaveContractReport,
   type CaveContractViolation,
   type CaveCredentialMetadata,
@@ -60,15 +59,11 @@ import {
   type CaveExecutionAttempt,
   type CaveExecutionBackfill,
   type CaveExecutionCoverage,
-  type CaveExecutionDay,
   type CaveExecutionSlice,
   type CaveExecutionWindow,
   type CaveFamiliar,
   type CaveFamiliarAnalytics,
   type CaveFamiliarContract,
-  type CaveFamiliarContractPresence,
-  type CaveFamiliarIdentity,
-  type CaveFamiliarWard,
   type CaveFamiliarWire,
   type CaveHealth,
   type CavePairingCreated,
@@ -145,8 +140,6 @@ export type CaveClientOptions =
 
 export interface CaveFamiliarAnalyticsOptions extends OperationOptions {
   recentLimit?: number;
-  /** Serve one window rather than all four. */
-  window?: CaveAnalyticsWindowKey;
 }
 
 interface ParsedHealthResponse {
@@ -1054,59 +1047,6 @@ function isViolation(value: unknown): boolean {
   );
 }
 
-function isContractPresence(value: unknown): value is CaveFamiliarContractPresence {
-  return (
-    isObject(value) &&
-    typeof value.soul === 'boolean' &&
-    typeof value.identity === 'boolean' &&
-    typeof value.ward === 'boolean' &&
-    typeof value.memory === 'boolean'
-  );
-}
-
-function isOptionalString(value: unknown): boolean {
-  return value === undefined || isString(value);
-}
-
-function isStringList(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every(isString);
-}
-
-function isContractIdentity(value: unknown): value is CaveFamiliarIdentity {
-  return (
-    isObject(value) &&
-    isOptionalString(value.name) &&
-    isOptionalString(value.creature) &&
-    isOptionalString(value.person)
-  );
-}
-
-function isWard(value: unknown): value is CaveFamiliarWard {
-  if (
-    !isObject(value) ||
-    !isOptionalString(value.version) ||
-    !isOptionalString(value.familiar) ||
-    !isOptionalString(value.person) ||
-    !isStringList(value.protectedFiles) ||
-    !isStringList(value.invariants) ||
-    !isStringList(value.editablePaths)
-  ) {
-    return false;
-  }
-  const tiers = value.approvalTiers;
-  return isObject(tiers) && isStringList(tiers.auto) && isStringList(tiers.humanReview);
-}
-
-function isDay(value: unknown): value is CaveExecutionDay {
-  return (
-    isObject(value) &&
-    isString(value.date) &&
-    typeof value.completed === 'number' &&
-    typeof value.failed === 'number' &&
-    typeof value.cancelled === 'number'
-  );
-}
-
 function isContractReport(value: unknown): boolean {
   if (!isObject(value)) {
     return false;
@@ -1191,11 +1131,6 @@ function isWindow(value: unknown): value is CaveExecutionWindow {
     }
   }
 
-  // Likewise the day series: only the day-shaped windows carry one.
-  if (value.days !== undefined && (!Array.isArray(value.days) || !value.days.every(isDay))) {
-    return false;
-  }
-
   return true;
 }
 
@@ -1278,51 +1213,6 @@ function managedPropertyCoverage(
     return undefined;
   }
   return { property: value.property, pass: value.pass };
-}
-
-function managedContractPresence(
-  value: CaveFamiliarContractPresence,
-): CaveFamiliarContractPresence {
-  return {
-    soul: value.soul,
-    identity: value.identity,
-    ward: value.ward,
-    memory: value.memory,
-  };
-}
-
-function managedContractIdentity(
-  value: CaveFamiliarIdentity,
-): CaveFamiliarIdentity {
-  return {
-    ...(value.name === undefined ? {} : { name: value.name }),
-    ...(value.creature === undefined ? {} : { creature: value.creature }),
-    ...(value.person === undefined ? {} : { person: value.person }),
-  };
-}
-
-function managedWard(value: CaveFamiliarWard): CaveFamiliarWard {
-  return {
-    ...(value.version === undefined ? {} : { version: value.version }),
-    ...(value.familiar === undefined ? {} : { familiar: value.familiar }),
-    ...(value.person === undefined ? {} : { person: value.person }),
-    protectedFiles: [...value.protectedFiles],
-    invariants: [...value.invariants],
-    editablePaths: [...value.editablePaths],
-    approvalTiers: {
-      auto: [...value.approvalTiers.auto],
-      humanReview: [...value.approvalTiers.humanReview],
-    },
-  };
-}
-
-function managedExecutionDay(value: CaveExecutionDay): CaveExecutionDay {
-  return {
-    date: value.date,
-    completed: value.completed,
-    failed: value.failed,
-    cancelled: value.cancelled,
-  };
 }
 
 function managedContractReport(value: unknown): CaveContractReport | undefined {
@@ -1485,10 +1375,6 @@ function managedExecutionWindow(
     }
   }
 
-  // `isWindow` proved every entry, so this copies rather than re-validating.
-  const days =
-    value.days === undefined ? undefined : value.days.map(managedExecutionDay);
-
   return {
     attempts: value.attempts,
     completed: value.completed,
@@ -1504,7 +1390,6 @@ function managedExecutionWindow(
     models,
     harnesses,
     coverage,
-    ...(days === undefined ? {} : { days }),
   };
 }
 
@@ -2497,49 +2382,21 @@ export class CaveClient {
         throw invalidResponse('familiarContract');
       }
 
-      // `present` is per file. A transport still answering the old boolean is
-      // refused as malformed rather than read as "everything is there" -- the
-      // whole point of the field is to say which file is missing.
-      //
-      // Each shape is proven once, here, so the managed reconstructors below
-      // copy a validated value rather than carrying a second, unreachable
-      // rejection path of their own.
-      const rawIdentity = response.identity;
-      const rawWard = response.ward;
-      if (!isContractPresence(response.present) || !isContractReport(response.report)) {
-        throw invalidResponse('familiarContract');
-      }
-      if (rawIdentity !== undefined && !isContractIdentity(rawIdentity)) {
-        throw invalidResponse('familiarContract');
-      }
-      if (rawWard !== undefined && !isWard(rawWard)) {
+      if (typeof response.present !== 'boolean' || !isContractReport(response.report)) {
         throw invalidResponse('familiarContract');
       }
 
-      const managed = this.#managedCredentialTransport !== undefined;
-      const report = managed
-        ? managedContractReport(response.report)
-        : response.report as CaveFamiliarContract['report'];
-      const present = managed
-        ? managedContractPresence(response.present)
-        : response.present;
-      const identity =
-        rawIdentity === undefined
-          ? undefined
-          : managed
-            ? managedContractIdentity(rawIdentity)
-            : rawIdentity;
-      const ward =
-        rawWard === undefined ? undefined : managed ? managedWard(rawWard) : rawWard;
+      const report =
+        this.#managedCredentialTransport === undefined
+          ? response.report as CaveFamiliarContract['report']
+          : managedContractReport(response.report);
       if (report === undefined) {
         throw invalidResponse('familiarContract');
       }
-      const contract: CaveFamiliarContract = {
+      const contract = {
         id: isString(response.id) ? response.id : familiarId,
         ...(isString(response.workspace) ? { workspace: response.workspace } : {}),
-        present,
-        ...(identity === undefined ? {} : { identity }),
-        ...(ward === undefined ? {} : { ward }),
+        present: response.present,
         report,
       };
       return this.#managedCredentialTransport === undefined
@@ -2561,12 +2418,7 @@ export class CaveClient {
     options: CaveFamiliarAnalyticsOptions = {},
   ): Promise<CaveFamiliarAnalytics> {
     const transportOptions =
-      options.recentLimit === undefined && options.window === undefined
-        ? undefined
-        : {
-            ...(options.recentLimit === undefined ? {} : { recentLimit: options.recentLimit }),
-            ...(options.window === undefined ? {} : { window: options.window }),
-          };
+      options.recentLimit === undefined ? undefined : { recentLimit: options.recentLimit };
 
     return this.#execute('familiarAnalytics', options, async (context) => {
       this.#ensureActive(context, 'familiarAnalytics');
