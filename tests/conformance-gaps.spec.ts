@@ -1809,7 +1809,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       lock.evidenceProducer.workflow.unixProductionScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_BOOTSTRAP_COMMAND)).toBe(
-      '2e2b7eddd160a54dccdad14337d66c6bf29ed4d7a91ab9c564e10e97e4478fbe',
+      lock.evidenceProducer.workflow.windowsBootstrapScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_CHILD_BOOTSTRAP)).toBe(
       'b4e8e50b9d0fb9a01c794c355075889a84b0cd9f8e514b27bc51ed590df53770',
