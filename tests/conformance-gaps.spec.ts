@@ -52,15 +52,15 @@ const schemaPath = resolve(
 );
 const windowsBootstrapFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-80ba6-windows-bootstrap.ps1.br',
+  'tests/fixtures/chat-b429d-windows-bootstrap.ps1.br',
 );
 const protectedWorkflowFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-80ba6-client-v1-conformance.yml.br',
+  'tests/fixtures/chat-b429d-client-v1-conformance.yml.br',
 );
 const unixSupervisorPreparationFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-80ba6-unix-supervisor-preparation.sh.br',
+  'tests/fixtures/chat-b429d-unix-supervisor-preparation.sh.br',
 );
 const windowsSupervisorTestFixturePath = resolve(
   workspaceRoot,
@@ -1714,8 +1714,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '80ba6c07562c5543285334fc39d7b6ceaf49855f',
-      tree: '3e4b66bc8987561ad1fe6694d39b38de767e7c18',
+      commit: 'b429d869550e299a6d9b5de669ee98b70bf1979c',
+      tree: '98e1fd8f1cbfe4b7182722356f7e6b76cf2ed562',
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -1736,7 +1736,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         path: '.github/workflows/client-v1-conformance.yml',
         size: 462_386,
         sha256:
-          '06845d517c55f197df6ebc25b8f17e652b6a813024ed9f630ab82e15f0befcf4',
+          '76df3748b42030c2096cb0b845ebe353760d96f99558b0fb87efa20d726242a2',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1755,7 +1755,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          '12951dd28d8e08ed5879815698f276ac50f3161a7c4d1711fc71fd6e8df5139d',
+          '802532f0c332b2bf90e21b8abc96af3cb86cf240d6b644f8a445cbbeed829339',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1763,7 +1763,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         linuxKeyringSetupScriptSha256:
           '26e6bb6da4d80617c99d6edeb577c2026910ffc3b1ee70df03bed5fb8d149a51',
         unixSupervisorPreparationScriptSha256:
-          'f1e833406eb0154930f7db8da930da01c1ce7c891c8fd0474634a4b00886ef53',
+          'f039ecebc5276240c87f3ec539c10d618a9131a52b0dd2aebe91294f57c06702',
         unixToolPathSource: {
           path: 'scripts/executable-resolution.mjs',
           size: 9_154,
@@ -1792,8 +1792,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '80ba6c07562c5543285334fc39d7b6ceaf49855f',
-        sourceDigest: '80ba6c07562c5543285334fc39d7b6ceaf49855f',
+        signerDigest: 'b429d869550e299a6d9b5de669ee98b70bf1979c',
+        sourceDigest: 'b429d869550e299a6d9b5de669ee98b70bf1979c',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1821,7 +1821,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       producer.workflow.windowsBootstrapScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_CHILD_BOOTSTRAP)).toBe(
-      'b96b14b63a2aa72b15b4b8c11bb31d9849c37acd85823272b6c9646751e77c23',
+      '195cbb1783d15fe0af05c1c8b951858b798dae36be3772c4eed3dd9da0d22e74',
     );
     expect(() =>
       verifyProtectedWorkflow(
