@@ -28,10 +28,10 @@ There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
 is the pinned `refs/heads/main` commit
-`91e86b150df0846dee54d4179aaf08efa9480faa`. Its source lock was pinned by
-reachable authority commit `0afe679a45933bb37337e7105df3379652cbfa41`
+`65223c0cee08b5037225f7469d33535dc7bbac87`. Its source lock was pinned by
+reachable authority commit `74e8c593f25bd1cb94a82c8ab3e0c5417d7a977e`
 to executable harness behavior revision
-`4dcf7b974f7919869be970da3425e7dd1ded1ebc`.
+`011c6099f82442096a23fd43d5a7ad2bad71b5a8`.
 The frozen workflow separates platform production, exact SDK validation,
 provenance attestation, and aggregation. Its lock records the validation and
 attestation job identities, the three static artifact names and record paths,
@@ -275,7 +275,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`91e86b150df0846dee54d4179aaf08efa9480faa` compatible with the reviewed
+`65223c0cee08b5037225f7469d33535dc7bbac87` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
