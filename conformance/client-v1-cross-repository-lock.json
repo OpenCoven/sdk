@@ -165,8 +165,8 @@
   "evidenceProducer": {
     "status": "compatible",
     "repository": "OpenCoven/chat",
-    "commit": "80ba6c07562c5543285334fc39d7b6ceaf49855f",
-    "tree": "3e4b66bc8987561ad1fe6694d39b38de767e7c18",
+    "commit": "b429d869550e299a6d9b5de669ee98b70bf1979c",
+    "tree": "98e1fd8f1cbfe4b7182722356f7e6b76cf2ed562",
     "packageManifest": {
       "path": "package.json",
       "size": 4044,
@@ -184,7 +184,7 @@
       "name": "client-v1 conformance",
       "path": ".github/workflows/client-v1-conformance.yml",
       "size": 462386,
-      "sha256": "06845d517c55f197df6ebc25b8f17e652b6a813024ed9f630ab82e15f0befcf4",
+      "sha256": "76df3748b42030c2096cb0b845ebe353760d96f99558b0fb87efa20d726242a2",
       "job": "platform-conformance",
       "jobNameTemplate": "platform-conformance ({platform})",
       "aggregationJob": "aggregate-conformance",
@@ -219,11 +219,11 @@
       ],
       "downloadArtifactAction": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
       "attestationAction": "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8",
-      "windowsBootstrapScriptSha256": "12951dd28d8e08ed5879815698f276ac50f3161a7c4d1711fc71fd6e8df5139d",
+      "windowsBootstrapScriptSha256": "802532f0c332b2bf90e21b8abc96af3cb86cf240d6b644f8a445cbbeed829339",
       "validatorRevisionScriptSha256": "9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9",
       "phase1RevisionsScriptSha256": "507ce777b643d97154472eb23135f7965fd55cf0fcedcec30e93b23e6472d225",
       "linuxKeyringSetupScriptSha256": "26e6bb6da4d80617c99d6edeb577c2026910ffc3b1ee70df03bed5fb8d149a51",
-      "unixSupervisorPreparationScriptSha256": "f1e833406eb0154930f7db8da930da01c1ce7c891c8fd0474634a4b00886ef53",
+      "unixSupervisorPreparationScriptSha256": "f039ecebc5276240c87f3ec539c10d618a9131a52b0dd2aebe91294f57c06702",
       "unixToolPathSource": {
         "path": "scripts/executable-resolution.mjs",
         "size": 9154,
@@ -249,8 +249,8 @@
         ]
       },
       "signerWorkflow": "OpenCoven/chat/.github/workflows/client-v1-conformance.yml",
-      "signerDigest": "80ba6c07562c5543285334fc39d7b6ceaf49855f",
-      "sourceDigest": "80ba6c07562c5543285334fc39d7b6ceaf49855f",
+      "signerDigest": "b429d869550e299a6d9b5de669ee98b70bf1979c",
+      "sourceDigest": "b429d869550e299a6d9b5de669ee98b70bf1979c",
       "predicateType": "https://slsa.dev/provenance/v1",
       "denySelfHostedRunners": true
     }
