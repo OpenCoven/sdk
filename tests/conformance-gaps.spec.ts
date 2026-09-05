@@ -54,6 +54,10 @@ const windowsBootstrapFixturePath = resolve(
   workspaceRoot,
   'tests/fixtures/chat-b406-windows-bootstrap.ps1.br',
 );
+const protectedWorkflowFixturePath = resolve(
+  workspaceRoot,
+  'tests/fixtures/chat-65223-client-v1-conformance.yml.br',
+);
 const unixSupervisorPreparationFixturePath = resolve(
   workspaceRoot,
   'tests/fixtures/chat-9198-unix-supervisor-preparation.sh.br',
@@ -143,6 +147,9 @@ const TEST_UNIX_RUST_INSTALL_COMMAND = [
 ].join(' ');
 const TEST_VALIDATOR_REVISION_COMMAND =
   '[[ "$OPENCOVEN_VALIDATOR_REVISION_INPUT" == "$OPENCOVEN_PROTECTED_VALIDATOR_REVISION" ]]';
+const TEST_PROTECTED_WORKFLOW_TEXT = brotliDecompressSync(
+  readFileSync(protectedWorkflowFixturePath),
+).toString('utf8');
 // Exact reviewed Windows run bytes, compressed to keep the fixture small.
 const TEST_WINDOWS_BOOTSTRAP_COMMAND = brotliDecompressSync(
   readFileSync(windowsBootstrapFixturePath),
@@ -1747,7 +1754,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          'ec20e12d8d8ae4a5fb762764d665c6792901a7dd9c1e9e2c26525747d8b6fd12',
+          '60063af0e908716c4dfa4ceb6094d63e37bd646a8d8e03a35ca5b99757b12d58',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1755,7 +1762,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         linuxKeyringSetupScriptSha256:
           '26e6bb6da4d80617c99d6edeb577c2026910ffc3b1ee70df03bed5fb8d149a51',
         unixSupervisorPreparationScriptSha256:
-          '872854536aa77d724afe2c6ff4ffd262cc76ff943dda8062f8ff3964fbf69352',
+          'cc018c79475c93acb40810dc155bc92d8ade43b8baabb0b32e2efad5c51bf535',
         unixToolPathSource: {
           path: 'scripts/executable-resolution.mjs',
           size: 9_154,
@@ -1798,23 +1805,30 @@ describe('unresolved SDK #38 conformance gaps', () => {
   });
 
   test('requires full checkout history so the locked Chat harness revision is available', () => {
-    const lock = readLock() as {
-      evidenceProducer: {
-        workflow: {
-          unixProductionScriptSha256: string;
-          windowsBootstrapScriptSha256: string;
-        };
-      };
-    };
+    const lock = contract.readFrozenConformanceLock(lockPath);
+    const producer = contract.assertEvidenceProducerCompatibility(lock);
+    expect(Buffer.byteLength(TEST_PROTECTED_WORKFLOW_TEXT, 'utf8')).toBe(
+      producer.workflow.size,
+    );
+    expect(sha256(TEST_PROTECTED_WORKFLOW_TEXT)).toBe(
+      producer.workflow.sha256,
+    );
     expect(sha256(TEST_UNIX_PRODUCTION_COMMAND)).toBe(
-      lock.evidenceProducer.workflow.unixProductionScriptSha256,
+      producer.workflow.unixProductionScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_BOOTSTRAP_COMMAND)).toBe(
-      lock.evidenceProducer.workflow.windowsBootstrapScriptSha256,
+      producer.workflow.windowsBootstrapScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_CHILD_BOOTSTRAP)).toBe(
-      '027a1d125bdfdabe7541f928e65663d5be2423eea2a5976cb5f802eb43d69ed8',
+      'befd074960727a33f86874da1b9ba62240feed8ad7baa4993b36efb5eb0e81b7',
     );
+    expect(() =>
+      verifyProtectedWorkflow(
+        TEST_PROTECTED_WORKFLOW_TEXT,
+        producer,
+        lock.toolchain,
+      ),
+    ).not.toThrow();
     expect(() =>
       verifyProtectedWorkflow(
         TEST_PRODUCER_WORKFLOW_TEXT,

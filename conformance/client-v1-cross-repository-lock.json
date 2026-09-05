@@ -219,11 +219,11 @@
       ],
       "downloadArtifactAction": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
       "attestationAction": "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8",
-      "windowsBootstrapScriptSha256": "ec20e12d8d8ae4a5fb762764d665c6792901a7dd9c1e9e2c26525747d8b6fd12",
+      "windowsBootstrapScriptSha256": "60063af0e908716c4dfa4ceb6094d63e37bd646a8d8e03a35ca5b99757b12d58",
       "validatorRevisionScriptSha256": "9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9",
       "phase1RevisionsScriptSha256": "507ce777b643d97154472eb23135f7965fd55cf0fcedcec30e93b23e6472d225",
       "linuxKeyringSetupScriptSha256": "26e6bb6da4d80617c99d6edeb577c2026910ffc3b1ee70df03bed5fb8d149a51",
-      "unixSupervisorPreparationScriptSha256": "872854536aa77d724afe2c6ff4ffd262cc76ff943dda8062f8ff3964fbf69352",
+      "unixSupervisorPreparationScriptSha256": "cc018c79475c93acb40810dc155bc92d8ade43b8baabb0b32e2efad5c51bf535",
       "unixToolPathSource": {
         "path": "scripts/executable-resolution.mjs",
         "size": 9154,
