@@ -1802,6 +1802,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       evidenceProducer: {
         workflow: {
           unixProductionScriptSha256: string;
+          windowsBootstrapScriptSha256: string;
         };
       };
     };
