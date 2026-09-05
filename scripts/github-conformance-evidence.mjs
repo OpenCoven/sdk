@@ -45,9 +45,9 @@ const WINDOWS_SUPERVISOR_ARTIFACT = 'phase1-process-supervisor-win32-x64';
 const WINDOWS_SUPERVISOR_JOB_NAME = 'build-windows-supervisor';
 const WINDOWS_SUPERVISOR_RUNNER_LABELS = ['macos-latest'];
 const REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256 =
-  '4fa94945acbc309bac780dda40ff7670d1c662332dc4832fbcaf4f61462d11f9';
+  '258241529d1ece72e4e0610c97a85811ba04535de790716bd82f24010083b770';
 const REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256 =
-  'e0ea8502a850dcd1b2fde8276243787328ce51b7c314958677656e456cc48424';
+  '34a86f84d14fdbee0efad9a5258e3855fac0946e95fdc9d81d8c5945fb34cf33';
 const REVIEWED_UNIX_SUPERVISOR_PREPARATION_SCRIPT_SHA256 =
   '07fc3c87faccb4215d7fa22e7043550f3606d7736fbc873a4bb38619573f12eb';
 const REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256 =
@@ -1077,6 +1077,7 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
         "${{ steps['phase1-revisions'].outputs.cave_repository }}",
       ref: "${{ steps['phase1-revisions'].outputs.cave_revision }}",
       path: '.phase1-counterparts/coven-cave',
+      'fetch-depth': 0,
     },
     {
       repository:
