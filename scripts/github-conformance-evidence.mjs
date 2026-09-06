@@ -45,11 +45,11 @@ const WINDOWS_SUPERVISOR_ARTIFACT = 'phase1-process-supervisor-win32-x64';
 const WINDOWS_SUPERVISOR_JOB_NAME = 'build-windows-supervisor';
 const WINDOWS_SUPERVISOR_RUNNER_LABELS = ['macos-latest'];
 const REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256 =
-  'b6ba031f653754e0effa1e7b8e10f74dcfd245cff97daf347a24d61042d400f7';
+  'accf841c2b611d0ef9f9dd9318a0bd7cdff66bb3eaf64e210274a489a445d441';
 const REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256 =
-  'a341f64d2f2314bf12874028d12406f716ed251120bd9076d6a36aa07923d58e';
+  '3acd1da9e067811f2cb2c01ff923b710a80cef29a00a6d488a04d253604da347';
 const REVIEWED_UNIX_SUPERVISOR_PREPARATION_SCRIPT_SHA256 =
-  'de4863986cd194e47751bbcb65c81a803f977ab19fb317226f13ee25cd396f00';
+  'd8ca265b1d5077d33465e6a47372bb077b6a59fd59d57a9777b619e8cd5c40b9';
 const REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256 =
   '043066be50d0c3fa66f7151224242734cb2e9f39ffa9cf1c6f8106ab88c75a02';
 const REVIEWED_UNIX_SUPERVISOR_SOURCE_BINDING =
@@ -66,7 +66,7 @@ const PLATFORM_STEP_CONTRACT = Object.freeze([
   [CHECKOUT_ACTION, ['uses', 'if', 'with']],
   [CHECKOUT_ACTION, ['uses', 'if', 'with']],
   [PNPM_SETUP_ACTION, ['uses', 'if', 'with']],
-  ['Install frozen Linux Secret Service', ['name', 'if', 'shell', 'run']],
+  ['Install Linux native dependencies', ['name', 'if', 'shell', 'run']],
   ['Install frozen Unix Rust', ['name', 'if', 'run']],
   ['Require frozen toolchain', ['name', 'if', 'run']],
   ['Prepare trusted Unix supervisor', ['name', 'if', 'shell', 'run']],
@@ -1203,7 +1203,7 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
   }
   const linuxSecretService = namedStep(
     platform.steps,
-    'Install frozen Linux Secret Service',
+    'Install Linux native dependencies',
     'platform producer',
   );
   if (

