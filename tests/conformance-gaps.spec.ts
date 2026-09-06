@@ -52,15 +52,15 @@ const schemaPath = resolve(
 );
 const windowsBootstrapFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-49883a-windows-bootstrap.ps1.br',
+  'tests/fixtures/chat-4a1a8c-windows-bootstrap.ps1.br',
 );
 const protectedWorkflowFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-49883a-client-v1-conformance.yml.br',
+  'tests/fixtures/chat-4a1a8c-client-v1-conformance.yml.br',
 );
 const unixSupervisorPreparationFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-49883a-unix-supervisor-preparation.sh.br',
+  'tests/fixtures/chat-4a1a8c-unix-supervisor-preparation.sh.br',
 );
 const windowsSupervisorTestFixturePath = resolve(
   workspaceRoot,
@@ -1744,8 +1744,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '49883a699a944beb40cbd9892cc02bffbd42e31a',
-      tree: 'fc9cd4eaebaaf4b498fb6311d37be7fe7dec69ee',
+      commit: '4a1a8c690fc50607b1b3d2a71a7baaf6bbb7db72',
+      tree: '76bd46a67952219e3fa72aee2132b329f51b4d96',
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -1755,9 +1755,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       harness: {
         path: 'scripts/phase1-conformance.mjs',
         version: '2.0.0',
-        size: 198_465,
+        size: 198_878,
         sha256:
-          'a97d3b7791d95867bce4f8522143284ddc71749227b915a6c49dc101065a3901',
+          'cafdb3dc02f878e8530d10fc882369aa0ad63cf9bf31e4406154a57c5ebb4f58',
       },
       command: 'test:phase1-conformance',
       recordSchemaVersion: 2,
@@ -1766,7 +1766,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         path: '.github/workflows/client-v1-conformance.yml',
         size: 462_746,
         sha256:
-          '3ef4d7e148b412b293a7c188ba0f2ec2cbb34da7ab810013e706d511f52352ac',
+          '7d872ba59ac77204efdf893fc2e50aabe1fb4bdbae7be463a0f2c96a1ea3294a',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1785,7 +1785,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          '51f2d602c7ea744d5a72f7852e4fb70253ac44591b42227845eae442d4e445e7',
+          'bb96b6aef894a9c9c5f5c2e54328ef9e4d8e0281c2661f01849c153910c3ac54',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1793,7 +1793,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         linuxKeyringSetupScriptSha256:
           '7b1ff87ab5d2230950632560230899cc450458a800a630c2788b53be8b13d200',
         unixSupervisorPreparationScriptSha256:
-          'a52caef992f083328e4f5c7fea2c186e5b12db2ab884adcc6d3f368946f69a4a',
+          '657b2c3eb853ee011cc13aec2583eb5109fe889fa6a29d89dba24656121781f2',
         unixToolPathSource: {
           path: 'scripts/executable-resolution.mjs',
           size: 9_154,
@@ -1822,8 +1822,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '49883a699a944beb40cbd9892cc02bffbd42e31a',
-        sourceDigest: '49883a699a944beb40cbd9892cc02bffbd42e31a',
+        signerDigest: '4a1a8c690fc50607b1b3d2a71a7baaf6bbb7db72',
+        sourceDigest: '4a1a8c690fc50607b1b3d2a71a7baaf6bbb7db72',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1851,7 +1851,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       producer.workflow.windowsBootstrapScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_CHILD_BOOTSTRAP)).toBe(
-      '53e7120b398ecc421312d603ee11a2190d5057d947561520e89972be233397c1',
+      'be69af3748ae677cb8b7fd4342a7e23b5c6be46cb0a46963137d79e0791789f9',
     );
     expect(() =>
       verifyProtectedWorkflow(
