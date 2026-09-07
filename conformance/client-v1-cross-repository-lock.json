@@ -11,7 +11,7 @@
     "path": "conformance/client-v1-cross-repository-evidence.schema.json",
     "version": 2,
     "size": 23174,
-    "sha256": "f9d58f4daee3f8a6fbf78650a18a74ed3ac14c39f1ae086d94324658d7fbdfad"
+    "sha256": "2581b0976ba655e238d98322adb81ddfa3bc0a251e25d49fb888fa4726435471"
   },
   "candidate": {
     "repository": "OpenCoven/sdk",
@@ -88,8 +88,8 @@
   "sources": {
     "cave": {
       "repository": "OpenCoven/coven-cave",
-      "commit": "6325fc4c1154c7d7398074a9760a2e2dc323b424",
-      "tree": "9144939792d3dbdd91c208d7e2abc5ecc0eac089",
+      "commit": "bc310e9753783678014086ed6f7ef7d3fb797967",
+      "tree": "8a9882f45c7b9f55a2d9bb6cbd16d3ead3c489e6",
       "releaseVersion": "0.3.12",
       "files": [
         {
@@ -274,6 +274,6 @@
   "assertionRegistry": {
     "path": "conformance/client-v1-cross-repository-assertions.json",
     "size": 10715,
-    "sha256": "6d5619033469f81a5d40f4fa4b5000708922da29b2eb7a76e4a4db4dfff198cb"
+    "sha256": "0f8df49a870b7beaac81bc417c072d7f77c1e8a7c2c4ab1241dffe5cd757bbb1"
   }
 }
