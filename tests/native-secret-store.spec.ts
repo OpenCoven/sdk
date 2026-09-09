@@ -21,7 +21,7 @@ import { probeNativeSecretStore } from '../packages/cli/src/native-secret-store.
 interface EntryShape {
   getPassword(): string | null | undefined;
   setPassword(value: string): void;
-  deletePassword(): void;
+  deletePassword(): boolean;
 }
 
 interface KeyringModuleShape {
@@ -66,6 +66,15 @@ function lockPath(lockDirectory: string, service: string, key: string): string {
 }
 
 describe('native secret store', () => {
+  test('loads the installed native binding without creating mutation state', async () => {
+    const lockDirectory = join(TEST_LOCK_DIRECTORY, 'installed-binding');
+    const store = await createNativeSecretStore({ lockDirectory });
+
+    expect(typeof store.get).toBe('function');
+    expect(typeof store.delete).toBe('function');
+    expect(existsSync(lockDirectory)).toBe(false);
+  });
+
   test('loads the native keyring module and stores secrets without a fallback', async () => {
     const secrets = new Map<string, string>();
     const loadModule = vi.fn(() => Promise.resolve({
@@ -84,8 +93,8 @@ describe('native secret store', () => {
           secrets.set(this.#slot, value);
         }
 
-        deletePassword(): void {
-          secrets.delete(this.#slot);
+        deletePassword(): boolean {
+          return secrets.delete(this.#slot);
         }
       },
     } satisfies KeyringModuleShape));
@@ -111,6 +120,45 @@ describe('native secret store', () => {
     ).resolves.toBe('absent');
     expect(loadModule).toHaveBeenCalledTimes(1);
   });
+
+  test.each(['delete', 'compareAndDelete'] as const)(
+    'reports absence when a credential disappears during %s',
+    async (operation) => {
+      const secrets = new Map<string, string>([
+        [`${SERVICE}:cave-credential`, 'stored-value'],
+      ]);
+      const store = await createNativeSecretStore(
+        moduleWithEntry(
+          class {
+            readonly #slot: string;
+
+            constructor(service: string, account: string) {
+              this.#slot = `${service}:${account}`;
+            }
+
+            getPassword(): string | undefined {
+              const value = secrets.get(this.#slot);
+              secrets.delete(this.#slot);
+              return value;
+            }
+
+            setPassword(value: string): void {
+              secrets.set(this.#slot, value);
+            }
+
+            deletePassword(): boolean {
+              return secrets.delete(this.#slot);
+            }
+          },
+        ),
+      );
+
+      const result = operation === 'delete'
+        ? store.delete('cave-credential')
+        : store.compareAndDelete?.('cave-credential', 'stored-value');
+      await expect(result).resolves.toBe(operation === 'delete' ? false : 'absent');
+    },
+  );
 
   test('does not delete a replacement written by another native store instance', async () => {
     const secrets = new Map<string, string>([
@@ -141,8 +189,8 @@ describe('native secret store', () => {
         secrets.set(this.#slot, value);
       }
 
-      deletePassword(): void {
-        secrets.delete(this.#slot);
+      deletePassword(): boolean {
+        return secrets.delete(this.#slot);
       }
     }
 
@@ -193,8 +241,8 @@ describe('native secret store', () => {
             secrets.set(this.#slot, value);
           }
 
-          deletePassword(): void {
-            secrets.delete(this.#slot);
+          deletePassword(): boolean {
+            return secrets.delete(this.#slot);
           }
         },
       ),
@@ -223,8 +271,8 @@ describe('native secret store', () => {
             setPassword(value);
           }
 
-          deletePassword(): void {
-            secrets.delete(`${SERVICE}:cave-credential`);
+          deletePassword(): boolean {
+            return secrets.delete(`${SERVICE}:cave-credential`);
           }
         },
       ),
@@ -277,7 +325,7 @@ describe('native secret store', () => {
             throw new Error('mutation must not run');
           }
 
-          deletePassword(): void {
+          deletePassword(): boolean {
             throw new Error('mutation must not run');
           }
         },
@@ -313,8 +361,9 @@ describe('native secret store', () => {
             calls.push({ account: this.#account, method: 'set' });
           }
 
-          deletePassword(): void {
+          deletePassword(): boolean {
             calls.push({ account: this.#account, method: 'delete' });
+            return true;
           }
         },
       ),
@@ -352,8 +401,8 @@ describe('native secret store', () => {
                 // no-op
               }
 
-              deletePassword(): void {
-                // no-op
+              deletePassword(): boolean {
+                return false;
               }
             },
           },
@@ -414,7 +463,7 @@ describe('native secret store', () => {
             throw new Error('unreachable');
           }
 
-          deletePassword(): void {
+          deletePassword(): boolean {
             throw new Error('unreachable');
           }
         },
@@ -437,50 +486,59 @@ describe('native secret store', () => {
   test.each([
     ['get', 'getPassword'],
     ['set', 'setPassword'],
+    ['delete', 'getPassword'],
     ['delete', 'deletePassword'],
+    ['compareAndDelete', 'getPassword'],
+    ['compareAndDelete', 'deletePassword'],
+    ['probe', 'getPassword'],
   ] as const)(
-    'wraps backend %s failures as secure_store_unavailable',
+    'wraps backend %s/%s failures as secure_store_unavailable',
     async (operation, failingMethod) => {
+      const failure = new Error('backend failure with secret bearer keychain token');
       const store = await createNativeSecretStore(
         moduleWithEntry(
           class {
             getPassword(): string | undefined {
-              if (failingMethod === 'getPassword' || failingMethod === 'deletePassword') {
-                throw new Error('backend failure with secret bearer value');
+              if (failingMethod === 'getPassword') {
+                throw failure;
               }
               return 'stored-value';
             }
 
             setPassword(): void {
               if (failingMethod === 'setPassword') {
-                throw new Error('backend failure with keychain token');
+                throw failure;
               }
             }
 
-            deletePassword(): void {
+            deletePassword(): boolean {
               if (failingMethod === 'deletePassword') {
-                throw new Error('backend failure with keychain token');
+                throw failure;
               }
+              return true;
             }
           },
         ),
       );
 
-      const error = await (
-        operation === 'get'
-          ? store.get('cave-credential')
-          : operation === 'set'
-            ? store.set('cave-credential', 'top-secret')
-            : store.delete('cave-credential')
-      ).catch((caught: unknown) => caught);
+      const operations = {
+        get: () => store.get('cave-credential'),
+        set: () => store.set('cave-credential', 'top-secret'),
+        delete: () => store.delete('cave-credential'),
+        compareAndDelete: () =>
+          Promise.resolve(store.compareAndDelete?.('cave-credential', 'stored-value')),
+        probe: () => probeNativeSecretStore(store),
+      };
+      const error = await operations[operation]().catch((caught: unknown) => caught);
 
       expect(error).toBeInstanceOf(SecureStoreUnavailableError);
       expect(error).toMatchObject({
         code: 'secure_store_unavailable',
         message: 'Native secure credential storage is unavailable.',
-        operation,
+        operation: operation === 'compareAndDelete' ? 'delete' : operation,
         retryable: false,
       });
+      expect(error).toHaveProperty('cause', failure);
       expect(String(error)).not.toContain('top-secret');
       expect(String(error)).not.toContain('token');
       expect(String(error)).not.toContain('bearer');
@@ -516,7 +574,7 @@ describe('native secret store', () => {
               throw new SecureStoreUnavailableError('set');
             }
 
-            deletePassword(): void {
+            deletePassword(): boolean {
               throw new Error('not reached');
             }
           },
@@ -535,7 +593,7 @@ describe('native secret store', () => {
               // no-op
             }
 
-            deletePassword(): void {
+            deletePassword(): boolean {
               throw new SecureStoreUnavailableError('delete');
             }
           },

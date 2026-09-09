@@ -85,6 +85,10 @@ nested causes are emitted.
 
 The CLI uses `@napi-rs/keyring` `2.0.0` directly and does not fall back to
 files, shell commands, environment variables, or alternate keychain adapters.
+Missing credentials remain distinct from locked or inaccessible backend errors.
+When a credential disappears before native deletion, `delete()` returns `false`
+and `compareAndDelete()` returns `absent`; provider failures still surface as
+`secure_store_unavailable`.
 `opencoven doctor` verifies native secure storage with a non-destructive probe
 against a dedicated keyring account so constructor and backend availability are
 exercised without overwriting or deleting a user's real credential. If the

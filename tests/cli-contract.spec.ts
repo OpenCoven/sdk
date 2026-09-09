@@ -327,7 +327,7 @@ async function runTimedCli(
 interface KeyringEntryShape {
   getPassword(): string | null | undefined;
   setPassword(value: string): void;
-  deletePassword(): void;
+  deletePassword(): boolean;
 }
 
 function nativeStoreWithEntry(
@@ -806,7 +806,7 @@ describe('opencoven CLI output', () => {
           throw new Error('unreachable');
         }
 
-        deletePassword(): void {
+        deletePassword(): boolean {
           throw new Error('unreachable');
         }
       },
@@ -828,7 +828,7 @@ describe('opencoven CLI output', () => {
           throw new Error('unreachable');
         }
 
-        deletePassword(): void {
+        deletePassword(): boolean {
           throw new Error('unreachable');
         }
       },

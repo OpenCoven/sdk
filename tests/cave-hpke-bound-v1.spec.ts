@@ -172,6 +172,7 @@ async function authenticatedResponse(
   vector: HpkeVector,
   request: Awaited<ReturnType<typeof createVectorRequest>>,
   body: Uint8Array,
+  retryAfter?: string,
 ): Promise<Response> {
   const suite = createCaveHpkeSuite();
   const authority = await suite.kem.deriveKeyPair(
@@ -191,7 +192,10 @@ async function authenticatedResponse(
   const plaintext = new TextEncoder().encode(
     JSON.stringify({
       body: caveBase64UrlEncode(body),
-      headers: { contentType: 'application/json' },
+      headers: {
+        contentType: 'application/json',
+        ...(retryAfter === undefined ? {} : { retryAfter }),
+      },
       requestNonce: request.binding.requestNonce,
       status: 200,
       version: 1,
@@ -317,6 +321,44 @@ describe('Cave hpke-bound-v1 producer interoperability', () => {
         { maxBodyBytes: 64 * 1_024 },
       ),
     ).rejects.toMatchObject({ code: 'reconcile_required' });
+  });
+
+  test.each(['\ud800', '\udc00'])(
+    'rejects an authenticated JCS response containing a lone surrogate %j',
+    async (retryAfter) => {
+      const { vector } = await loadVector();
+      const request = await createVectorRequest(vector);
+      const response = await authenticatedResponse(
+        vector,
+        request,
+        new Uint8Array(),
+        retryAfter,
+      );
+
+      const error = await request.open(response, {
+        maxBodyBytes: 64,
+      }).catch((cause: unknown) => cause);
+      expect(error).toMatchObject({
+        code: 'reconcile_required',
+        retryable: false,
+      });
+      expect(error).not.toHaveProperty('cause');
+    },
+  );
+
+  test('accepts paired Unicode surrogates in authenticated JCS metadata', async () => {
+    const { vector } = await loadVector();
+    const request = await createVectorRequest(vector);
+    const retryAfter = '\ud83d\ude00';
+    const response = await authenticatedResponse(
+      vector,
+      request,
+      new Uint8Array(),
+      retryAfter,
+    );
+
+    const opened = await request.open(response, { maxBodyBytes: 64 });
+    expect(opened.headers.retryAfter).toBe(retryAfter);
   });
 
   test('bounds encrypted envelope reads by the caller body limit', async () => {

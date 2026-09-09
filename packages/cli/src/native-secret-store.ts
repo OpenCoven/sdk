@@ -20,7 +20,7 @@ export type SecureStoreUnavailableOperation = 'load' | 'construct' | 'get' | 'se
 interface KeyringEntry {
   getPassword(): string | null | undefined;
   setPassword(value: string): void;
-  deletePassword(): void;
+  deletePassword(): boolean;
 }
 
 interface KeyringModule {
@@ -375,8 +375,7 @@ class NativeSecretStore implements SecretStore {
       if (value == null) {
         return false;
       }
-      entry.deletePassword();
-      return true;
+      return entry.deletePassword();
     });
   }
 
@@ -394,8 +393,7 @@ class NativeSecretStore implements SecretStore {
         return 'changed';
       }
 
-      entry.deletePassword();
-      return 'deleted';
+      return entry.deletePassword() ? 'deleted' : 'absent';
     });
   }
 
