@@ -28,10 +28,10 @@ There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `5d5cb69ce12c6581a6afd0074e55296f9a2d5b4c`; the compatible evidence producer
 is the pinned `refs/heads/main` commit
-`a57833a19ef0bfe954a086b8a99800213afa6956`. Its source lock was pinned by
-reachable authority commit `a031968191351b1e6fc5e45187df65812221314e`
+`9dc8eec56510ae17ed2bc84d5a903d41ffb9578d`. Its source lock was pinned by
+reachable authority commit `f7030e33ca7e82596d2d4a27ee21b67ae7ed5440`
 to executable harness behavior revision
-`effa8c419d8c57ff29d0672b6826ee778fab7c48`.
+`3acd9d83ac99d91b1448c5cc1fc6f92f0af0a422`.
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
 toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
 or a global Rust default.
@@ -305,7 +305,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`a57833a19ef0bfe954a086b8a99800213afa6956` compatible with the reviewed
+`9dc8eec56510ae17ed2bc84d5a903d41ffb9578d` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
