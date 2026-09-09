@@ -1755,9 +1755,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       harness: {
         path: 'scripts/phase1-conformance.mjs',
         version: '2.0.0',
-        size: 200_018,
+        size: 200_482,
         sha256:
-          'a8ee86506972638414a2d2e6044ff1d7458afa62020f6bfa3e5ac2169749da05',
+          '62bf43c4ff7a4777103f31fecf2c340b4d93b1f055569904ef52d5bc49e3a60e',
       },
       command: 'test:phase1-conformance',
       recordSchemaVersion: 2,
