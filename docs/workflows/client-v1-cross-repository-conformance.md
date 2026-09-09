@@ -26,7 +26,7 @@ publication primitives needed to support the aggregator safely on Windows.
 
 There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
-`edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
+`5d5cb69ce12c6581a6afd0074e55296f9a2d5b4c`; the compatible evidence producer
 is the pinned `refs/heads/main` commit
 `f6eba8af1f71d4251583cf39d4e5fb5b4797d209`. Its source lock was pinned by
 reachable authority commit `5d19823ff37997d165437441f1353e79c4f3349a`
@@ -59,7 +59,7 @@ rotated to that merged SDK commit.
 is the single machine-readable artifact and source lock. It freezes:
 
 - SDK package candidate
-  `acc38488f00860d246c3c553375634d64806eabb` and its committed tree;
+  `6526b56b30c9a9c1c072caf2f0022d3427ae18db` and its committed tree;
 - the private-source **conformance artifact** `release-manifest.json`,
   including its exact 1,031-byte canonical JSON representation and SHA-256;
 - the four package names, versions, release filenames, Chat vendor paths,
@@ -221,13 +221,13 @@ After the protected jobs complete, the SDK verifier downloads and authenticates
 the records before producing the exact aggregate bytes. Copy those bytes into:
 
 ```text
-docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.json
+docs/client-v1-cross-repository-results/6526b56b30c9a9c1c072caf2f0022d3427ae18db.json
 ```
 
 Create the sibling reviewed evidence index:
 
 ```text
-docs/client-v1-cross-repository-results/acc38488f00860d246c3c553375634d64806eabb.index.json
+docs/client-v1-cross-repository-results/6526b56b30c9a9c1c072caf2f0022d3427ae18db.index.json
 ```
 
 The index records the expected aggregate and primary-record digests, exact

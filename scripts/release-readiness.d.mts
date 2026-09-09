@@ -38,8 +38,8 @@ export interface ReleaseConfig {
   conformanceEvidence: {
     issue: 'OpenCoven/sdk#38';
     artifactSet: 'conformance-candidate';
-    candidateCommit: 'acc38488f00860d246c3c553375634d64806eabb';
-    runtimeManifestSha256: '1cf387f4f53f456c87a51ab09ab68f7ff7291480f9a7cd3a4fe3bb70f907e56a';
+    candidateCommit: '6526b56b30c9a9c1c072caf2f0022d3427ae18db';
+    runtimeManifestSha256: 'd1e6ba145534897b5a55b4d81511c5e797f245b436d84545f2418759d44a1121';
     aggregateRecord: string | null;
   };
   publicationCandidate: {
