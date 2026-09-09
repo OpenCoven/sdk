@@ -45,15 +45,15 @@ const WINDOWS_SUPERVISOR_ARTIFACT = 'phase1-process-supervisor-win32-x64';
 const WINDOWS_SUPERVISOR_JOB_NAME = 'build-windows-supervisor';
 const WINDOWS_SUPERVISOR_RUNNER_LABELS = ['macos-latest'];
 const REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256 =
-  'd9572f970962a3eb24e0fa307b65578a7722eda902b59af8b268b03d83537a43';
+  '5d901f4890606126cbeb34cc892254de470e8ad0573dee4d0cb9eba95e05a489';
 const REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256 =
-  '67f01cab92aef55dac0c07bf9e9aa68f3402379fc58854bb8ab5cdced22d6db9';
+  '29880b0d5ed3d1771e0b91edc60f294ee8f625750d0ec2189b9dfcbeba88f0c5';
 const REVIEWED_UNIX_SUPERVISOR_PREPARATION_SCRIPT_SHA256 =
-  '019a8570d1d16ab896a56a08b446978f0e9d8ddd7daee274e3f1747a56192b5e';
+  '393a7ac4c3dacc0e40df09bccb0b03422d44cd73fd5cfec57e8ad8f3802a057c';
 const REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256 =
   '043066be50d0c3fa66f7151224242734cb2e9f39ffa9cf1c6f8106ab88c75a02';
 const REVIEWED_UNIX_SUPERVISOR_SOURCE_BINDING =
-  "['scripts/unix-producer-supervisor.sh', [29289, '1a83eb8495b671a9d490a26a8ce23745cdded680aa2b896142883acfde19064a']]";
+  "['scripts/unix-producer-supervisor.sh', [29424, 'b73036415744c80ed27d5667f255ceea149096ca517b47c93a154299802206ff']]";
 const PLATFORM_STEP_CONTRACT = Object.freeze([
   ['Bootstrap supervised Windows conformance', ['name', 'if', 'shell', 'env', 'run']],
   ['Require protected validator revision', ['name', 'if', 'shell', 'env', 'run']],
