@@ -28,12 +28,13 @@ There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
 is the pinned `refs/heads/main` commit
-`f987d9dd064ae51c7775cbe0097d87cda79193a7`. Its source lock was pinned by
-reachable authority commit `7c4adf779777c1a8cbe3f40c8bf2f75f103b6f90`
+`b2d63e5fcea3b307d4d97fd560621dc84d659755`. Its source lock was pinned by
+reachable authority commit `a9ba88cdba59267f1b3a640250f146eeaae06d04`
 to executable harness behavior revision
-`f669662f7b62ce2e0bba2fea390d11cad3bb8782`.
-The harness preserves the bounded evidence-build environment, Cave-record,
-isolation, and assertion diagnostic IDs through its outer stage wrapper.
+`cd2f5a3ded0fe4dabf4cfc84ba53cdb293d2234a`.
+The harness preserves bounded Cave record identity, timing, and assertion
+diagnostics through both producer wrappers. Malformed timestamps are rejected
+before range comparisons; record values and private error causes are never logged.
 This diagnostic repair does not establish a passing platform record.
 The frozen workflow separates platform production, exact SDK validation,
 provenance attestation, and aggregation. Its lock records the validation and
@@ -278,7 +279,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`f987d9dd064ae51c7775cbe0097d87cda79193a7` compatible with the reviewed
+`b2d63e5fcea3b307d4d97fd560621dc84d659755` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
