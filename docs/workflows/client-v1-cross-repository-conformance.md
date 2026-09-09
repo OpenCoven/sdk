@@ -24,12 +24,15 @@ verification on those hosts authenticates the root-owned, non-writable
 a required record platform, but Node does not expose the directory-relative
 publication primitives needed to support the aggregator safely on Windows.
 
-There is no passing aggregate in this repository yet. The frozen Chat
-production source remains
-`5d5cb69ce12c6581a6afd0074e55296f9a2d5b4c`; the compatible evidence producer
-is the pinned `refs/heads/main` commit
-`4cf28daa3017e683ccce76b42c3590919b984c90`. Its source lock was pinned by
-reachable authority commit `b17b9b72733234740d0891b19a0398b7f84ddeba`
+There is no passing aggregate in this repository yet. The replacement SDK
+candidate is `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat
+production source `841a88f8885bc20cac2f9d5b5b6bc2a23a76e657`. This source
+refreshes the SDK package pins while preserving the ten native producer deltas.
+The compatible producer is merged Chat commit
+`4f5cbf8b625f096eb4e1b50b7ad26c5f409a1791`. This validator must merge and both
+protected validator scopes must be rotated before a fresh protected attempt.
+The producer source lock was pinned by
+reachable authority commit `322f93ab301642d1fab63c2f4febb9b1b3bc9eb0`
 to executable harness behavior revision
 `5f7b09b64a4b1911b9ed6cf191fa14e20fc32770`.
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
@@ -84,7 +87,7 @@ rotated to that merged SDK commit.
 is the single machine-readable artifact and source lock. It freezes:
 
 - SDK package candidate
-  `6526b56b30c9a9c1c072caf2f0022d3427ae18db` and its committed tree;
+  `1597835325cf3762b51408ff0a565037eeb25f64` and its committed tree;
 - the private-source **conformance artifact** `release-manifest.json`,
   including its exact 1,031-byte canonical JSON representation and SHA-256;
 - the four package names, versions, release filenames, Chat vendor paths,
@@ -246,13 +249,13 @@ After the protected jobs complete, the SDK verifier downloads and authenticates
 the records before producing the exact aggregate bytes. Copy those bytes into:
 
 ```text
-docs/client-v1-cross-repository-results/6526b56b30c9a9c1c072caf2f0022d3427ae18db.json
+docs/client-v1-cross-repository-results/1597835325cf3762b51408ff0a565037eeb25f64.json
 ```
 
 Create the sibling reviewed evidence index:
 
 ```text
-docs/client-v1-cross-repository-results/6526b56b30c9a9c1c072caf2f0022d3427ae18db.index.json
+docs/client-v1-cross-repository-results/1597835325cf3762b51408ff0a565037eeb25f64.index.json
 ```
 
 The index records the expected aggregate and primary-record digests, exact
@@ -309,7 +312,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`4cf28daa3017e683ccce76b42c3590919b984c90` compatible with the reviewed
+`4f5cbf8b625f096eb4e1b50b7ad26c5f409a1791` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
