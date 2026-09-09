@@ -29,12 +29,12 @@ candidate is `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat
 production source `841a88f8885bc20cac2f9d5b5b6bc2a23a76e657`. This source
 refreshes the SDK package pins while preserving the ten native producer deltas.
 The compatible producer is merged Chat commit
-`3f2302da7dc2b39adb8042853b64aa58c406de08`. This validator must merge and both
+`3a4e003e12da02e7f0259da2aa6f831d85646166`. This validator must merge and both
 protected validator scopes must be rotated before a fresh protected attempt.
 The producer source lock was pinned by
-reachable authority commit `c1cc26a6bd180d182f767acdd4804ef0505ef233`
+reachable authority commit `1f291abdecff55f8ed7c5152345f22b32f837fdf`
 to executable harness behavior revision
-`034b7a766f2a45d090966b5b76b5f07a77b4b8a5`.
+`1a2967d3661f89974a76eaac8ed544ab0a849ee9`.
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
 toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
 or a global Rust default.
@@ -312,7 +312,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`3f2302da7dc2b39adb8042853b64aa58c406de08` compatible with the reviewed
+`3a4e003e12da02e7f0259da2aa6f831d85646166` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
@@ -397,3 +397,12 @@ corepack pnpm@10.34.0 test:conformance-contract
 CI tests the parser, schema, lock, registry, checkout failures, scanner,
 canonical serialization, and publication races with synthetic fixtures. Those
 fixtures are not platform evidence and are never retained as a passing result.
+
+Protected run `34406621503` passed Linux and macOS, but Windows failed at
+`phase1.runtime-observations.coven-rust-tests.failed` after SDK, Chat, and
+Chat Rust observations. Validation, attestation, and aggregation were skipped.
+The successor preserves every selected test and existing limit while
+reporting a bounded category for each of the five selected Windows Coven
+observation commands. It distinguishes command failures, an exact test failure,
+and a successful command missing the expected test; raw output stays private.
+The new diagnostics require a complete protected attempt after final binding.
