@@ -28,7 +28,7 @@ There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
 is the pinned `refs/heads/main` commit
-`79eab77884245b4f34d8a14b5e1c8cea78b6dabe`. Its source lock was pinned by
+`c15936296d0bba8bc36601c8dc20d6884754c0c3`. Its source lock was pinned by
 reachable authority commit `8aacd8f43e49d53af31a0bfc61fab4a63e93ca8c`
 to executable harness behavior revision
 `4b35a86470abc2864095dd2fcd91fd0aafb3e869`.
@@ -38,7 +38,9 @@ before range comparisons; record values and private error causes are never logge
 Windows schema-v2 commands use the nonce-bound pnpm CLI through Node, and
 the bootstrap does not reference child-only variables in the parent scope.
 The portable Cave canonical-ID assertion removes filesystem-casing dependence
-without accepting skips. These repairs do not establish a passing platform record.
+without accepting skips. The packed-consumer and Phase 1 locks name the same
+portable Cave checkout; SDK tarball and Cave fixture digests remain unchanged.
+These repairs do not establish a passing platform record.
 The frozen workflow separates platform production, exact SDK validation,
 provenance attestation, and aggregation. Its lock records the validation and
 attestation job identities, the three static artifact names and record paths,
@@ -282,7 +284,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`79eab77884245b4f34d8a14b5e1c8cea78b6dabe` compatible with the reviewed
+`c15936296d0bba8bc36601c8dc20d6884754c0c3` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
