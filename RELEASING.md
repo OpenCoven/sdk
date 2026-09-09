@@ -214,10 +214,10 @@ passing evidence record for each target.
 The frozen Chat production source
 `edd4728792321771496df58bfc0e6122908a96ec` is exercised by the compatible
 schema-v2 producer at
-`b2d63e5fcea3b307d4d97fd560621dc84d659755`. Its source lock was pinned by
-reachable authority commit `a9ba88cdba59267f1b3a640250f146eeaae06d04`
+`79eab77884245b4f34d8a14b5e1c8cea78b6dabe`. Its source lock was pinned by
+reachable authority commit `8aacd8f43e49d53af31a0bfc61fab4a63e93ca8c`
 to executable harness behavior revision
-`cd2f5a3ded0fe4dabf4cfc84ba53cdb293d2234a`.
+`4b35a86470abc2864095dd2fcd91fd0aafb3e869`.
 Its protected workflow requires
 an exact SDK `validator_revision`, uses protected environment ID
 `20863036831`, validates the three static platform artifacts in
@@ -232,8 +232,9 @@ Node copy, and copies `rustup` under the `rustup`, `cargo`, and `rustc`
 multicall names.
 The governed harness invokes trusted `pnpm` directly; Corepack and private
 runner-home directories are absent from restricted execution. Windows
-bootstrap launches pinned npm/pnpm JavaScript entrypoints through Node and
-reads the explicit child `Process.ExitCode`.
+bootstrap and schema-v2 commands launch pinned npm/pnpm JavaScript entrypoints
+through Node without relying on a PATH shim. The bootstrap reads the explicit
+child `Process.ExitCode`; Unix supervision preserves a bounded exit-status diagnostic.
 That environment must disable administrator bypass, require reviewer user ID
 `68980965`, permit self-review, have a zero-minute wait timer, and allow
 protected branches only. Its `required_reviewers` rule therefore has
