@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { constants as fsConstants, type Stats } from 'node:fs';
 import { lstat as nodeLstat, open as nodeOpen, realpath as nodeRealpath } from 'node:fs/promises';
 import { posix, win32 } from 'node:path';
@@ -359,12 +360,18 @@ function validateRootIdentity(
   platform: NodeJS.Platform,
   expectedUid: number | undefined,
 ): void {
+  const validNodeIdentity =
+    platform === 'win32'
+      ? Number.isInteger(identity.device) &&
+        identity.device >= 0 &&
+        Number.isInteger(identity.inode) &&
+        identity.inode >= 0
+      : Number.isSafeInteger(identity.device) &&
+        identity.device >= 0 &&
+        Number.isSafeInteger(identity.inode) &&
+        identity.inode > 0;
   if (
-    !Number.isSafeInteger(identity.device) ||
-    identity.device < 0 ||
-    !Number.isSafeInteger(identity.inode) ||
-    identity.inode < 0 ||
-    (platform !== 'win32' && identity.inode === 0) ||
+    !validNodeIdentity ||
     !Number.isSafeInteger(identity.mode) ||
     identity.mode < 0 ||
     !Number.isSafeInteger(identity.ownerUid) ||
@@ -391,12 +398,18 @@ function validateRecordIdentity(
   expectedUid: number | undefined,
   maxRecordBytes: number,
 ): void {
+  const validNodeIdentity =
+    platform === 'win32'
+      ? Number.isInteger(identity.device) &&
+        identity.device >= 0 &&
+        Number.isInteger(identity.inode) &&
+        identity.inode >= 0
+      : Number.isSafeInteger(identity.device) &&
+        identity.device >= 0 &&
+        Number.isSafeInteger(identity.inode) &&
+        identity.inode > 0;
   if (
-    !Number.isSafeInteger(identity.device) ||
-    identity.device < 0 ||
-    !Number.isSafeInteger(identity.inode) ||
-    identity.inode < 0 ||
-    (platform !== 'win32' && identity.inode === 0) ||
+    !validNodeIdentity ||
     !Number.isSafeInteger(identity.mode) ||
     identity.mode < 0 ||
     !Number.isSafeInteger(identity.ownerUid) ||
@@ -493,17 +506,48 @@ function validateStableIdentity(
   initialNativeIdentity: string | undefined,
   currentNativeIdentity: string | undefined,
   message: string,
+  requireNativeIdentity = false,
 ): void {
   if (
-    current.device !== initial.device ||
-    current.inode !== initial.inode ||
-    ((initial.device === 0 || initial.inode === 0) &&
-      (initialNativeIdentity === undefined ||
+    requireNativeIdentity
+      ? initialNativeIdentity === undefined ||
         currentNativeIdentity === undefined ||
-        currentNativeIdentity !== initialNativeIdentity))
+        currentNativeIdentity !== initialNativeIdentity
+      : current.device !== initial.device || current.inode !== initial.inode
   ) {
     return fail('unsafe_endpoint', message);
   }
+}
+
+function hasPortableNodeIdentity(identity: CaveDiscoveryPathIdentity): boolean {
+  return (
+    Number.isSafeInteger(identity.device) &&
+    identity.device > 0 &&
+    Number.isSafeInteger(identity.inode) &&
+    identity.inode > 0
+  );
+}
+
+function portableRecordIdentity(
+  identity: CaveDiscoveryPathIdentity,
+  nativeIdentity: string | undefined,
+): Pick<CaveDiscoveryRecordIdentity, 'device' | 'inode'> {
+  if (hasPortableNodeIdentity(identity)) {
+    return { device: identity.device, inode: identity.inode };
+  }
+  if (nativeIdentity === undefined) {
+    return fail('owner_mismatch', 'Windows Cave discovery native identity is required.');
+  }
+
+  const digest = createHash('sha256')
+    .update('opencoven-cave-record-native-identity-v1\0')
+    .update(nativeIdentity, 'utf8')
+    .digest();
+  const portableValue = (offset: number) => digest.readUIntBE(offset, 6) || 1;
+  return {
+    device: portableValue(0),
+    inode: portableValue(6),
+  };
 }
 
 function decodeJson(bytes: Uint8Array): string {
@@ -644,9 +688,12 @@ export async function discoverCaveEndpoint(
     try {
       const openedIdentity = await awaitStep(() => handle.stat(), deadline);
       validateRecordIdentity(openedIdentity, platform, expectedUid, maxRecordBytes);
-      const openedRecordWindowsIdentity =
+      const requireOpenedWindowsIdentity =
         platform === 'win32' &&
-        (initialIdentity.device === 0 || initialIdentity.inode === 0)
+        (!hasPortableNodeIdentity(initialIdentity) ||
+          !hasPortableNodeIdentity(openedIdentity));
+      const openedRecordWindowsIdentity =
+        requireOpenedWindowsIdentity
           ? await validateWindowsOpenedFileTrust(
               dependencies?.windowsPathTrust,
               handle,
@@ -660,6 +707,7 @@ export async function discoverCaveEndpoint(
         recordWindowsIdentity,
         openedRecordWindowsIdentity,
         'Cave discovery record changed while it was being opened.',
+        requireOpenedWindowsIdentity,
       );
 
       const buffer = Buffer.alloc(maxRecordBytes + 1);
@@ -732,6 +780,9 @@ export async function discoverCaveEndpoint(
       recordWindowsIdentity,
       currentRecordWindowsIdentity,
       'Cave discovery record changed while it was being read.',
+      platform === 'win32' &&
+        (!hasPortableNodeIdentity(initialIdentity) ||
+          !hasPortableNodeIdentity(currentRecordIdentity)),
     );
 
     const currentRootIdentity = await awaitStep(() => lstat(physicalRoot), deadline);
@@ -756,14 +807,20 @@ export async function discoverCaveEndpoint(
       rootWindowsIdentity,
       currentRootWindowsIdentity,
       'Cave discovery root changed while the record was read.',
+      platform === 'win32' &&
+        (!hasPortableNodeIdentity(rootIdentity) ||
+          !hasPortableNodeIdentity(currentRootIdentity)),
     );
 
+    const recordIdentity =
+      platform === 'win32'
+        ? portableRecordIdentity(initialIdentity, recordWindowsIdentity)
+        : { device: initialIdentity.device, inode: initialIdentity.inode };
     return {
       ...parseCaveDiscoveryRecord(serialized, isProcessAlive),
       record: {
         path: physicalRecordPath,
-        device: initialIdentity.device,
-        inode: initialIdentity.inode,
+        ...recordIdentity,
       },
     };
   } catch (error) {

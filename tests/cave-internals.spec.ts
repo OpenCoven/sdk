@@ -1465,82 +1465,82 @@ describe('Cave discovery platform helpers', () => {
       throw Object.assign(new Error(`missing ${path}`), { code: 'ENOENT' });
     });
 
-    await expect(
-      discoverCaveEndpoint({
-        cwd: 'C:\\workspace',
-        env: {
-          USERPROFILE: 'C:\\Users\\Alice',
+    const userProfileDiscovery = await discoverCaveEndpoint({
+      cwd: 'C:\\workspace',
+      env: {
+        USERPROFILE: 'C:\\Users\\Alice',
+      },
+      platform: 'win32',
+      timeoutMs: 50,
+      dependencies: {
+        isProcessAlive: () => true,
+        lstat,
+        openFile,
+        realpath: async (path) => path,
+        windowsPathTrust: {
+          validate,
+          validateOpenedFile: async () => ({
+            trusted: true,
+            identity: 'windows-record-identity',
+          }),
         },
-        platform: 'win32',
-        timeoutMs: 50,
-        dependencies: {
-          isProcessAlive: () => true,
-          lstat,
-          openFile,
-          realpath: async (path) => path,
-          windowsPathTrust: {
-            validate,
-            validateOpenedFile: async () => ({
-              trusted: true,
-              identity: 'windows-record-identity',
-            }),
-          },
-        },
-      }),
-    ).resolves.toEqual({
+      },
+    });
+    expect(userProfileDiscovery).toMatchObject({
       ...discovered,
       record: {
         path: userProfileRecordPath,
-        device: recordIdentity.device,
-        inode: recordIdentity.inode,
       },
     });
+    expect(Number.isSafeInteger(userProfileDiscovery.record.device)).toBe(true);
+    expect(userProfileDiscovery.record.device).toBeGreaterThan(0);
+    expect(Number.isSafeInteger(userProfileDiscovery.record.inode)).toBe(true);
+    expect(userProfileDiscovery.record.inode).toBeGreaterThan(0);
 
     expect(validate).toHaveBeenNthCalledWith(1, userProfileRoot, 'root');
     expect(validate).toHaveBeenNthCalledWith(2, userProfileRecordPath, 'record');
 
     const homeDriveRoot = 'C:\\Users\\Bob\\.coven\\cave';
     const homeDriveRecordPath = `${homeDriveRoot}\\client-v1-discovery.json`;
-    await expect(
-      discoverCaveEndpoint({
-        cwd: 'C:\\workspace',
-        env: {
-          HOMEDRIVE: 'C:',
-          HOMEPATH: '\\Users\\Bob',
+    const homeDriveDiscovery = await discoverCaveEndpoint({
+      cwd: 'C:\\workspace',
+      env: {
+        HOMEDRIVE: 'C:',
+        HOMEPATH: '\\Users\\Bob',
+      },
+      platform: 'win32',
+      timeoutMs: 50,
+      dependencies: {
+        isProcessAlive: () => true,
+        lstat: async (path: string) => {
+          if (path === homeDriveRoot) {
+            return rootIdentity;
+          }
+          if (path === homeDriveRecordPath) {
+            return recordIdentity;
+          }
+          throw Object.assign(new Error(`missing ${path}`), { code: 'ENOENT' });
         },
-        platform: 'win32',
-        timeoutMs: 50,
-        dependencies: {
-          isProcessAlive: () => true,
-          lstat: async (path: string) => {
-            if (path === homeDriveRoot) {
-              return rootIdentity;
-            }
-            if (path === homeDriveRecordPath) {
-              return recordIdentity;
-            }
-            throw Object.assign(new Error(`missing ${path}`), { code: 'ENOENT' });
-          },
-          openFile: async () => memoryHandle(recordBytes, recordIdentity),
-          realpath: async (path) => path,
-          windowsPathTrust: {
-            validate: async (_path, purpose) => ({
-              trusted: true,
-              identity: `windows-${purpose}-identity`,
-            }),
-            validateOpenedFile: async () => ({
-              trusted: true,
-              identity: 'windows-record-identity',
-            }),
-          },
+        openFile: async () => memoryHandle(recordBytes, recordIdentity),
+        realpath: async (path) => path,
+        windowsPathTrust: {
+          validate: async (_path, purpose) => ({
+            trusted: true,
+            identity: `windows-${purpose}-identity`,
+          }),
+          validateOpenedFile: async () => ({
+            trusted: true,
+            identity: 'windows-record-identity',
+          }),
         },
-      }),
-    ).resolves.toEqual({
+      },
+    });
+    expect(homeDriveDiscovery).toEqual({
       ...discovered,
       record: {
         path: homeDriveRecordPath,
-        device: recordIdentity.device,
-        inode: recordIdentity.inode,
+        device: userProfileDiscovery.record.device,
+        inode: userProfileDiscovery.record.inode,
       },
     });
   });
@@ -1623,6 +1623,80 @@ describe('Cave discovery platform helpers', () => {
       code: 'unsafe_endpoint',
       retryable: false,
     });
+  });
+
+  test('derives portable Windows identity from out-of-range native file IDs', async () => {
+    const root = 'C:\\Users\\Alice\\.coven\\cave';
+    const recordPath = `${root}\\client-v1-discovery.json`;
+    const recordBytes = discoveryRecord();
+    const unsafeInode = Number.MAX_SAFE_INTEGER + 1;
+    const rootIdentity = discoveredPathIdentity({
+      device: unsafeInode,
+      inode: unsafeInode,
+      regularFile: false,
+      directory: true,
+      mode: 0o040700,
+      size: 0,
+    });
+    const recordIdentity = discoveredPathIdentity({
+      device: unsafeInode,
+      inode: unsafeInode,
+      size: Buffer.byteLength(recordBytes),
+    });
+    const lstat = (path: string) => {
+      if (path === root) {
+        return Promise.resolve(rootIdentity);
+      }
+      if (path === recordPath) {
+        return Promise.resolve(recordIdentity);
+      }
+      return Promise.reject(Object.assign(new Error(`missing ${path}`), { code: 'ENOENT' }));
+    };
+    let recordNativeIdentity = 'record-id-a';
+    const validateOpenedFile = vi.fn(() =>
+      Promise.resolve({
+        trusted: true as const,
+        identity: recordNativeIdentity,
+      }),
+    );
+    const discover = () =>
+      discoverCaveEndpoint({
+        cwd: 'C:\\workspace',
+        env: { USERPROFILE: 'C:\\Users\\Alice' },
+        platform: 'win32',
+        timeoutMs: 50,
+        dependencies: {
+          isProcessAlive: () => true,
+          lstat,
+          openFile: () => Promise.resolve(memoryHandle(recordBytes, recordIdentity)),
+          realpath: (path) => Promise.resolve(path),
+          windowsPathTrust: {
+            validate: (_path, purpose) =>
+              Promise.resolve({
+                trusted: true,
+              identity: purpose === 'root' ? 'root-id' : recordNativeIdentity,
+              }),
+            validateOpenedFile,
+          },
+        },
+    });
+
+    const first = await discover();
+    recordNativeIdentity = 'record-id-b';
+    const second = await discover();
+
+    expect(first).toMatchObject({
+    ...discovered,
+    record: {
+      path: recordPath,
+    },
+    });
+    expect(Number.isSafeInteger(first.record.device)).toBe(true);
+    expect(first.record.device).toBeGreaterThan(0);
+    expect(Number.isSafeInteger(first.record.inode)).toBe(true);
+    expect(first.record.inode).toBeGreaterThan(0);
+    expect(second.record).not.toEqual(first.record);
+    expect(validateOpenedFile).toHaveBeenCalledTimes(2);
   });
 
   test('fails closed when Windows home resolution or trust validation is unavailable', async () => {

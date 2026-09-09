@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { constants as fsConstants } from 'node:fs';
 import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { resolve } from 'node:path';
+import { resolve } from 'node:path/posix';
 
 import {
   COVEN_DAEMON_PROTOCOL,
@@ -13,7 +13,7 @@ import {
   createCovenUnixTransport as createRawCovenUnixTransport,
   createCovenWindowsTransport as createRawCovenWindowsTransport,
   createDiscoveredCovenClient,
-  discoverCovenEndpoint,
+  discoverCovenEndpoint as discoverRawCovenEndpoint,
   isCovenDaemonResponseError,
   isCovenIpcError,
   type CovenConnectedSocket,
@@ -354,6 +354,13 @@ function createCovenUnixTransport(
   });
 }
 
+function discoverCovenEndpoint(
+  options: Parameters<typeof discoverRawCovenEndpoint>[0],
+) {
+  // The default collaborators model Unix; Windows cases select their platform explicitly.
+  return discoverRawCovenEndpoint({ platform: 'linux', ...options });
+}
+
 function unixEndpoint(path: string): CovenDiscoveredEndpoint {
   return {
     version: 1,
@@ -421,11 +428,16 @@ function createCovenWindowsTransport(
 }
 
 let ownedRoot: ReturnType<typeof createOwnedTempDirectory>;
+let unixRootPath: string;
 
 beforeEach(() => {
   ownedRoot = createOwnedTempDirectory({
     prefix: 'opencoven-coven-discovery-spec',
   });
+  // Mock Unix endpoints must not inherit a Windows drive path.
+  unixRootPath = process.platform === 'win32'
+    ? '/opencoven-coven-discovery-spec'
+    : ownedRoot.rootPath;
 });
 
 afterEach(() => {
@@ -454,7 +466,7 @@ describe('Coven endpoint discovery', () => {
 
   test('prefers non-empty COVEN_HOME without invoking the CLI', async () => {
     const execFile = execResult('must not be used');
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     const socketPath = resolve(home, 'coven.sock');
     const metadataPath = resolve(home, 'daemon.json');
     const metadata = JSON.stringify({
@@ -478,7 +490,7 @@ describe('Coven endpoint discovery', () => {
   test.runIf(process.platform !== 'win32')(
     'reads owner-safe Unix metadata through the default bounded file adapter',
     async () => {
-      const home = resolve(ownedRoot.rootPath, 'default-file-adapter');
+      const home = resolve(unixRootPath, 'default-file-adapter');
       const socketPath = resolve(home, 'coven.sock');
       await mkdir(home);
       await writeFile(
@@ -508,16 +520,16 @@ describe('Coven endpoint discovery', () => {
   );
 
   test('falls back to exact no-shell config paths argv with a sanitized environment', async () => {
-    const socketPath = resolve(ownedRoot.rootPath, 'coven.sock');
-    const metadataPath = resolve(ownedRoot.rootPath, 'daemon.json');
+    const socketPath = resolve(unixRootPath, 'coven.sock');
+    const metadataPath = resolve(unixRootPath, 'daemon.json');
     const execFile = execResult(configPathsReport(socketPath, metadataPath));
 
     await expect(
       discoverCovenEndpoint({
-        cwd: ownedRoot.rootPath,
+        cwd: unixRootPath,
         env: {
           PATH: '/safe/bin',
-          HOME: ownedRoot.rootPath,
+          HOME: unixRootPath,
           COVEN_HOME: '',
           SECRET_TOKEN: 'redact-me',
           AWS_SECRET_ACCESS_KEY: 'redact-me-too',
@@ -537,7 +549,7 @@ describe('Coven endpoint discovery', () => {
     expect(args).toEqual(['config', 'paths', '--json']);
     expect(options).toMatchObject({
       encoding: 'utf8',
-      cwd: ownedRoot.rootPath,
+      cwd: unixRootPath,
       shell: false,
       maxBuffer: 65_536,
       killSignal: 'SIGKILL',
@@ -546,14 +558,14 @@ describe('Coven endpoint discovery', () => {
     expect(options?.timeout).toBeGreaterThan(0);
     expect(options?.timeout).toBeLessThanOrEqual(2_000);
     expect(options?.env).toEqual({
-      HOME: ownedRoot.rootPath,
+      HOME: unixRootPath,
       PATH: '/safe/bin',
     });
   });
 
   test('passes an integer timeout to Node execFile', async () => {
-    const socketPath = resolve(ownedRoot.rootPath, 'coven.sock');
-    const metadataPath = resolve(ownedRoot.rootPath, 'daemon.json');
+    const socketPath = resolve(unixRootPath, 'coven.sock');
+    const metadataPath = resolve(unixRootPath, 'daemon.json');
     const report = configPathsReport(socketPath, metadataPath);
     const timeouts: number[] = [];
     const execFile: CovenExecFile = (_file, _args, options, callback) => {
@@ -569,7 +581,7 @@ describe('Coven endpoint discovery', () => {
 
     await expect(
       discoverCovenEndpoint({
-        cwd: ownedRoot.rootPath,
+        cwd: unixRootPath,
         env: { PATH: '/safe/bin' },
         platform: 'linux',
         timeoutMs: 100.75,
@@ -583,8 +595,8 @@ describe('Coven endpoint discovery', () => {
   });
 
   test('does not allow callers to override the Coven executable', async () => {
-    const socketPath = resolve(ownedRoot.rootPath, 'coven.sock');
-    const metadataPath = resolve(ownedRoot.rootPath, 'daemon.json');
+    const socketPath = resolve(unixRootPath, 'coven.sock');
+    const metadataPath = resolve(unixRootPath, 'daemon.json');
     const execFile = execResult(configPathsReport(socketPath, metadataPath));
 
     await discoverCovenEndpoint({
@@ -726,7 +738,7 @@ describe('Coven endpoint discovery', () => {
   });
 
   test('rejects duplicate or malformed daemon IPC surfaces', async () => {
-    const socketPath = resolve(ownedRoot.rootPath, 'coven.sock');
+    const socketPath = resolve(unixRootPath, 'coven.sock');
     const surface = {
       id: 'state.daemon_ipc',
       status: 'resolved',
@@ -856,7 +868,7 @@ describe('Coven endpoint discovery', () => {
   });
 
   test('rejects unsafe discovered endpoint paths', async () => {
-    const report = configPathsReport('relative/coven.sock', resolve(ownedRoot.rootPath, 'daemon.json'));
+    const report = configPathsReport('relative/coven.sock', resolve(unixRootPath, 'daemon.json'));
 
     await expect(
       discoverCovenEndpoint({
@@ -992,8 +1004,8 @@ describe('Coven endpoint discovery', () => {
   });
 
   test('rejects a reported Unix IPC path outside the reported Coven home', async () => {
-    const endpointPath = resolve(ownedRoot.rootPath, 'outside', 'coven.sock');
-    const metadataPath = resolve(ownedRoot.rootPath, 'profile', 'daemon.json');
+    const endpointPath = resolve(unixRootPath, 'outside', 'coven.sock');
+    const metadataPath = resolve(unixRootPath, 'profile', 'daemon.json');
     const report = JSON.parse(
       configPathsReport(endpointPath, metadataPath),
     ) as {
@@ -1005,7 +1017,7 @@ describe('Coven endpoint discovery', () => {
     if (homeSurface === undefined) {
       throw new Error('Expected Coven home surface.');
     }
-    homeSurface.path = resolve(ownedRoot.rootPath, 'profile');
+    homeSurface.path = resolve(unixRootPath, 'profile');
 
     await expect(
       discoverCovenEndpoint({
@@ -1056,7 +1068,7 @@ describe('Coven endpoint discovery', () => {
       code: 'malformed_config',
     },
   ])('rejects daemon metadata with $label', async ({ metadata, code }) => {
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     const metadataPath = resolve(home, 'daemon.json');
     const serialized = JSON.stringify({
       ...metadata,
@@ -1075,7 +1087,7 @@ describe('Coven endpoint discovery', () => {
   });
 
   test('rejects unsafe and oversized daemon metadata before materializing it', async () => {
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     const metadataPath = resolve(home, 'daemon.json');
     await expect(
       discoverCovenEndpoint({
@@ -1122,7 +1134,7 @@ describe('Coven endpoint discovery', () => {
     ['unsafe mode', discoveryFileIdentity({ mode: 0o100660 })],
     ['wrong owner', discoveryFileIdentity({ ownerUid: 502 })],
   ])('rejects daemon metadata with %s before open', async (_label, identity) => {
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     const openFile = vi.fn();
 
     await expect(
@@ -1143,7 +1155,7 @@ describe('Coven endpoint discovery', () => {
   });
 
   test('reads at most the daemon metadata limit plus one byte', async () => {
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     const metadataPath = resolve(home, 'daemon.json');
     const read = vi.fn<CovenMetadataFileHandle['read']>(
       (buffer, offset, length) => {
@@ -1171,7 +1183,7 @@ describe('Coven endpoint discovery', () => {
   });
 
   test('rejects metadata path replacement after open and closes the handle', async () => {
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     const metadataPath = resolve(home, 'daemon.json');
     const metadata = JSON.stringify({
       pid: 42,
@@ -1214,7 +1226,7 @@ describe('Coven endpoint discovery', () => {
   });
 
   test('uses safe nonblocking flags and rejects a FIFO opened after lstat', async () => {
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     const metadataPath = resolve(home, 'daemon.json');
     const metadata = JSON.stringify({
       pid: 42,
@@ -1253,9 +1265,11 @@ describe('Coven endpoint discovery', () => {
       diagnostics: { phase: 'read_metadata' },
     });
     expect(openFlags).toBeTypeOf('number');
-    expect((openFlags as number) & fsConstants.O_NONBLOCK).toBe(
-      fsConstants.O_NONBLOCK,
-    );
+    if (typeof fsConstants.O_NONBLOCK === 'number') {
+      expect((openFlags as number) & fsConstants.O_NONBLOCK).toBe(
+        fsConstants.O_NONBLOCK,
+      );
+    }
     if (typeof fsConstants.O_NOFOLLOW === 'number') {
       expect((openFlags as number) & fsConstants.O_NOFOLLOW).toBe(
         fsConstants.O_NOFOLLOW,
@@ -1271,7 +1285,7 @@ describe('Coven endpoint discovery', () => {
     'applies the discovery deadline to a stalled metadata %s',
     async (stage) => {
       vi.useFakeTimers();
-      const home = resolve(ownedRoot.rootPath, 'profile');
+      const home = resolve(unixRootPath, 'profile');
       const metadataPath = resolve(home, 'daemon.json');
       const metadata = JSON.stringify({
         pid: 42,
@@ -1320,7 +1334,7 @@ describe('Coven endpoint discovery', () => {
 
   test('closes a metadata handle after fstat timeout and absorbs late rejection', async () => {
     vi.useFakeTimers();
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     const metadataPath = resolve(home, 'daemon.json');
     const metadata = JSON.stringify({
       pid: 42,
@@ -1358,7 +1372,7 @@ describe('Coven endpoint discovery', () => {
 
   test('closes a metadata handle that opens after the discovery deadline', async () => {
     vi.useFakeTimers();
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     const metadataPath = resolve(home, 'daemon.json');
     const close = vi.fn(() => Promise.resolve());
     let resolveOpen: ((handle: CovenMetadataFileHandle) => void) | undefined;
@@ -1434,7 +1448,7 @@ describe('Coven endpoint discovery', () => {
       clockReads += 1;
       return clockReads === 1 ? 0 : 1;
     });
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     const lstat = vi.fn(() => Promise.resolve(discoveryFileIdentity()));
     const openFile = vi.fn(() => Promise.resolve(memoryMetadataFile('{}')));
     const getEffectiveUid = vi.fn(() => 501);
@@ -1468,7 +1482,7 @@ describe('Coven endpoint discovery', () => {
     vi.useFakeTimers();
     let now = 0;
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     let rejectLstat: ((error: Error) => void) | undefined;
     const result = discoverCovenEndpoint({
       env: { COVEN_HOME: home },
@@ -1503,7 +1517,7 @@ describe('Coven endpoint discovery', () => {
     vi.useFakeTimers();
     let now = 0;
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     let rejectLstat: ((error: Error) => void) | undefined;
     const result = discoverCovenEndpoint({
       env: { COVEN_HOME: home },
@@ -1538,7 +1552,7 @@ describe('Coven endpoint discovery', () => {
     vi.useFakeTimers();
     let now = 0;
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
 
     try {
       const result = discoverCovenEndpoint({
@@ -1570,7 +1584,7 @@ describe('Coven endpoint discovery', () => {
     vi.useFakeTimers();
     let now = 0;
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     const metadataPath = resolve(home, 'daemon.json');
     const close = vi.fn(() =>
       Promise.reject(new Error('private late cleanup failure')),
@@ -1722,12 +1736,12 @@ describe('Coven endpoint discovery', () => {
   });
 
   test('rejects daemon metadata that points at another profile endpoint', async () => {
-    const home = resolve(ownedRoot.rootPath, 'profile');
+    const home = resolve(unixRootPath, 'profile');
     const metadataPath = resolve(home, 'daemon.json');
     const metadata = JSON.stringify({
       pid: 42,
       startedAt: '2026-08-21T06:00:00Z',
-      socket: resolve(ownedRoot.rootPath, 'other.sock'),
+      socket: resolve(unixRootPath, 'other.sock'),
     });
     await expect(
       discoverCovenEndpoint({
@@ -1763,7 +1777,7 @@ describe('Unix owner-local health transport', () => {
   ])('rejects a %s endpoint before connecting', async (_label, identity) => {
     const connect = vi.fn(() => connectedSocket(httpResponse(HEALTH_BODY)));
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect,
@@ -1784,7 +1798,7 @@ describe('Unix owner-local health transport', () => {
       Promise.resolve(unixIdentity({ mode: 0o140644 })),
     );
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => connectedSocket(httpResponse(HEALTH_BODY)),
@@ -1800,7 +1814,7 @@ describe('Unix owner-local health transport', () => {
 
   test('reports a missing Unix socket distinctly', async () => {
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'missing.sock')),
+      unixEndpoint(resolve(unixRootPath, 'missing.sock')),
       {
         dependencies: {
           connect: () => connectedSocket(httpResponse(HEALTH_BODY)),
@@ -1820,7 +1834,7 @@ describe('Unix owner-local health transport', () => {
     let inspection = 0;
     const socket = connectedSocket(httpResponse(HEALTH_BODY));
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
@@ -1852,7 +1866,7 @@ describe('Unix owner-local health transport', () => {
     const validationOrder: string[] = [];
     let inspections = 0;
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => connectedSocket(httpResponse(HEALTH_BODY)),
@@ -1886,7 +1900,7 @@ describe('Unix owner-local health transport', () => {
     let inspection = 0;
     const socket = new FakeSocket();
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
@@ -1923,7 +1937,7 @@ describe('Unix owner-local health transport', () => {
       });
     };
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
@@ -1955,7 +1969,7 @@ describe('Unix owner-local health transport', () => {
   test('fails closed at construction when Unix peer security is unavailable', () => {
     expect(() => {
       Reflect.apply(createRawCovenUnixTransport, undefined, [
-        unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+        unixEndpoint(resolve(unixRootPath, 'coven.sock')),
         {},
       ]);
     }).toThrow(expect.objectContaining({
@@ -1967,7 +1981,7 @@ describe('Unix owner-local health transport', () => {
   test('constructs directly with Unix security', () => {
     expect(() => {
       createRawCovenUnixTransport(
-        unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+        unixEndpoint(resolve(unixRootPath, 'coven.sock')),
         {
           security: {
             platform: 'unix',
@@ -1983,7 +1997,7 @@ describe('Unix owner-local health transport', () => {
   test('fails closed at construction with Windows security', () => {
     expect(() => {
       Reflect.apply(createRawCovenUnixTransport, undefined, [
-        unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+        unixEndpoint(resolve(unixRootPath, 'coven.sock')),
         {
           security: {
             platform: 'windows',
@@ -2004,7 +2018,7 @@ describe('Unix owner-local health transport', () => {
   test('sanitizes synchronous Unix connected-peer inspection failures', async () => {
     const socket = new FakeSocket();
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
@@ -2038,7 +2052,7 @@ describe('Unix owner-local health transport', () => {
   test('reports connection failure with deterministic cleanup', async () => {
     const socket = new FakeSocket();
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
@@ -2085,7 +2099,7 @@ describe('Unix owner-local health transport', () => {
     },
   ])('rejects $label', async ({ response, code }) => {
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => connectedSocket(response),
@@ -2110,7 +2124,7 @@ describe('Unix owner-local health transport', () => {
     Buffer.from('HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\n{}'),
   ])('rejects invalid HTTP health framing', async (response) => {
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => connectedSocket(response),
@@ -2137,7 +2151,7 @@ describe('Unix owner-local health transport', () => {
     }),
   ])('rejects malformed or secret-bearing daemon errors', async (body) => {
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => connectedSocket(httpResponse(body, 500)),
@@ -2186,7 +2200,7 @@ describe('Unix owner-local health transport', () => {
     expected,
   }) => {
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () =>
@@ -2237,7 +2251,7 @@ describe('Unix owner-local health transport', () => {
       },
     });
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => connectedSocket(httpResponse(body, 500)),
@@ -2262,7 +2276,7 @@ describe('Unix owner-local health transport', () => {
       },
     });
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => connectedSocket(httpResponse(body, 500)),
@@ -2397,7 +2411,7 @@ describe('Unix owner-local health transport', () => {
       `HTTP/1.1 200 OK\nContent-Length: ${Buffer.byteLength(HEALTH_BODY)}\n\n${HEALTH_BODY}`,
     );
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => connectedSocket(response),
@@ -2418,7 +2432,7 @@ describe('Unix owner-local health transport', () => {
       });
     };
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         requestTimeoutMs: 10,
         dependencies: {
@@ -2441,7 +2455,7 @@ describe('Unix owner-local health transport', () => {
     vi.useFakeTimers();
     const socket = new FakeSocket();
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         requestTimeoutMs: 10,
         dependencies: {
@@ -2474,7 +2488,7 @@ describe('Unix owner-local health transport', () => {
     vi.useFakeTimers();
     const connect = vi.fn(() => connectedSocket(httpResponse(HEALTH_BODY)));
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect,
@@ -2514,7 +2528,7 @@ describe('Unix owner-local health transport', () => {
     const connect = vi.fn(() => connectedSocket(httpResponse(HEALTH_BODY)));
     let resolveLstat: ((identity: CovenUnixFileIdentity) => void) | undefined;
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect,
@@ -2557,7 +2571,7 @@ describe('Unix owner-local health transport', () => {
     const connect = vi.fn(() => connectedSocket(httpResponse(HEALTH_BODY)));
     let rejectLstat: ((error: Error) => void) | undefined;
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect,
@@ -2596,7 +2610,7 @@ describe('Unix owner-local health transport', () => {
   test('keeps an immediate Unix pre-connect inspection failure unsafe', async () => {
     const connect = vi.fn(() => connectedSocket(httpResponse(HEALTH_BODY)));
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect,
@@ -2618,7 +2632,7 @@ describe('Unix owner-local health transport', () => {
     vi.useFakeTimers();
     let rejectInspection: ((error: Error) => void) | undefined;
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           getEffectiveUid: () => 501,
@@ -2651,7 +2665,7 @@ describe('Unix owner-local health transport', () => {
       return new Promise<TestUnixPeerIdentity>(() => undefined);
     });
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
@@ -2689,7 +2703,7 @@ describe('Unix owner-local health transport', () => {
     let inspection = 0;
     let rejectRevalidation: ((error: Error) => void) | undefined;
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
@@ -2743,7 +2757,7 @@ describe('Unix owner-local health transport', () => {
     const socket = new FakeSocket();
     let inspection = 0;
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
@@ -2784,7 +2798,7 @@ describe('Unix owner-local health transport', () => {
     );
     const connect = vi.fn(() => new FakeSocket());
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect,
@@ -2826,7 +2840,7 @@ describe('Unix owner-local health transport', () => {
     );
     const connect = vi.fn(() => new FakeSocket());
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect,
@@ -2856,7 +2870,7 @@ describe('Unix owner-local health transport', () => {
     );
     const connect = vi.fn(() => new FakeSocket());
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect,
@@ -2891,7 +2905,7 @@ describe('Unix owner-local health transport', () => {
     );
     const connect = vi.fn(() => new FakeSocket());
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect,
@@ -2936,7 +2950,7 @@ describe('Unix owner-local health transport', () => {
         }),
     );
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
@@ -2985,7 +2999,7 @@ describe('Unix owner-local health transport', () => {
     const nowSpy = vi.spyOn(performance, 'now').mockImplementation(() => now);
     const socket = new FakeSocket();
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
@@ -3035,7 +3049,7 @@ describe('Unix owner-local health transport', () => {
       resolvePeer = resolvePromise;
     });
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
@@ -3088,7 +3102,7 @@ describe('Unix owner-local health transport', () => {
       body,
     ]);
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => connectedSocket(response),
@@ -3107,7 +3121,7 @@ describe('Unix owner-local health transport', () => {
     vi.useFakeTimers();
     const timeoutSocket = new FakeSocket();
     const timeoutTransport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         connectTimeoutMs: 10,
         dependencies: {
@@ -3125,7 +3139,7 @@ describe('Unix owner-local health transport', () => {
     const controller = new AbortController();
     const abortSocket = new FakeSocket();
     const abortTransport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => abortSocket,
@@ -3143,7 +3157,7 @@ describe('Unix owner-local health transport', () => {
 
   test('maps synchronous connector failures without leaking their message', async () => {
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
@@ -3218,7 +3232,7 @@ describe('Unix owner-local health transport', () => {
   });
 
   test('rejects unsupported discovered endpoint versions and protocols', () => {
-    const endpoint = unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock'));
+    const endpoint = unixEndpoint(resolve(unixRootPath, 'coven.sock'));
 
     expect(() =>
       createCovenUnixTransport({
@@ -3237,7 +3251,7 @@ describe('Unix owner-local health transport', () => {
   test('sends only the reviewed health request and parses a valid response', async () => {
     const socket = connectedSocket(httpResponse(HEALTH_BODY));
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => {
@@ -4007,8 +4021,8 @@ describe('Windows owner-local health transport', () => {
 
 describe('structured client behavior', () => {
   test('creates a discovered client with the constrained platform transport', async () => {
-    const socketPath = resolve(ownedRoot.rootPath, 'coven.sock');
-    const metadataPath = resolve(ownedRoot.rootPath, 'daemon.json');
+    const socketPath = resolve(unixRootPath, 'coven.sock');
+    const metadataPath = resolve(unixRootPath, 'daemon.json');
     const client = await createDiscoveredCovenClient({
       transportSecurity: {
         platform: 'unix',
@@ -4053,8 +4067,8 @@ describe('structured client behavior', () => {
           dependencies: trustedCommandDependencies(
             execResult(
               configPathsReport(
-                resolve(ownedRoot.rootPath, 'coven.sock'),
-                resolve(ownedRoot.rootPath, 'daemon.json'),
+                resolve(unixRootPath, 'coven.sock'),
+                resolve(unixRootPath, 'daemon.json'),
               ),
             ),
             { getEffectiveUid: () => 501 },
@@ -4082,7 +4096,7 @@ describe('structured client behavior', () => {
       },
     });
     const transport = createCovenUnixTransport(
-      unixEndpoint(resolve(ownedRoot.rootPath, 'coven.sock')),
+      unixEndpoint(resolve(unixRootPath, 'coven.sock')),
       {
         dependencies: {
           connect: () => connectedSocket(httpResponse(body, 503)),

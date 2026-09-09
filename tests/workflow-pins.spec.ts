@@ -101,7 +101,7 @@ function checkoutSteps(source: string): string[] {
 }
 
 describe('workflow action pins', () => {
-  test('exercises the native keyring adapter on Linux, macOS, and Windows', () => {
+  test('exercises native binding and observation contracts on Linux, macOS, and Windows', () => {
     const nativeJob = workflow.split('\n  native-keyring:\n')[1]?.split(/\n {2}\S/u)[0];
 
     expect(nativeJob).toBeDefined();
@@ -110,6 +110,18 @@ describe('workflow action pins', () => {
     expect(nativeJob).toContain('node-version: 24.18.1');
     expect(nativeJob).toContain('pnpm install --frozen-lockfile');
     expect(nativeJob).toContain('pnpm exec vitest run tests/native-secret-store.spec.ts');
+    for (const file of [
+      'cave-discovery-pairing',
+      'cave-canonical-reads',
+      'cave-hpke-bound-v1',
+      'cave-managed-native',
+      'cave-managed-native-staged',
+      'coven-discovery',
+      'health-validation',
+      'client-contract',
+    ]) {
+      expect(nativeJob).toContain(`tests/${file}.spec.ts`);
+    }
   });
 
   test('runs branch validation once through pull requests and still verifies main pushes', () => {

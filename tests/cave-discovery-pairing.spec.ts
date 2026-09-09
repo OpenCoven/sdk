@@ -1,5 +1,5 @@
 import { chmod, lstat, mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join, posix, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -8,6 +8,7 @@ import {
   createDiscoveredCaveClient,
   discoverCaveEndpoint,
   type CaveCredentialPersistingTransport,
+  type CaveDiscoveryDependencies,
 } from '@opencoven/cave-client';
 import {
   createMemorySecretStore,
@@ -363,10 +364,21 @@ function abortingFetch(
   );
 }
 
-function discoveryDependencies() {
+function discoveryDependencies(): CaveDiscoveryDependencies {
   return {
     getEffectiveUid: () => DEFAULT_UID,
     isProcessAlive: (pid: number) => pid === DISCOVERY_PID,
+    // These owned test fixtures stand in for the host's native Windows trust adapter.
+    windowsPathTrust: {
+      validate: async (path) => {
+        const stats = await lstat(path);
+        return { trusted: true, identity: `${stats.dev}:${stats.ino}` };
+      },
+      validateOpenedFile: async (handle) => {
+        const stats = await handle.stat();
+        return { trusted: true, identity: `${stats.device}:${stats.inode}` };
+      },
+    },
   };
 }
 
@@ -491,7 +503,7 @@ function createSlowMutationStore(
 
 function inlineDiscoveredClient(fetchImplementation: typeof fetch) {
   const root = '/Users/example/.coven/cave';
-  const recordPath = join(root, DISCOVERY_FILE_NAME);
+  const recordPath = posix.join(root, DISCOVERY_FILE_NAME);
   const serialized = `${JSON.stringify(discoveryRecord())}\n`;
 
   return createDiscoveredCaveClient({
@@ -501,6 +513,7 @@ function inlineDiscoveredClient(fetchImplementation: typeof fetch) {
     },
     discovery: {
       root,
+      platform: 'darwin',
       timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
       dependencies: {
         getEffectiveUid: () => DEFAULT_UID,
@@ -611,17 +624,16 @@ describe('discoverCaveEndpoint', () => {
     const path = await writeDiscoveryRecord(root, discoveryRecord());
     const stats = await lstat(path);
 
-    await expect(
-      discoverCaveEndpoint({
-        env: {
-          COVEN_CAVE_HOME: root,
-        },
-        cwd: process.cwd(),
-        platform: process.platform,
-        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
-        dependencies: discoveryDependencies(),
-      }),
-    ).resolves.toEqual({
+    const endpoint = await discoverCaveEndpoint({
+      env: {
+        COVEN_CAVE_HOME: root,
+      },
+      cwd: process.cwd(),
+      platform: process.platform,
+      timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
+      dependencies: discoveryDependencies(),
+    });
+    expect(endpoint).toMatchObject({
       version: 1,
       endpoint: {
         kind: 'http',
@@ -634,10 +646,24 @@ describe('discoverCaveEndpoint', () => {
       },
       record: {
         path,
-        device: stats.dev,
-        inode: stats.ino,
       },
     });
+    expect(Number.isSafeInteger(endpoint.record.device)).toBe(true);
+    expect(Number.isSafeInteger(endpoint.record.inode)).toBe(true);
+    if (
+      Number.isSafeInteger(stats.dev) &&
+      stats.dev > 0 &&
+      Number.isSafeInteger(stats.ino) &&
+      stats.ino > 0
+    ) {
+      expect(endpoint.record).toMatchObject({
+        device: stats.dev,
+        inode: stats.ino,
+      });
+    } else {
+      expect(endpoint.record.device).toBeGreaterThan(0);
+      expect(endpoint.record.inode).toBeGreaterThan(0);
+    }
   });
 
   test('accepts the producer-supported localhost endpoint with an explicit port', async () => {
@@ -745,6 +771,7 @@ describe('discoverCaveEndpoint', () => {
         dependencies: {
           ...discoveryDependencies(),
           getEffectiveUid: () => DEFAULT_UID + 1,
+          windowsPathTrust: { validate: () => Promise.resolve(false) },
         },
       }),
     ).rejects.toMatchObject({
@@ -761,10 +788,13 @@ describe('discoverCaveEndpoint', () => {
       discoverCaveEndpoint({
         root: modeRoot,
         timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
-        dependencies: discoveryDependencies(),
+        dependencies: {
+          ...discoveryDependencies(),
+          windowsPathTrust: { validate: () => Promise.resolve(false) },
+        },
       }),
     ).rejects.toMatchObject({
-      code: 'unsafe_endpoint',
+      code: process.platform === 'win32' ? 'owner_mismatch' : 'unsafe_endpoint',
       retryable: false,
     });
 
@@ -785,11 +815,12 @@ describe('discoverCaveEndpoint', () => {
     });
 
     const swappedRoot = '/Users/example/.coven/cave';
-    const swappedPath = join(swappedRoot, DISCOVERY_FILE_NAME);
+    const swappedPath = posix.join(swappedRoot, DISCOVERY_FILE_NAME);
     const swappedRecord = JSON.stringify(discoveryRecord());
     await expect(
       discoverCaveEndpoint({
         root: swappedRoot,
+        platform: 'darwin',
         timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: {
           getEffectiveUid: () => DEFAULT_UID,
@@ -837,7 +868,7 @@ describe('discoverCaveEndpoint', () => {
 
   test('rejects a discovery record replaced after its contents are read', async () => {
     const root = '/Users/example/.coven/cave';
-    const recordPath = join(root, DISCOVERY_FILE_NAME);
+    const recordPath = posix.join(root, DISCOVERY_FILE_NAME);
     const serialized = `${JSON.stringify(discoveryRecord())}\n`;
     const rootIdentity = identity({
       directory: true,
@@ -853,6 +884,7 @@ describe('discoverCaveEndpoint', () => {
     await expect(
       discoverCaveEndpoint({
         root,
+        platform: 'darwin',
         timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: {
           getEffectiveUid: () => DEFAULT_UID,
@@ -886,7 +918,7 @@ describe('discoverCaveEndpoint', () => {
 
   test('rejects a discovery root replaced after record contents are read', async () => {
     const root = '/Users/example/.coven/cave';
-    const recordPath = join(root, DISCOVERY_FILE_NAME);
+    const recordPath = posix.join(root, DISCOVERY_FILE_NAME);
     const serialized = `${JSON.stringify(discoveryRecord())}\n`;
     const rootIdentity = identity({
       directory: true,
@@ -902,6 +934,7 @@ describe('discoverCaveEndpoint', () => {
     await expect(
       discoverCaveEndpoint({
         root,
+        platform: 'darwin',
         timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
         dependencies: {
           getEffectiveUid: () => DEFAULT_UID,
