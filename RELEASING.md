@@ -214,10 +214,13 @@ passing evidence record for each target.
 The frozen Chat production source
 `5d5cb69ce12c6581a6afd0074e55296f9a2d5b4c` is exercised by the compatible
 schema-v2 producer at
-`6ab87e150af7b46ce4d3c0a480a14b8a06acc694`. Its source lock was pinned by
-reachable authority commit `efc69a4f5bd66751f8273b329e0fd103f41a1656`
+`5bcd548d523a34dcff8b693c3fa2ba1edcf9add1`. Its source lock was pinned by
+reachable authority commit `051a7c31b62427ce08a120611580386d351075ad`
 to executable harness behavior revision
-`97fc19619f4524c6a7c36d684c2adcdb40ff491b`.
+`35a39711998e4d0542f1b7d835feeec424b9cff6`.
+Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
+toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
+or a global Rust default.
 Its protected workflow requires
 an exact SDK `validator_revision`, uses protected environment ID
 `20863036831`, validates the three static platform artifacts in
