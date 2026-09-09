@@ -102,4 +102,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Verify native binding and adapter contracts
-        run: pnpm exec vitest run tests/native-secret-store.spec.ts
+        run: >-
+          pnpm exec vitest run tests/native-secret-store.spec.ts
+          tests/cave-discovery-pairing.spec.ts
+          tests/cave-canonical-reads.spec.ts
+          tests/cave-hpke-bound-v1.spec.ts
+          tests/cave-managed-native.spec.ts
+          tests/cave-managed-native-staged.spec.ts
+          tests/coven-discovery.spec.ts
+          tests/health-validation.spec.ts
+          tests/client-contract.spec.ts
