@@ -101,6 +101,17 @@ function checkoutSteps(source: string): string[] {
 }
 
 describe('workflow action pins', () => {
+  test('exercises the native keyring adapter on Linux, macOS, and Windows', () => {
+    const nativeJob = workflow.split('\n  native-keyring:\n')[1]?.split(/\n {2}\S/u)[0];
+
+    expect(nativeJob).toBeDefined();
+    expect(nativeJob).toContain('runs-on: ${{ matrix.os }}');
+    expect(nativeJob).toContain("os: ['ubuntu-latest', 'macos-latest', 'windows-latest']");
+    expect(nativeJob).toContain('node-version: 24.18.1');
+    expect(nativeJob).toContain('pnpm install --frozen-lockfile');
+    expect(nativeJob).toContain('pnpm exec vitest run tests/native-secret-store.spec.ts');
+  });
+
   test('runs branch validation once through pull requests and still verifies main pushes', () => {
     expect(workflow).toMatch(
       /^on:\n\s{2}push:\n\s{4}branches:\n\s{6}- main\n\s{2}pull_request:\n/m,
@@ -210,8 +221,10 @@ describe('workflow action pins', () => {
     const ciSdkCheckouts = checkoutSteps(workflow).filter(
       (step) => !step.includes('repository:'),
     );
-    expect(ciSdkCheckouts).toHaveLength(1);
-    expect(ciSdkCheckouts[0]).toContain('fetch-depth: 0');
+    expect(ciSdkCheckouts).toHaveLength(2);
+    for (const checkout of ciSdkCheckouts) {
+      expect(checkout).toContain('fetch-depth: 0');
+    }
 
     const repositoryVerificationJob = releaseWorkflow.slice(
       releaseWorkflow.indexOf('\n  repository-verification:\n'),
