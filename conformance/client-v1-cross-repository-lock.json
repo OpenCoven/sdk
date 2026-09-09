@@ -165,12 +165,12 @@
   "evidenceProducer": {
     "status": "compatible",
     "repository": "OpenCoven/chat",
-    "commit": "c15936296d0bba8bc36601c8dc20d6884754c0c3",
-    "tree": "cdfbf23c50b48611afc70d51ba2c10caa90f5722",
+    "commit": "523b49f4e7e512c467483fc4373844dea6c2d077",
+    "tree": "827da29893ec88c1c3a9c95b6b069a5c51c2ba52",
     "packageManifest": {
       "path": "package.json",
       "size": 4044,
-      "sha256": "ed23998109c7762c18120ecbe31ef517f24ab7a1630239e0ca65a56112aa619b"
+      "sha256": "7c111a42060ecb80017542f0b87bbc227d3944709a175274ddf7dcc7390fd302"
     },
     "harness": {
       "path": "scripts/phase1-conformance.mjs",
@@ -249,8 +249,8 @@
         ]
       },
       "signerWorkflow": "OpenCoven/chat/.github/workflows/client-v1-conformance.yml",
-      "signerDigest": "c15936296d0bba8bc36601c8dc20d6884754c0c3",
-      "sourceDigest": "c15936296d0bba8bc36601c8dc20d6884754c0c3",
+      "signerDigest": "523b49f4e7e512c467483fc4373844dea6c2d077",
+      "sourceDigest": "523b49f4e7e512c467483fc4373844dea6c2d077",
       "predicateType": "https://slsa.dev/provenance/v1",
       "denySelfHostedRunners": true
     }
