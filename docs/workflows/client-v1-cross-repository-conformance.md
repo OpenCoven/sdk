@@ -28,16 +28,20 @@ There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `5d5cb69ce12c6581a6afd0074e55296f9a2d5b4c`; the compatible evidence producer
 is the pinned `refs/heads/main` commit
-`9dc8eec56510ae17ed2bc84d5a903d41ffb9578d`. Its source lock was pinned by
-reachable authority commit `f7030e33ca7e82596d2d4a27ee21b67ae7ed5440`
+`4cf28daa3017e683ccce76b42c3590919b984c90`. Its source lock was pinned by
+reachable authority commit `b17b9b72733234740d0891b19a0398b7f84ddeba`
 to executable harness behavior revision
-`3acd9d83ac99d91b1448c5cc1fc6f92f0af0a422`.
+`5f7b09b64a4b1911b9ed6cf191fa14e20fc32770`.
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
 toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
 or a global Rust default.
 Schema-v2 also preserves the built Chat RPC executable outside its Cargo
-target and removes that target before the Coven build; Windows disk, silent
-exit, and native process failures remain bounded to path-free diagnostics.
+target and removes that target before the Coven build. It now preserves the
+built Coven executable the same way and removes the Coven target before the
+shared observation target starts. Residual observation failures expose only
+fixed SDK/Chat install, test, Rust-test, or cleanup substages; Windows disk,
+silent exit, and native process failures remain bounded to path-free
+diagnostics.
 The harness preserves bounded Cave record identity, timing, and assertion
 diagnostics through both producer wrappers. Malformed timestamps are rejected
 before range comparisons; record values and private error causes are never logged.
@@ -305,7 +309,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`9dc8eec56510ae17ed2bc84d5a903d41ffb9578d` compatible with the reviewed
+`4cf28daa3017e683ccce76b42c3590919b984c90` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
