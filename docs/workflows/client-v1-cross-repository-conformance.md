@@ -28,20 +28,21 @@ There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `5d5cb69ce12c6581a6afd0074e55296f9a2d5b4c`; the compatible evidence producer
 is the pinned `refs/heads/main` commit
-`89d363036964f9d12a35eb3e7688079ebd59219c`. Its source lock was pinned by
-reachable authority commit `a1dce969d9d6fcb0eb684342f79bebf691faa8f4`
+`6ab87e150af7b46ce4d3c0a480a14b8a06acc694`. Its source lock was pinned by
+reachable authority commit `efc69a4f5bd66751f8273b329e0fd103f41a1656`
 to executable harness behavior revision
-`3421eac231cde912e70c734da1cc94cd399a9702`.
+`97fc19619f4524c6a7c36d684c2adcdb40ff491b`.
 The harness preserves bounded Cave record identity, timing, and assertion
 diagnostics through both producer wrappers. Malformed timestamps are rejected
 before range comparisons; record values and private error causes are never logged.
 Windows schema-v2 commands use the nonce-bound pnpm CLI through Node, and
 the bootstrap does not reference child-only variables in the parent scope.
-The exact Windows image is `20260907.229.1` with Visual Studio
-`18.9.12120.119`, reviewed against the immutable `actions/runner-images`
-inventory at `c240f76fa0dd523af7376dbe8480964a3cb0af47`. This refresh changes
-only those two step-level inventory values; executable bootstrap blocks,
-other runtime pins, trusted paths, and signature checks remain unchanged.
+The Windows bootstrap accepts only the reviewed image/Visual Studio pairs
+`20260824.214.3`/`18.9.12112.369` and
+`20260907.229.1`/`18.9.12120.119`, reviewed against immutable
+`actions/runner-images` inventories. Unknown images, unknown Visual Studio
+versions, and crossed pairs fail closed; other runtime pins, trusted paths,
+signature checks, containment, and quotas remain unchanged.
 Windows quotas follow the isolated identity's actual temporary directory.
 The Cave checkout receives 4 GiB while execution and bootstrap aggregates
 retain their 10 GiB and 12 GiB bounds. Only Windows schema-v2 native builds
@@ -298,7 +299,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`89d363036964f9d12a35eb3e7688079ebd59219c` compatible with the reviewed
+`6ab87e150af7b46ce4d3c0a480a14b8a06acc694` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
