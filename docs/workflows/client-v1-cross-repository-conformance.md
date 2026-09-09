@@ -28,19 +28,28 @@ There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `5d5cb69ce12c6581a6afd0074e55296f9a2d5b4c`; the compatible evidence producer
 is the pinned `refs/heads/main` commit
-`f6eba8af1f71d4251583cf39d4e5fb5b4797d209`. Its source lock was pinned by
-reachable authority commit `5d19823ff37997d165437441f1353e79c4f3349a`
+`293a6282ef76763bb6334e1232baf4eb77cb2ef7`. Its source lock was pinned by
+reachable authority commit `d39e7b507bcf731f2e28916f52620933dfde01e2`
 to executable harness behavior revision
-`15b0f4cb9f6bcd5f70b9afd156c55b2b8b8f1569`.
+`a5f3d65e21c28f5617117a58e27df0e8a22b7615`.
 The harness preserves bounded Cave record identity, timing, and assertion
 diagnostics through both producer wrappers. Malformed timestamps are rejected
 before range comparisons; record values and private error causes are never logged.
 Windows schema-v2 commands use the nonce-bound pnpm CLI through Node, and
 the bootstrap does not reference child-only variables in the parent scope.
+Windows quotas follow the isolated identity's actual temporary directory.
+The Cave checkout receives 4 GiB while execution and bootstrap aggregates
+retain their 10 GiB and 12 GiB bounds. Only Windows schema-v2 native builds
+disable debug symbols and incremental compilation, including the shared
+observation target. The primary bounded failure is emitted before cleanup;
+cleanup failures still fail closed.
+The ordinary packed canary uses the SDK's explicit conformance-artifact API
+instead of the publication CLI, without enabling publication or treating its
+output as accepted conformance evidence.
 The portable Cave canonical-ID assertion removes filesystem-casing dependence
 without accepting skips. The packed-consumer and Phase 1 locks name the same
 portable Cave checkout; SDK tarball and Cave fixture digests remain unchanged.
-These repairs do not establish a passing platform record.
+These repairs do not establish a passing replacement-candidate platform record.
 The frozen workflow separates platform production, exact SDK validation,
 provenance attestation, and aggregation. Its lock records the validation and
 attestation job identities, the three static artifact names and record paths,
