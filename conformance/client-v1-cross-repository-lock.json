@@ -11,7 +11,7 @@
     "path": "conformance/client-v1-cross-repository-evidence.schema.json",
     "version": 2,
     "size": 23174,
-    "sha256": "2581b0976ba655e238d98322adb81ddfa3bc0a251e25d49fb888fa4726435471"
+    "sha256": "593115e2ededad802f386f764006d97c282d2be15c855f95936aa98a7a24a075"
   },
   "candidate": {
     "repository": "OpenCoven/sdk",
@@ -88,14 +88,14 @@
   "sources": {
     "cave": {
       "repository": "OpenCoven/coven-cave",
-      "commit": "bc310e9753783678014086ed6f7ef7d3fb797967",
-      "tree": "8a9882f45c7b9f55a2d9bb6cbd16d3ead3c489e6",
+      "commit": "d20d83c46ba0c32433ce8dc6a358fb14b6bd0e45",
+      "tree": "7ff358ac42a9d94ae5feb1f08e2af64a5513e78e",
       "releaseVersion": "0.3.12",
       "files": [
         {
           "path": "scripts/client-v1-conformance.mjs",
-          "size": 146432,
-          "sha256": "b611d2b2935dad3cf913eda45e30ba109ba2ab53dadfef8670a26c7c03b115dd"
+          "size": 146472,
+          "sha256": "a3f16292f0200711c44553bb6874d64f19e94474ae7e9412127ac4c705b79f2c"
         },
         {
           "path": "src/lib/server/client-v1/contract-fixture.json",
@@ -274,6 +274,6 @@
   "assertionRegistry": {
     "path": "conformance/client-v1-cross-repository-assertions.json",
     "size": 10715,
-    "sha256": "0f8df49a870b7beaac81bc417c072d7f77c1e8a7c2c4ab1241dffe5cd757bbb1"
+    "sha256": "66181b715e5566ce34d0470a7d5b6e2c96ab3af3d1ac40c2ec1c10f433906769"
   }
 }

@@ -1613,8 +1613,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     ]);
     expect(lock.sources).toMatchObject({
       cave: {
-        commit: 'bc310e9753783678014086ed6f7ef7d3fb797967',
-        tree: '8a9882f45c7b9f55a2d9bb6cbd16d3ead3c489e6',
+        commit: 'd20d83c46ba0c32433ce8dc6a358fb14b6bd0e45',
+        tree: '7ff358ac42a9d94ae5feb1f08e2af64a5513e78e',
       },
       coven: {
         commit: '721437b84026c042e431b0882dcd14fdb29ac07d',
@@ -1967,13 +1967,13 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(registry.schemaVersion).toBe(2);
     expect(registry.provenance).toEqual({
       repository: 'OpenCoven/coven-cave',
-      commit: 'bc310e9753783678014086ed6f7ef7d3fb797967',
-      tree: '8a9882f45c7b9f55a2d9bb6cbd16d3ead3c489e6',
+      commit: 'd20d83c46ba0c32433ce8dc6a358fb14b6bd0e45',
+      tree: '7ff358ac42a9d94ae5feb1f08e2af64a5513e78e',
       engine: {
         path: 'scripts/client-v1-conformance.mjs',
-        size: 146_432,
+        size: 146_472,
         sha256:
-          'b611d2b2935dad3cf913eda45e30ba109ba2ab53dadfef8670a26c7c03b115dd',
+          'a3f16292f0200711c44553bb6874d64f19e94474ae7e9412127ac4c705b79f2c',
       },
       includeTtl: true,
       includeAuthorityTakeover: true,
@@ -4976,7 +4976,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       'OPENCOVEN_CAVE_AUTHORITY_ROOT: ${{ github.workspace }}/.artifacts/cave-authority',
     );
     expect(workflow).toContain(
-      'ref: bc310e9753783678014086ed6f7ef7d3fb797967',
+      'ref: d20d83c46ba0c32433ce8dc6a358fb14b6bd0e45',
     );
     expect(workflow).toContain('path: .artifacts/cave-authority');
   });
