@@ -170,10 +170,10 @@ trailing newline. Its shape is:
     "commit": "<release-commit>",
     "repository": "OpenCoven/sdk",
     "runtimeManifest": {
-      "candidateCommit": "6526b56b30c9a9c1c072caf2f0022d3427ae18db",
-      "candidateTree": "1a3810a931c7b0914d656eafcd5254a94a9cdb19",
+      "candidateCommit": "1597835325cf3762b51408ff0a565037eeb25f64",
+      "candidateTree": "f2c2478c77293560be6b04199b641fa467a2cc2b",
       "file": "publication-source-manifest.json",
-      "runtimeSha256": "d1e6ba145534897b5a55b4d81511c5e797f245b436d84545f2418759d44a1121",
+      "runtimeSha256": "ba1b822d45e130579209f6da4fa11bdac775b0213c08ffb3af1838448207733f",
       "sha256": "<raw-source-manifest-sha256>",
       "size": "<raw-source-manifest-size>"
     },
@@ -212,7 +212,7 @@ support and does not by itself authorize release; #38 still requires one
 passing evidence record for each target.
 
 The frozen Chat production source
-`5d5cb69ce12c6581a6afd0074e55296f9a2d5b4c` is exercised by the compatible
+`841a88f8885bc20cac2f9d5b5b6bc2a23a76e657` is exercised by the compatible
 schema-v2 producer at
 `4cf28daa3017e683ccce76b42c3590919b984c90`. Its source lock was pinned by
 reachable authority commit `b17b9b72733234740d0891b19a0398b7f84ddeba`
@@ -259,9 +259,9 @@ as documented in
 
 Before advancing this candidate after that blocker is resolved, copy the
 canonical aggregate to
-`docs/client-v1-cross-repository-results/6526b56b30c9a9c1c072caf2f0022d3427ae18db.json`,
+`docs/client-v1-cross-repository-results/1597835325cf3762b51408ff0a565037eeb25f64.json`,
 and add the sibling reviewed evidence index
-`docs/client-v1-cross-repository-results/6526b56b30c9a9c1c072caf2f0022d3427ae18db.index.json`.
+`docs/client-v1-cross-repository-results/1597835325cf3762b51408ff0a565037eeb25f64.index.json`.
 The index is a reviewed locator and expected-value record, not an
 authentication oracle. Release readiness uses the standard GitHub workflow
 token to fetch the exact Chat workflow bytes, run, job, and artifact records

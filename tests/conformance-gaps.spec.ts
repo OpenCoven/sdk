@@ -1534,13 +1534,13 @@ describe('unresolved SDK #38 conformance gaps', () => {
     };
 
     expect(lock.candidate).toMatchObject({
-      commit: '6526b56b30c9a9c1c072caf2f0022d3427ae18db',
-      tree: '1a3810a931c7b0914d656eafcd5254a94a9cdb19',
+      commit: '1597835325cf3762b51408ff0a565037eeb25f64',
+      tree: 'f2c2478c77293560be6b04199b641fa467a2cc2b',
       releaseManifest: {
         file: 'release-manifest.json',
         size: 1_031,
         sha256:
-          'addec3436daf8e99633ea3216b0ed80ad856d244e1676823cf338adfdb1cbc41',
+          'a0f4bffb4619856997668371d0cf471d35c085b884ff5b3082510d0006ebb2d5',
       },
     });
     expect(lock.candidate.sdkPackages).toEqual([
@@ -1558,9 +1558,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
         version: '0.1.0',
         releaseFile: 'tarballs/cave/opencoven-cave-client-0.1.0.tgz',
         vendorPath: 'vendor/opencoven-sdk/cave-client-0.1.0.tgz',
-        size: 81_543,
+        size: 82_000,
         sha256:
-          '5718ff2964e5e897d54c01d785530df4d6ac4642b96209d6d5d0713fb0e4459d',
+          '21f03dd75d16aa40803d336490981ee83bc63ca69eeb090824eeb0eba9df0858',
       },
       {
         packageName: '@opencoven/coven-client',
@@ -1623,13 +1623,13 @@ describe('unresolved SDK #38 conformance gaps', () => {
         tree: '7cc5988b5a06f3f279e5c034cf2228775bd2b0e0',
       },
       chat: {
-        commit: '5d5cb69ce12c6581a6afd0074e55296f9a2d5b4c',
-        tree: '10b268f706b2a9b97c48c973dfcc0a71dc1a2a0a',
+        commit: '841a88f8885bc20cac2f9d5b5b6bc2a23a76e657',
+        tree: '81bbc67b3024c9c76444f7f4e84d79ac6fad1cc6',
         consumerLock: {
           path: 'pnpm-lock.yaml',
           size: 56_222,
           sha256:
-            'fd5ee257005c81071bec2b4f0fbc33c18debc25e4ae57b72e60d3837663b4bd2',
+            'aa514bcde77a8e572ceb25d06ce500a897e39d2ed0095ad1557572c04e0ae95b',
         },
       },
     });
@@ -1641,7 +1641,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           '-C',
           workspaceRoot,
           'rev-parse',
-          '6526b56b30c9a9c1c072caf2f0022d3427ae18db^{tree}',
+          '1597835325cf3762b51408ff0a565037eeb25f64^{tree}',
         ],
         { encoding: 'utf8' },
       ).trim(),
@@ -1653,7 +1653,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           '-C',
           workspaceRoot,
           'show',
-          `6526b56b30c9a9c1c072caf2f0022d3427ae18db:${expected.path}`,
+          `1597835325cf3762b51408ff0a565037eeb25f64:${expected.path}`,
         ],
         { encoding: 'buffer' },
       );
@@ -2100,7 +2100,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
     const harness = evidence.harness as { commit: string; tree: string };
 
     expect(provenance.candidate.commit).toBe(
-      '6526b56b30c9a9c1c072caf2f0022d3427ae18db',
+      '1597835325cf3762b51408ff0a565037eeb25f64',
     );
     expect(provenance.validator.commit).not.toBe(
       provenance.candidate.commit,
@@ -2293,7 +2293,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
             candidate: {
               provenance: {
                 repository: 'OpenCoven/sdk',
-                commit: '6526b56b30c9a9c1c072caf2f0022d3427ae18db',
+                commit: '1597835325cf3762b51408ff0a565037eeb25f64',
               },
             },
             summary: { status: 'passed' },
@@ -2352,7 +2352,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
     };
     const aggregateText = contract.serializeCanonicalJson(aggregateRecord);
     const aggregatePath =
-      'docs/client-v1-cross-repository-results/6526b56b30c9a9c1c072caf2f0022d3427ae18db.json';
+      'docs/client-v1-cross-repository-results/1597835325cf3762b51408ff0a565037eeb25f64.json';
     const compatibleLock = createCompatibleLock(lock);
     const index = {
       schemaVersion: 1,
@@ -2574,7 +2574,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
     };
     const aggregateText = contract.serializeCanonicalJson(aggregateRecord);
     const aggregatePath =
-      'docs/client-v1-cross-repository-results/6526b56b30c9a9c1c072caf2f0022d3427ae18db.json';
+      'docs/client-v1-cross-repository-results/1597835325cf3762b51408ff0a565037eeb25f64.json';
     const producer = TEST_COMPATIBLE_PRODUCER;
     const toolchain = lock.toolchain as {
       nodeVersion: string;
