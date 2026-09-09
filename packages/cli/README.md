@@ -83,7 +83,7 @@ nested causes are emitted.
 
 ## Native secure storage
 
-The CLI uses `@napi-rs/keyring` `1.3.0` directly and does not fall back to
+The CLI uses `@napi-rs/keyring` `2.0.0` directly and does not fall back to
 files, shell commands, environment variables, or alternate keychain adapters.
 `opencoven doctor` verifies native secure storage with a non-destructive probe
 against a dedicated keyring account so constructor and backend availability are

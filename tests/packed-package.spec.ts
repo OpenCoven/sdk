@@ -122,7 +122,7 @@ function expectedPackedDependencies(workspaceDirectory: string, version: string)
       };
     case 'cli':
       return {
-        '@napi-rs/keyring': '1.3.0',
+        '@napi-rs/keyring': '2.0.0',
         '@opencoven/cave-client': version,
         '@opencoven/coven-client': version,
         '@opencoven/sdk-core': version,

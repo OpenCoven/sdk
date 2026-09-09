@@ -146,7 +146,7 @@ corepack pnpm@10.34.0 verify:automations-v1-evidence
 Every command performs runtime discovery only when invoked, enforces an
 explicit reviewed deadline, and keeps human and JSON output secret-free.
 `cave pair` uses one absolute budget across create, poll, and exchange.
-Production credentials require direct `@napi-rs/keyring` `1.3.0`; the CLI
+Production credentials require direct `@napi-rs/keyring` `2.0.0`; the CLI
 fails closed with `secure_store_unavailable` and has no file, shell, or
 environment fallback. `coven health` requires a real reviewed native
 platform-security adapter; the default Node CLI reports

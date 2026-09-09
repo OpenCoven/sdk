@@ -90,7 +90,7 @@ const EXPECTED_WORKSPACE_DEPENDENCIES = {
     '@opencoven/sdk-core': 'workspace:0.1.0',
   },
   cli: {
-    '@napi-rs/keyring': '1.3.0',
+    '@napi-rs/keyring': '2.0.0',
     '@opencoven/cave-client': 'workspace:0.1.0',
     '@opencoven/coven-client': 'workspace:0.1.0',
     '@opencoven/sdk-core': 'workspace:0.1.0',
@@ -260,12 +260,12 @@ describe('workspace package manifests', () => {
       optionalDependencies?: Record<string, string>;
     };
 
-    expect(cliManifest.dependencies?.['@napi-rs/keyring']).toBe('1.3.0');
+    expect(cliManifest.dependencies?.['@napi-rs/keyring']).toBe('2.0.0');
     expect(cliManifest.optionalDependencies?.['@napi-rs/keyring']).toBeUndefined();
     expect(lockfile).toMatch(/['"]@napi-rs\/keyring['"]:/);
-    expect(lockfile).toContain('specifier: 1.3.0');
-    expect(lockfile).toContain("'@napi-rs/keyring@1.3.0':");
-    expect(lockfile).toMatch(/optionalDependencies:\n(?:\s+'@napi-rs\/keyring-[^']+': 1\.3\.0\n)+/);
+    expect(lockfile).toContain('specifier: 2.0.0');
+    expect(lockfile).toContain("'@napi-rs/keyring@2.0.0':");
+    expect(lockfile).toMatch(/optionalDependencies:\n(?:\s+'@napi-rs\/keyring-[^']+': 2\.0\.0\n)+/);
   });
 
   test('declare exact root export maps, dependencies, and approved package metadata', () => {
