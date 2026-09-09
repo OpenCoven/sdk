@@ -28,10 +28,17 @@ There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
 is the pinned `refs/heads/main` commit
-`ada542f731ea1b65dd4e6de94ab7dc28b0551740`. Its source lock was pinned by
-reachable authority commit `25b3bc6883954aff21d2108f49aa7be6a08ccef0`
+`79eab77884245b4f34d8a14b5e1c8cea78b6dabe`. Its source lock was pinned by
+reachable authority commit `8aacd8f43e49d53af31a0bfc61fab4a63e93ca8c`
 to executable harness behavior revision
-`50ad59966d9ebdae3a97459bc21670e461bd6dd9`.
+`4b35a86470abc2864095dd2fcd91fd0aafb3e869`.
+The harness preserves bounded Cave record identity, timing, and assertion
+diagnostics through both producer wrappers. Malformed timestamps are rejected
+before range comparisons; record values and private error causes are never logged.
+Windows schema-v2 commands use the nonce-bound pnpm CLI through Node, and
+the bootstrap does not reference child-only variables in the parent scope.
+The portable Cave canonical-ID assertion removes filesystem-casing dependence
+without accepting skips. These repairs do not establish a passing platform record.
 The frozen workflow separates platform production, exact SDK validation,
 provenance attestation, and aggregation. Its lock records the validation and
 attestation job identities, the three static artifact names and record paths,
@@ -275,11 +282,19 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`ada542f731ea1b65dd4e6de94ab7dc28b0551740` compatible with the reviewed
+`79eab77884245b4f34d8a14b5e1c8cea78b6dabe` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
 attestations exist and are reviewed.
+
+Before dispatch, verify that Chat main still equals the frozen producer commit.
+If another Chat change lands first, rebind this validator to that merged producer
+and recheck its exact workflow and harness bytes before rotating the protected
+variable. Dispatch from main with the same merged SDK revision as
+`validator_revision`; a successful ordinary CI run does not replace protected
+conformance. Keep `publishingEnabled: false` and the aggregate record unset until
+all release evidence requirements are met.
 
 The three records must come from one exact run attempt. The verifier fetches
 the attempt's complete job list and requires exactly the three successful
