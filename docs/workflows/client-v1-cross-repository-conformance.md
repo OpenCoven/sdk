@@ -32,8 +32,9 @@ is the pinned `refs/heads/main` commit
 reachable authority commit `051a7c31b62427ce08a120611580386d351075ad`
 to executable harness behavior revision
 `35a39711998e4d0542f1b7d835feeec424b9cff6`.
-Both harness schemas preserve the resolved Rust toolchain ahead of the
-supervisor PATH, without inheriting Cargo credentials or a global Rust default.
+Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
+toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
+or a global Rust default.
 The harness preserves bounded Cave record identity, timing, and assertion
 diagnostics through both producer wrappers. Malformed timestamps are rejected
 before range comparisons; record values and private error causes are never logged.

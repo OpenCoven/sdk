@@ -218,8 +218,9 @@ schema-v2 producer at
 reachable authority commit `051a7c31b62427ce08a120611580386d351075ad`
 to executable harness behavior revision
 `35a39711998e4d0542f1b7d835feeec424b9cff6`.
-Both harness schemas preserve the resolved Rust toolchain ahead of the
-supervisor PATH, without inheriting Cargo credentials or a global Rust default.
+Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
+toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
+or a global Rust default.
 Its protected workflow requires
 an exact SDK `validator_revision`, uses protected environment ID
 `20863036831`, validates the three static platform artifacts in
