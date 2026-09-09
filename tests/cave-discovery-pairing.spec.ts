@@ -624,17 +624,16 @@ describe('discoverCaveEndpoint', () => {
     const path = await writeDiscoveryRecord(root, discoveryRecord());
     const stats = await lstat(path);
 
-    await expect(
-      discoverCaveEndpoint({
-        env: {
-          COVEN_CAVE_HOME: root,
-        },
-        cwd: process.cwd(),
-        platform: process.platform,
-        timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
-        dependencies: discoveryDependencies(),
-      }),
-    ).resolves.toEqual({
+    const endpoint = await discoverCaveEndpoint({
+      env: {
+        COVEN_CAVE_HOME: root,
+      },
+      cwd: process.cwd(),
+      platform: process.platform,
+      timeoutMs: DISCOVERY_TEST_TIMEOUT_MS,
+      dependencies: discoveryDependencies(),
+    });
+    expect(endpoint).toMatchObject({
       version: 1,
       endpoint: {
         kind: 'http',
@@ -647,10 +646,24 @@ describe('discoverCaveEndpoint', () => {
       },
       record: {
         path,
-        device: stats.dev,
-        inode: stats.ino,
       },
     });
+    expect(Number.isSafeInteger(endpoint.record.device)).toBe(true);
+    expect(Number.isSafeInteger(endpoint.record.inode)).toBe(true);
+    if (
+      Number.isSafeInteger(stats.dev) &&
+      stats.dev > 0 &&
+      Number.isSafeInteger(stats.ino) &&
+      stats.ino > 0
+    ) {
+      expect(endpoint.record).toMatchObject({
+        device: stats.dev,
+        inode: stats.ino,
+      });
+    } else {
+      expect(endpoint.record.device).toBeGreaterThan(0);
+      expect(endpoint.record.inode).toBeGreaterThan(0);
+    }
   });
 
   test('accepts the producer-supported localhost endpoint with an explicit port', async () => {

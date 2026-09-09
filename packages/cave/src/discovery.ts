@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { constants as fsConstants, type Stats } from 'node:fs';
 import { lstat as nodeLstat, open as nodeOpen, realpath as nodeRealpath } from 'node:fs/promises';
 import { posix, win32 } from 'node:path';
@@ -527,8 +528,26 @@ function hasPortableNodeIdentity(identity: CaveDiscoveryPathIdentity): boolean {
   );
 }
 
-function portableNodeIdentityValue(value: number): number {
-  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+function portableRecordIdentity(
+  identity: CaveDiscoveryPathIdentity,
+  nativeIdentity: string | undefined,
+): Pick<CaveDiscoveryRecordIdentity, 'device' | 'inode'> {
+  if (hasPortableNodeIdentity(identity)) {
+    return { device: identity.device, inode: identity.inode };
+  }
+  if (nativeIdentity === undefined) {
+    return fail('owner_mismatch', 'Windows Cave discovery native identity is required.');
+  }
+
+  const digest = createHash('sha256')
+    .update('opencoven-cave-record-native-identity-v1\0')
+    .update(nativeIdentity, 'utf8')
+    .digest();
+  const portableValue = (offset: number) => digest.readUIntBE(offset, 6) || 1;
+  return {
+    device: portableValue(0),
+    inode: portableValue(6),
+  };
 }
 
 function decodeJson(bytes: Uint8Array): string {
@@ -793,12 +812,15 @@ export async function discoverCaveEndpoint(
           !hasPortableNodeIdentity(currentRootIdentity)),
     );
 
+    const recordIdentity =
+      platform === 'win32'
+        ? portableRecordIdentity(initialIdentity, recordWindowsIdentity)
+        : { device: initialIdentity.device, inode: initialIdentity.inode };
     return {
       ...parseCaveDiscoveryRecord(serialized, isProcessAlive),
       record: {
         path: physicalRecordPath,
-        device: portableNodeIdentityValue(initialIdentity.device),
-        inode: portableNodeIdentityValue(initialIdentity.inode),
+        ...recordIdentity,
       },
     };
   } catch (error) {

@@ -14,7 +14,9 @@
 - Share credential mutation queues across duplicate module copies and use
   atomic compare-and-delete when the configured secret store supports it.
 - Treat unavailable (`0`) or out-of-range Windows device/inode metadata as
-  native-identity-only and require reviewed path and opened-handle trust.
+  native-identity-only, require reviewed path and opened-handle trust, and
+  derive stable portable credential-binding identifiers from that native
+  identity.
 - Bind stored credentials to the Cave health `instanceId`, prove it before
   bearer use, and bracket pairing exchange with pre/post authority proofs.
 - Treat failed post-exchange authority proof as a terminal re-pair condition
