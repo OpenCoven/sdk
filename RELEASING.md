@@ -212,7 +212,7 @@ support and does not by itself authorize release; #38 still requires one
 passing evidence record for each target.
 
 The frozen Chat production source
-`93bbe74e54e019ef2405c66ba0c8878b7133f920` is exercised by the compatible
+`5d5cb69ce12c6581a6afd0074e55296f9a2d5b4c` is exercised by the compatible
 schema-v2 producer at
 `523b49f4e7e512c467483fc4373844dea6c2d077`. Its source lock was pinned by
 reachable authority commit `8aacd8f43e49d53af31a0bfc61fab4a63e93ca8c`

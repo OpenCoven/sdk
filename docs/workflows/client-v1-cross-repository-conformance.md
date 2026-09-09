@@ -26,7 +26,7 @@ publication primitives needed to support the aggregator safely on Windows.
 
 There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
-`93bbe74e54e019ef2405c66ba0c8878b7133f920`; the compatible evidence producer
+`5d5cb69ce12c6581a6afd0074e55296f9a2d5b4c`; the compatible evidence producer
 is the pinned `refs/heads/main` commit
 `523b49f4e7e512c467483fc4373844dea6c2d077`. Its source lock was pinned by
 reachable authority commit `8aacd8f43e49d53af31a0bfc61fab4a63e93ca8c`
