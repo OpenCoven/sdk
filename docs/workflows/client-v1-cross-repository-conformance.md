@@ -28,10 +28,10 @@ There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `edd4728792321771496df58bfc0e6122908a96ec`; the compatible evidence producer
 is the pinned `refs/heads/main` commit
-`ada542f731ea1b65dd4e6de94ab7dc28b0551740`. Its source lock was pinned by
-reachable authority commit `25b3bc6883954aff21d2108f49aa7be6a08ccef0`
+`550039aa0c89efd3b48a6496911d3bd005b31387`. Its source lock was pinned by
+reachable authority commit `89cd566ec1280f6be45061854f87ebfc0238db95`
 to executable harness behavior revision
-`50ad59966d9ebdae3a97459bc21670e461bd6dd9`.
+`b47d347db1073c1b86c23fcf6467f20949a2df26`.
 The frozen workflow separates platform production, exact SDK validation,
 provenance attestation, and aggregation. Its lock records the validation and
 attestation job identities, the three static artifact names and record paths,
@@ -275,11 +275,19 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`ada542f731ea1b65dd4e6de94ab7dc28b0551740` compatible with the reviewed
+`550039aa0c89efd3b48a6496911d3bd005b31387` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
 attestations exist and are reviewed.
+
+Before dispatch, verify that Chat main still equals the frozen producer commit.
+If another Chat change lands first, rebind this validator to that merged producer
+and recheck its exact workflow and harness bytes before rotating the protected
+variable. Dispatch from main with the same merged SDK revision as
+`validator_revision`; a successful ordinary CI run does not replace protected
+conformance. Keep `publishingEnabled: false` and the aggregate record unset until
+all release evidence requirements are met.
 
 The three records must come from one exact run attempt. The verifier fetches
 the attempt's complete job list and requires exactly the three successful
