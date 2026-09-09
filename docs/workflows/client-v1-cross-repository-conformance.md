@@ -28,13 +28,16 @@ There is no passing aggregate in this repository yet. The frozen Chat
 production source remains
 `5d5cb69ce12c6581a6afd0074e55296f9a2d5b4c`; the compatible evidence producer
 is the pinned `refs/heads/main` commit
-`5bcd548d523a34dcff8b693c3fa2ba1edcf9add1`. Its source lock was pinned by
-reachable authority commit `051a7c31b62427ce08a120611580386d351075ad`
+`a57833a19ef0bfe954a086b8a99800213afa6956`. Its source lock was pinned by
+reachable authority commit `a031968191351b1e6fc5e45187df65812221314e`
 to executable harness behavior revision
-`35a39711998e4d0542f1b7d835feeec424b9cff6`.
+`effa8c419d8c57ff29d0672b6826ee778fab7c48`.
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
 toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
 or a global Rust default.
+Schema-v2 also preserves the built Chat RPC executable outside its Cargo
+target and removes that target before the Coven build; Windows disk, silent
+exit, and native process failures remain bounded to path-free diagnostics.
 The harness preserves bounded Cave record identity, timing, and assertion
 diagnostics through both producer wrappers. Malformed timestamps are rejected
 before range comparisons; record values and private error causes are never logged.
@@ -302,7 +305,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`5bcd548d523a34dcff8b693c3fa2ba1edcf9add1` compatible with the reviewed
+`a57833a19ef0bfe954a086b8a99800213afa6956` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
