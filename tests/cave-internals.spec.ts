@@ -1625,6 +1625,72 @@ describe('Cave discovery platform helpers', () => {
     });
   });
 
+  test('uses native Windows identity when Node file IDs exceed the safe integer range', async () => {
+    const root = 'C:\\Users\\Alice\\.coven\\cave';
+    const recordPath = `${root}\\client-v1-discovery.json`;
+    const recordBytes = discoveryRecord();
+    const unsafeInode = Number.MAX_SAFE_INTEGER + 1;
+    const rootIdentity = discoveredPathIdentity({
+      device: unsafeInode,
+      inode: unsafeInode,
+      regularFile: false,
+      directory: true,
+      mode: 0o040700,
+      size: 0,
+    });
+    const recordIdentity = discoveredPathIdentity({
+      device: unsafeInode,
+      inode: unsafeInode,
+      size: Buffer.byteLength(recordBytes),
+    });
+    const lstat = (path: string) => {
+      if (path === root) {
+        return Promise.resolve(rootIdentity);
+      }
+      if (path === recordPath) {
+        return Promise.resolve(recordIdentity);
+      }
+      return Promise.reject(Object.assign(new Error(`missing ${path}`), { code: 'ENOENT' }));
+    };
+    const validateOpenedFile = vi.fn(() =>
+      Promise.resolve({
+        trusted: true as const,
+        identity: 'record-id',
+      }),
+    );
+
+    await expect(
+      discoverCaveEndpoint({
+        cwd: 'C:\\workspace',
+        env: { USERPROFILE: 'C:\\Users\\Alice' },
+        platform: 'win32',
+        timeoutMs: 50,
+        dependencies: {
+          isProcessAlive: () => true,
+          lstat,
+          openFile: () => Promise.resolve(memoryHandle(recordBytes, recordIdentity)),
+          realpath: (path) => Promise.resolve(path),
+          windowsPathTrust: {
+            validate: (_path, purpose) =>
+              Promise.resolve({
+                trusted: true,
+                identity: purpose === 'root' ? 'root-id' : 'record-id',
+              }),
+            validateOpenedFile,
+          },
+        },
+      }),
+    ).resolves.toEqual({
+      ...discovered,
+      record: {
+        path: recordPath,
+        device: 0,
+        inode: 0,
+      },
+    });
+    expect(validateOpenedFile).toHaveBeenCalledOnce();
+  });
+
   test('fails closed when Windows home resolution or trust validation is unavailable', async () => {
     await expect(
       discoverCaveEndpoint({

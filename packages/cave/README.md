@@ -40,8 +40,9 @@ record path. Metadata-only checks, shell commands, and fabricated ACL trust are
 rejected; the helper fails closed until a real validator is injected. A
 trusted Windows validator must also return a stable native identity and
 implement `validateOpenedFile(...)` when Node reports the filesystem device or
-inode as `0`, allowing the path snapshots to be compared with the actual opened
-record. Unix discovery still requires a positive inode.
+inode as `0` or outside JavaScript's safe integer range, allowing the path
+snapshots to be compared with the actual opened record. Unix discovery still
+requires a positive safe-integer inode.
 
 ## Shipped surface
 

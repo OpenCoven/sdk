@@ -1,5 +1,4 @@
-import type { BigIntStats } from 'node:fs';
-import { chmod, lstat, mkdir, open, rename, rm, symlink, writeFile, type FileHandle } from 'node:fs/promises';
+import { chmod, lstat, mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { join, posix, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -10,8 +9,6 @@ import {
   discoverCaveEndpoint,
   type CaveCredentialPersistingTransport,
   type CaveDiscoveryDependencies,
-  type CaveDiscoveryFileHandle,
-  type CaveDiscoveryPathIdentity,
 } from '@opencoven/cave-client';
 import {
   createMemorySecretStore,
@@ -110,7 +107,6 @@ const DISCOVERY_TEST_TIMEOUT_MS = 1_000;
 const DEFAULT_DISCOVERY_ENDPOINT = 'http://127.0.0.1:3020';
 const DEFAULT_UID = process.geteuid?.() ?? 501;
 const createdRoots = new Set<string>();
-const windowsFixtureInodes = new Map<string, number>();
 
 function requestUrl(input: string | URL | Request): string {
   if (typeof input === 'string') {
@@ -368,66 +364,19 @@ function abortingFetch(
   );
 }
 
-function fixturePathIdentity(stats: BigIntStats): CaveDiscoveryPathIdentity {
-  let inode = Number(stats.ino);
-  if (process.platform === 'win32') {
-    // Preserve exact NTFS identity equality without rounding 64-bit IDs into JS numbers.
-    const key = `${stats.dev}:${stats.ino}`;
-    let fixtureInode = windowsFixtureInodes.get(key);
-    if (fixtureInode === undefined) {
-      fixtureInode = windowsFixtureInodes.size + 1;
-      windowsFixtureInodes.set(key, fixtureInode);
-    }
-    inode = fixtureInode;
-  }
-  return {
-    device: Number(stats.dev),
-    inode,
-    mode: Number(stats.mode),
-    ownerUid: Number(stats.uid),
-    size: Number(stats.size),
-    symbolicLink: stats.isSymbolicLink(),
-    regularFile: stats.isFile(),
-    directory: stats.isDirectory(),
-  };
-}
-
 function discoveryDependencies(): CaveDiscoveryDependencies {
-  const dependencies: CaveDiscoveryDependencies = {
+  return {
     getEffectiveUid: () => DEFAULT_UID,
     isProcessAlive: (pid: number) => pid === DISCOVERY_PID,
-  };
-  if (process.platform !== 'win32') {
-    return dependencies;
-  }
-  const handles = new WeakMap<CaveDiscoveryFileHandle, FileHandle>();
-  return {
-    ...dependencies,
-    lstat: async (path) => fixturePathIdentity(await lstat(path, { bigint: true })),
-    openFile: async (path, flags) => {
-      const nativeHandle = await open(path, flags);
-      const handle: CaveDiscoveryFileHandle = {
-        close: () => nativeHandle.close(),
-        read: (buffer, offset, length, position) =>
-          nativeHandle.read(buffer, offset, length, position),
-        stat: async () => fixturePathIdentity(await nativeHandle.stat({ bigint: true })),
-      };
-      handles.set(handle, nativeHandle);
-      return handle;
-    },
     // These owned test fixtures stand in for the host's native Windows trust adapter.
     windowsPathTrust: {
       validate: async (path) => {
-        const stats = await lstat(path, { bigint: true });
+        const stats = await lstat(path);
         return { trusted: true, identity: `${stats.dev}:${stats.ino}` };
       },
       validateOpenedFile: async (handle) => {
-        const nativeHandle = handles.get(handle);
-        if (nativeHandle === undefined) {
-          throw new Error('Unknown discovery fixture file handle.');
-        }
-        const stats = await nativeHandle.stat({ bigint: true });
-        return { trusted: true, identity: `${stats.dev}:${stats.ino}` };
+        const stats = await handle.stat();
+        return { trusted: true, identity: `${stats.device}:${stats.inode}` };
       },
     },
   };
@@ -673,7 +622,7 @@ describe('discoverCaveEndpoint', () => {
   test('resolves the discovery file from COVEN_CAVE_HOME and validates the current record', async () => {
     const root = createScratchRoot('discover-valid');
     const path = await writeDiscoveryRecord(root, discoveryRecord());
-    const stats = fixturePathIdentity(await lstat(path, { bigint: true }));
+    const stats = await lstat(path);
 
     await expect(
       discoverCaveEndpoint({
@@ -698,8 +647,8 @@ describe('discoverCaveEndpoint', () => {
       },
       record: {
         path,
-        device: stats.device,
-        inode: stats.inode,
+        device: stats.dev,
+        inode: stats.ino,
       },
     });
   });
