@@ -1265,9 +1265,11 @@ describe('Coven endpoint discovery', () => {
       diagnostics: { phase: 'read_metadata' },
     });
     expect(openFlags).toBeTypeOf('number');
-    expect((openFlags as number) & fsConstants.O_NONBLOCK).toBe(
-      fsConstants.O_NONBLOCK,
-    );
+    if (typeof fsConstants.O_NONBLOCK === 'number') {
+      expect((openFlags as number) & fsConstants.O_NONBLOCK).toBe(
+        fsConstants.O_NONBLOCK,
+      );
+    }
     if (typeof fsConstants.O_NOFOLLOW === 'number') {
       expect((openFlags as number) & fsConstants.O_NOFOLLOW).toBe(
         fsConstants.O_NOFOLLOW,
