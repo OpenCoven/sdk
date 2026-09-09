@@ -393,10 +393,16 @@ function fixturePathIdentity(stats: BigIntStats): CaveDiscoveryPathIdentity {
 }
 
 function discoveryDependencies(): CaveDiscoveryDependencies {
-  const handles = new WeakMap<CaveDiscoveryFileHandle, FileHandle>();
-  return {
+  const dependencies: CaveDiscoveryDependencies = {
     getEffectiveUid: () => DEFAULT_UID,
     isProcessAlive: (pid: number) => pid === DISCOVERY_PID,
+  };
+  if (process.platform !== 'win32') {
+    return dependencies;
+  }
+  const handles = new WeakMap<CaveDiscoveryFileHandle, FileHandle>();
+  return {
+    ...dependencies,
     lstat: async (path) => fixturePathIdentity(await lstat(path, { bigint: true })),
     openFile: async (path, flags) => {
       const nativeHandle = await open(path, flags);
