@@ -165,8 +165,8 @@
   "evidenceProducer": {
     "status": "compatible",
     "repository": "OpenCoven/chat",
-    "commit": "dadef699c85a34d534e58e72a0b66863563f1ce5",
-    "tree": "7d7b6a21e24487a95cf494630e0a71bf3dbd4c4a",
+    "commit": "d843dc4fbc95a436bb6a93618268b7d8fdefd826",
+    "tree": "c52612d2270aaf1869f2548f26e7f0c18f81aec1",
     "packageManifest": {
       "path": "package.json",
       "size": 4044,
@@ -249,8 +249,8 @@
         ]
       },
       "signerWorkflow": "OpenCoven/chat/.github/workflows/client-v1-conformance.yml",
-      "signerDigest": "dadef699c85a34d534e58e72a0b66863563f1ce5",
-      "sourceDigest": "dadef699c85a34d534e58e72a0b66863563f1ce5",
+      "signerDigest": "d843dc4fbc95a436bb6a93618268b7d8fdefd826",
+      "sourceDigest": "d843dc4fbc95a436bb6a93618268b7d8fdefd826",
       "predicateType": "https://slsa.dev/provenance/v1",
       "denySelfHostedRunners": true
     }
