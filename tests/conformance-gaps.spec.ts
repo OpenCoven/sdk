@@ -1746,8 +1746,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '4cf28daa3017e683ccce76b42c3590919b984c90',
-      tree: '0178cf511059ee77f814e7100adc786ecf6cef0f',
+      commit: '4f5cbf8b625f096eb4e1b50b7ad26c5f409a1791',
+      tree: '8902f770b2e44e29f3d8f66e8a899e5bcc9f15a4',
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -1824,8 +1824,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '4cf28daa3017e683ccce76b42c3590919b984c90',
-        sourceDigest: '4cf28daa3017e683ccce76b42c3590919b984c90',
+        signerDigest: '4f5cbf8b625f096eb4e1b50b7ad26c5f409a1791',
+        sourceDigest: '4f5cbf8b625f096eb4e1b50b7ad26c5f409a1791',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },

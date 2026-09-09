@@ -28,10 +28,11 @@ There is no passing aggregate in this repository yet. The replacement SDK
 candidate is `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat
 production source `841a88f8885bc20cac2f9d5b5b6bc2a23a76e657`. This source
 refreshes the SDK package pins while preserving the ten native producer deltas.
-The producer and validator must be rebound before protected acceptance of this
-candidate. The previous candidate used producer
-`4cf28daa3017e683ccce76b42c3590919b984c90`; its source lock was pinned by
-reachable authority commit `b17b9b72733234740d0891b19a0398b7f84ddeba`
+The compatible producer is merged Chat commit
+`4f5cbf8b625f096eb4e1b50b7ad26c5f409a1791`. This validator must merge and both
+protected validator scopes must be rotated before a fresh protected attempt.
+The producer source lock was pinned by
+reachable authority commit `322f93ab301642d1fab63c2f4febb9b1b3bc9eb0`
 to executable harness behavior revision
 `5f7b09b64a4b1911b9ed6cf191fa14e20fc32770`.
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
@@ -311,7 +312,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`4cf28daa3017e683ccce76b42c3590919b984c90` compatible with the reviewed
+`4f5cbf8b625f096eb4e1b50b7ad26c5f409a1791` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
