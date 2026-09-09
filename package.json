@@ -13,7 +13,7 @@
   "pnpm": {
     "overrides": {
       "@hpke/common": "1.10.0",
-      "esbuild": "0.28.1"
+      "esbuild": "0.28.2"
     }
   },
   "scripts": {
@@ -50,17 +50,17 @@
     "verify": "corepack pnpm@10.34.0 typecheck && corepack pnpm@10.34.0 clean:public-dist && corepack pnpm@10.34.0 test && corepack pnpm@10.34.0 verify:contracts && corepack pnpm@10.34.0 verify:package && corepack pnpm@10.34.0 verify:development-release-configuration && corepack pnpm@10.34.0 test:coverage && corepack pnpm@10.34.0 test:stress && corepack pnpm@10.34.0 lint"
   },
   "devDependencies": {
-    "@changesets/cli": "3.0.1",
+    "@changesets/cli": "3.0.2",
     "@eslint/js": "10.0.1",
     "@types/node": "24.13.3",
     "@vitest/coverage-v8": "4.1.11",
-    "esbuild": "0.28.1",
-    "eslint": "10.9.0",
+    "esbuild": "0.28.2",
+    "eslint": "10.10.0",
     "fast-check": "4.9.0",
-    "globals": "17.11.0",
+    "globals": "17.12.0",
     "tsup": "8.5.1",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.67.0",
+    "typescript-eslint": "8.69.0",
     "vitest": "4.1.11"
   }
 }
