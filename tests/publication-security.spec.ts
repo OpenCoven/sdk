@@ -328,8 +328,6 @@ function createReleaseFixture({
     resolve(root, '.github/workflows/release.yml'),
   );
   cpSync(resolve(workspaceRoot, '.npmrc'), resolve(root, '.npmrc'));
-  cpSync(resolve(workspaceRoot, 'package.json'), resolve(root, 'package.json'));
-  cpSync(resolve(workspaceRoot, 'pnpm-lock.yaml'), resolve(root, 'pnpm-lock.yaml'));
 
   const config = JSON.parse(
     readFileSync(resolve(workspaceRoot, 'release.config.json'), 'utf8'),
