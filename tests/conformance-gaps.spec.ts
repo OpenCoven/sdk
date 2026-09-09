@@ -52,15 +52,15 @@ const schemaPath = resolve(
 );
 const windowsBootstrapFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-9bdd-windows-bootstrap.ps1.br',
+  'tests/fixtures/chat-d57677-windows-bootstrap.ps1.br',
 );
 const protectedWorkflowFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-9bdd-client-v1-conformance.yml.br',
+  'tests/fixtures/chat-d57677-client-v1-conformance.yml.br',
 );
 const unixSupervisorPreparationFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-9bdd-unix-supervisor-preparation.sh.br',
+  'tests/fixtures/chat-d57677-unix-supervisor-preparation.sh.br',
 );
 const windowsSupervisorTestFixturePath = resolve(
   workspaceRoot,
