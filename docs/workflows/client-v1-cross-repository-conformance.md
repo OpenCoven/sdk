@@ -29,8 +29,14 @@ candidate is `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat
 production source `841a88f8885bc20cac2f9d5b5b6bc2a23a76e657`. This source
 refreshes the SDK package pins while preserving the ten native producer deltas.
 The compatible producer is merged Chat commit
-`cfe8137c07307dfa19f926152a74da83afec49e5`. This validator must merge and both
+`7ca56c5c8c95fc1be4efecf22554cb4f3cc08e22`. This validator must merge and both
 protected validator scopes must be rotated before a fresh protected attempt.
+This producer includes merged Chat #204 and #201. Ordinary CI runs
+`34456077153` and `34455214301` passed, including packaged conformance.
+Their protected workflow, harness, source lock, and package manifest are
+unchanged from #203. The #204 GLib backport is not adopted into the frozen
+production source; Chat #188 remains open. Chat #206 separately tracks the
+first Windows quarantine failure despite its unchanged retry passing.
 The producer source lock was pinned by
 reachable authority commit `cfe8137c07307dfa19f926152a74da83afec49e5`
 to executable harness behavior revision
@@ -326,7 +332,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`cfe8137c07307dfa19f926152a74da83afec49e5` compatible with the reviewed
+`7ca56c5c8c95fc1be4efecf22554cb4f3cc08e22` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
