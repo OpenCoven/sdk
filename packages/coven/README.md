@@ -1,8 +1,8 @@
 # @opencoven/coven-client
 
-A constrained, owner-local Coven health client. Importing the package performs
-no filesystem, process, network, socket, or daemon I/O. Discovery and health
-checks happen only through explicit runtime calls.
+A constrained, owner-local Coven client. Importing the package performs
+no filesystem, process, network, socket, or daemon I/O. Discovery, health, and
+policy requests happen only through explicit runtime calls.
 
 The supported root API, pre-1.0 compatibility rules, and deprecation process
 are documented in the repository
@@ -20,6 +20,184 @@ and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
   daemon health contract.
 - `createCovenClient(...)` preserves caller-supplied transports, while
   `COVEN_DAEMON_PROTOCOL` exports the exact reviewed daemon protocol string.
+- `createCovenSessionPolicyClient(...)` is a separate, explicitly injected
+  discovery/refusal-only policy consumer. It does not extend `CovenClient`,
+  the built-in health transports, or the unified SDK client.
+- `createCovenSessionPolicyUnixTransport(...)` is the opt-in real Unix policy
+  transport with mandatory connected-peer security and only the two fixed
+  policy routes. Windows policy transport is explicitly unsupported.
+
+## Session-policy admission v1 (refusal only)
+
+Depend directly on **`@opencoven/coven-client`** and import these APIs from its
+supported package root, not from a workspace source path or the private CLI.
+This is one of the SDK's four release-inventory packages. Like the other
+release packages, its source manifest remains private behind the repository's
+pre-release publishing gates; this does not make it a CLI-only workspace API.
+`@opencoven/sdk` remains the optional health coordinator and does not implicitly
+create, activate, or re-export the policy client.
+
+The authoritative contract is
+[`coven.session-policy.v1`](https://github.com/OpenCoven/coven/blob/8ae022a70ce2506e0e3b4345b8e567fe94380ce5/spec/coven-session-policy/v1/README.md).
+Its only restricted-launch outcome is a correlated **HTTP 409** response with
+`decision: "rejected"`, `code: "enforcement_unavailable"`, and
+`admission: "not_started"`. No production enforced adapter exists. This SDK
+reports a schema-validated server refusal, not verified authority, a running
+process constraint, a signature, or proof that other processes are stopped.
+Fabricated accepted responses, session IDs, receipts, and effective grants
+are rejected.
+
+`CovenSessionPolicyClient` accepts an explicit `CovenSessionPolicyTransport`.
+Use `createCovenSessionPolicyUnixTransport(endpoint, options)` for real Unix
+IPC. It reuses the existing current-UID, non-symlink socket, permission,
+connected-peer, and post-connect path-identity validation. It pauses the socket
+until validation completes, then sends one fixed request and destroys the
+socket on completion, cancellation, or failure. A reviewed native
+`security: { platform: 'unix', peerIdentity }` adapter is still mandatory;
+the SDK does not invent peer credentials. Windows endpoints fail with
+`unsupported_platform`; no Windows policy factory is exposed.
+
+There is no automatic endpoint discovery. Call `discoverCovenEndpoint()`
+explicitly if needed, then opt into the policy factory separately. Do not
+adapt the health transport, treat health capabilities as approval, or replace
+peer authentication with path or discovery metadata. Construction performs no
+I/O; client methods and direct transport requests perform I/O only when called.
+
+The transport's discriminated request union contains exactly two routes:
+`GET /api/v1/session-policy` and `POST /api/v1/sessions/restricted`. It exposes
+no headers, credentials, arbitrary methods, or arbitrary paths. The adapter
+must honor `OperationContext.signal` and `deadline`, enforce the supplied
+16 KiB response limit while reading (including HTTP error bodies), and return
+the **raw JSON `Uint8Array` plus numeric HTTP status**. It must bound connection,
+headers and framing, disable redirects and automatic retries, and never fall
+back to legacy launch. The consumer independently checks body size and strict
+JSON; already-parsed objects are not an acceptable substitute.
+
+The built-in policy transport enforces those constraints independently: 2-second
+connect and 5-second request timeouts, 64 KiB headers, 16 KiB response bodies,
+and a total frame allocation bound. Its whole-operation deadline also covers
+initial path inspection and connected-peer validation, defaults to five seconds
+when no context deadline is supplied, and never exceeds five minutes. The
+request union and body array must be frozen; mutable octets, unknown methods,
+paths, headers, and altered limits are rejected before I/O. No transport option
+can raise the fixed policy size limits. Optional `dependencies` expose the same
+isolated socket/UID/stat test seams as the health transport.
+
+Protected invocation workflows must stop on unavailable discovery **before any
+prompt-bearing POST**. The SDK also exposes an explicit POST for separately
+requested refusal correlation; it is not automatic continuation, fallback, or
+permission to start a runtime.
+
+```ts
+import {
+  createCovenSessionPolicyClient,
+  createCovenSessionPolicyUnixTransport,
+  isCovenSessionPolicyError,
+  type CovenDiscoveredEndpoint,
+  type CovenRestrictedLaunchRequest,
+  type CovenUnixPeerIdentityAdapter,
+} from '@opencoven/coven-client';
+
+declare const endpoint: CovenDiscoveredEndpoint;
+declare const nativeUnixPeerIdentity: CovenUnixPeerIdentityAdapter;
+declare const request: CovenRestrictedLaunchRequest;
+const policy = createCovenSessionPolicyClient({
+  transport: createCovenSessionPolicyUnixTransport(endpoint, {
+    security: { platform: 'unix', peerIdentity: nativeUnixPeerIdentity },
+  }),
+});
+
+// Explicit availability metadata, never authorization; no supported profiles in v1.
+const availability = await policy.discover({ timeoutMs: 5_000 });
+console.log(availability.enforcement); // "unavailable": protected invocation stops here.
+```
+
+For a separately requested refusal-correlation probe, the low-level POST remains
+available using the explicitly constructed client:
+
+```ts
+// Caller supplies lowercase canonical request/invocation UUIDs and an admission
+// deadline, then serializes once. Do not retry or silently create new identities.
+const body = new TextEncoder().encode(JSON.stringify(request));
+try {
+  const refusal = await policy.launchRestricted(body, { timeoutMs: 5_000 });
+  console.log(refusal.decision); // Always "rejected", never a grant.
+} catch (error) {
+  if (!isCovenSessionPolicyError(error)) throw error;
+  console.error(error.code, error.delivery);
+}
+```
+
+`launchRestricted()` copies the supplied octets before parsing, freezes a
+`readonly number[]` snapshot for transport, and binds the response to SHA-256
+of that exact snapshot plus both canonical UUIDs. Transport implementations
+send `Uint8Array.from(request.body)` once, without JSON reserialization.
+Whitespace, escaping and Unicode representation intentionally affect the
+digest. The SDK does not perform semantic JSON canonicalization, path
+resolution, familiar lookup, credential lookup, or TypeScript authority
+decisions. The canonical v1 harness wire IDs are exactly `codex`, `claude`,
+`coven-code`, and `copilot`. The typed request and parser reject other IDs;
+this mirrors the versioned server schema, not an independent backend/authority
+allowlist. Every listed harness still has unavailable enforcement.
+
+Callers such as Wand may use Swift `JSONEncoder.sortedKeys`; pass the resulting
+frozen bytes unchanged. Sorted keys do not authorize normalization of slash
+escaping, Unicode, whitespace, or trailing newlines before sending or binding.
+
+Requests are bounded to 1 MiB and depth 16, with the contract's closed envelope,
+field types and UTF-8 limits. Duplicate keys (including escaped equivalents),
+invalid UTF-8, unpaired Unicode surrogates, unknown contract/profile revisions,
+and malformed payloads fail closed. Discovery and refusal responses are
+closed schemas; supported profiles or positive enforcement metadata do not
+become permission. Admission expiry must be a safe integer strictly in the
+future and at most five minutes away. It is **not a running-process lease**.
+The deadline must use a plain signed integer JSON token; fractional or
+exponential encodings are invalid even when their numeric value is integral.
+Negative safe integers are structurally integers but already expired, so this
+consumer rejects them locally without sending a request.
+
+Both operations accept existing `OperationOptions` and constructor operation
+defaults. Unlike legacy `health()`, the opt-in policy consumer defaults to a
+five-second timeout, caps operations at five minutes, and further bounds a
+launch by its admission deadline. Request preparation consumes the timeout
+budget. Cancellation/deadlines are checked before dispatch and after response
+handling; non-cooperative transports cannot make the client wait indefinitely
+or turn a late reply into a refusal. Stopping underlying I/O still requires a
+cooperative adapter.
+
+`CovenSessionPolicyError` exposes allowlisted `normalized` metadata,
+`code`, optional HTTP status and validated request correlation fields,
+`retryable: false`, and `delivery`:
+`not_attempted` means the transport was not called; `unknown` means it was
+called but no valid correlated refusal was received. Neither error state
+asserts `not_started`. Invalid request/response, unsupported contract/profile,
+HTTP errors, transport failure, invalid options, cancellation, and timeout
+have explicit codes, as does unsupported platform. HTTP errors do not expose raw server messages or details;
+transport errors and cancellation do not retain sensitive causes. Observer
+error metadata also declares retries disabled. There is no automatic
+discovery, POST retry, redirect, or fallback in this consumer.
+
+Positive runtime enforcement, reviewed backend tuples, grants, leases,
+revocation, and lifecycle events require a separate future contract. They
+cannot be added to this refusal-only revision as metadata.
+
+### Shared conformance vectors
+
+You can reproduce these vectors from Coven producer commit
+`8ae022a70ce2506e0e3b4345b8e567fe94380ce5`.
+`fixtures/session-policy-v1/manifest.provenance.json` pins that commit, the source
+manifest path, and its SHA-256. This separate SDK provenance file records the
+origin of the samples, not runtime enforcement or authority.
+
+The authoritative server vectors are copied byte-for-byte into
+`fixtures/session-policy-v1/{request,refusal,discovery,manifest}.json`.
+The manifest fixes admission time at `1799999700000`. Its 421-byte request
+includes one trailing LF and binds to
+`sha256:c61bac56f84d1f3fddd5e70da35a7e8906f9bd4bac769b5d4ad61769dae83fdb`.
+These historical fixed-time samples are for conformance, not live launch.
+Response fixture files include LF for source hygiene; server HTTP response
+bodies do not. Both response whitespace forms are valid, but request bytes must
+never be trimmed or reserialized for binding.
 
 ## Discover and check health
 
@@ -90,7 +268,7 @@ const endpoint = await discoverCovenEndpoint({
 
 ## Same-user IPC
 
-The built-in transports support only `GET /api/v1/health` for the exact
+The built-in health transports support only `GET /api/v1/health` for the exact
 `coven.daemon.v1` protocol. They do not expose arbitrary request methods,
 frames, or socket handles.
 

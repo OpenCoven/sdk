@@ -68,7 +68,7 @@ than the active release checklist.
 | --- | --- | --- | --- |
 | `packages/core` | `@opencoven/sdk-core` | Release inventory | Transport-neutral errors, compatibility/discovery contracts, operation controls, bounded pagination, allowlisted diagnostics, non-secret profiles, and in-memory secret abstractions |
 | `packages/cave` | `@opencoven/cave-client` | Release inventory | Constrained Cave client, runtime discovery/pairing, canonical reads, legacy familiar extensions, and reviewed contract fixtures |
-| `packages/coven` | `@opencoven/coven-client` | Release inventory | Constrained Coven discovery and health with explicit native transport-security providers |
+| `packages/coven` | `@opencoven/coven-client` | Release inventory | Constrained Coven discovery/health and separately opt-in session-policy refusal with real Unix IPC and explicit native peer security |
 | `packages/sdk` | `@opencoven/sdk` | Release inventory | Optional Cave/Coven coordination without merging source-system identity or errors |
 | `packages/cli` | `@opencoven/dev-cli` | Private workspace only | Source-tested `opencoven` command implementation, native keyring integration, and fail-closed native trust injection points |
 
@@ -128,7 +128,7 @@ corepack pnpm@10.34.0 verify:automations-v1-evidence
 | --- | --- |
 | Shared errors, compatibility/discovery contracts, operation controls, bounded pagination, allowlisted diagnostics, non-secret profiles, or in-memory secrets | `@opencoven/sdk-core` |
 | Cave health, runtime pairing/discovery, canonical reads, legacy familiar extensions, or reviewed contract fixtures | `@opencoven/cave-client` |
-| Explicit Coven discovery and owner-local daemon health | `@opencoven/coven-client` |
+| Explicit Coven discovery/health or opt-in session-policy refusal and its Unix transport | `@opencoven/coven-client` (direct dependency; supported package-root imports) |
 | Optional Cave/Coven coordination | `@opencoven/sdk` |
 | Runtime diagnostics, discovery, pairing, credential status, and health commands for repository development only | Private `@opencoven/dev-cli` workspace |
 

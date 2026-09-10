@@ -6,6 +6,14 @@ package exports only `createOpenCovenSdk`, `OpenCovenSdk`, and
 credential stores, or perform import-time I/O; explicit discovery stays in the
 underlying Cave and Coven clients you inject.
 
+For opt-in session-policy admission, depend directly on
+`@opencoven/coven-client` and import `createCovenSessionPolicyClient` and
+`createCovenSessionPolicyUnixTransport` from that supported release-package
+root. See its [policy API documentation](../coven/README.md#session-policy-admission-v1-refusal-only).
+The coordinator's health methods neither activate policy requests nor provide
+launch fallback; a valid v1 policy response is only a correlated refusal, not
+runtime enforcement.
+
 The supported root API, pre-1.0 compatibility rules, and deprecation process
 are documented in the repository
 [compatibility policy](https://github.com/OpenCoven/sdk/blob/main/COMPATIBILITY.md)

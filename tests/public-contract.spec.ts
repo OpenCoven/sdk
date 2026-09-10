@@ -455,11 +455,17 @@ describe('public package entry points', () => {
     ]);
     expect(exportedKeys(coven)).toEqual([
       'COVEN_DAEMON_PROTOCOL',
+      'COVEN_SESSION_POLICY_CONTRACT',
+      'COVEN_SESSION_POLICY_PROFILE',
       'CovenClient',
       'CovenClientError',
       'CovenDaemonResponseError',
       'CovenIpcError',
+      'CovenSessionPolicyClient',
+      'CovenSessionPolicyError',
       'createCovenClient',
+      'createCovenSessionPolicyClient',
+      'createCovenSessionPolicyUnixTransport',
       'createCovenUnixTransport',
       'createCovenWindowsTransport',
       'createDiscoveredCovenClient',
@@ -467,6 +473,7 @@ describe('public package entry points', () => {
       'isCovenClientError',
       'isCovenDaemonResponseError',
       'isCovenIpcError',
+      'isCovenSessionPolicyError',
       'normalizeCovenError',
     ]);
     expect(exportedKeys(sdk)).toEqual([
