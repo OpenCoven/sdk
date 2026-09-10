@@ -214,7 +214,7 @@ passing evidence record for each target.
 The frozen Chat production source
 `841a88f8885bc20cac2f9d5b5b6bc2a23a76e657` is exercised by the compatible
 schema-v2 producer at
-`cfe8137c07307dfa19f926152a74da83afec49e5`. Its source lock was pinned by
+`7ca56c5c8c95fc1be4efecf22554cb4f3cc08e22`. Its source lock was pinned by
 reachable authority commit `cfe8137c07307dfa19f926152a74da83afec49e5`
 to executable harness behavior revision
 `c5445941750f5ac232a78f3d7c7dcecf91bd52bc`.
@@ -232,7 +232,13 @@ Chat #203 separately repaired packaged provenance checks that incorrectly
 required ancestry between independently frozen Chat/SDK authorities. Exact
 revision, tree, clean-checkout, file digest, and native-delta checks remain.
 Its complete ordinary CI run `34451030376` passed packaged conformance.
-This validator binds that merged producer and its published repaired harness;
+This validator binds Chat main after #204 and #201 merged. Their complete
+ordinary CI runs `34456077153` and `34455214301` passed. The protected
+workflow, harness, source lock, and package manifest are unchanged from #203.
+The GLib backport in #204 is not adopted by the frozen production source;
+Chat #188 remains open for that adoption. Chat #206 retains the first Windows
+quarantine failure from #201 despite the unchanged retry passing.
+This binding preserves the published repaired harness;
 ordinary CI does not replace fresh protected validation after both scopes rotate.
 
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust

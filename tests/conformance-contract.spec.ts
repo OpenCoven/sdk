@@ -215,7 +215,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      'cfe8137c07307dfa19f926152a74da83afec49e5',
+      '7ca56c5c8c95fc1be4efecf22554cb4f3cc08e22',
     );
     expect(workflowDocument).not.toContain(
       'f6eba8af1f71d4251583cf39d4e5fb5b4797d209',
