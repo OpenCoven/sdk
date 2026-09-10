@@ -29,12 +29,12 @@ candidate is `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat
 production source `841a88f8885bc20cac2f9d5b5b6bc2a23a76e657`. This source
 refreshes the SDK package pins while preserving the ten native producer deltas.
 The compatible producer is merged Chat commit
-`b7986d081db76d80b2d479d151ce9d0f503492d8`. This validator must merge and both
+`cfe8137c07307dfa19f926152a74da83afec49e5`. This validator must merge and both
 protected validator scopes must be rotated before a fresh protected attempt.
 The producer source lock was pinned by
-reachable authority commit `b7986d081db76d80b2d479d151ce9d0f503492d8`
+reachable authority commit `cfe8137c07307dfa19f926152a74da83afec49e5`
 to executable harness behavior revision
-`0ae0e90ea853067bd0859a1a475de2e40ac5823f`.
+`c5445941750f5ac232a78f3d7c7dcecf91bd52bc`.
 The Coven daemon and observation source is merged revision
 `c0c979cdee96327bf24218bc7c7ecb90d719cb27`, tree
 `ee36a8801b930ca44da4a83358bfbcfe85a13259`. Frozen Chat source
@@ -81,34 +81,19 @@ codes (`spawn.enoent`, `spawn.eacces`, `spawn.eperm`, `spawn.einval`,
 `spawn.e2big`, and `spawn.enomem`), retaining `spawn` for other launch failures.
 Historical protected run `34413820955` passed Linux and macOS but reported
 Windows `legacy-case.spawn`, which conflated launch and tracking.
-The latest protected run, `34435223248`, used Chat `724690e` and validator
-`a5c7e38`. Linux and Darwin records passed identity, digest, timing, scan, and
+The latest protected run, `34441519622`, used Chat `b7986d0` and validator
+`d1c9ddf`. Linux and Darwin records passed identity, digest, timing, scan, and
 all 110 Cave, 46 SDK, and 41 Chat assertion checks. Windows reported
-`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.writer-error.access-denied`.
-This identifies Windows OS code 5; the failing operation remains unknown.
-Validation, attestation, and aggregation were skipped. The new producer
-classifies nine fixed writer operations and six fixed OS codes from attributed,
-structurally valid Rust Debug records. It supports Unicode scalar and ASCII
-escapes, retains generic fallback for malformed or unknown forms, and never
-emits raw messages. Fresh protected validation with this binding remains required.
-The ordinary packed canary uses the SDK's explicit conformance-artifact API
-instead of the publication CLI, without enabling publication or treating its
-output as accepted conformance evidence.
-The portable Cave canonical-ID assertion removes filesystem-casing dependence
-without accepting skips. The packed-consumer and Phase 1 locks name the same
-portable Cave checkout; SDK tarball and Cave fixture digests remain unchanged.
-These repairs do not establish a passing replacement-candidate platform record.
-The frozen workflow separates platform production, exact SDK validation,
-provenance attestation, and aggregation. Its lock records the validation and
-attestation job identities, the three static artifact names and record paths,
-the pinned download and attestation actions, the exact security-critical
-bootstrap, reviewed Unix tool-path source and step, production, validation, and
-digest-comparison script hashes, and the protected
-`CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` variable. Aggregation and release
-readiness remain fail closed until all three protected platform records exist
-and their live GitHub attestations are reviewed. Those records remain pending
-until this SDK validator merges and the protected environment revision is
-rotated to that merged SDK commit.
+`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.writer-error.apply-owner-only-security.access-denied`.
+Validation, attestation, and aggregation were skipped. Coven #984 tracks the
+native ACL failure; draft Coven #988 has not established a passing repair.
+
+Chat #203 separately repaired packaged provenance checks that incorrectly
+required ancestry between independently frozen Chat/SDK authorities. Exact
+revision, tree, clean-checkout, file digest, and native-delta checks remain.
+Its complete ordinary CI run `34451030376` passed packaged conformance.
+This validator binds that merged producer and its published repaired harness;
+ordinary CI does not replace fresh protected validation after both scopes rotate.
 
 ## Frozen reviewed inputs
 
@@ -341,7 +326,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`b7986d081db76d80b2d479d151ce9d0f503492d8` compatible with the reviewed
+`cfe8137c07307dfa19f926152a74da83afec49e5` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
