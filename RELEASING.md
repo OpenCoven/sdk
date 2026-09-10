@@ -214,23 +214,27 @@ passing evidence record for each target.
 The frozen Chat production source
 `841a88f8885bc20cac2f9d5b5b6bc2a23a76e657` is exercised by the compatible
 schema-v2 producer at
-`b7986d081db76d80b2d479d151ce9d0f503492d8`. Its source lock was pinned by
-reachable authority commit `b7986d081db76d80b2d479d151ce9d0f503492d8`
+`cfe8137c07307dfa19f926152a74da83afec49e5`. Its source lock was pinned by
+reachable authority commit `cfe8137c07307dfa19f926152a74da83afec49e5`
 to executable harness behavior revision
-`0ae0e90ea853067bd0859a1a475de2e40ac5823f`.
+`c5445941750f5ac232a78f3d7c7dcecf91bd52bc`.
 This behavior repairs completed PID reuse and preserves replacement ownership
 across asynchronous cleanup. It distinguishes tracking from bounded launch
 errors. Historical run `34413820955` reported Windows `legacy-case.spawn`.
-The latest protected run, `34435223248`, used Chat `724690e` and validator
-`a5c7e38`. Linux and Darwin records passed identity, digest, timing, scan, and
+The latest protected run, `34441519622`, used Chat `b7986d0` and validator
+`d1c9ddf`. Linux and Darwin records passed identity, digest, timing, scan, and
 all 110 Cave, 46 SDK, and 41 Chat assertion checks. Windows reported
-`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.writer-error.access-denied`.
-This identifies Windows OS code 5; the failing operation remains unknown.
-Validation, attestation, and aggregation were skipped. The new producer
-classifies nine fixed writer operations and six fixed OS codes from attributed,
-structurally valid Rust Debug records. It supports Unicode scalar and ASCII
-escapes, retains generic fallback for malformed or unknown forms, and never
-emits raw messages. Fresh protected validation with this binding remains required.
+`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.writer-error.apply-owner-only-security.access-denied`.
+Validation, attestation, and aggregation were skipped. Coven #984 tracks the
+native ACL failure; draft Coven #988 has not established a passing repair.
+
+Chat #203 separately repaired packaged provenance checks that incorrectly
+required ancestry between independently frozen Chat/SDK authorities. Exact
+revision, tree, clean-checkout, file digest, and native-delta checks remain.
+Its complete ordinary CI run `34451030376` passed packaged conformance.
+This validator binds that merged producer and its published repaired harness;
+ordinary CI does not replace fresh protected validation after both scopes rotate.
+
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
 toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
 or a global Rust default.
