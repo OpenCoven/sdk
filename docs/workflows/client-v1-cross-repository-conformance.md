@@ -29,12 +29,12 @@ candidate is `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat
 production source `841a88f8885bc20cac2f9d5b5b6bc2a23a76e657`. This source
 refreshes the SDK package pins while preserving the ten native producer deltas.
 The compatible producer is merged Chat commit
-`3a4e003e12da02e7f0259da2aa6f831d85646166`. This validator must merge and both
+`6cf479d7c730821d3440f371d198d29fd4d51a00`. This validator must merge and both
 protected validator scopes must be rotated before a fresh protected attempt.
 The producer source lock was pinned by
-reachable authority commit `1f291abdecff55f8ed7c5152345f22b32f837fdf`
+reachable authority commit `2805861f636d30d98a9a7ab8f660ccea37464b99`
 to executable harness behavior revision
-`1a2967d3661f89974a76eaac8ed544ab0a849ee9`.
+`11e9a272a1332aacb4b780ddb3c9551fe0f323e6`.
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
 toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
 or a global Rust default.
@@ -62,6 +62,16 @@ retain their 10 GiB and 12 GiB bounds. Only Windows schema-v2 native builds
 disable debug symbols and incremental compilation, including the shared
 observation target. The primary bounded failure is emitted before cleanup;
 cleanup failures still fail closed.
+Child tracking accepts a recycled PID only after the former child completes.
+Asynchronous termination removes only the child instance it reaped; cleanup
+retains the root and fails if replacement children still need cleanup.
+Coven observation diagnostics distinguish `tracking` from six fixed launch
+codes (`spawn.enoent`, `spawn.eacces`, `spawn.eperm`, `spawn.einval`,
+`spawn.e2big`, and `spawn.enomem`), retaining `spawn` for other launch failures.
+Protected run `34413820955` passed Linux and macOS but reported Windows
+`legacy-case.spawn`, which conflated launch and tracking. Local regressions
+prove the repaired ownership defect, not that it caused the protected failure.
+A fresh protected attempt with this merged validator must establish the result.
 The ordinary packed canary uses the SDK's explicit conformance-artifact API
 instead of the publication CLI, without enabling publication or treating its
 output as accepted conformance evidence.
@@ -312,7 +322,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`3a4e003e12da02e7f0259da2aa6f831d85646166` compatible with the reviewed
+`6cf479d7c730821d3440f371d198d29fd4d51a00` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
