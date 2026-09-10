@@ -220,8 +220,12 @@ to executable harness behavior revision
 `a2a5db86faff61fd1abd78030245dcea605f90f4`.
 This behavior repairs completed PID reuse and preserves replacement ownership
 across asynchronous cleanup. It distinguishes tracking from bounded launch
-errors. The previous Windows `legacy-case.spawn` result does not prove which
-category caused the failure; fresh protected validation remains required.
+errors. Historical run `34413820955` reported Windows `legacy-case.spawn`.
+The latest protected run, `34425192604`, passed Linux and Darwin but failed at
+`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.early-result`.
+That identifies the 20 ms timing assertion; whether the early writer result
+was success or an error remains unknown. Coven #982 repairs the test assumption,
+but fresh protected validation of the adopted source remains required.
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
 toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
 or a global Rust default.

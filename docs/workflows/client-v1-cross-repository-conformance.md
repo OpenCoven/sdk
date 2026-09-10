@@ -37,8 +37,10 @@ to executable harness behavior revision
 `a2a5db86faff61fd1abd78030245dcea605f90f4`.
 The Coven daemon and observation source is merged revision
 `705623e9cf2dfa9ee2d52973b2a6eb194a4cf7c4`, tree
-`3fab12622a5a27285c16fe1ca0ce7c7c556f44ce`. Chat retains its frozen native
-client at `721437b84026c042e431b0882dcd14fdb29ac07d`. This adoption includes
+`3fab12622a5a27285c16fe1ca0ce7c7c556f44ce`. Frozen Chat source
+`841a88f8885bc20cac2f9d5b5b6bc2a23a76e657` retains its native `coven-client`
+Cargo dependency at Coven commit `721437b84026c042e431b0882dcd14fdb29ac07d`.
+This adoption includes
 intervening Coven production and dependency-version changes; a fresh complete
 protected run must prove compatibility. It preserves the SDK candidate,
 observation selection, resource ceilings, and dependency policy. The workflow
@@ -77,10 +79,15 @@ retains the root and fails if replacement children still need cleanup.
 Coven observation diagnostics distinguish `tracking` from six fixed launch
 codes (`spawn.enoent`, `spawn.eacces`, `spawn.eperm`, `spawn.einval`,
 `spawn.e2big`, and `spawn.enomem`), retaining `spawn` for other launch failures.
-Protected run `34413820955` passed Linux and macOS but reported Windows
-`legacy-case.spawn`, which conflated launch and tracking. Local regressions
-prove the repaired ownership defect, not that it caused the protected failure.
-A fresh protected attempt with this merged validator must establish the result.
+Historical protected run `34413820955` passed Linux and macOS but reported
+Windows `legacy-case.spawn`, which conflated launch and tracking. The latest
+protected run, `34425192604`, passed Linux and Darwin and identified
+`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.early-result`
+on Windows. The selected test received a result within its 20 ms window;
+the diagnostic does not establish whether that writer result was success or an
+error. Coven #982 preserves the result without the minimum-duration assumption.
+A fresh protected attempt with this merged validator must prove the adopted
+source and complete all three platform records, validation, and aggregation.
 The ordinary packed canary uses the SDK's explicit conformance-artifact API
 instead of the publication CLI, without enabling publication or treating its
 output as accepted conformance evidence.
