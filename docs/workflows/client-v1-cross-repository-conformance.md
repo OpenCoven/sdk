@@ -29,12 +29,23 @@ candidate is `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat
 production source `841a88f8885bc20cac2f9d5b5b6bc2a23a76e657`. This source
 refreshes the SDK package pins while preserving the ten native producer deltas.
 The compatible producer is merged Chat commit
-`572be6197980c39c8034a84ec92b44311b28df21`. This validator must merge and both
+`83518c85605a69089ef96fe31206cfa25741d5e4`. This validator must merge and both
 protected validator scopes must be rotated before a fresh protected attempt.
 The producer source lock was pinned by
-reachable authority commit `8856ad5cdee22f098c1b498dc8371f9feedb8262`
+reachable authority commit `2a8e42c35c07c1f3e12e560f418c4236c267fff3`
 to executable harness behavior revision
 `a2a5db86faff61fd1abd78030245dcea605f90f4`.
+The Coven daemon and observation source is merged revision
+`705623e9cf2dfa9ee2d52973b2a6eb194a4cf7c4`, tree
+`3fab12622a5a27285c16fe1ca0ce7c7c556f44ce`. Frozen Chat source
+`841a88f8885bc20cac2f9d5b5b6bc2a23a76e657` retains its native `coven-client`
+Cargo dependency at Coven commit `721437b84026c042e431b0882dcd14fdb29ac07d`.
+This adoption includes
+intervening Coven production and dependency-version changes; a fresh complete
+protected run must prove compatibility. It preserves the SDK candidate,
+observation selection, resource ceilings, and dependency policy. The workflow
+and bootstrap fixture bytes are unchanged from the previous binding.
+
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
 toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
 or a global Rust default.
@@ -68,10 +79,15 @@ retains the root and fails if replacement children still need cleanup.
 Coven observation diagnostics distinguish `tracking` from six fixed launch
 codes (`spawn.enoent`, `spawn.eacces`, `spawn.eperm`, `spawn.einval`,
 `spawn.e2big`, and `spawn.enomem`), retaining `spawn` for other launch failures.
-Protected run `34413820955` passed Linux and macOS but reported Windows
-`legacy-case.spawn`, which conflated launch and tracking. Local regressions
-prove the repaired ownership defect, not that it caused the protected failure.
-A fresh protected attempt with this merged validator must establish the result.
+Historical protected run `34413820955` passed Linux and macOS but reported
+Windows `legacy-case.spawn`, which conflated launch and tracking. The latest
+protected run, `34425192604`, passed Linux and Darwin and identified
+`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.early-result`
+on Windows. The selected test received a result within its 20 ms window;
+the diagnostic does not establish whether that writer result was success or an
+error. Coven #982 preserves the result without the minimum-duration assumption.
+A fresh protected attempt with this merged validator must prove the adopted
+source and complete all three platform records, validation, and aggregation.
 The ordinary packed canary uses the SDK's explicit conformance-artifact API
 instead of the publication CLI, without enabling publication or treating its
 output as accepted conformance evidence.
@@ -322,7 +338,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`572be6197980c39c8034a84ec92b44311b28df21` compatible with the reviewed
+`83518c85605a69089ef96fe31206cfa25741d5e4` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
