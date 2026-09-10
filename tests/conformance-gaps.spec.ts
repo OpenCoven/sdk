@@ -1619,8 +1619,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         tree: '7ff358ac42a9d94ae5feb1f08e2af64a5513e78e',
       },
       coven: {
-        commit: '721437b84026c042e431b0882dcd14fdb29ac07d',
-        tree: '7cc5988b5a06f3f279e5c034cf2228775bd2b0e0',
+        commit: '705623e9cf2dfa9ee2d52973b2a6eb194a4cf7c4',
+        tree: '3fab12622a5a27285c16fe1ca0ce7c7c556f44ce',
       },
       chat: {
         commit: '841a88f8885bc20cac2f9d5b5b6bc2a23a76e657',
