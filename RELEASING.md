@@ -214,8 +214,8 @@ passing evidence record for each target.
 The frozen Chat production source
 `841a88f8885bc20cac2f9d5b5b6bc2a23a76e657` is exercised by the compatible
 schema-v2 producer at
-`572be6197980c39c8034a84ec92b44311b28df21`. Its source lock was pinned by
-reachable authority commit `8856ad5cdee22f098c1b498dc8371f9feedb8262`
+`83518c85605a69089ef96fe31206cfa25741d5e4`. Its source lock was pinned by
+reachable authority commit `2a8e42c35c07c1f3e12e560f418c4236c267fff3`
 to executable harness behavior revision
 `a2a5db86faff61fd1abd78030245dcea605f90f4`.
 This behavior repairs completed PID reuse and preserves replacement ownership
