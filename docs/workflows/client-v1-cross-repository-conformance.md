@@ -29,19 +29,24 @@ candidate is `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat
 production source `0da8c4749f57e63601b29d66032f80c9bbac1cb5`. This source
 refreshes the SDK package pins while preserving the ten native producer deltas.
 The compatible producer is merged Chat commit
-`7480dc4e168cacea30283f6233954a8b0405b521`. This validator must merge and both
+`4a5002011322de824f4d15676eab7769ce7975ba`. This validator must merge and both
 protected validator scopes must be rotated before a fresh protected attempt.
-This producer includes #210 frozen-source adoption plus #207 diagnostics,
-#209 native validation tooling, and #208 roadmap updates. Full ordinary CI
-`34504274365` passed at #210 head `970fc31`, and native run `34498480972`
-validated both frozen GLib trees. The protected workflow and package manifest
-are unchanged; the source lock adopts both repaired sources. Chat #188 remains
-open for protected acceptance and advisory reconciliation. Chat #206 still
-tracks the original Windows quarantine failure despite passing retries.
-The producer source lock was pinned by
-reachable authority commit `9f073f05241c2d3241b23ed9d73b26c6cd55ce7e`
-to executable harness behavior revision
-`0207b93f4238017764e59eca4916e4c790561f77`.
+This producer includes #213's bounded Windows quota diagnostics and preserves
+prior GLib source adoption through #210 at
+`9f073f05241c2d3241b23ed9d73b26c6cd55ce7e`. Native run `34498480972`
+validated both frozen GLib trees. Full ordinary CI `34590464014` passed all
+ten jobs at #213 head `988faa8`; the landed merge tree matches the tested tree.
+The workflow and parent Windows bootstrap bindings are refreshed. The child
+bootstrap, package manifest, production candidate, and resource ceilings are
+unchanged. The reachable producer commit pins executable harness
+`220e9aa1e2a83ccd9ed32279fda26fe09ac98894`.
+
+Protected run `34580621067` passed Linux and Darwin with 110 Cave, 46 SDK,
+and 41 Chat assertions each. Windows reported an unclassified quota-monitor
+failure followed by a separate identity-cleanup failure. The new categories
+must be exercised in fresh protected validation; ordinary CI does not prove
+protected Windows recovery. Chat #188 remains open for protected acceptance
+and advisory reconciliation; #206 tracks the Windows quarantine failure.
 The Coven daemon and observation source is merged revision
 `c0c979cdee96327bf24218bc7c7ecb90d719cb27`, tree
 `ee36a8801b930ca44da4a83358bfbcfe85a13259`. Frozen Chat source
@@ -333,7 +338,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`7480dc4e168cacea30283f6233954a8b0405b521` compatible with the reviewed
+`4a5002011322de824f4d15676eab7769ce7975ba` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
