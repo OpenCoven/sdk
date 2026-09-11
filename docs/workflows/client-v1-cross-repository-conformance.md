@@ -27,10 +27,12 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The SDK candidate remains
 `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
-This binding selects the verified Chat #221 merge
-`0c7bcc2032691c91a98b1e1326d0dc0b4b6781a6`, pinning executable harness
-`eda879fa0da04e76289fa977e3e853d9d8696df7`. All ten checks in CI run
-`34638791505` passed at the exact PR head, and the merge retains that tree.
+This binding selects the verified Chat #225 merge
+`e7dfc135bb7341d4cfc5b7f0fcf4004843868809`, pinning executable harness
+`79e6dd2b3f4e59b20ce6bb7a1f209e2dd26d2c3a`. Applicable CI checks in run
+`34645394309` passed at the exact PR head; the actual merge preserves the
+frozen diagnostic source ancestry. The diagnostic change distinguishes SDK
+command/report failures using fixed identifiers, without changing acceptance.
 The validator must merge and both protected scopes must be rotated before a
 fresh protected run.
 
@@ -41,17 +43,17 @@ The Windows supervisor accounts directories through the already validated
 isolated-user token at all three quota scan sites. Each read owns a
 noninheritable duplicate; terminal accounting follows account disablement.
 Private ACLs, the bounded walker and first-failure reporting remain enforced.
-The binding refreshes the workflow and Windows parent-bootstrap fixture.
+The binding refreshes the harness, workflow, Windows parent/child bootstrap
+hashes and Unix preparation fixture.
 
-The latest terminal protected run, `34611963297`, used Chat `37e6984` and
-SDK `7f53b74`. Linux and Darwin passed with 110 Cave, 46 SDK and 41 Chat
-assertions each. Retained records passed exact identities, Cave timing, ordered
-assertions and scanner checks. Windows failed with
-`access-denied; root=harness-execution-aggregate; operation=directory-enumeration`;
-cleanup separately reported `root-delete:win32-3,root-survived:invalid-operation`.
-Artifact validation, attestation and aggregation were skipped. Chat #217 is
-complete on bounded disclosure; #219 owns the accounting repair and separate
-cleanup investigation. No protected aggregate acceptance is established.
+The latest terminal protected run, `34641974164`, used Chat `0c7bcc2` and
+SDK `e806259`. Linux and Darwin each passed 110 Cave, 46 SDK and 41 Chat
+assertions. Independent checks verified ZIP digests, source and validator
+identities, Cave timing, ordered assertions and scans. Windows failed at
+`phase1.runtime-observations.sdk-tests.failed`; the previous quota-monitor and
+cleanup errors were not reported. The SDK command/report cause remains
+unclassified. Artifact validation, attestation and aggregation were skipped.
+Chat #219 and the final protected acceptance gate remain open.
 
 The Coven daemon and observation source is merged revision
 `d56021851537d62cfad9ece80583a908f20898a1`, tree
@@ -345,7 +347,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`0c7bcc2032691c91a98b1e1326d0dc0b4b6781a6` compatible with the reviewed
+`e7dfc135bb7341d4cfc5b7f0fcf4004843868809` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub

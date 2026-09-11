@@ -213,9 +213,11 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #221 producer `0c7bcc2032691c91a98b1e1326d0dc0b4b6781a6`, pinning executable
-harness `eda879fa0da04e76289fa977e3e853d9d8696df7`. All ten checks in CI run `34638791505` passed at the exact PR head; the
-verified merge preserves that tree and the frozen harness ancestry.
+Chat #225 producer `e7dfc135bb7341d4cfc5b7f0fcf4004843868809`, pinning executable
+harness `79e6dd2b3f4e59b20ce6bb7a1f209e2dd26d2c3a`. Applicable CI checks in run
+`34645394309` passed at the exact PR head; the actual merge preserves the
+frozen diagnostic source ancestry. The diagnostic change distinguishes SDK
+command/report failures using fixed identifiers, without changing acceptance.
 
 The Windows reader retains the validated isolated token for synchronous quota
 scans, including terminal accounting after account disablement. Private ACLs
@@ -224,15 +226,14 @@ remains merged #988 at `d56021851537d62cfad9ece80583a908f20898a1`.
 SDK landing, both validator-scope rotations and fresh protected validation
 remain required release gates.
 
-The latest terminal protected run, `34611963297`, used Chat `37e6984` and
-SDK `7f53b74`. Linux and Darwin passed with 110 Cave, 46 SDK and 41 Chat
-assertions each. Retained records passed exact identities, Cave timing, ordered
-assertions and scanner checks. Windows failed with
-`access-denied; root=harness-execution-aggregate; operation=directory-enumeration`;
-cleanup separately reported `root-delete:win32-3,root-survived:invalid-operation`.
-Artifact validation, attestation and aggregation were skipped. Chat #217 is
-complete on bounded disclosure; #219 owns the accounting repair and separate
-cleanup investigation. No protected aggregate acceptance is established.
+The latest terminal protected run, `34641974164`, used Chat `0c7bcc2` and
+SDK `e806259`. Linux and Darwin each passed 110 Cave, 46 SDK and 41 Chat
+assertions. Independent checks verified ZIP digests, source and validator
+identities, Cave timing, ordered assertions and scans. Windows failed at
+`phase1.runtime-observations.sdk-tests.failed`; the previous quota-monitor and
+cleanup errors were not reported. The SDK command/report cause remains
+unclassified. Artifact validation, attestation and aggregation were skipped.
+Chat #219 and the final protected acceptance gate remain open.
 
 Chat #203 repaired packaged provenance checks that incorrectly required
 ancestry between independently frozen Chat/SDK authorities. Exact revision,
