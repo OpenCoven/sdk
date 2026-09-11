@@ -212,39 +212,35 @@ support and does not by itself authorize release; #38 still requires one
 passing evidence record for each target.
 
 The frozen Chat production source
-`0da8c4749f57e63601b29d66032f80c9bbac1cb5` is exercised by the compatible
+`0da8c4749f57e63601b29d66032f80c9bbac1cb5` is exercised by the candidate
 schema-v2 producer at
-`4a5002011322de824f4d15676eab7769ce7975ba`. This reachable authority commit
-pins executable harness `220e9aa1e2a83ccd9ed32279fda26fe09ac98894`.
-The harness preserves the first quota failure and reports fixed monitor-error
-categories without exposing exception messages or paths. Resource ceilings,
-cleanup requirements, and the frozen production candidate remain unchanged.
+`3d5af5b3441991e0314c4f2dfa91bfe9b450e9a7`, the verified Chat #211 merge commit. It pins executable harness
+`19dd987cdc1aeb3e3fa519dfc5282d41fe5f24c9`, combining secure Windows status
+staging with bounded quota diagnostics and first-failure preservation. The
+Coven daemon/observation source is merged #988 at
+`d56021851537d62cfad9ece80583a908f20898a1`. The frozen production candidate,
+package manifest, resource ceilings and dependency policy remain unchanged.
 
-Protected run `34580621067` used Chat `7480dc4` and SDK validator `fdc95d5`.
-Linux and Darwin passed, with 110 Cave, 46 SDK, and 41 Chat assertions each.
-Windows failed with an unclassified quota-monitor exception followed by a
-separate identity-cleanup failure. This does not establish a quota breach or
-resource exhaustion. No complete protected aggregate was accepted.
-Earlier run `34441519622` reached a Coven status-replacement owner-only ACL
-failure. Coven #984 tracks that failure; draft #988 has not established a
-passing repair. The newer monitor failure does not prove that ACL issue fixed.
+Protected run `34594407090` used the preceding producer and SDK validator
+`c43b21c`. Linux and Darwin passed with 110 Cave, 46 SDK and 41 Chat assertions
+each. Windows failed at
+`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.writer-error.apply-owner-only-security.access-denied`.
+The previous quota-monitor and identity-cleanup errors were not reported in
+this execution; that is not proof they cannot recur. No protected aggregate
+was accepted, and the run does not validate this staging integration.
 
-Chat #203 separately repaired packaged provenance checks that incorrectly
-required ancestry between independently frozen Chat/SDK authorities. Exact
-revision, tree, clean-checkout, file digest, and native-delta checks remain.
-Its complete ordinary CI run `34451030376` passed packaged conformance.
-GLib source adoption landed through #210 at `9f073f05241c2d3241b23ed9d73b26c6cd55ce7e`;
-native run `34498480972` validated both frozen GLib trees. This validator binds
-#213's subsequent quota diagnostics. Full ordinary CI `34590464014` passed
-all ten jobs at head `988faa8`; the landed merge tree matches that tested tree.
-The workflow and parent Windows bootstrap hashes and fixtures are refreshed;
-the child bootstrap and package manifest are unchanged. Merge this validator,
-rotate both protected scopes, and obtain fresh protected validation before
-claiming release acceptance.
-Chat #188 remains open for protected acceptance and advisory reconciliation.
-Chat #206 retains the original Windows quarantine failure despite passing
-retries. Ordinary CI does not replace fresh protected validation after both
-validator scopes rotate.
+Chat #203 repaired packaged provenance checks that incorrectly required
+ancestry between independently frozen Chat/SDK authorities. Exact revision,
+tree, clean-checkout, file digest and native-delta checks remain. GLib adoption
+landed through #210 at `9f073f05241c2d3241b23ed9d73b26c6cd55ce7e`;
+native run `34498480972` validated those GLib trees. That earlier evidence does
+not validate the combined staging harness. The workflow, both Windows
+bootstraps and trusted Unix preparation hashes and fixtures are refreshed for
+the integration, including the producer module that retains staging bindings. After
+verified Chat landing, merge the final validator binding, rotate both scopes
+and obtain fresh protected acceptance. Chat #188 remains open for protected
+acceptance and advisory reconciliation; #206 retains the Windows quarantine
+issue. Ordinary CI does not replace fresh protected validation.
 
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
 toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
