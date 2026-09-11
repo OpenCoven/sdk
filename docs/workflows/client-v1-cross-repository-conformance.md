@@ -24,31 +24,34 @@ verification on those hosts authenticates the root-owned, non-writable
 a required record platform, but Node does not expose the directory-relative
 publication primitives needed to support the aggregator safely on Windows.
 
-There is no passing aggregate in this repository yet. The replacement SDK
-candidate is `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat
-production source `0da8c4749f57e63601b29d66032f80c9bbac1cb5`. This source
-refreshes the SDK package pins while preserving the ten native producer deltas.
-The producer is Verified Chat #218 merge
-`37e6984d83835f8994392d35d28fc98813746716`; its tree matches the tested head. This validator must merge and both protected validator scopes must
-be rotated before a fresh protected attempt. The producer combines secure
-Windows status staging with #213's bounded quota diagnostics, preserving GLib
-source adoption through #210 at
-`9f073f05241c2d3241b23ed9d73b26c6cd55ce7e`. It pins executable harness
-`e8fe64b4d2b9bd38a03d8c23a28432518b41c187`. Workflow, parent/child Windows bootstrap and trusted Unix preparation hashes
-are rebound to the staging integration. The frozen Node producer retains the
-validated staging environment, and ACL checks reject missing supervisor
-identity and malformed inherited entries. SDK package
-candidate, frozen production source, resource ceilings and dependency policy
-remain unchanged.
+There is no passing aggregate in this repository yet. The SDK candidate remains
+`1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
+`0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
+This binding selects the verified Chat #221 merge
+`0c7bcc2032691c91a98b1e1326d0dc0b4b6781a6`, pinning executable harness
+`eda879fa0da04e76289fa977e3e853d9d8696df7`. All ten checks in CI run
+`34638791505` passed at the exact PR head, and the merge retains that tree.
+The validator must merge and both protected scopes must be rotated before a
+fresh protected run.
 
-Protected run `34603676876` used Chat `3d5af5b` and SDK `2e14473b1`.
-Linux and Darwin passed with 110 Cave, 46 SDK and 41 Chat assertions each;
-their retained records passed exact identities, Cave timing, ordered assertions
-and scanner checks. Windows failed with quota-monitor `access-denied`, then a
-separate ephemeral identity-cleanup failure. The quota root and filesystem
-operation were not disclosed. Artifact validation, attestation and aggregation
-were skipped. The current diagnostic gathers bounded context; it does not
-claim an ACL repair or protected acceptance. Chat #217 tracks that evidence gap.
+The reviewed GLib-adoption ancestry through Chat #210 includes
+`9f073f05241c2d3241b23ed9d73b26c6cd55ce7e`, retained by this producer.
+
+The Windows supervisor accounts directories through the already validated
+isolated-user token at all three quota scan sites. Each read owns a
+noninheritable duplicate; terminal accounting follows account disablement.
+Private ACLs, the bounded walker and first-failure reporting remain enforced.
+The binding refreshes the workflow and Windows parent-bootstrap fixture.
+
+The latest terminal protected run, `34611963297`, used Chat `37e6984` and
+SDK `7f53b74`. Linux and Darwin passed with 110 Cave, 46 SDK and 41 Chat
+assertions each. Retained records passed exact identities, Cave timing, ordered
+assertions and scanner checks. Windows failed with
+`access-denied; root=harness-execution-aggregate; operation=directory-enumeration`;
+cleanup separately reported `root-delete:win32-3,root-survived:invalid-operation`.
+Artifact validation, attestation and aggregation were skipped. Chat #217 is
+complete on bounded disclosure; #219 owns the accounting repair and separate
+cleanup investigation. No protected aggregate acceptance is established.
 
 The Coven daemon and observation source is merged revision
 `d56021851537d62cfad9ece80583a908f20898a1`, tree
@@ -58,8 +61,7 @@ Cargo dependency at Coven commit `721437b84026c042e431b0882dcd14fdb29ac07d`.
 This adoption includes
 intervening Coven production and dependency-version changes; a fresh complete
 protected run must prove compatibility. It preserves the SDK candidate,
-observation selection, resource ceilings, and dependency policy. The workflow
-and all three script fixtures are refreshed to bind the combined staging and diagnostic script bytes.
+observation selection, resource ceilings, and dependency policy. The workflow and Windows parent-bootstrap fixture bind the scoped-reader bytes.
 
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
 toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
@@ -101,7 +103,8 @@ Earlier protected run `34441519622` used Chat `b7986d0` and validator
 all 110 Cave, 46 SDK, and 41 Chat assertion checks. Windows reported
 `phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.writer-error.apply-owner-only-security.access-denied`.
 Validation, attestation, and aggregation were skipped. Coven #984 tracks the
-native ACL failure; draft Coven #988 has not established a passing repair.
+native ACL failure. Coven #988 has since merged; fresh protected acceptance
+for the current binding remains required.
 
 Chat #203 separately repaired packaged provenance checks that incorrectly
 required ancestry between independently frozen Chat/SDK authorities. Exact
@@ -342,7 +345,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`37e6984d83835f8994392d35d28fc98813746716` compatible with the reviewed
+`0c7bcc2032691c91a98b1e1326d0dc0b4b6781a6` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
