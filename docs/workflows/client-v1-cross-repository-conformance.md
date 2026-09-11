@@ -93,7 +93,7 @@ codes (`spawn.enoent`, `spawn.eacces`, `spawn.eperm`, `spawn.einval`,
 `spawn.e2big`, and `spawn.enomem`), retaining `spawn` for other launch failures.
 Historical protected run `34413820955` passed Linux and macOS but reported
 Windows `legacy-case.spawn`, which conflated launch and tracking.
-The latest protected run, `34441519622`, used Chat `b7986d0` and validator
+Earlier protected run `34441519622` used Chat `b7986d0` and validator
 `d1c9ddf`. Linux and Darwin records passed identity, digest, timing, scan, and
 all 110 Cave, 46 SDK, and 41 Chat assertion checks. Windows reported
 `phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.writer-error.apply-owner-only-security.access-denied`.
@@ -104,8 +104,9 @@ Chat #203 separately repaired packaged provenance checks that incorrectly
 required ancestry between independently frozen Chat/SDK authorities. Exact
 revision, tree, clean-checkout, file digest, and native-delta checks remain.
 Its complete ordinary CI run `34451030376` passed packaged conformance.
-This validator binds that merged producer and its published repaired harness;
-ordinary CI does not replace fresh protected validation after both scopes rotate.
+The current binding includes that provenance repair through the later #213
+producer and harness identified above. Ordinary CI does not replace fresh
+protected validation after both scopes rotate.
 
 ## Frozen reviewed inputs
 
