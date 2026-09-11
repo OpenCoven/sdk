@@ -28,35 +28,38 @@ There is no passing aggregate in this repository yet. The replacement SDK
 candidate is `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat
 production source `0da8c4749f57e63601b29d66032f80c9bbac1cb5`. This source
 refreshes the SDK package pins while preserving the ten native producer deltas.
-The compatible producer is merged Chat commit
-`4a5002011322de824f4d15676eab7769ce7975ba`. This validator must merge and both
-protected validator scopes must be rotated before a fresh protected attempt.
-This producer includes #213's bounded Windows quota diagnostics and preserves
-prior GLib source adoption through #210 at
-`9f073f05241c2d3241b23ed9d73b26c6cd55ce7e`. Native run `34498480972`
-validated both frozen GLib trees. Full ordinary CI `34590464014` passed all
-ten jobs at #213 head `988faa8`; the landed merge tree matches the tested tree.
-The workflow and parent Windows bootstrap bindings are refreshed. The child
-bootstrap, package manifest, production candidate, and resource ceilings are
-unchanged. The reachable producer commit pins executable harness
-`220e9aa1e2a83ccd9ed32279fda26fe09ac98894`.
+The producer is merged Chat #211 commit
+`3d5af5b3441991e0314c4f2dfa91bfe9b450e9a7`, with its tree verified against the tested PR head. This validator must merge and both protected validator scopes must
+be rotated before a fresh protected attempt. The producer combines secure
+Windows status staging with #213's bounded quota diagnostics, preserving GLib
+source adoption through #210 at
+`9f073f05241c2d3241b23ed9d73b26c6cd55ce7e`. It pins executable harness
+`19dd987cdc1aeb3e3fa519dfc5282d41fe5f24c9`. Workflow, parent/child Windows bootstrap and trusted Unix preparation hashes
+are rebound to the staging integration. The frozen Node producer retains the
+validated staging environment, and ACL checks reject missing supervisor
+identity and malformed inherited entries. SDK package
+candidate, frozen production source, resource ceilings and dependency policy
+remain unchanged.
 
-Protected run `34580621067` passed Linux and Darwin with 110 Cave, 46 SDK,
-and 41 Chat assertions each. Windows reported an unclassified quota-monitor
-failure followed by a separate identity-cleanup failure. The new categories
-must be exercised in fresh protected validation; ordinary CI does not prove
-protected Windows recovery. Chat #188 remains open for protected acceptance
-and advisory reconciliation; #206 tracks the Windows quarantine failure.
+Protected run `34594407090` used the preceding Chat producer and passed Linux
+and Darwin with 110 Cave, 46 SDK and 41 Chat assertions each. Windows failed at
+`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.writer-error.apply-owner-only-security.access-denied`.
+The older quota-monitor and identity-cleanup errors were not reported in this
+execution; that does not establish they cannot recur. Aggregate validation and
+attestation were skipped. This run identifies the status-writer operation but
+does not validate the new staging integration. Chat #188 remains open for
+protected acceptance and advisory reconciliation.
+
 The Coven daemon and observation source is merged revision
-`c0c979cdee96327bf24218bc7c7ecb90d719cb27`, tree
-`ee36a8801b930ca44da4a83358bfbcfe85a13259`. Frozen Chat source
+`d56021851537d62cfad9ece80583a908f20898a1`, tree
+`65cc9b3fc5458ffc6745324997a5a56679c675c3`. Frozen Chat source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` retains its native `coven-client`
 Cargo dependency at Coven commit `721437b84026c042e431b0882dcd14fdb29ac07d`.
 This adoption includes
 intervening Coven production and dependency-version changes; a fresh complete
 protected run must prove compatibility. It preserves the SDK candidate,
 observation selection, resource ceilings, and dependency policy. The workflow
-and both bootstrap fixtures are refreshed to bind the new diagnostic script bytes.
+and all three script fixtures are refreshed to bind the combined staging and diagnostic script bytes.
 
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
 toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
@@ -339,7 +342,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`4a5002011322de824f4d15676eab7769ce7975ba` compatible with the reviewed
+`3d5af5b3441991e0314c4f2dfa91bfe9b450e9a7` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
