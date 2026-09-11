@@ -213,26 +213,29 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #225 producer `e7dfc135bb7341d4cfc5b7f0fcf4004843868809`, pinning executable
+Chat #226 producer `cb91fef6e5be851b033015d2de27a78e12c5d668`, pinning executable
 harness `79e6dd2b3f4e59b20ce6bb7a1f209e2dd26d2c3a`. Applicable CI checks in run
-`34645394309` passed at the exact PR head; the actual merge preserves the
-frozen diagnostic source ancestry. The diagnostic change distinguishes SDK
-command/report failures using fixed identifiers, without changing acceptance.
+`34655260452` passed at the exact PR head; the actual merge preserves the
+frozen diagnostic source ancestry. The binding adopts Coven #1015 for configured
+status staging in the Windows
+observation fixture, while retaining default-path coverage and bounded replacement
+semantics. The executable harness and workflow bytes are unchanged.
 
 The Windows reader retains the validated isolated token for synchronous quota
 scans, including terminal accounting after account disablement. Private ACLs
 and existing quota bounds remain enforced. The Coven daemon/observation source
-remains merged #988 at `d56021851537d62cfad9ece80583a908f20898a1`.
+is merged #1015 at `8c3735f374d6bc95e5b6fd107f7e7308fa26a2f8`.
 SDK landing, both validator-scope rotations and fresh protected validation
 remain required release gates.
 
-The latest terminal protected run, `34641974164`, used Chat `0c7bcc2` and
-SDK `e806259`. Linux and Darwin each passed 110 Cave, 46 SDK and 41 Chat
+The latest terminal protected run, `34647484742`, used Chat `e7dfc135` and
+SDK `c774ba4`. Linux and Darwin each passed 110 Cave, 46 SDK and 41 Chat
 assertions. Independent checks verified ZIP digests, source and validator
-identities, Cave timing, ordered assertions and scans. Windows failed at
-`phase1.runtime-observations.sdk-tests.failed`; the previous quota-monitor and
-cleanup errors were not reported. The SDK command/report cause remains
-unclassified. Artifact validation, attestation and aggregation were skipped.
+identities, Cave timing, ordered assertions and scans. Windows passed SDK and
+Chat observations, then failed at
+`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.writer-error.apply-owner-only-security.access-denied`.
+The previous SDK failure did not recur; its cause remains unclassified.
+Artifact validation, attestation and aggregation were skipped.
 Chat #219 and the final protected acceptance gate remain open.
 
 Chat #203 repaired packaged provenance checks that incorrectly required
