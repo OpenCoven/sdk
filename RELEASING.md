@@ -214,20 +214,22 @@ passing evidence record for each target.
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is exercised by the candidate
 schema-v2 producer at
-`3d5af5b3441991e0314c4f2dfa91bfe9b450e9a7`, the verified Chat #211 merge commit. It pins executable harness
-`19dd987cdc1aeb3e3fa519dfc5282d41fe5f24c9`, combining secure Windows status
-staging with bounded quota diagnostics and first-failure preservation. The
+`37e6984d83835f8994392d35d28fc98813746716`, the Verified Chat #218 merge commit. It pins executable harness
+`e8fe64b4d2b9bd38a03d8c23a28432518b41c187`, combining secure Windows status
+staging, cleanup diagnostics and bounded quota root/operation context with
+first-failure preservation. The
 Coven daemon/observation source is merged #988 at
 `d56021851537d62cfad9ece80583a908f20898a1`. The frozen production candidate,
 package manifest, resource ceilings and dependency policy remain unchanged.
 
-Protected run `34594407090` used the preceding producer and SDK validator
-`c43b21c`. Linux and Darwin passed with 110 Cave, 46 SDK and 41 Chat assertions
-each. Windows failed at
-`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.writer-error.apply-owner-only-security.access-denied`.
-The previous quota-monitor and identity-cleanup errors were not reported in
-this execution; that is not proof they cannot recur. No protected aggregate
-was accepted, and the run does not validate this staging integration.
+Protected run `34603676876` used Chat `3d5af5b` and SDK `2e14473b1`.
+Linux and Darwin passed with 110 Cave, 46 SDK and 41 Chat assertions each;
+their retained records passed exact identities, Cave timing, ordered assertions
+and scanner checks. Windows failed with quota-monitor `access-denied`, then a
+separate ephemeral identity-cleanup failure. The quota root and filesystem
+operation were not disclosed. Artifact validation, attestation and aggregation
+were skipped. The current diagnostic gathers bounded context; it does not
+claim an ACL repair or protected acceptance. Chat #217 tracks that evidence gap.
 
 Chat #203 repaired packaged provenance checks that incorrectly required
 ancestry between independently frozen Chat/SDK authorities. Exact revision,
