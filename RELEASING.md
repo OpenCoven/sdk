@@ -214,30 +214,33 @@ passing evidence record for each target.
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is exercised by the compatible
 schema-v2 producer at
-`7480dc4e168cacea30283f6233954a8b0405b521`. Its source lock was pinned by
-reachable authority commit `9f073f05241c2d3241b23ed9d73b26c6cd55ce7e`
-to executable harness behavior revision
-`0207b93f4238017764e59eca4916e4c790561f77`.
-This behavior repairs completed PID reuse and preserves replacement ownership
-across asynchronous cleanup. It distinguishes tracking from bounded launch
-errors. Historical run `34413820955` reported Windows `legacy-case.spawn`.
-The latest protected run, `34441519622`, used Chat `b7986d0` and validator
-`d1c9ddf`. Linux and Darwin records passed identity, digest, timing, scan, and
-all 110 Cave, 46 SDK, and 41 Chat assertion checks. Windows reported
-`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.writer-error.apply-owner-only-security.access-denied`.
-Validation, attestation, and aggregation were skipped. Coven #984 tracks the
-native ACL failure; draft Coven #988 has not established a passing repair.
+`4a5002011322de824f4d15676eab7769ce7975ba`. This reachable authority commit
+pins executable harness `220e9aa1e2a83ccd9ed32279fda26fe09ac98894`.
+The harness preserves the first quota failure and reports fixed monitor-error
+categories without exposing exception messages or paths. Resource ceilings,
+cleanup requirements, and the frozen production candidate remain unchanged.
+
+Protected run `34580621067` used Chat `7480dc4` and SDK validator `fdc95d5`.
+Linux and Darwin passed, with 110 Cave, 46 SDK, and 41 Chat assertions each.
+Windows failed with an unclassified quota-monitor exception followed by a
+separate identity-cleanup failure. This does not establish a quota breach or
+resource exhaustion. No complete protected aggregate was accepted.
+Earlier run `34441519622` reached a Coven status-replacement owner-only ACL
+failure. Coven #984 tracks that failure; draft #988 has not established a
+passing repair. The newer monitor failure does not prove that ACL issue fixed.
 
 Chat #203 separately repaired packaged provenance checks that incorrectly
 required ancestry between independently frozen Chat/SDK authorities. Exact
 revision, tree, clean-checkout, file digest, and native-delta checks remain.
 Its complete ordinary CI run `34451030376` passed packaged conformance.
-This validator binds Chat main after #210 adopted the reviewed GLib backport
-in both frozen sources and #207, #209, and #208 landed. Full ordinary CI
-`34504274365` passed at #210 head `970fc31`; native run `34498480972`
-validated both frozen trees. Both source commits remain ancestors of main.
-The protected workflow and package manifest retain their reviewed bytes;
-the source lock now binds the adopted production and harness revisions.
+GLib source adoption landed through #210 at `9f073f05241c2d3241b23ed9d73b26c6cd55ce7e`;
+native run `34498480972` validated both frozen GLib trees. This validator binds
+#213's subsequent quota diagnostics. Full ordinary CI `34590464014` passed
+all ten jobs at head `988faa8`; the landed merge tree matches that tested tree.
+The workflow and parent Windows bootstrap hashes and fixtures are refreshed;
+the child bootstrap and package manifest are unchanged. Merge this validator,
+rotate both protected scopes, and obtain fresh protected validation before
+claiming release acceptance.
 Chat #188 remains open for protected acceptance and advisory reconciliation.
 Chat #206 retains the original Windows quarantine failure despite passing
 retries. Ordinary CI does not replace fresh protected validation after both
