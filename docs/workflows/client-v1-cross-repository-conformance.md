@@ -28,27 +28,27 @@ There is no passing aggregate in this repository yet. The replacement SDK
 candidate is `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat
 production source `0da8c4749f57e63601b29d66032f80c9bbac1cb5`. This source
 refreshes the SDK package pins while preserving the ten native producer deltas.
-The producer is merged Chat #211 commit
-`3d5af5b3441991e0314c4f2dfa91bfe9b450e9a7`, with its tree verified against the tested PR head. This validator must merge and both protected validator scopes must
+The producer is Verified Chat #218 merge
+`37e6984d83835f8994392d35d28fc98813746716`; its tree matches the tested head. This validator must merge and both protected validator scopes must
 be rotated before a fresh protected attempt. The producer combines secure
 Windows status staging with #213's bounded quota diagnostics, preserving GLib
 source adoption through #210 at
 `9f073f05241c2d3241b23ed9d73b26c6cd55ce7e`. It pins executable harness
-`19dd987cdc1aeb3e3fa519dfc5282d41fe5f24c9`. Workflow, parent/child Windows bootstrap and trusted Unix preparation hashes
+`e8fe64b4d2b9bd38a03d8c23a28432518b41c187`. Workflow, parent/child Windows bootstrap and trusted Unix preparation hashes
 are rebound to the staging integration. The frozen Node producer retains the
 validated staging environment, and ACL checks reject missing supervisor
 identity and malformed inherited entries. SDK package
 candidate, frozen production source, resource ceilings and dependency policy
 remain unchanged.
 
-Protected run `34594407090` used the preceding Chat producer and passed Linux
-and Darwin with 110 Cave, 46 SDK and 41 Chat assertions each. Windows failed at
-`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.writer-error.apply-owner-only-security.access-denied`.
-The older quota-monitor and identity-cleanup errors were not reported in this
-execution; that does not establish they cannot recur. Aggregate validation and
-attestation were skipped. This run identifies the status-writer operation but
-does not validate the new staging integration. Chat #188 remains open for
-protected acceptance and advisory reconciliation.
+Protected run `34603676876` used Chat `3d5af5b` and SDK `2e14473b1`.
+Linux and Darwin passed with 110 Cave, 46 SDK and 41 Chat assertions each;
+their retained records passed exact identities, Cave timing, ordered assertions
+and scanner checks. Windows failed with quota-monitor `access-denied`, then a
+separate ephemeral identity-cleanup failure. The quota root and filesystem
+operation were not disclosed. Artifact validation, attestation and aggregation
+were skipped. The current diagnostic gathers bounded context; it does not
+claim an ACL repair or protected acceptance. Chat #217 tracks that evidence gap.
 
 The Coven daemon and observation source is merged revision
 `d56021851537d62cfad9ece80583a908f20898a1`, tree
@@ -342,7 +342,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`3d5af5b3441991e0314c4f2dfa91bfe9b450e9a7` compatible with the reviewed
+`37e6984d83835f8994392d35d28fc98813746716` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
