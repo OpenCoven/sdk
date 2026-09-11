@@ -1623,8 +1623,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         tree: 'ee36a8801b930ca44da4a83358bfbcfe85a13259',
       },
       chat: {
-        commit: '841a88f8885bc20cac2f9d5b5b6bc2a23a76e657',
-        tree: '81bbc67b3024c9c76444f7f4e84d79ac6fad1cc6',
+        commit: '0da8c4749f57e63601b29d66032f80c9bbac1cb5',
+        tree: '7be1737c4aae02493660d39a2d6f6fdf4dd9e696',
         consumerLock: {
           path: 'pnpm-lock.yaml',
           size: 56_222,
@@ -1746,8 +1746,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '7ca56c5c8c95fc1be4efecf22554cb4f3cc08e22',
-      tree: '372cbf9037d12de0f4d279b392293cedfb91b736',
+      commit: '7480dc4e168cacea30283f6233954a8b0405b521',
+      tree: '1d3ae289cc0083320943608d385920ac265644eb',
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -1824,8 +1824,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '7ca56c5c8c95fc1be4efecf22554cb4f3cc08e22',
-        sourceDigest: '7ca56c5c8c95fc1be4efecf22554cb4f3cc08e22',
+        signerDigest: '7480dc4e168cacea30283f6233954a8b0405b521',
+        sourceDigest: '7480dc4e168cacea30283f6233954a8b0405b521',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },

@@ -212,12 +212,12 @@ support and does not by itself authorize release; #38 still requires one
 passing evidence record for each target.
 
 The frozen Chat production source
-`841a88f8885bc20cac2f9d5b5b6bc2a23a76e657` is exercised by the compatible
+`0da8c4749f57e63601b29d66032f80c9bbac1cb5` is exercised by the compatible
 schema-v2 producer at
-`7ca56c5c8c95fc1be4efecf22554cb4f3cc08e22`. Its source lock was pinned by
-reachable authority commit `cfe8137c07307dfa19f926152a74da83afec49e5`
+`7480dc4e168cacea30283f6233954a8b0405b521`. Its source lock was pinned by
+reachable authority commit `9f073f05241c2d3241b23ed9d73b26c6cd55ce7e`
 to executable harness behavior revision
-`c5445941750f5ac232a78f3d7c7dcecf91bd52bc`.
+`0207b93f4238017764e59eca4916e4c790561f77`.
 This behavior repairs completed PID reuse and preserves replacement ownership
 across asynchronous cleanup. It distinguishes tracking from bounded launch
 errors. Historical run `34413820955` reported Windows `legacy-case.spawn`.
@@ -232,14 +232,16 @@ Chat #203 separately repaired packaged provenance checks that incorrectly
 required ancestry between independently frozen Chat/SDK authorities. Exact
 revision, tree, clean-checkout, file digest, and native-delta checks remain.
 Its complete ordinary CI run `34451030376` passed packaged conformance.
-This validator binds Chat main after #204 and #201 merged. Their complete
-ordinary CI runs `34456077153` and `34455214301` passed. The protected
-workflow, harness, source lock, and package manifest are unchanged from #203.
-The GLib backport in #204 is not adopted by the frozen production source;
-Chat #188 remains open for that adoption. Chat #206 retains the first Windows
-quarantine failure from #201 despite the unchanged retry passing.
-This binding preserves the published repaired harness;
-ordinary CI does not replace fresh protected validation after both scopes rotate.
+This validator binds Chat main after #210 adopted the reviewed GLib backport
+in both frozen sources and #207, #209, and #208 landed. Full ordinary CI
+`34504274365` passed at #210 head `970fc31`; native run `34498480972`
+validated both frozen trees. Both source commits remain ancestors of main.
+The protected workflow and package manifest retain their reviewed bytes;
+the source lock now binds the adopted production and harness revisions.
+Chat #188 remains open for protected acceptance and advisory reconciliation.
+Chat #206 retains the original Windows quarantine failure despite passing
+retries. Ordinary CI does not replace fresh protected validation after both
+validator scopes rotate.
 
 Both the schema-v1 and schema-v2 harnesses preserve the resolved Rust
 toolchain ahead of the supervisor PATH, without inheriting Cargo credentials
