@@ -213,15 +213,16 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #232 producer `8e33e2a78c0ef639e88466de21d8580604bd28f0`, pinning executable
-harness `b0c4f976c4ceadd9bcebab21c40d733e155e48d2` and merged Cave
+Chat #233 producer `d4950708742ed9b9f9b743ebe1eea04fd45dae30`, pinning executable
+harness `2456be72daa92e580fe16cde954fd6eace25a089` and merged Cave
 OpenCoven/coven-cave#5374 at
 `82bf6831b4afbe82709a5fe78949d1b16c4d61e1`. All CI checks in Chat run
-`34679357327` passed at the exact PR head; the merge commit preserves the
-frozen source ancestry. Cave's Windows ACL repair now avoids a redundant
-owner write when the protected standard user already owns the discovery
-directory. Foreign-owner takeover, protected-DACL enforcement, post-repair
-verification and fail-closed behavior remain unchanged. Trusted workflow
+`34685522784` passed at the exact PR head; the merge commit preserves the
+frozen source ancestry. The protected Windows producer now provisions a
+nonce-bound, 64 MiB Cave temp root whose isolated SID has explicit DACL
+authority. Only the schema-v2 Cave authority child receives that temp path, so
+it can remove inherited supervisor and OWNER RIGHTS entries without weakening
+the general profile, temp, workspace, cleanup or quota policy. Trusted workflow
 metadata and Windows/Unix bootstrap digests bind those executable bytes. The
 workflow remains below GitHub's 500 KiB file limit with parsed command bodies
 preserved.
