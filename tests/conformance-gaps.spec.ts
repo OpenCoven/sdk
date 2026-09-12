@@ -1746,8 +1746,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: 'f77b24912ccf2492e6d79adb306da8c858af0595',
-      tree: '88767a843e337cd2964ad0b3839509df3e8e17d1',
+      commit: '5f4572c45e19bc17fa8963fb8147b47bc8d0c31c',
+      tree: 'bd5c6a3a786852011a39f9cf17c3267ca3fbaed8',
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -1766,9 +1766,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 500_326,
+        size: 501_294,
         sha256:
-          '493a5fed24751e6b0c1d2210726ab3af0ae76e89b679357a36ed5b6a0216e6fb',
+          '6086cf8e4bcdbe575b9b47b2b97f2ab67a806117338719f9e36b0594ad1ff207',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1787,7 +1787,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          '4447f7536b87fe5b5f0aa2721efcf89da18adc4d987faf82ca634d94bbde3eb0',
+          'f764212094804aff3c0fd49dacdbb237f6a7cc991a7f8a8828e3d1be62d87631',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1824,8 +1824,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: 'f77b24912ccf2492e6d79adb306da8c858af0595',
-        sourceDigest: 'f77b24912ccf2492e6d79adb306da8c858af0595',
+        signerDigest: '5f4572c45e19bc17fa8963fb8147b47bc8d0c31c',
+        sourceDigest: '5f4572c45e19bc17fa8963fb8147b47bc8d0c31c',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
