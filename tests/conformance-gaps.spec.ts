@@ -212,17 +212,41 @@ const TEST_WINDOWS_DIAGNOSTIC_TRAP = [
   '    $Failure',
   '  }',
   '  $depth = 0',
-  '  while ($null -ne $exception -and $depth -lt 12) {',
+  '  $sidProbeAttempted = $false',
+  '  $pending = [Collections.Generic.Queue[Exception]]::new()',
+  '  if ($null -ne $exception) { $pending.Enqueue($exception) }',
+  '  while ($pending.Count -gt 0 -and $depth -lt 12) {',
+  '    $exception = $pending.Dequeue()',
   '    Write-Host "cause[$depth] $($exception.GetType().FullName): $($exception.Message)"',
-  '    if ($exception -is [AggregateException]) {',
-  '      $index = 0',
-  '      foreach ($inner in $exception.InnerExceptions) {',
-  '        Write-Host "  aggregate[$index] $($inner.GetType().FullName): $($inner.Message)"',
-  '        $index++',
+  '    if ($exception -is [ComponentModel.Win32Exception]) {',
+  '      Write-Host "native-error[$depth]=$($exception.NativeErrorCode)"',
+  '    }',
+  '    if (-not $sidProbeAttempted -and',
+  "        $exception.Message -match '^WTS process primary token SID query was ambiguous for process ([0-9]+) in session ([0-9]+)\\.$') {",
+  '      $sidProbeAttempted = $true',
+  '      # One observation only, after failure; no SID output or acceptance change.',
+  '      try {',
+  '        $processId = [uint32]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture)',
+  '        $queryMethod = [OpenCoven.WindowsJobSupervisor].GetMethod(',
+  "          'QueryProcessPrimaryTokenSid', [Reflection.BindingFlags]'NonPublic,Static'",
+  '        )',
+  '        $querySid = [Delegate]::CreateDelegate([Func[IntPtr, string]], $queryMethod)',
+  '        $observation = [OpenCoven.WindowsProcessSidDiagnostics]::Describe($processId, $querySid)',
+  '        Write-Host "wts-null-sid-observation: $observation"',
+  '      } catch {',
+  "        Write-Host 'wts-null-sid-observation: probe-failed'",
   '      }',
   '    }',
-  '    $exception = $exception.InnerException',
   '    $depth++',
+  '    if ($exception -is [AggregateException]) {',
+  '      foreach ($inner in $exception.InnerExceptions) {',
+  '        if ($pending.Count -ge (12 - $depth)) { break }',
+  '        $pending.Enqueue($inner)',
+  '      }',
+  '    } elseif ($null -ne $exception.InnerException -and',
+  '              $pending.Count -lt (12 - $depth)) {',
+  '      $pending.Enqueue($exception.InnerException)',
+  '    }',
   '  }',
   '}',
   '',
@@ -1746,8 +1770,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '8e33e2a78c0ef639e88466de21d8580604bd28f0',
-      tree: '53ab86430e81f7bc0074760ff4175fe6bf72220c',
+      commit: 'd4950708742ed9b9f9b743ebe1eea04fd45dae30',
+      tree: '9202f7dac99a9a258e871b7472bbd02934f69f40',
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -1766,9 +1790,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 511_601,
+        size: 511_743,
         sha256:
-          '695e66ad899e8d2817b8cb3a406d1c625aa4c38b38b863f68948ffa5a0b1fa33',
+          'c9b7e7bf3e6b484925b34949835dbe215d2debd846ac1148e57399383d572784',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1787,7 +1811,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          '646edf7d2839ea477d7f3e5b2fd09274bbfbe698d9c5a434117b33145ec47c4a',
+          '3d40186102b8f014a70e00f413065f9778b2782407cb0035601f51e41c99c8fe',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1795,7 +1819,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         linuxKeyringSetupScriptSha256:
           '7b1ff87ab5d2230950632560230899cc450458a800a630c2788b53be8b13d200',
         unixSupervisorPreparationScriptSha256:
-          'ee5a6b90272860f20a890652fba7dd38b2f07944eb0ec2f074dff36284c85bbf',
+          '26189b03ec0683721fd9aea0246908cef8746d0aa7eee5d7dc6549f9c0adfc33',
         unixToolPathSource: {
           path: 'scripts/executable-resolution.mjs',
           size: 9_154,
@@ -1824,8 +1848,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '8e33e2a78c0ef639e88466de21d8580604bd28f0',
-        sourceDigest: '8e33e2a78c0ef639e88466de21d8580604bd28f0',
+        signerDigest: 'd4950708742ed9b9f9b743ebe1eea04fd45dae30',
+        sourceDigest: 'd4950708742ed9b9f9b743ebe1eea04fd45dae30',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1853,7 +1877,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       producer.workflow.windowsBootstrapScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_CHILD_BOOTSTRAP)).toBe(
-      '697431c43b3b44a8514847be10d3c83e12e4e0e15a83dfc461b27613de543223',
+      '949c3307c11232532933ab04464b493fd99e53b61aea1bbad8174fa289fd4ec9',
     );
     expect(() =>
       verifyProtectedWorkflow(
@@ -1878,10 +1902,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
 
   test('freezes the exact Windows supervisor diagnostics and quarantine contract', () => {
     expect(Buffer.byteLength(TEST_WINDOWS_SUPERVISOR_TEST, 'utf8')).toBe(
-      171_179,
+      180_439,
     );
     expect(sha256(TEST_WINDOWS_SUPERVISOR_TEST)).toBe(
-      '55e9cf065e2dc7cc656c6aa8cc9ea53542259d3d7eee55c368c6cf0fc6356ab9',
+      '920e5cae9dbb650d627d053100ead7755b26058a46c645331177b6c5757930ea',
     );
     expect(TEST_WINDOWS_SUPERVISOR_TEST).toContain(
       TEST_WINDOWS_DIAGNOSTIC_TRAP,
