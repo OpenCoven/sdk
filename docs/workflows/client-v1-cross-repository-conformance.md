@@ -27,20 +27,21 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The SDK candidate remains
 `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
-This binding selects merged Chat #240 producer `8d17c173aa00310755fe912c66d4d3ba088296c4`, pinning executable
-harness `4ca05443866131c655169dea088158095f2df9f2` and merged Cave
+This binding selects merged Chat #239 producer `43e821689cc22e58b424c59b90981379fb16a6a8`, pinning executable
+harness `87ce946b0d9c7f05ccad2e23b2e1a7b18e9682f2` and merged Cave
 OpenCoven/coven-cave#5378 at
 `cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. Exact-head Chat CI run
-`34707682406` passed its applicable checks. The merge retains the immutable
+`34710284258` passed all checks. The merge retains the immutable
 harness source ancestry.
 
 The conformance-only token-profile safety probe reports fixed follow-up
-categories after an initial unsafe discovery response. Owner-only and
-combined owner/ACL failures remain distinct. Follow-up observations do not
-capture the original read and never authorize launch. Existing discovery
-trust, quota, assertion and dependency policies remain unchanged. This is a
-diagnostic-only rebind; native protected validation and release acceptance
-remain outstanding.
+categories after an initial unsafe discovery response and never authorizes
+launch. The Windows reader now accepts the OS-managed profile root when its
+owner is the restricted user, LocalSystem, or builtin Administrators and only
+those trusted principals can write it. Application-owned discovery paths
+still require restricted-user ownership. Reparse, identity, replacement,
+size, process, quota, assertion, and dependency checks remain fail closed.
+Fresh protected validation and release acceptance remain outstanding.
 
 The validator must merge and both protected scopes must be rotated before a
 fresh protected run.
@@ -404,7 +405,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`8d17c173aa00310755fe912c66d4d3ba088296c4` compatible with the reviewed
+`43e821689cc22e58b424c59b90981379fb16a6a8` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
