@@ -213,12 +213,12 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #233 producer `d4950708742ed9b9f9b743ebe1eea04fd45dae30`, pinning executable
+Chat #235 producer `6e9af83e0bb3c9271867b7aa0caaa94fdfa702c9`, pinning executable
 harness `2456be72daa92e580fe16cde954fd6eace25a089` and merged Cave
-OpenCoven/coven-cave#5374 at
-`82bf6831b4afbe82709a5fe78949d1b16c4d61e1`. All CI checks in Chat run
-`34685522784` passed at the exact PR head; the merge commit preserves the
-frozen source ancestry. The protected Windows producer now provisions a
+OpenCoven/coven-cave#5378 at
+`cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. The producer merge preserves the
+unchanged frozen harness source ancestry. The protected Windows producer
+provisions a
 nonce-bound, 64 MiB Cave temp root whose isolated SID has explicit DACL
 authority. Only the schema-v2 Cave authority child receives that temp path, so
 it can remove inherited supervisor and OWNER RIGHTS entries without weakening
@@ -273,6 +273,21 @@ protected standard user intentionally lacks. Validation, attestation and
 aggregation were skipped. The Cave and Chat repairs require this newly bound
 SDK validator and a fresh protected matrix before any passing aggregate or
 completed release acceptance is claimed.
+
+Protected run `34687009654` used merged Chat #233 and SDK #216. The frozen
+supervisor build passed, Linux and Darwin passed all conformance checks, and
+Windows progressed through restricted Cave startup and discovery before
+failing at `phase1.cave-authority.assertion.takeover`. That focused proof alone
+allocated its scratch fixture beneath the restricted repository checkout,
+bypassing the canonical Cave temp root. Cave #5378 now allocates the takeover
+fixture through the existing conformance temp helper, setting and restoring
+`TEMP`, `TMP`, and `TMPDIR` in cross-platform tests while preserving authority
+assertions, cleanup, quotas, bounded diagnostics, and fail-closed behavior.
+Chat #235 binds the merged Cave repair without changing the frozen workflow,
+bootstrap, Unix preparation, native-test, package, toolchain, runner, or
+artifact bytes. This SDK validator and both protected scopes must rotate before
+fresh protected acceptance.
+
 Chat #219 and the final protected acceptance gate remain open.
 
 Chat #203 repaired packaged provenance checks that incorrectly required
