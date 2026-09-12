@@ -229,12 +229,14 @@ SDK landing, both validator-scope rotations and fresh protected validation
 remain required release gates.
 
 The latest terminal protected run, `34661318050`, used Chat `c680e0a` and
-SDK `cab8260`. Linux and Darwin each passed 110 Cave, 46 SDK and 41 Chat
+SDK `cab82608`. Linux and Darwin each passed 110 Cave, 46 SDK and 41 Chat
 assertions. Independent checks verified ZIP digests, source and validator
 identities, Cave timing, ordered assertions and scans. Windows completed all
-observation suites, then failed at `phase1.cave-authority.exit-nonzero`, proving
-the Cave child exited with status 1 before emitting a failed assertion marker.
-Artifact validation, attestation and aggregation were skipped.
+observation suites, including the repaired Coven status fixture, then reported
+`phase1.cave-authority.exit-nonzero`. This establishes a nonzero Cave exit
+without failed assertion markers; successful or skipped markers followed by a
+later failure remain possible. Artifact validation, attestation and aggregation
+were skipped.
 Chat #219 and the final protected acceptance gate remain open.
 
 Chat #203 repaired packaged provenance checks that incorrectly required
