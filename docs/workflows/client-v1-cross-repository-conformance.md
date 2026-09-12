@@ -38,7 +38,9 @@ The initial discovery boundary distinguishes present, unavailable, unsafe,
 invalid, body-limit, service and unknown outcomes using fixed diagnostics.
 Only the expected missing-discovery response permits launch. Unknown and
 malformed codes remain redacted. Quotas, ACLs, assertions and dependency
-policy remain unchanged; fresh protected validation is still required.
+policy remain unchanged. This rebinding is diagnostic-only; it neither
+establishes the root cause nor constitutes protected validation or release
+acceptance. Fresh protected validation is still required.
 
 The validator must merge and both protected scopes must be rotated before a
 fresh protected run.
