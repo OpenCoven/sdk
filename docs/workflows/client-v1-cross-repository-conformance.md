@@ -27,13 +27,13 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The SDK candidate remains
 `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
-This binding selects the verified Chat #228 merge
-`f77b24912ccf2492e6d79adb306da8c858af0595`, pinning executable harness
-`1e54da6fe51337dbbd21c3746c1528d05bb20568`. Applicable CI checks in run
-`34664693091` passed at the exact PR head; the actual merge preserves the
-frozen diagnostic source ancestry. Marker-free Cave exits now distinguish
-bounded startup, cleanup, pairing, reads, request transport and last-phase
-families without copying child output. Trusted workflow metadata and bootstrap
+This binding selects the verified Chat #229 merge
+`5f4572c45e19bc17fa8963fb8147b47bc8d0c31c`, pinning executable harness
+`2ab6bdeee06dde573ea432db3dcca8c158a3a576`. Applicable CI checks in run
+`34668300360` passed at the exact PR head; the actual merge preserves the
+frozen diagnostic source ancestry. Quota enumeration now distinguishes the
+matched root and capped descendant depths using fixed labels, without paths or
+changes to accounting, isolated-user access, limits or first-failure behavior. Trusted workflow metadata and bootstrap
 digests bind those executable bytes. Acceptance remains unchanged.
 The validator must merge and both protected scopes must be rotated before a
 fresh protected run.
@@ -45,18 +45,19 @@ The Windows supervisor accounts directories through the already validated
 isolated-user token at all three quota scan sites. Each read owns a
 noninheritable duplicate; terminal accounting follows account disablement.
 Private ACLs, the bounded walker and first-failure reporting remain enforced.
-The binding updates the harness, workflow, Windows parent/child bootstrap
-hashes and Unix preparation fixture.
+The binding updates the producer identity, workflow and Windows parent
+bootstrap hash and fixtures. Child bootstrap and Unix preparation bytes are unchanged.
 
-The latest terminal protected run, `34661318050`, used Chat `c680e0a` and
-SDK `cab82608`. Linux and Darwin each passed 110 Cave, 46 SDK and 41 Chat
-assertions. Independent checks verified ZIP digests, source and validator
-identities, Cave timing, ordered assertions and scans. Windows completed all
-observation suites, including the repaired Coven status fixture, then reported
-`phase1.cave-authority.exit-nonzero`. This establishes a nonzero Cave exit
-without failed assertion markers; successful or skipped markers followed by a
-later failure remain possible. Artifact validation, attestation and aggregation
-were skipped.
+The latest terminal protected run, `34666399779`, used Chat `f77b249` and
+SDK `5730979`. Linux and Darwin records independently passed archive digests,
+scans, exact identities, Cave timing and all 197 ordered assertions. Windows
+failed before Cave diagnostics with `access-denied; root=harness-execution-aggregate;
+operation=directory-enumeration`. This does not establish a Cave record mismatch
+or recurrence of the earlier quota-reader token defect. Validation, attestation
+and aggregation were skipped. The new frozen supervisor reports only fixed
+root/depth-1/depth-2/depth-3-plus enumeration labels; accounting, permissions,
+limits, redaction and acceptance remain unchanged. A fresh protected run is
+required to identify the failing depth.
 Chat #219 and the final protected acceptance gate remain open.
 
 The Coven daemon and observation source is merged revision
@@ -351,7 +352,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`f77b24912ccf2492e6d79adb306da8c858af0595` compatible with the reviewed
+`5f4572c45e19bc17fa8963fb8147b47bc8d0c31c` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub

@@ -213,12 +213,12 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #228 producer `f77b24912ccf2492e6d79adb306da8c858af0595`, pinning executable
-harness `1e54da6fe51337dbbd21c3746c1528d05bb20568`. Applicable CI checks in run
-`34664693091` passed at the exact PR head; the actual merge preserves the
-frozen diagnostic source ancestry. Marker-free Cave exits now distinguish
-bounded startup, cleanup, pairing, reads, request transport and last-phase
-families without copying child output. Trusted workflow metadata and bootstrap
+Chat #229 producer `5f4572c45e19bc17fa8963fb8147b47bc8d0c31c`, pinning executable
+harness `2ab6bdeee06dde573ea432db3dcca8c158a3a576`. Applicable CI checks in run
+`34668300360` passed at the exact PR head; the actual merge preserves the
+frozen diagnostic source ancestry. Quota enumeration now distinguishes the
+matched root and capped descendant depths using fixed labels, without paths or
+changes to accounting, isolated-user access, limits or first-failure behavior. Trusted workflow metadata and bootstrap
 digests bind those executable bytes. Acceptance remains unchanged.
 
 The Windows reader retains the validated isolated token for synchronous quota
@@ -228,15 +228,16 @@ is merged #1015 at `8c3735f374d6bc95e5b6fd107f7e7308fa26a2f8`.
 SDK landing, both validator-scope rotations and fresh protected validation
 remain required release gates.
 
-The latest terminal protected run, `34661318050`, used Chat `c680e0a` and
-SDK `cab82608`. Linux and Darwin each passed 110 Cave, 46 SDK and 41 Chat
-assertions. Independent checks verified ZIP digests, source and validator
-identities, Cave timing, ordered assertions and scans. Windows completed all
-observation suites, including the repaired Coven status fixture, then reported
-`phase1.cave-authority.exit-nonzero`. This establishes a nonzero Cave exit
-without failed assertion markers; successful or skipped markers followed by a
-later failure remain possible. Artifact validation, attestation and aggregation
-were skipped.
+The latest terminal protected run, `34666399779`, used Chat `f77b249` and
+SDK `5730979`. Linux and Darwin records independently passed archive digests,
+scans, exact identities, Cave timing and all 197 ordered assertions. Windows
+failed before Cave diagnostics with `access-denied; root=harness-execution-aggregate;
+operation=directory-enumeration`. This does not establish a Cave record mismatch
+or recurrence of the earlier quota-reader token defect. Validation, attestation
+and aggregation were skipped. The new frozen supervisor reports only fixed
+root/depth-1/depth-2/depth-3-plus enumeration labels; accounting, permissions,
+limits, redaction and acceptance remain unchanged. A fresh protected run is
+required to identify the failing depth.
 Chat #219 and the final protected acceptance gate remain open.
 
 Chat #203 repaired packaged provenance checks that incorrectly required
