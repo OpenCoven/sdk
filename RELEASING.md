@@ -213,12 +213,14 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #241 producer `11606c2f91b3523d2e362143234731cd7e664a1c`, pinning executable
-harness `7d2b855eb4112dcb93d530c5d54f26601e201b6b` and merged Cave
+Chat #243 producer `59fd228e308b732e5f530b0f89af68f3811a177c`, pinning executable
+harness `d183c60836046c339f0e5954390fbc0c5e8d4fd5` and merged Cave
 OpenCoven/coven-cave#5378 at
 `cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. Exact-head Chat CI run
-`34713015571` passed its applicable checks. The merge retains the immutable
-harness source ancestry.
+`34717180149` passed its applicable checks. The producer gives only
+`cave_launch` a 35-second RPC response budget around the native 30-second
+readiness deadline; all other RPCs retain their 10-second bound. The merge
+retains the immutable harness source ancestry.
 
 The native regression proves SYSTEM or Administrators ownership using the
 isolated process token profile before testing the discovery reader. Unknown
