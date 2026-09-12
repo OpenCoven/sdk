@@ -27,15 +27,19 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The SDK candidate remains
 `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
-This binding selects the verified Chat #230 merge
-`09410982d3a85cbfbcdf2d2d193c3a96e8e80f74`, pinning executable harness
-`a0e13a30213496bdec88c1a6b88f632212bac762`. Applicable CI checks in run
-`34670529730` passed at the exact PR head; the actual merge preserves the
-frozen diagnostic source ancestry. Cave startup failures now distinguish six
-fixed subtypes: timeout, early exit, health, missing discovery, endpoint mismatch
-and PID mismatch. No paths, endpoints, PIDs, child output or response bodies are
-disclosed; quota-depth diagnostics and acceptance remain unchanged. Trusted workflow metadata and bootstrap
-digests bind those executable bytes. Acceptance remains unchanged.
+This binding selects merged Chat #231 producer
+`395a5c99bb2f4f00106e2b4d3266e312391b6906`, pinning executable
+harness `1ad4184a043eea731613fbe6d15482a0c1e237a7`. All CI checks in run
+`34674121298` passed at the exact PR head; the actual merge preserves the
+frozen diagnostic source ancestry. Windows quota failures now include fixed
+bootstrap scope and repeat classifications. One bounded diagnostic repeat is
+permitted only inside the existing isolated-user quota read. Supervisor-context
+reads remain single attempts; metadata repeats use fresh reads, while original
+accounting and the first failure remain authoritative. No quota, ACL, timeout,
+permission or acceptance limits change. Trusted workflow metadata and bootstrap
+digests bind those executable bytes. The workflow remains below GitHub's 500 KiB
+file limit with parsed command bodies preserved.
+
 The validator must merge and both protected scopes must be rotated before a
 fresh protected run.
 
@@ -47,7 +51,7 @@ isolated-user token at all three quota scan sites. Each read owns a
 noninheritable duplicate; terminal accounting follows account disablement.
 Private ACLs, the bounded walker and first-failure reporting remain enforced.
 The binding refreshes the exact producer, harness, workflow and bootstrap
-metadata and fixtures for the reviewed startup subtype source.
+metadata and fixtures for the reviewed quota scope and repeat diagnostics.
 
 Protected run `34667436672` used Chat `f77b249` and SDK `5730979`.
 Linux and Darwin records independently passed archive digests, scans, exact
@@ -64,9 +68,19 @@ ordered assertions each. Windows failed closed with `access-denied`, root
 identifies a capped descendant depth in the bootstrap tree; it does not
 establish a Cave record identity, timing or assertion mismatch. Validation,
 attestation and aggregation were skipped. This remains separate from the
-Cave startup observation and this startup-subtype binding. The new validator requires a fresh protected
-run after both scopes are rotated to its verified merge. No passing aggregate
-or completed release acceptance is claimed here.
+Cave startup observation.
+
+Protected run `34672157833` used Chat #230 and SDK #213. Linux and
+Darwin independently passed archive digests, scans, exact record identities,
+Cave timing and all 197 ordered assertions each. Windows failed closed with
+`access-denied`, root `harness-cargo-registry`, operation
+`directory-enumeration-depth-3-plus`. Validation, attestation and aggregation
+were skipped. This is distinct from the earlier bootstrap quota denial and
+Cave startup observation; it establishes no Cave identity, timing or assertion
+mismatch. The new scope/repeat fields require fresh protected evidence before
+any transience or persistence claim. Both validator scopes must select the
+verified SDK merge before that run. No passing aggregate or completed release
+acceptance is claimed here.
 Chat #219 and the final protected acceptance gate remain open.
 
 The Coven daemon and observation source is merged revision
@@ -361,7 +375,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`09410982d3a85cbfbcdf2d2d193c3a96e8e80f74` compatible with the reviewed
+`395a5c99bb2f4f00106e2b4d3266e312391b6906` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
