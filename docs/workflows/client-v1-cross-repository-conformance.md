@@ -27,14 +27,21 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The SDK candidate remains
 `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
-This binding selects merged Chat #244 producer `df10699bb7e1cc792ac6e197fe99d8c355e2bf18`, pinning executable
-harness `64932c955de3aa823732d31abd927d7a91f26632` and merged Cave
+This binding selects merged Chat #248 producer `e35d4482ee1e2062bd5f6e7896dcb4ef5680dcb9`, pinning executable
+harness `0a2cf1c9815b511bcc53e37360b5b2bafdfe20dd` and merged Cave
 OpenCoven/coven-cave#5378 at
-`cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. Exact-head Chat CI run
-`34718152735` attempt 2 passed all ten checks. Only `cave_launch` receives the
+`cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. Pre-merge Chat CI run
+`34721888738` passed all ten checks at head
+`56431f80e555476a54e6ac805db5f2e2bfb3a8a2`. The actual merge retains
+that tested tree; this CI run is not protected evidence for the merged producer. Only `cave_launch` receives the
 40-second outer RPC response budget needed to encompass the native 30-second
 readiness deadline; every other RPC retains its 10-second bound. Both harness clients use this budget; generic service
 errors remain unknown, not timeout evidence. The merge retains the immutable harness source ancestry.
+
+The bound quota diagnostic distinguishes a readable follow-up from a missing
+file or directory. Every outcome preserves the initial quota failure and rejects
+the measurement. Persistent means another nonmissing exception, which need not
+match the first. Production Windows root alignment remains required.
 
 The native regression proves SYSTEM or Administrators ownership using the
 isolated process token profile before testing the discovery reader. Unknown
@@ -406,7 +413,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`df10699bb7e1cc792ac6e197fe99d8c355e2bf18` compatible with the reviewed
+`e35d4482ee1e2062bd5f6e7896dcb4ef5680dcb9` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub

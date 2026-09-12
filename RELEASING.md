@@ -213,14 +213,21 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #244 producer `df10699bb7e1cc792ac6e197fe99d8c355e2bf18`, pinning executable
-harness `64932c955de3aa823732d31abd927d7a91f26632` and merged Cave
+Chat #248 producer `e35d4482ee1e2062bd5f6e7896dcb4ef5680dcb9`, pinning executable
+harness `0a2cf1c9815b511bcc53e37360b5b2bafdfe20dd` and merged Cave
 OpenCoven/coven-cave#5378 at
-`cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. Exact-head Chat CI run
-`34718152735` attempt 2 passed all ten checks. The producer gives only
+`cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. Pre-merge Chat CI run
+`34721888738` passed all ten checks at head
+`56431f80e555476a54e6ac805db5f2e2bfb3a8a2`. The actual merge retains
+that tested tree; this CI run is not protected evidence for the merged producer. The producer gives only
 `cave_launch` a 40-second RPC response budget around the native 30-second
 readiness deadline; all other RPCs retain their 10-second bound. Both harness clients use this budget; generic service
 errors remain unknown, not timeout evidence. The merge retains the immutable harness source ancestry.
+
+The bound quota diagnostic distinguishes a readable follow-up from a missing
+file or directory. Every outcome preserves the initial quota failure and rejects
+the measurement. Persistent means another nonmissing exception, which need not
+match the first. Production Windows root alignment remains required.
 
 The native regression proves SYSTEM or Administrators ownership using the
 isolated process token profile before testing the discovery reader. Unknown
