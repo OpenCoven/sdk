@@ -213,18 +213,20 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #237 producer `4774a4d4760f13b1153ac47d84a25470d01ade5b`, pinning executable
-harness `be656f3cb678e17342c117a1ac84273b61201a1f` and merged Cave
+Chat #238 producer `c4a7be83bb1b5dd814f3dbfe247a409dfdf46256`, pinning executable
+harness `89848fd960bcdc66e38e83162dc4a1f676885825` and merged Cave
 OpenCoven/coven-cave#5378 at
 `cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. Exact-head Chat CI run
-`34698031465` passed its applicable checks. The merge retains the immutable
+`34701808264` passed its applicable checks. The merge retains the immutable
 harness source ancestry.
 
-Harness quota diagnostics classify execution directories using fixed,
-path-free scopes. The root scope also serves as a pre-traversal aggregate
-fallback and does not prove which directory failed. Quotas, ACLs, assertions,
-repeat behavior and dependency policy remain unchanged. Fresh protected
-validation remains required to identify the underlying Windows denial.
+The initial discovery boundary distinguishes present, unavailable, unsafe,
+invalid, body-limit, service and unknown outcomes using fixed diagnostics.
+Only the expected missing-discovery response permits launch. Unknown and
+malformed codes remain redacted. Quotas, ACLs, assertions and dependency
+policy remain unchanged. This rebinding is diagnostic-only; it neither
+establishes the root cause nor constitutes protected validation or release
+acceptance. Fresh protected validation is still required.
 
 The Windows reader retains the validated isolated token for synchronous quota
 scans, including terminal accounting after account disablement. Private ACLs
