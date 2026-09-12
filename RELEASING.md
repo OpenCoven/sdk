@@ -213,29 +213,39 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #248 producer `e35d4482ee1e2062bd5f6e7896dcb4ef5680dcb9`, pinning executable
-harness `0a2cf1c9815b511bcc53e37360b5b2bafdfe20dd` and merged Cave
+Chat #249 producer `4682a4aa758c8d958f8b87b9976addf14856f76b`, pinning executable
+harness `0392645db9ec3b6e06cbc91ed0c09a868a50aea5` and merged Cave
 OpenCoven/coven-cave#5378 at
 `cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. Pre-merge Chat CI run
-`34721888738` passed all ten checks at head
-`56431f80e555476a54e6ac805db5f2e2bfb3a8a2`. The actual merge retains
-that tested tree; this CI run is not protected evidence for the merged producer. The producer gives only
-`cave_launch` a 40-second RPC response budget around the native 30-second
-readiness deadline; all other RPCs retain their 10-second bound. Both harness clients use this budget; generic service
-errors remain unknown, not timeout evidence. The merge retains the immutable harness source ancestry.
+`34724946685` passed all ten checks at head
+`73b9acf8bc069911ebbd2b847e65383bf9b91677`. The actual merge retains
+that tested tree; this CI run is not protected evidence for the merged producer.
+The producer gives Windows `cave_launch` an 85-second RPC response budget around
+the native 75-second readiness deadline; non-Windows remains 40 seconds around
+30 seconds. All other RPCs retain their 10-second bound. Both harness clients
+use these budgets; generic service errors remain unknown, not timeout evidence.
+The merge retains the immutable harness source ancestry.
+
+The trusted supervisor overwrites the dedicated Windows profile-root binding
+with the operating-system profile registered for the restricted process token.
+The producer validates it independently from the bootstrap-local `USERPROFILE`
+redirect and publishes only the native fixture beneath that profile's
+`.coven/cave`, matching Rust token-profile discovery. A forged caller value
+cannot redirect publication. Fixture deletion follows confirmed RPC closure;
+failed graceful shutdown defers termination and profile removal to the
+supervisor.
 
 The bound quota diagnostic distinguishes a readable follow-up from a missing
-file or directory. Every outcome preserves the initial quota failure and rejects
-the measurement. Persistent means another nonmissing exception, which need not
-match the first. Production Windows root alignment remains required.
+file or directory. Every outcome preserves the initial quota failure and
+rejects the measurement. Persistent means another nonmissing exception, which
+need not match the first.
 
 The native regression proves SYSTEM or Administrators ownership using the
 isolated process token profile before testing the discovery reader. Unknown
 ACL metadata for a trusted profile owner remains unavailable and rejected. Follow-up observations do not
 capture the original read and never authorize launch. Existing discovery
-trust, quota, assertion and dependency policies remain unchanged. This is a
-diagnostic-only rebind; native protected validation and release acceptance
-remain outstanding.
+trust, quota, assertion and dependency policies remain unchanged. Native
+protected validation and release acceptance remain outstanding.
 
 The Windows reader retains the validated isolated token for synchronous quota
 scans, including terminal accounting after account disablement. Private ACLs
