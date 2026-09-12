@@ -27,12 +27,14 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The SDK candidate remains
 `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
-This binding selects merged Chat #241 producer `11606c2f91b3523d2e362143234731cd7e664a1c`, pinning executable
-harness `7d2b855eb4112dcb93d530c5d54f26601e201b6b` and merged Cave
+This binding selects merged Chat #243 producer `59fd228e308b732e5f530b0f89af68f3811a177c`, pinning executable
+harness `d183c60836046c339f0e5954390fbc0c5e8d4fd5` and merged Cave
 OpenCoven/coven-cave#5378 at
 `cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. Exact-head Chat CI run
-`34713015571` passed its applicable checks. The merge retains the immutable
-harness source ancestry.
+`34717180149` passed its applicable checks. Only `cave_launch` receives the
+35-second outer RPC response budget needed to encompass the native 30-second
+readiness deadline; every other RPC retains its 10-second bound. The merge
+retains the immutable harness source ancestry.
 
 The native regression proves SYSTEM or Administrators ownership using the
 isolated process token profile before testing the discovery reader. Unknown
@@ -404,7 +406,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`11606c2f91b3523d2e362143234731cd7e664a1c` compatible with the reviewed
+`59fd228e308b732e5f530b0f89af68f3811a177c` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
