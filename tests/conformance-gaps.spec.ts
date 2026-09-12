@@ -1770,8 +1770,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '43e821689cc22e58b424c59b90981379fb16a6a8',
-      tree: 'a7cd7ba6a784ded8afb34d68780475dbdcd928ec',
+      commit: '11606c2f91b3523d2e362143234731cd7e664a1c',
+      tree: 'da2f3100d3fa99d3217e34bebda57f2d4b3de7bd',
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -1848,8 +1848,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '43e821689cc22e58b424c59b90981379fb16a6a8',
-        sourceDigest: '43e821689cc22e58b424c59b90981379fb16a6a8',
+        signerDigest: '11606c2f91b3523d2e362143234731cd7e664a1c',
+        sourceDigest: '11606c2f91b3523d2e362143234731cd7e664a1c',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1902,10 +1902,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
 
   test('freezes the exact Windows supervisor diagnostics and quarantine contract', () => {
     expect(Buffer.byteLength(TEST_WINDOWS_SUPERVISOR_TEST, 'utf8')).toBe(
-      181_303,
+      186_680,
     );
     expect(sha256(TEST_WINDOWS_SUPERVISOR_TEST)).toBe(
-      '6348c9d127a405bb93c008d28fe6bdf12879abd97a9242b7b95e9009430c0922',
+      '4d72ab77e9f1e3d442b5e0bffd7b920e53fa28548a22b53f7e6226bd9b19df4a',
     );
     expect(TEST_WINDOWS_SUPERVISOR_TEST).toContain(
       TEST_WINDOWS_DIAGNOSTIC_TRAP,

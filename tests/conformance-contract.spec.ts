@@ -215,7 +215,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      '43e821689cc22e58b424c59b90981379fb16a6a8',
+      '11606c2f91b3523d2e362143234731cd7e664a1c',
     );
     expect(workflowDocument).not.toContain(
       'f6eba8af1f71d4251583cf39d4e5fb5b4797d209',
@@ -230,7 +230,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       '9f073f05241c2d3241b23ed9d73b26c6cd55ce7e',
     );
     expect(workflowDocument).toContain(
-      '87ce946b0d9c7f05ccad2e23b2e1a7b18e9682f2',
+      '7d2b855eb4112dcb93d530c5d54f26601e201b6b',
     );
     expect(workflowDocument).toContain('validator_revision');
     expect(workflowDocument).toContain('20863036831');
