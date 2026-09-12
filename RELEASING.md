@@ -213,19 +213,20 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #235 producer `6e9af83e0bb3c9271867b7aa0caaa94fdfa702c9`, pinning executable
-harness `2456be72daa92e580fe16cde954fd6eace25a089` and merged Cave
+Chat #234 producer `62a23f34e1a8f188df140bb1b2e3e7574af9f55d`, pinning executable
+harness `a990cdc516f9d7798ed2a317eb026ff438745824` and merged Cave
 OpenCoven/coven-cave#5378 at
-`cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. The producer merge preserves the
-unchanged frozen harness source ancestry. The protected Windows producer
-provisions a
-nonce-bound, 64 MiB Cave temp root whose isolated SID has explicit DACL
-authority. Only the schema-v2 Cave authority child receives that temp path, so
-it can remove inherited supervisor and OWNER RIGHTS entries without weakening
-the general profile, temp, workspace, cleanup or quota policy. Trusted workflow
-metadata and Windows/Unix bootstrap digests bind those executable bytes. The
-workflow remains below GitHub's 500 KiB file limit with parsed command bodies
-preserved.
+`cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. Exact-head Chat CI run
+`34691707468` passed, including native Windows supervision and optimized Linux
+RPC regressions. The merge retains the immutable harness source ancestry.
+
+The isolated SID has modify access on the nonce-bound, 64 MiB Cave temp root.
+Full control is inherit-only for descendant files and directories, permitting
+fixture ACL repair while preserving the root DACL boundary. Native Windows
+tests reject root DACL escalation and verify descendant repair through the
+PowerShell 7 ACL API. The frozen harness also includes the RPC test that proves
+its response pipe is broken before startup. Workflow, bootstrap and native-test
+fixtures bind the reviewed bytes without changing quotas or dependency policy.
 
 The Windows reader retains the validated isolated token for synchronous quota
 scans, including terminal accounting after account disablement. Private ACLs
