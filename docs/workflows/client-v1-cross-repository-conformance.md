@@ -27,14 +27,15 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The SDK candidate remains
 `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
-This binding selects the verified Chat #226 merge
-`cb91fef6e5be851b033015d2de27a78e12c5d668`, pinning executable harness
-`79e6dd2b3f4e59b20ce6bb7a1f209e2dd26d2c3a`. Applicable CI checks in run
-`34655260452` passed at the exact PR head; the actual merge preserves the
-frozen diagnostic source ancestry. The binding adopts Coven #1015 for configured
-status staging in the Windows
-observation fixture, while retaining default-path coverage and bounded replacement
-semantics. The executable harness and workflow bytes are unchanged.
+This binding selects the verified Chat #227 merge
+`c680e0a42087e956285725d02db442bfab676660`, pinning the bounded Cave
+diagnostic source at `180c7c529fc6af2c723bf032c2a4cd26d2472d7d`.
+Applicable CI checks in run `34659677734` passed at the exact PR head; the
+actual merge preserves the frozen diagnostic source ancestry. The classifier
+maps Cave timeout, output-limit, spawn, supervisor, signal, nonzero-exit,
+invalid-output, record-read, record-invalid, and allowlisted assertion
+categories to fixed public identifiers without exposing child output or
+changing acceptance.
 The validator must merge and both protected scopes must be rotated before a
 fresh protected run.
 
@@ -45,16 +46,20 @@ The Windows supervisor accounts directories through the already validated
 isolated-user token at all three quota scan sites. Each read owns a
 noninheritable duplicate; terminal accounting follows account disablement.
 Private ACLs, the bounded walker and first-failure reporting remain enforced.
-The binding preserves the harness, workflow, Windows parent/child bootstrap
-hashes and Unix preparation fixture.
+The binding refreshes the harness, workflow, Windows parent bootstrap, and
+Unix preparation fixtures for the exact diagnostic module metadata. The
+Windows child execution behavior and all production, validation, quota, and
+acceptance bounds are unchanged.
 
-The latest terminal protected run, `34647484742`, used Chat `e7dfc135` and
-SDK `c774ba4`. Linux and Darwin each passed 110 Cave, 46 SDK and 41 Chat
+The latest terminal protected runs, `34656775116` and `34657084053`, used
+Chat `cb91fef6` and SDK `7c771629`. Linux and Darwin each passed 110 Cave,
+46 SDK and 41 Chat
 assertions. Independent checks verified ZIP digests, source and validator
-identities, Cave timing, ordered assertions and scans. Windows passed SDK and
-Chat observations, then failed at
-`phase1.runtime-observations.coven-rust-tests.status-replacement.assertion.writer-error.apply-owner-only-security.access-denied`.
-The previous SDK failure did not recur; its cause remains unclassified.
+identities, Cave timing, ordered assertions and scans. Windows progressed past
+the repaired Coven status observation and reproducibly failed at the generic
+`phase1.stage.cave-authority.failed` diagnostic. The new binding preserves all
+resource and acceptance bounds while making the next protected failure
+actionable.
 Artifact validation, attestation and aggregation were skipped.
 Chat #219 and the final protected acceptance gate remain open.
 
@@ -350,7 +355,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`cb91fef6e5be851b033015d2de27a78e12c5d668` compatible with the reviewed
+`c680e0a42087e956285725d02db442bfab676660` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
