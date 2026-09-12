@@ -213,13 +213,13 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #227 producer `c680e0a42087e956285725d02db442bfab676660`, pinning executable
-harness `180c7c529fc6af2c723bf032c2a4cd26d2472d7d`. Applicable CI checks in run
-`34659677734` passed at the exact PR head; the actual merge preserves the
-frozen diagnostic source ancestry. The harness now distinguishes bounded Cave
-command, record and assertion-output failures. Trusted workflow metadata and
-bootstrap digests bind those executable bytes. Acceptance remains unchanged,
-and the previously adopted Coven #1015 status fixture is retained.
+Chat #228 producer `f77b24912ccf2492e6d79adb306da8c858af0595`, pinning executable
+harness `1e54da6fe51337dbbd21c3746c1528d05bb20568`. Applicable CI checks in run
+`34664693091` passed at the exact PR head; the actual merge preserves the
+frozen diagnostic source ancestry. Marker-free Cave exits now distinguish
+bounded startup, cleanup, pairing, reads, request transport and last-phase
+families without copying child output. Trusted workflow metadata and bootstrap
+digests bind those executable bytes. Acceptance remains unchanged.
 
 The Windows reader retains the validated isolated token for synchronous quota
 scans, including terminal accounting after account disablement. Private ACLs
@@ -228,13 +228,15 @@ is merged #1015 at `8c3735f374d6bc95e5b6fd107f7e7308fa26a2f8`.
 SDK landing, both validator-scope rotations and fresh protected validation
 remain required release gates.
 
-The latest terminal protected run, `34656775116`, used Chat `cb91fef6` and
-SDK `7c771629`. Linux and Darwin each passed 110 Cave, 46 SDK and 41 Chat
+The latest terminal protected run, `34661318050`, used Chat `c680e0a` and
+SDK `cab82608`. Linux and Darwin each passed 110 Cave, 46 SDK and 41 Chat
 assertions. Independent checks verified ZIP digests, source and validator
 identities, Cave timing, ordered assertions and scans. Windows completed all
-observation suites, including the repaired Coven status fixture, then failed at
-`phase1.stage.cave-authority.failed`. Its Cave cause remains unclassified.
-Artifact validation, attestation and aggregation were skipped.
+observation suites, including the repaired Coven status fixture, then reported
+`phase1.cave-authority.exit-nonzero`. This establishes a nonzero Cave exit
+without failed assertion markers; successful or skipped markers followed by a
+later failure remain possible. Artifact validation, attestation and aggregation
+were skipped.
 Chat #219 and the final protected acceptance gate remain open.
 
 Chat #203 repaired packaged provenance checks that incorrectly required
