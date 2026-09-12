@@ -2,8 +2,8 @@
   "schemaVersion": 2,
   "provenance": {
     "repository": "OpenCoven/coven-cave",
-    "commit": "d20d83c46ba0c32433ce8dc6a358fb14b6bd0e45",
-    "tree": "7ff358ac42a9d94ae5feb1f08e2af64a5513e78e",
+    "commit": "82bf6831b4afbe82709a5fe78949d1b16c4d61e1",
+    "tree": "06ffdd4320b7e05fbe68e2168f6efdb77c585756",
     "engine": {
       "path": "scripts/client-v1-conformance.mjs",
       "size": 146472,

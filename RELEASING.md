@@ -213,17 +213,18 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #231 producer `395a5c99bb2f4f00106e2b4d3266e312391b6906`, pinning executable
-harness `1ad4184a043eea731613fbe6d15482a0c1e237a7`. All CI checks in run
-`34674121298` passed at the exact PR head; the actual merge preserves the
-frozen diagnostic source ancestry. Windows quota failures now include fixed
-bootstrap scope and repeat classifications. One bounded diagnostic repeat is
-permitted only inside the existing isolated-user quota read. Supervisor-context
-reads remain single attempts; metadata repeats use fresh reads, while original
-accounting and the first failure remain authoritative. No quota, ACL, timeout,
-permission or acceptance limits change. Trusted workflow metadata and bootstrap
-digests bind those executable bytes. The workflow remains below GitHub's 500 KiB
-file limit with parsed command bodies preserved.
+Chat #232 producer `8e33e2a78c0ef639e88466de21d8580604bd28f0`, pinning executable
+harness `b0c4f976c4ceadd9bcebab21c40d733e155e48d2` and merged Cave
+OpenCoven/coven-cave#5374 at
+`82bf6831b4afbe82709a5fe78949d1b16c4d61e1`. All CI checks in Chat run
+`34679357327` passed at the exact PR head; the merge commit preserves the
+frozen source ancestry. Cave's Windows ACL repair now avoids a redundant
+owner write when the protected standard user already owns the discovery
+directory. Foreign-owner takeover, protected-DACL enforcement, post-repair
+verification and fail-closed behavior remain unchanged. Trusted workflow
+metadata and Windows/Unix bootstrap digests bind those executable bytes. The
+workflow remains below GitHub's 500 KiB file limit with parsed command bodies
+preserved.
 
 The Windows reader retains the validated isolated token for synchronous quota
 scans, including terminal accounting after account disablement. Private ACLs
@@ -260,6 +261,17 @@ mismatch. The new scope/repeat fields require fresh protected evidence before
 any transience or persistence claim. Both validator scopes must select the
 verified SDK merge before that run. No passing aggregate or completed release
 acceptance is claimed here.
+Protected run `34675842331` used Chat #231 and SDK #214. Linux and
+Darwin independently passed archive digests, scans, exact record identities,
+Cave timing and all 197 ordered assertions each. Windows reached the Cave
+authority, but discovery publication failed with the fixed subtype
+`phase1.cave-authority.startup.discovery.missing`. The listener remained
+healthy because publication errors are intentionally degraded. The root cause
+was a redundant `SetOwner` call that requires `WRITE_OWNER`, which the
+protected standard user intentionally lacks. Validation, attestation and
+aggregation were skipped. The Cave and Chat repairs require this newly bound
+SDK validator and a fresh protected matrix before any passing aggregate or
+completed release acceptance is claimed.
 Chat #219 and the final protected acceptance gate remain open.
 
 Chat #203 repaired packaged provenance checks that incorrectly required
