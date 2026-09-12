@@ -213,18 +213,18 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #236 producer `59ea9ca3f557eb2179a1388e705cc5488d7fac9d`, pinning executable
-harness `d86743738b7f7e21de8a34ed01e88c84bc63d868` and merged Cave
+Chat #237 producer `4774a4d4760f13b1153ac47d84a25470d01ade5b`, pinning executable
+harness `be656f3cb678e17342c117a1ac84273b61201a1f` and merged Cave
 OpenCoven/coven-cave#5378 at
 `cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. Exact-head Chat CI run
-`34694870704` passed its applicable checks. The merge retains the immutable
-harness source ancestry, including the root ACL and RPC pipe fixture repairs.
+`34698031465` passed its applicable checks. The merge retains the immutable
+harness source ancestry.
 
-The native launch boundary now distinguishes installation, configuration,
-process launch, timeout, closed RPC, initial discovery, discovery publication,
-health and health-envelope failures using a closed diagnostic allowlist.
-Unknown causes remain redacted. Workflow and bootstrap fixtures bind the
-reviewed bytes without changing quotas, assertions or dependency policy.
+Harness quota diagnostics classify execution directories using fixed,
+path-free scopes. The root scope also serves as a pre-traversal aggregate
+fallback and does not prove which directory failed. Quotas, ACLs, assertions,
+repeat behavior and dependency policy remain unchanged. Fresh protected
+validation remains required to identify the underlying Windows denial.
 
 The Windows reader retains the validated isolated token for synchronous quota
 scans, including terminal accounting after account disablement. Private ACLs
