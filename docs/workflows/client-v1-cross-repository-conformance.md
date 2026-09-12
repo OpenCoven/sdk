@@ -27,21 +27,19 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The SDK candidate remains
 `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
-This binding selects merged Chat #234 producer
-`62a23f34e1a8f188df140bb1b2e3e7574af9f55d`, pinning executable
-harness `a990cdc516f9d7798ed2a317eb026ff438745824` and merged Cave
+This binding selects merged Chat #236 producer
+`59ea9ca3f557eb2179a1388e705cc5488d7fac9d`, pinning executable
+harness `d86743738b7f7e21de8a34ed01e88c84bc63d868` and merged Cave
 OpenCoven/coven-cave#5378 at
 `cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. Exact-head Chat CI run
-`34691707468` passed, including native Windows supervision and optimized Linux
-RPC regressions. The merge retains the immutable harness source ancestry.
+`34694870704` passed its applicable checks. The merge retains the immutable
+harness source ancestry, including the root ACL and RPC pipe fixture repairs.
 
-The isolated SID has modify access on the nonce-bound, 64 MiB Cave temp root.
-Full control is inherit-only for descendant files and directories, permitting
-fixture ACL repair while preserving the root DACL boundary. Native Windows
-tests reject root DACL escalation and verify descendant repair through the
-PowerShell 7 ACL API. The frozen harness also includes the RPC test that proves
-its response pipe is broken before startup. Workflow, bootstrap and native-test
-fixtures bind the reviewed bytes without changing quotas or dependency policy.
+The native launch boundary now distinguishes installation, configuration,
+process launch, timeout, closed RPC, initial discovery, discovery publication,
+health and health-envelope failures using a closed diagnostic allowlist.
+Unknown causes remain redacted. Workflow and bootstrap fixtures bind the
+reviewed bytes without changing quotas, assertions or dependency policy.
 
 The validator must merge and both protected scopes must be rotated before a
 fresh protected run.
@@ -405,7 +403,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`62a23f34e1a8f188df140bb1b2e3e7574af9f55d` compatible with the reviewed
+`59ea9ca3f557eb2179a1388e705cc5488d7fac9d` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
