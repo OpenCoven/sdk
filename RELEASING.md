@@ -213,14 +213,17 @@ passing evidence record for each target.
 
 The frozen Chat production source
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` is selected by merged
-Chat #230 producer `09410982d3a85cbfbcdf2d2d193c3a96e8e80f74`, pinning executable
-harness `a0e13a30213496bdec88c1a6b88f632212bac762`. Applicable CI checks in run
-`34670529730` passed at the exact PR head; the actual merge preserves the
-frozen diagnostic source ancestry. Cave startup failures now distinguish six
-fixed subtypes: timeout, early exit, health, missing discovery, endpoint mismatch
-and PID mismatch. No paths, endpoints, PIDs, child output or response bodies are
-disclosed; quota-depth diagnostics and acceptance remain unchanged. Trusted workflow metadata and bootstrap
-digests bind those executable bytes. Acceptance remains unchanged.
+Chat #231 producer `395a5c99bb2f4f00106e2b4d3266e312391b6906`, pinning executable
+harness `1ad4184a043eea731613fbe6d15482a0c1e237a7`. All CI checks in run
+`34674121298` passed at the exact PR head; the actual merge preserves the
+frozen diagnostic source ancestry. Windows quota failures now include fixed
+bootstrap scope and repeat classifications. One bounded diagnostic repeat is
+permitted only inside the existing isolated-user quota read. Supervisor-context
+reads remain single attempts; metadata repeats use fresh reads, while original
+accounting and the first failure remain authoritative. No quota, ACL, timeout,
+permission or acceptance limits change. Trusted workflow metadata and bootstrap
+digests bind those executable bytes. The workflow remains below GitHub's 500 KiB
+file limit with parsed command bodies preserved.
 
 The Windows reader retains the validated isolated token for synchronous quota
 scans, including terminal accounting after account disablement. Private ACLs
@@ -244,9 +247,19 @@ ordered assertions each. Windows failed closed with `access-denied`, root
 identifies a capped descendant depth in the bootstrap tree; it does not
 establish a Cave record identity, timing or assertion mismatch. Validation,
 attestation and aggregation were skipped. This remains separate from the
-Cave startup observation and this startup-subtype binding. The new validator requires a fresh protected
-run after both scopes are rotated to its verified merge. No passing aggregate
-or completed release acceptance is claimed here.
+Cave startup observation.
+
+Protected run `34672157833` used Chat #230 and SDK #213. Linux and
+Darwin independently passed archive digests, scans, exact record identities,
+Cave timing and all 197 ordered assertions each. Windows failed closed with
+`access-denied`, root `harness-cargo-registry`, operation
+`directory-enumeration-depth-3-plus`. Validation, attestation and aggregation
+were skipped. This is distinct from the earlier bootstrap quota denial and
+Cave startup observation; it establishes no Cave identity, timing or assertion
+mismatch. The new scope/repeat fields require fresh protected evidence before
+any transience or persistence claim. Both validator scopes must select the
+verified SDK merge before that run. No passing aggregate or completed release
+acceptance is claimed here.
 Chat #219 and the final protected acceptance gate remain open.
 
 Chat #203 repaired packaged provenance checks that incorrectly required
