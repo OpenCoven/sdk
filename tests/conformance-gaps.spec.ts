@@ -2758,6 +2758,11 @@ describe('unresolved SDK #38 conformance gaps', () => {
         caveVersion: typedLock.sources.cave.releaseVersion,
         covenVersion: typedLock.sources.coven.releaseVersion,
         consumerLock: typedLock.sources.chat.consumerLock,
+        caveArtifacts: {
+          assertionEngine: typedLock.sources.cave.files[0]!,
+          contractFixture: typedLock.sources.cave.files[1]!,
+          hpkeVectors: typedLock.sources.cave.files[3]!,
+        },
       },
     };
     const toolchain = lock.toolchain as {
@@ -3382,6 +3387,19 @@ describe('unresolved SDK #38 conformance gaps', () => {
         ),
       } as never),
     ).toThrow(/phase1 harness authority does not match/u);
+
+    const wrongCaveArtifact = structuredClone(phase1AuthorityLock);
+    wrongCaveArtifact.release.caveArtifacts.assertionEngine.sha256 =
+      'a'.repeat(64);
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInput,
+        execute: authorityResponseOverride(
+          '/contents/phase1-conformance.lock.json',
+          contract.serializeCanonicalJson(wrongCaveArtifact),
+        ),
+      } as never),
+    ).toThrow(/phase1 Cave artifacts do not match/u);
 
     const arbitraryActionDisabledOfficialSteps = beforeProtectedUpload(
       TEST_PRODUCER_WORKFLOW_TEXT,

@@ -1597,6 +1597,25 @@ export function validateChatProducerAuthorityBinding(
   if (!equalJson(release.sdkArtifacts, expectedArtifacts)) {
     throw new Error(`${source} phase1 SDK artifacts do not match`);
   }
+  const caveFile = (path) =>
+    lock.sources.cave.files.find((entry) => entry.path === path);
+  const expectedCaveArtifacts = {
+    assertionEngine: caveFile('scripts/client-v1-conformance.mjs'),
+    contractFixture: caveFile(
+      'src/lib/server/client-v1/contract-fixture.json',
+    ),
+    hpkeVectors: caveFile(
+      'src/lib/server/client-v1/hpke-bound-v1-vectors.json',
+    ),
+  };
+  if (
+    Object.values(expectedCaveArtifacts).some(
+      (entry) => entry === undefined,
+    )
+    || !equalJson(release.caveArtifacts, expectedCaveArtifacts)
+  ) {
+    throw new Error(`${source} phase1 Cave artifacts do not match`);
+  }
 
   return {
     producerCommit,
