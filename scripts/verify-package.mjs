@@ -347,7 +347,7 @@ const cave = new CaveClient({
       return {
         apiVersion: '1.0',
         capabilities: ['health'],
-        minimumClientVersion: '0.1.0',
+        minimumClientVersion: '0.0.1',
         operations: ['health.read'],
         data: {
           instanceId: 'packed-consumer-cave',
@@ -582,7 +582,7 @@ const transport: CaveManagedCredentialTransport = {
   health: async () => ({
     apiVersion: '1.0',
     capabilities: ['health'],
-    minimumClientVersion: '0.1.0',
+    minimumClientVersion: '0.0.1',
     operations: ['health.read'],
     data: {
       instanceId: 'packed-browser-cave',
@@ -630,7 +630,7 @@ let exchangeCalls = 0;
 const health = {
   apiVersion: '1.0',
   capabilities: ['health'],
-  minimumClientVersion: '0.1.0',
+  minimumClientVersion: '0.0.1',
   operations: ['health.read'],
   data: {
     instanceId: 'packed-browser-cave',
@@ -680,7 +680,7 @@ const transport = {
       'conversation-messages',
       'cursors',
     ],
-    minimumClientVersion: '0.1.0',
+    minimumClientVersion: '0.0.1',
     operations: [
       'familiars.list',
       'projects.list',

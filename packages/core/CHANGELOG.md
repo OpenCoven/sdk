@@ -1,8 +1,9 @@
 # @opencoven/sdk-core
 
-## 0.1.0
+## 0.0.1
 
 - Initial experimental SDK foundation. This version is not yet published.
+- Add a browser-safe core subpath for managed-native consumers.
 - Add optional atomic compare-and-delete support to the secret-store contract.
 - Add reusable page contracts, strict page-option normalization, and bounded
   async page iteration. Limits default to `50`, reject values outside the safe

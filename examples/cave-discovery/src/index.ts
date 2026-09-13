@@ -61,7 +61,7 @@ async function runUnixExample(): Promise<void> {
           new Response(
             JSON.stringify({
               apiVersion: '1.0',
-              minimumClientVersion: '0.1.0',
+              minimumClientVersion: '0.0.1',
               capabilities: ['health', 'pairing'],
               operations: ['health.read', 'pairing.create'],
               data: {

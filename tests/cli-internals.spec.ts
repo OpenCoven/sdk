@@ -53,7 +53,7 @@ const caveDiscovery: CaveDiscoveredEndpoint = {
 const caveHealth = {
   status: 'ok' as const,
   apiVersion: '1.0',
-  minimumClientVersion: '0.1.0',
+  minimumClientVersion: '0.0.1',
   instanceId: 'internal-test-cave',
   pairingRequired: true as const,
   releaseVersion: '0.1.0',

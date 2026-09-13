@@ -1,6 +1,6 @@
 {
   "name": "@opencoven/cave-client",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Transport-neutral constrained Cave client",
   "type": "module",
@@ -47,7 +47,7 @@
   "dependencies": {
     "@hpke/core": "1.9.0",
     "@hpke/dhkem-x25519": "1.8.0",
-    "@opencoven/sdk-core": "workspace:0.1.0",
+    "@opencoven/sdk-core": "workspace:0.0.1",
     "canonicalize": "4.0.0"
   }
 }

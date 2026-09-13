@@ -43,8 +43,8 @@
   },
   "dependencies": {
     "@napi-rs/keyring": "2.0.0",
-    "@opencoven/cave-client": "workspace:0.1.0",
-    "@opencoven/coven-client": "workspace:0.1.0",
-    "@opencoven/sdk-core": "workspace:0.1.0"
+    "@opencoven/cave-client": "workspace:0.0.1",
+    "@opencoven/coven-client": "workspace:0.0.1",
+    "@opencoven/sdk-core": "workspace:0.0.1"
   }
 }

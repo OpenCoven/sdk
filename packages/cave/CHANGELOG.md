@@ -1,8 +1,16 @@
 # @opencoven/cave-client
 
-## 0.1.0
+## 0.0.1
 
 - Initial experimental SDK foundation. This version is not yet published.
+- Adopt the reviewed Cave Client v1 minimum of `0.0.1` from authority commit
+  `e806655a7100e9d589662a6f3817c3fd8cde48ad`, preserving strict compatibility
+  comparisons and the original HPKE cryptographic vectors.
+- Preserve the authority's `ownership_refused` error through pairing,
+  canonical reads, and redacted managed clients without automatic retries.
+- Add a native discovery-source adapter that validates owner-checked discovery
+  bytes and metadata in the SDK, with narrow managed-native pairing, credential
+  status, and forget transports that keep secrets outside JavaScript.
 - Harden Cave discovery against record replacement, malformed timestamps and
   nonces, unbounded responses, ambient credentials, cache reuse, redirects,
   and uncancelled response streams while accepting the producer's explicit

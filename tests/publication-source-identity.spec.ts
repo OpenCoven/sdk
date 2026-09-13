@@ -171,6 +171,9 @@ describe('publication source identity', { timeout: 30_000 }, () => {
 
   test('permits only the reviewed metadata unlock transform', () => {
     const { root, manifest } = createFixture();
+    const candidatePackage = JSON.parse(
+      readFileSync(resolve(root, 'packages/core/package.json'), 'utf8'),
+    ) as { version: string };
     for (const workspace of ['core', 'cave', 'coven', 'sdk']) {
       const manifestPath = resolve(root, 'packages', workspace, 'package.json');
       const packageManifest = JSON.parse(
@@ -201,7 +204,7 @@ describe('publication source identity', { timeout: 30_000 }, () => {
     writeFileSync(
       lockPath,
       readFileSync(lockPath, 'utf8').replaceAll(
-        'specifier: workspace:0.1.0',
+        `specifier: workspace:${candidatePackage.version}`,
         'specifier: workspace:0.1.1',
       ),
     );
@@ -250,6 +253,9 @@ describe('publication source identity', { timeout: 30_000 }, () => {
 
   test('applies only release metadata to an exact candidate checkout', () => {
     const { root, candidateCommit, manifest } = createFixture();
+    const candidatePackage = JSON.parse(
+      readFileSync(resolve(root, 'packages/core/package.json'), 'utf8'),
+    ) as { version: string };
     const candidateRoot = mkdtempSync(
       resolve(tmpdir(), 'opencoven-candidate-transform-'),
     );
@@ -299,7 +305,7 @@ describe('publication source identity', { timeout: 30_000 }, () => {
     writeFileSync(
       lockPath,
       readFileSync(lockPath, 'utf8').replaceAll(
-        'specifier: workspace:0.1.0',
+        `specifier: workspace:${candidatePackage.version}`,
         'specifier: workspace:0.1.1',
       ),
     );

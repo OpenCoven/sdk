@@ -26,8 +26,8 @@ describe('reviewed authority fixtures', () => {
       examples: Record<string, unknown>;
     };
 
-    expect(digest(fixture)).toBe('b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd');
-    expect(readFileSync(digestFile, 'utf8')).toBe('b2694cd1a70a2ddd81b54ee43ade1ff5aa1ecd661fa6e41e5b7acedd8db400bd\n');
+    expect(digest(fixture)).toBe('0c03baea9c21f0985df41eef3c5ae5223497b9081c665b53ddecab36598f5ede');
+    expect(readFileSync(digestFile, 'utf8')).toBe('0c03baea9c21f0985df41eef3c5ae5223497b9081c665b53ddecab36598f5ede\n');
     expect(parsed.contract.identityKinds).toEqual([
       'client',
       'credential',
@@ -40,6 +40,7 @@ describe('reviewed authority fixtures', () => {
     expect(Object.keys(parsed.examples)).toEqual([
       'cursor',
       'discoveryRecord',
+      'discoveryRecordV2',
       'errorEnvelope',
       'health',
       'healthEnvelope',

@@ -12,7 +12,7 @@ const REQUEST_ID = '018f4f1a-77c2-7a31-8a15-55a25aaba001';
 
 const HEALTH_ENVELOPE = {
   apiVersion: '1.0',
-  minimumClientVersion: '0.1.0',
+  minimumClientVersion: '0.0.1',
   capabilities: ['health', 'familiars'],
   operations: ['health.read', 'familiars.list'],
   data: {
@@ -430,7 +430,7 @@ describe('managed native Cave credential custody', () => {
       const retryable = code === 'rate_limited' || code === 'service_unavailable';
       const envelope = {
         apiVersion: '1.0',
-        minimumClientVersion: '0.1.0',
+        minimumClientVersion: '0.0.1',
         capabilities: ['familiars', 'cursors'],
         operations: ['familiars.list'],
         error: {
@@ -807,7 +807,7 @@ describe('managed native Cave credential custody', () => {
       listFamiliars: vi.fn(() =>
         Promise.resolve({
           apiVersion: '1.0',
-          minimumClientVersion: '0.1.0',
+          minimumClientVersion: '0.0.1',
           capabilities: ['familiars', 'cursors'],
           operations: ['familiars.list'],
           data: { familiars: [canonicalEntry] },
@@ -847,7 +847,7 @@ describe('managed native Cave credential custody', () => {
       listFamiliars: vi.fn(() =>
         Promise.resolve({
           apiVersion: '1.0',
-          minimumClientVersion: '0.1.0',
+          minimumClientVersion: '0.0.1',
           capabilities: ['familiars', 'cursors'],
           operations: ['familiars.list'],
           data: {
@@ -978,7 +978,7 @@ describe('managed native Cave credential custody', () => {
       listFamiliars: vi.fn(() =>
         Promise.resolve({
           apiVersion: '1.0',
-          minimumClientVersion: '0.1.0',
+          minimumClientVersion: '0.0.1',
           capabilities: ['familiars', 'cursors'],
           operations: ['familiars.list'],
           bearer: nestedBearer,
@@ -1177,7 +1177,7 @@ describe('managed native Cave credential custody', () => {
       health: {
         status: 'ok',
         apiVersion: '1.0',
-        minimumClientVersion: '0.1.0',
+        minimumClientVersion: '0.0.1',
         capabilities: ['health', 'familiars'],
         operations: ['health.read', 'familiars.list'],
         instanceId: 'managed-native-cave',

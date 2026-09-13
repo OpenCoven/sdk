@@ -468,8 +468,12 @@ Contract fixture helpers are exported as
 `parseCaveContractFixture`, `parseVerifiedCaveContractFixture`,
 `verifyCaveContractFixtureDigest`, and `digestCaveContractFixture`.
 The vendored fixture is byte-identical to `OpenCoven/coven-cave` commit
-`4adc97b1bdafd1012ce4c66de598e82f49329f79`; its source paths and SHA-256 are
+`e806655a7100e9d589662a6f3817c3fd8cde48ad`; its source paths and SHA-256 are
 recorded in `fixtures/contract-fixture.provenance.json`.
+The advertised minimum is `0.0.1`, compatible with both 0.0.1 and 0.1.0
+clients. Runtime versions remain manifest-derived and strictly compared.
+Additive fixture metadata does not expand the fixture parser's public return
+shape. Static HPKE vectors retain their original 0.1.0 cryptographic inputs.
 
 Migration note: transports that returned `{ data: { status: "ok" } }` must now
 return the complete Client v1 health envelope shown above. Consumers may keep

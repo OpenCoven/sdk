@@ -47,7 +47,7 @@ const CANONICAL_CAPABILITIES = [
 const VALID_HEALTH_RESPONSE = {
   apiVersion: '1.0',
   capabilities: ['health'],
-  minimumClientVersion: '0.1.0',
+  minimumClientVersion: '0.0.1',
   operations: ['health.read'],
   data: {
     instanceId: 'test-cave',
@@ -111,7 +111,7 @@ function successEnvelope(
 ): Record<string, unknown> {
   return {
     apiVersion: '1.0',
-    minimumClientVersion: '0.1.0',
+    minimumClientVersion: '0.0.1',
     capabilities: CANONICAL_CAPABILITIES,
     operations: CANONICAL_OPERATIONS,
     data,
@@ -124,7 +124,7 @@ function errorEnvelope(
 ): Record<string, unknown> {
   return {
     apiVersion: '1.0',
-    minimumClientVersion: '0.1.0',
+    minimumClientVersion: '0.0.1',
     capabilities: CANONICAL_CAPABILITIES,
     operations: CANONICAL_OPERATIONS,
     error: {
@@ -1581,7 +1581,7 @@ describe('Cave caller-supplied canonical reads', () => {
       'data',
       {
         apiVersion: '1.0',
-        minimumClientVersion: '0.1.0',
+        minimumClientVersion: '0.0.1',
         capabilities: CANONICAL_CAPABILITIES,
         operations: CANONICAL_OPERATIONS,
       },

@@ -9,6 +9,6 @@
     "typecheck": "tsc --pretty false --noEmit"
   },
   "dependencies": {
-    "@opencoven/coven-client": "workspace:0.1.0"
+    "@opencoven/coven-client": "workspace:0.0.1"
   }
 }

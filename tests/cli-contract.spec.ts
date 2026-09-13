@@ -63,7 +63,7 @@ const caveDiscovery = {
 const caveHealth = {
   status: 'ok',
   apiVersion: '1.0',
-  minimumClientVersion: '0.1.0',
+  minimumClientVersion: '0.0.1',
   instanceId: 'cli-contract-cave',
   pairingRequired: true,
   releaseVersion: '0.1.0',
@@ -165,7 +165,7 @@ function caveResponse(status: number, data: Record<string, unknown>): Response {
   return new Response(
     JSON.stringify({
       apiVersion: '1.0',
-      minimumClientVersion: '0.1.0',
+      minimumClientVersion: '0.0.1',
       capabilities: [...caveHealth.capabilities],
       operations: [...caveHealth.operations],
       data,

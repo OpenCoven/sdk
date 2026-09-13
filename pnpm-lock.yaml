@@ -52,40 +52,40 @@ importers:
   examples/cave-discovery:
     dependencies:
       '@opencoven/cave-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../../packages/cave
       '@opencoven/sdk-core':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../../packages/core
 
   examples/cave-health:
     dependencies:
       '@opencoven/cave-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../../packages/cave
 
   examples/cave-managed-native:
     dependencies:
       '@opencoven/cave-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../../packages/cave
 
   examples/coven-health:
     dependencies:
       '@opencoven/coven-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../../packages/coven
 
   examples/unified-health:
     dependencies:
       '@opencoven/cave-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../../packages/cave
       '@opencoven/coven-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../../packages/coven
       '@opencoven/sdk':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../../packages/sdk
 
   packages/cave:
@@ -97,7 +97,7 @@ importers:
         specifier: 1.8.0
         version: 1.8.0
       '@opencoven/sdk-core':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../core
       canonicalize:
         specifier: 4.0.0
@@ -109,13 +109,13 @@ importers:
         specifier: 2.0.0
         version: 2.0.0
       '@opencoven/cave-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../cave
       '@opencoven/coven-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../coven
       '@opencoven/sdk-core':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../core
 
   packages/core: {}
@@ -123,19 +123,19 @@ importers:
   packages/coven:
     dependencies:
       '@opencoven/sdk-core':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../core
 
   packages/sdk:
     dependencies:
       '@opencoven/cave-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../cave
       '@opencoven/coven-client':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../coven
       '@opencoven/sdk-core':
-        specifier: workspace:0.1.0
+        specifier: workspace:0.0.1
         version: link:../core
 
 packages:

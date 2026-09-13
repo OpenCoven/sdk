@@ -16,7 +16,7 @@ infrastructure.
 
 This source repository is public, but all workspace packages are explicitly
 marked private, are not published, and have standard publishing blocked. The
-0.1 release inventory contains only `@opencoven/sdk-core`,
+0.0.1 release inventory contains only `@opencoven/sdk-core`,
 `@opencoven/cave-client`, `@opencoven/coven-client`, and `@opencoven/sdk`.
 `@opencoven/dev-cli` remains private and is not packed, versioned with, or
 published beside that group. Standard publishing also requires
@@ -25,6 +25,15 @@ part of an intentional release process. The 0.1 native Chat/real-authority
 conformance release matrix is separately frozen to `darwin-arm64`,
 `linux-x64`, and `win32-x64`; see [SUPPORT.md](SUPPORT.md) for the distinction
 between Node runtime support and this release gate.
+
+The four release manifests and initial changelogs are prepared at **0.0.1**,
+with the merged Cave authority contract advertising a `0.0.1` client minimum.
+Strict version checks remain unchanged. The frozen candidate and tarball
+evidence still describe the unpublished **0.1.0** candidate, not these bytes.
+A new committed source freeze, complete #38 evidence, and #40 authorization
+are still required; see the
+[v0.0.1 preparation checklist](RELEASING.md#v001-preparation-decision-2026-09-12)
+for the remaining gates and required release sequence.
 
 - [Roadmap](docs/ROADMAP.md)
 - [0.1 read-only release design](docs/superpowers/specs/2026-08-22-sdk-0.1-read-only-release-design.md)
@@ -52,11 +61,13 @@ adapters to Chat's Tauri layer. Chat
 native integration, and
 [OpenCoven/chat#30](https://github.com/OpenCoven/chat/pull/30) produced the first packed
 real-authority record on `darwin-arm64`. SDK
-[#38](https://github.com/OpenCoven/sdk/issues/38) remains open for the required
-`linux-x64` and `win32-x64` records on the merged producer path from
+[#38](https://github.com/OpenCoven/sdk/issues/38) remained open for the required
+`linux-x64` and `win32-x64` records on the earlier merged producer path from
 [OpenCoven/coven-cave#5044](https://github.com/OpenCoven/coven-cave/pull/5044),
 which closed
 [OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
+The prepared 0.0.1 source now needs fresh candidate-bound records on all three
+platforms; the earlier Darwin record does not validate the new candidate.
 
 Message sending, streaming, attachments, task handoffs, GitHub mutations, and
 offline mutation queues are explicitly deferred to separately reviewed
@@ -64,7 +75,7 @@ post-release authority milestones. The roadmap and issue program above are the
 current plan of record; older Phase 0 plans remain historical evidence rather
 than the active release checklist.
 
-| Path | Package | 0.1 status | Current purpose |
+| Path | Package | 0.0.1 status | Current purpose |
 | --- | --- | --- | --- |
 | `packages/core` | `@opencoven/sdk-core` | Release inventory | Transport-neutral errors, compatibility/discovery contracts, operation controls, bounded pagination, allowlisted diagnostics, non-secret profiles, and in-memory secret abstractions |
 | `packages/cave` | `@opencoven/cave-client` | Release inventory | Constrained Cave client, runtime discovery/pairing, canonical reads, legacy familiar extensions, and reviewed contract fixtures |
@@ -453,7 +464,7 @@ secure-store, and platform-security errors require repair before rerunning.
 Reviewed Cave and Coven fixture bytes are committed under their client
 packages and verified locally. The Cave fixture provenance manifest pins
 `OpenCoven/coven-cave` commit
-`4adc97b1bdafd1012ce4c66de598e82f49329f79`, producer paths, and SHA-256.
+`e806655a7100e9d589662a6f3817c3fd8cde48ad`, producer paths, and SHA-256.
 Refresh fixture bytes with
 `pnpm sync:contracts -- --cave-root <path> --coven-root <path>` before running
 the offline contract verifier. Explicitly prove a checkout is at the pinned

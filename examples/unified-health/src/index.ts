@@ -8,7 +8,7 @@ const sdk = createOpenCovenSdk({
       health: () => Promise.resolve({
         apiVersion: '1.0',
         capabilities: ['health'],
-        minimumClientVersion: '0.1.0',
+        minimumClientVersion: '0.0.1',
         operations: ['health.read'],
         data: {
           instanceId: 'example-cave',

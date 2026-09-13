@@ -258,7 +258,7 @@ describe('release artifacts', () => {
 
     expect(writtenManifest).toEqual(result.manifest);
     expect(writtenManifest.schemaVersion).toBe(1);
-    expect(writtenManifest.version).toBe('0.1.0');
+    expect(writtenManifest.version).toBe('0.0.1');
     expect(
       writtenManifest.packages.every(
         ({ file }) => !isAbsolute(file) && !file.includes('..'),

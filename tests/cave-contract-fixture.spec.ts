@@ -3,17 +3,63 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  CAVE_CLIENT_VERSION,
+  CaveClient,
   digestCaveContractFixture,
   parseCaveContractFixture,
   parseVerifiedCaveContractFixture,
 } from '@opencoven/cave-client';
+import { assessCompatibility } from '@opencoven/sdk-core';
 import { describe, expect, test } from 'vitest';
+
+import { CAVE_CONTRACT_ERROR_CODES } from '../packages/cave/src/contract-constraints.js';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const fixturePath = resolve(root, 'packages/cave/fixtures/contract-fixture.json');
 const digestPath = resolve(root, 'packages/cave/fixtures/contract-fixture.sha256');
 
 describe('Cave contract fixture parsing', () => {
+  test('keeps the runtime error allowlist aligned with the reviewed authority', () => {
+    const fixture = parseVerifiedCaveContractFixture(
+      readFileSync(fixturePath),
+      readFileSync(digestPath, 'utf8'),
+    );
+    expect(CAVE_CONTRACT_ERROR_CODES).toEqual(fixture.contract.errorCodes);
+  });
+
+  test('negotiates the actual 0.0.1 authority without fabricating the runtime version', async () => {
+    const fixture = parseVerifiedCaveContractFixture(
+      readFileSync(fixturePath),
+      readFileSync(digestPath, 'utf8'),
+    );
+    const minimum = fixture.contract.minimumClientVersion;
+    expect(CAVE_CLIENT_VERSION).toBe('0.0.1');
+    expect(minimum).toBe('0.0.1');
+    for (const client of ['0.0.1', '0.1.0']) {
+      expect(assessCompatibility(minimum, client).compatible).toBe(true);
+    }
+    for (const client of ['0.0.0', '0.0.1-rc.1']) {
+      expect(assessCompatibility(minimum, client).compatible).toBe(false);
+    }
+    for (const envelope of [
+      fixture.examples.healthEnvelope,
+      fixture.examples.pairingCreatedEnvelope,
+      fixture.examples.pairingStatusEnvelope,
+      fixture.examples.pairingExchangeEnvelope,
+      fixture.examples.successEnvelope,
+      fixture.examples.errorEnvelope,
+    ]) {
+      expect(envelope.minimumClientVersion).toBe(minimum);
+    }
+    const client = new CaveClient({
+      transport: { health: () => Promise.resolve(fixture.examples.healthEnvelope) },
+    });
+    await expect(client.health()).resolves.toMatchObject({
+      status: 'ok',
+      minimumClientVersion: '0.0.1',
+    });
+  });
+
   test('parses the reviewed fixture through the public package entry point', () => {
     const fixture = readFileSync(fixturePath, 'utf8');
     const digest = readFileSync(digestPath, 'utf8');
@@ -28,6 +74,8 @@ describe('Cave contract fixture parsing', () => {
           'pairing',
           'credentials',
           'familiars',
+          'familiar-contract',
+          'familiar-analytics',
           'projects',
           'conversations',
           'conversation-messages',
@@ -42,6 +90,7 @@ describe('Cave contract fixture parsing', () => {
           'invalid_request',
           'unauthorized',
           'scope_denied',
+          'ownership_refused',
           'not_found',
           'conflict',
           'rate_limited',
@@ -53,7 +102,7 @@ describe('Cave contract fixture parsing', () => {
           'reconcile_required',
           'internal_error',
         ],
-        minimumClientVersion: '0.1.0',
+        minimumClientVersion: '0.0.1',
         pairingRequired: true,
         pairingSecretHeader: 'x-coven-pairing-secret',
         limits: {
