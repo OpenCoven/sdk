@@ -16,6 +16,7 @@ import {
   loadCommittedCaveAssertionEngine,
 } from '../scripts/aggregate-client-v1-conformance.mjs';
 import * as contract from '../scripts/conformance-contract.mjs';
+import { decodeWindowsSupervisorSource, renderWindowsSupervisorSource } from '../scripts/windows-supervisor-source.mjs';
 import {
   verifyGitHubConformanceEvidence,
   verifyProtectedWorkflow,
@@ -52,11 +53,11 @@ const schemaPath = resolve(
 );
 const windowsBootstrapFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-198455-windows-bootstrap.ps1.br',
+  'tests/fixtures/chat-8856ad-windows-bootstrap.ps1.br',
 );
 const protectedWorkflowFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-198455-client-v1-conformance.yml.br',
+  'tests/fixtures/chat-8856ad-client-v1-conformance.yml.br',
 );
 const unixSupervisorPreparationFixturePath = resolve(
   workspaceRoot,
@@ -190,6 +191,15 @@ if (
 ) {
   throw new Error('Canonical Windows bootstrap fixture is not LF-normalized');
 }
+const supervisorBlocks = TEST_WINDOWS_BOOTSTRAP_COMMAND.match(
+  /^# BEGIN bounded Windows supervisor source v1\n[\s\S]*?^# END bounded Windows supervisor source v1$/gmu,
+);
+if (supervisorBlocks?.length !== 1) throw new Error('Missing canonical supervisor block');
+const TEST_WINDOWS_SUPERVISOR_BLOCK = supervisorBlocks[0];
+const TEST_WINDOWS_SUPERVISOR_SOURCE = decodeWindowsSupervisorSource(TEST_WINDOWS_SUPERVISOR_BLOCK, {
+  size: 349530,
+  sha256: 'b7ec5455ad394b58cafd93cc85c7e87da37b04cdbd6f936aad0a1768432064df',
+}).toString('utf8');
 const TEST_WINDOWS_CHILD_BOOTSTRAP = requireTestWindowsChildBootstrap(
   TEST_WINDOWS_BOOTSTRAP_COMMAND,
 );
@@ -390,6 +400,14 @@ function replaceWorkflowRun(
     throw new Error('Test workflow does not contain the expected run script');
   }
   return workflow.replace(renderedBefore, () => yamlLiteralRun(after));
+}
+
+function mutateWindowsSupervisor(mutate: (source: string) => string): string {
+  const changed = mutate(TEST_WINDOWS_SUPERVISOR_SOURCE);
+  if (changed === TEST_WINDOWS_SUPERVISOR_SOURCE) throw new Error('Supervisor mutation did not change source');
+  const bootstrap = TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(TEST_WINDOWS_SUPERVISOR_BLOCK,
+    () => renderWindowsSupervisorSource(Buffer.from(changed, 'utf8')));
+  return replaceWorkflowRun(TEST_PRODUCER_WORKFLOW_TEXT, TEST_WINDOWS_BOOTSTRAP_COMMAND, bootstrap);
 }
 
 function mutateWindowsChildBootstrap(
@@ -1770,8 +1788,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: 'ee83236b759db544912c0f1761513238a637671b',
-      tree: 'a5279e8d13ef200bf1104ed45f3387e1a2cf61eb',
+      commit: 'c487e29492c2fee5d02d630ab26cb1c6dd277f67',
+      tree: '53ff360420859771de52130e7cdbef2bdf9a492a',
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -1790,9 +1808,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 161_808,
+        size: 166_054,
         sha256:
-          'ad52f1e1b83d70617866bd454aa55865135bc31db301390214596e6aeae6881d',
+          '56d9d912a152e3c4d281fa8260040eae3bfd29a6ea67bc2cc71b924850e72273',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1811,7 +1829,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          '4b0f632a20df37622cc0b9bba1a4dd935f8a17a642bd03e7b9d1e198e30f7291',
+          'db8c956c06bd0968c3351d99fc0dbd60fb47f9a23d6f2a6923834fe46811c2b4',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1819,7 +1837,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         linuxKeyringSetupScriptSha256:
           '7b1ff87ab5d2230950632560230899cc450458a800a630c2788b53be8b13d200',
         unixSupervisorPreparationScriptSha256:
-          '7469b3d9d897fbeab57bd6d57802ed3dea3382ba1ef4fd2a5d2ba83ec1675585',
+          '3d486717e471c739612ce00db2c69b620530e67bf230b04aec37cf68625ef428',
         unixToolPathSource: {
           path: 'scripts/executable-resolution.mjs',
           size: 9_154,
@@ -1848,8 +1866,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: 'ee83236b759db544912c0f1761513238a637671b',
-        sourceDigest: 'ee83236b759db544912c0f1761513238a637671b',
+        signerDigest: 'c487e29492c2fee5d02d630ab26cb1c6dd277f67',
+        sourceDigest: 'c487e29492c2fee5d02d630ab26cb1c6dd277f67',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1877,7 +1895,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       producer.workflow.windowsBootstrapScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_CHILD_BOOTSTRAP)).toBe(
-      '39e1e12e554ea5fb610cd889fca638a666edb1e0fabf4c95ab1d55fbb2946a89',
+      '2bcbb2fd519301db5a22686b96c1ad4f322289dd56f10969a8d9939cee6ee8e5',
     );
     expect(() =>
       verifyProtectedWorkflow(
@@ -1902,10 +1920,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
 
   test('freezes the exact Windows supervisor diagnostics and quarantine contract', () => {
     expect(Buffer.byteLength(TEST_WINDOWS_SUPERVISOR_TEST, 'utf8')).toBe(
-      186_976,
+      187_043,
     );
     expect(sha256(TEST_WINDOWS_SUPERVISOR_TEST)).toBe(
-      '1111edca2c13abf8738d930f17b5249f91bf5992ed46f334616691b9fd671cea',
+      '883cccc5266058155d6d7a29ecb8b407010aa170a1b2e7f062d2be65338af06c',
     );
     expect(TEST_WINDOWS_SUPERVISOR_TEST).toContain(
       TEST_WINDOWS_DIAGNOSTIC_TRAP,
@@ -1918,11 +1936,11 @@ describe('unresolved SDK #38 conformance gaps', () => {
       ].map((match) => Number(match[1])),
     ).toEqual([60, 60, 60, 60, 2, 60, 60, 2, 60, 60, 6]);
     expect(
-      TEST_WINDOWS_BOOTSTRAP_COMMAND.split(
+      TEST_WINDOWS_SUPERVISOR_SOURCE.split(
         TEST_WINDOWS_SESSION_ZERO_QUARANTINE,
       ),
-    ).toHaveLength(1);
-    expect(TEST_WINDOWS_BOOTSTRAP_COMMAND).not.toContain(
+    ).toHaveLength(2);
+    expect(TEST_WINDOWS_SUPERVISOR_SOURCE).not.toContain(
       '"WTS process primary token SID query was ambiguous.");',
     );
   });
@@ -3820,6 +3838,58 @@ describe('unresolved SDK #38 conformance gaps', () => {
           '$validatorRevision -cne $protectedValidatorRevision',
           '$false -and $validatorRevision -cne $protectedValidatorRevision',
         ),
+      },
+      ...[
+        { name: 'missing bounded supervisor block', block: '' },
+        {
+          name: 'repeated bounded supervisor block',
+          block: `${TEST_WINDOWS_SUPERVISOR_BLOCK}\n${TEST_WINDOWS_SUPERVISOR_BLOCK}`,
+        },
+        {
+          name: 'altered bounded supervisor decoder',
+          block: TEST_WINDOWS_SUPERVISOR_BLOCK.replace('ReadByte() -ne -1', 'ReadByte() -ne -2'),
+        },
+      ].map(({ name, block }) => ({
+        name,
+        workflow: replaceWorkflowRun(
+          TEST_PRODUCER_WORKFLOW_TEXT,
+          TEST_WINDOWS_BOOTSTRAP_COMMAND,
+          TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(TEST_WINDOWS_SUPERVISOR_BLOCK, block),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+        expectedError: /exact reviewed decoded Windows supervisor source/u,
+      })),
+      {
+        name: 'Windows quarantine skips an unreadable nonzero-session owner',
+        workflow: mutateWindowsSupervisor((source) => source.replace(
+            'information.SessionId == 0)',
+            'information.SessionId != 0)',
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+        expectedError: /exact reviewed decoded Windows supervisor source/u,
+      },
+      {
+        name: 'Windows quarantine drops ambiguous owner process diagnostics',
+        workflow: mutateWindowsSupervisor((source) => source.replace(
+            [
+              '"WTS process primary token SID query was ambiguous "',
+              '                                + "for process {0} in session {1}.",',
+            ].join('\n'),
+            '"WTS process primary token SID query was ambiguous.",',
+          ),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+        expectedError: /exact reviewed decoded Windows supervisor source/u,
       },
       {
         name: 'substituted Windows bootstrap shell',

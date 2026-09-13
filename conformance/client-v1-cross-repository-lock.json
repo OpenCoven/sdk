@@ -165,8 +165,8 @@
   "evidenceProducer": {
     "status": "compatible",
     "repository": "OpenCoven/chat",
-    "commit": "ee83236b759db544912c0f1761513238a637671b",
-    "tree": "a5279e8d13ef200bf1104ed45f3387e1a2cf61eb",
+    "commit": "c487e29492c2fee5d02d630ab26cb1c6dd277f67",
+    "tree": "53ff360420859771de52130e7cdbef2bdf9a492a",
     "packageManifest": {
       "path": "package.json",
       "size": 4044,
@@ -183,8 +183,8 @@
     "workflow": {
       "name": "client-v1 conformance",
       "path": ".github/workflows/client-v1-conformance.yml",
-      "size": 161808,
-      "sha256": "ad52f1e1b83d70617866bd454aa55865135bc31db301390214596e6aeae6881d",
+      "size": 166054,
+      "sha256": "56d9d912a152e3c4d281fa8260040eae3bfd29a6ea67bc2cc71b924850e72273",
       "job": "platform-conformance",
       "jobNameTemplate": "platform-conformance ({platform})",
       "aggregationJob": "aggregate-conformance",
@@ -219,11 +219,11 @@
       ],
       "downloadArtifactAction": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
       "attestationAction": "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8",
-      "windowsBootstrapScriptSha256": "4b0f632a20df37622cc0b9bba1a4dd935f8a17a642bd03e7b9d1e198e30f7291",
+      "windowsBootstrapScriptSha256": "db8c956c06bd0968c3351d99fc0dbd60fb47f9a23d6f2a6923834fe46811c2b4",
       "validatorRevisionScriptSha256": "9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9",
       "phase1RevisionsScriptSha256": "507ce777b643d97154472eb23135f7965fd55cf0fcedcec30e93b23e6472d225",
       "linuxKeyringSetupScriptSha256": "7b1ff87ab5d2230950632560230899cc450458a800a630c2788b53be8b13d200",
-      "unixSupervisorPreparationScriptSha256": "7469b3d9d897fbeab57bd6d57802ed3dea3382ba1ef4fd2a5d2ba83ec1675585",
+      "unixSupervisorPreparationScriptSha256": "3d486717e471c739612ce00db2c69b620530e67bf230b04aec37cf68625ef428",
       "unixToolPathSource": {
         "path": "scripts/executable-resolution.mjs",
         "size": 9154,
@@ -249,8 +249,8 @@
         ]
       },
       "signerWorkflow": "OpenCoven/chat/.github/workflows/client-v1-conformance.yml",
-      "signerDigest": "ee83236b759db544912c0f1761513238a637671b",
-      "sourceDigest": "ee83236b759db544912c0f1761513238a637671b",
+      "signerDigest": "c487e29492c2fee5d02d630ab26cb1c6dd277f67",
+      "sourceDigest": "c487e29492c2fee5d02d630ab26cb1c6dd277f67",
       "predicateType": "https://slsa.dev/provenance/v1",
       "denySelfHostedRunners": true
     }

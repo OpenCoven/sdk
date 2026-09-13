@@ -26,6 +26,13 @@ import {
   createGitHubCliEnvironment,
 } from './release-runtime-integrity.mjs';
 
+import { decodeWindowsSupervisorSource } from './windows-supervisor-source.mjs';
+
+const REVIEWED_WINDOWS_SUPERVISOR_SOURCE = Object.freeze({
+  size: 349530,
+  sha256: 'b7ec5455ad394b58cafd93cc85c7e87da37b04cdbd6f936aad0a1768432064df',
+});
+
 const MAX_GITHUB_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_ATTESTATION_BUNDLE_BYTES = 16 * 1024 * 1024;
 const CHECKOUT_ACTION =
@@ -45,11 +52,11 @@ const WINDOWS_SUPERVISOR_ARTIFACT = 'phase1-process-supervisor-win32-x64';
 const WINDOWS_SUPERVISOR_JOB_NAME = 'build-windows-supervisor';
 const WINDOWS_SUPERVISOR_RUNNER_LABELS = ['macos-latest'];
 const REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256 =
-  '4b0f632a20df37622cc0b9bba1a4dd935f8a17a642bd03e7b9d1e198e30f7291';
+  'db8c956c06bd0968c3351d99fc0dbd60fb47f9a23d6f2a6923834fe46811c2b4';
 const REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256 =
-  '39e1e12e554ea5fb610cd889fca638a666edb1e0fabf4c95ab1d55fbb2946a89';
+  '2bcbb2fd519301db5a22686b96c1ad4f322289dd56f10969a8d9939cee6ee8e5';
 const REVIEWED_UNIX_SUPERVISOR_PREPARATION_SCRIPT_SHA256 =
-  '7469b3d9d897fbeab57bd6d57802ed3dea3382ba1ef4fd2a5d2ba83ec1675585';
+  '3d486717e471c739612ce00db2c69b620530e67bf230b04aec37cf68625ef428';
 const REVIEWED_UNIX_PRODUCTION_SCRIPT_SHA256 =
   '043066be50d0c3fa66f7151224242734cb2e9f39ffa9cf1c6f8106ab88c75a02';
 const REVIEWED_UNIX_SUPERVISOR_SOURCE_BINDING =
@@ -1001,6 +1008,15 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
       !== REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256
   ) {
     workflowError('does not use the exact canonical Windows child bootstrap source');
+  }
+  try {
+    const blocks = windowsBootstrap.run.match(
+      /^# BEGIN bounded Windows supervisor source v1\n[\s\S]*?^# END bounded Windows supervisor source v1$/gmu,
+    );
+    if (blocks?.length !== 1) throw new Error('Missing or repeated source block');
+    decodeWindowsSupervisorSource(blocks[0], REVIEWED_WINDOWS_SUPERVISOR_SOURCE);
+  } catch {
+    workflowError('does not bind the exact reviewed decoded Windows supervisor source');
   }
   if (
     producer.workflow.windowsBootstrapScriptSha256
