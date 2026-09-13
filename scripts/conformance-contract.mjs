@@ -727,6 +727,8 @@ function expectEvidenceProducer(value, label) {
         'repository',
         'commit',
         'tree',
+        'source',
+        'harnessAuthority',
         'packageManifest',
         'harness',
         'command',
@@ -789,6 +791,16 @@ function expectEvidenceProducer(value, label) {
       ),
       commit: expectGitOid(object.commit, `${label}.commit`),
       tree: expectGitOid(object.tree, `${label}.tree`),
+      source: expectIdentity(
+        object.source,
+        `${label}.source`,
+        'OpenCoven/chat',
+      ),
+      harnessAuthority: expectIdentity(
+        object.harnessAuthority,
+        `${label}.harnessAuthority`,
+        'OpenCoven/chat',
+      ),
       packageManifest: expectFileMetadata(
         object.packageManifest,
         `${label}.packageManifest`,
@@ -1055,6 +1067,13 @@ function expectEvidenceProducer(value, label) {
         !== `${producer.repository}/${producer.workflow.path}`
       || producer.workflow.signerDigest !== producer.commit
       || producer.workflow.sourceDigest !== producer.commit
+      || producer.source.repository !== producer.repository
+      || producer.source.commit === producer.commit
+      || producer.source.tree !== producer.tree
+      || producer.harnessAuthority.repository !== producer.repository
+      || producer.harnessAuthority.commit === producer.commit
+      || producer.harnessAuthority.commit === producer.source.commit
+      || producer.harnessAuthority.tree === producer.tree
       || producer.workflow.predicateType
         !== 'https://slsa.dev/provenance/v1'
       || producer.workflow.denySelfHostedRunners !== true
@@ -1442,6 +1461,148 @@ export function assertEvidenceProducerCompatibility(lockValue) {
     );
   }
   return lock.evidenceProducer;
+}
+
+function expectGitCommitAuthority(value, label) {
+  if (!isPlainObject(value) || !isPlainObject(value.tree)) {
+    throw new Error(`${label} must be Git commit metadata`);
+  }
+  if (!Array.isArray(value.parents)) {
+    throw new Error(`${label}.parents must be an array`);
+  }
+  return {
+    sha: expectGitOid(value.sha, `${label}.sha`),
+    tree: expectGitOid(value.tree.sha, `${label}.tree.sha`),
+    parents: value.parents.map((parent, index) => {
+      if (!isPlainObject(parent)) {
+        throw new Error(`${label}.parents[${index}] must be a Git commit`);
+      }
+      return expectGitOid(parent.sha, `${label}.parents[${index}].sha`);
+    }),
+  };
+}
+
+function expectPhase1Revision(value, label, repository) {
+  if (!isPlainObject(value)) {
+    throw new Error(`${label} must be a revision binding`);
+  }
+  if (value.repository !== repository) {
+    throw new Error(`${label} does not match ${repository}`);
+  }
+  return expectGitOid(value.revision, `${label}.revision`);
+}
+
+export function validateChatProducerAuthorityBinding(
+  lockValue,
+  authorityValue,
+  source = 'Chat producer authority',
+) {
+  const lock = validateFrozenConformanceLock(
+    lockValue,
+    'frozen conformance lock',
+  );
+  const producer = assertEvidenceProducerCompatibility(lock);
+  const authority = expectExactObject(
+    authorityValue,
+    ['producerCommit', 'sourceCommit', 'harnessCommit', 'phase1LockText'],
+    source,
+  );
+  const producerCommit = expectGitCommitAuthority(
+    authority.producerCommit,
+    `${source}.producerCommit`,
+  );
+  const sourceCommit = expectGitCommitAuthority(
+    authority.sourceCommit,
+    `${source}.sourceCommit`,
+  );
+  const harnessCommit = expectGitCommitAuthority(
+    authority.harnessCommit,
+    `${source}.harnessCommit`,
+  );
+  if (
+    producerCommit.sha !== producer.commit
+    || producerCommit.tree !== producer.tree
+    || producerCommit.parents.length !== 2
+    || producerCommit.parents[1] !== producer.source.commit
+    || sourceCommit.sha !== producer.source.commit
+    || sourceCommit.tree !== producer.source.tree
+    || sourceCommit.parents.length !== 1
+    || sourceCommit.parents[0] !== producer.harnessAuthority.commit
+    || harnessCommit.sha !== producer.harnessAuthority.commit
+    || harnessCommit.tree !== producer.harnessAuthority.tree
+  ) {
+    throw new Error(`${source} Git identities do not match the frozen producer`);
+  }
+
+  if (typeof authority.phase1LockText !== 'string') {
+    throw new Error(`${source}.phase1LockText must be a string`);
+  }
+  const phase1Lock = parseJsonText(
+    authority.phase1LockText,
+    `${source} phase1 lock`,
+  );
+  if (!isPlainObject(phase1Lock) || phase1Lock.version !== 5) {
+    throw new Error(`${source} phase1 lock must be version 5`);
+  }
+  const expectedRevisions = [
+    ['chat', lock.sources.chat.repository, lock.sources.chat.commit],
+    ['sdk', lock.candidate.repository, lock.candidate.commit],
+    ['cave', lock.sources.cave.repository, lock.sources.cave.commit],
+    ['coven', lock.sources.coven.repository, lock.sources.coven.commit],
+    ['harness', producer.harnessAuthority.repository, producer.harnessAuthority.commit],
+  ];
+  for (const [name, repository, revision] of expectedRevisions) {
+    if (
+      expectPhase1Revision(
+        phase1Lock[name],
+        `${source} phase1 lock.${name}`,
+        repository,
+      ) !== revision
+    ) {
+      throw new Error(`${source} phase1 lock.${name} revision does not match`);
+    }
+  }
+  if (
+    !isPlainObject(phase1Lock.harnessAuthority)
+    || phase1Lock.harnessAuthority.revision
+      !== producer.harnessAuthority.commit
+    || phase1Lock.harnessAuthority.tree !== producer.harnessAuthority.tree
+  ) {
+    throw new Error(`${source} phase1 harness authority does not match`);
+  }
+
+  const release = phase1Lock.release;
+  if (!isPlainObject(release) || !isPlainObject(release.sdkManifest)) {
+    throw new Error(`${source} phase1 release binding is missing`);
+  }
+  if (
+    release.sdkManifest.version !== lock.candidate.releaseManifest.version
+    || release.sdkManifest.sha256 !== lock.candidate.releaseManifest.sha256
+    || release.caveVersion !== lock.sources.cave.releaseVersion
+    || release.covenVersion !== lock.sources.coven.releaseVersion
+    || !equalJson(release.consumerLock, lock.sources.chat.consumerLock)
+  ) {
+    throw new Error(`${source} phase1 release metadata does not match`);
+  }
+  if (!Array.isArray(release.sdkArtifacts)) {
+    throw new Error(`${source} phase1 SDK artifacts are missing`);
+  }
+  const expectedArtifacts = lock.candidate.sdkPackages.map((entry) => ({
+    packageName: entry.packageName,
+    releaseFile: entry.releaseFile,
+    vendorFile: entry.vendorPath.split('/').at(-1),
+    size: entry.size,
+    sha256: entry.sha256,
+  }));
+  if (!equalJson(release.sdkArtifacts, expectedArtifacts)) {
+    throw new Error(`${source} phase1 SDK artifacts do not match`);
+  }
+
+  return {
+    producerCommit,
+    sourceCommit,
+    harnessCommit,
+  };
 }
 
 function validateAssertionIds(ids, label, pattern = IDENTIFIER_PATTERN) {
@@ -3454,7 +3615,15 @@ export function parseReviewedEvidenceIndex(
   }
   const producerObject = expectExactObject(
     object.producer,
-    ['repository', 'commit', 'tree', 'harness', 'workflow'],
+    [
+      'repository',
+      'commit',
+      'tree',
+      'source',
+      'harnessAuthority',
+      'harness',
+      'workflow',
+    ],
     `${source}.producer`,
   );
   const producerHarness = expectExactObject(
@@ -3518,6 +3687,16 @@ export function parseReviewedEvidenceIndex(
       `${source}.producer.commit`,
     ),
     tree: expectGitOid(producerObject.tree, `${source}.producer.tree`),
+    source: expectIdentity(
+      producerObject.source,
+      `${source}.producer.source`,
+      'OpenCoven/chat',
+    ),
+    harnessAuthority: expectIdentity(
+      producerObject.harnessAuthority,
+      `${source}.producer.harnessAuthority`,
+      'OpenCoven/chat',
+    ),
     harness: {
       path: expectRelativePath(
         producerHarness.path,
@@ -3729,6 +3908,8 @@ export function parseReviewedEvidenceIndex(
       repository: producer.repository,
       commit: producer.commit,
       tree: producer.tree,
+      source: producer.source,
+      harnessAuthority: producer.harnessAuthority,
       harness: producer.harness,
       workflow: producer.workflow,
     })

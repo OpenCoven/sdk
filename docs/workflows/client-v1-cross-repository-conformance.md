@@ -33,7 +33,8 @@ tree `8e20adb1d55f17fb5b5a833bad6c9535d41c98ce`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
 This binding selects the true merged Chat #261 producer
 `3a1f4e355853b0ab44c317afb36f5e99f3d14037`, tree
-`63078257368d2bda8b1066d7b7dd1149ff1657f5`, not its reviewed PR head.
+`63078257368d2bda8b1066d7b7dd1149ff1657f5`. Its source-bound producer head is
+`c237ea5315d2bf2f68972ed6f332852634bcfa70` with the same tree.
 The committed Phase 1 lock separately authenticates executable harness source
 `d55b40c3315035be4267424b5d5d55c416bb609d`, tree
 `ceb98c9ace85138ef8ddab5a6f7a0aeb7d2008fb`, and reviewed native deltas.
@@ -62,8 +63,16 @@ The adopted Cave authority adds bounded, source-attributed discovery
 read/publication diagnostics without forwarding raw errors or changing
 authority gates. The frozen Chat production decoder is unchanged; the signed
 harness decoder advances only to recognize those bounded categories.
-Independent source comparison, readiness acceptance, and fail-closed behavior
-remain unchanged.
+Independent merged-producer, source-head, executable-harness, production,
+candidate, Cave, and Coven comparisons remain fail closed. A fresh protected
+run after this validator merges and both validator scopes rotate is required
+to surface Cave's bounded `[read=...; publication=...]` diagnostic pair and
+determine whether a further behavioral repair is necessary.
+The verifier authenticates those independent identities by fetching the three
+Git commit objects and the merged producer's exact
+`phase1-conformance.lock.json`. It requires the source head to be the merged
+producer's second parent, verifies all three trees, and matches the Chat lock's
+revisions and release metadata before accepting any protected-run evidence.
 
 Both harness clients give `cave_launch` a 40-second response budget around
 Rust's 30-second readiness deadline. Other RPCs retain their 10-second bound.
@@ -251,8 +260,8 @@ is the single machine-readable artifact and source lock. It freezes:
 - the exact ordered platform matrix;
 - the immutable schema identity, path, version, size, and SHA-256;
 - the assertion-registry path, size, and SHA-256; and
-- the frozen Chat package manifest and available contract-canary bytes that
-  prove the frozen commit cannot produce this schema.
+- the merged Chat producer, source-bound producer head, executable harness
+  authority, package manifest, schema-v2 harness, and protected workflow bytes.
 
 The schema identity is
 `urn:opencoven:schema:client-v1-cross-repository-platform-evidence:2`, not a
@@ -460,9 +469,10 @@ reusable workflow, upload path, or attestation path is accepted. The
 aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
-only. The committed lock marks the reachable Chat producer at
+only. The committed lock marks the merged Chat producer at
 `3a1f4e355853b0ab44c317afb36f5e99f3d14037` compatible with the reviewed
-schema-v2 workflow bytes. Release readiness remains blocked until this SDK
+schema-v2 workflow bytes and separately freezes its source-bound head and
+executable harness authority. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
 attestations exist and are reviewed.

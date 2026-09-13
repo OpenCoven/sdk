@@ -230,6 +230,9 @@ describe('cross-repository conformance contract entrypoints', () => {
       '9f073f05241c2d3241b23ed9d73b26c6cd55ce7e',
     );
     expect(workflowDocument).toContain(
+      'c237ea5315d2bf2f68972ed6f332852634bcfa70',
+    );
+    expect(workflowDocument).toContain(
       'd55b40c3315035be4267424b5d5d55c416bb609d',
     );
     expect(workflowDocument).toContain('validator_revision');

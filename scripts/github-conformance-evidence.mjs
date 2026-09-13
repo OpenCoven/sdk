@@ -15,6 +15,7 @@ import {
   parsePlatformEvidence,
   parseReviewedEvidenceIndex,
   serializeCanonicalJson,
+  validateChatProducerAuthorityBinding,
   validateFrozenConformanceBindings,
 } from './conformance-contract.mjs';
 import {
@@ -2008,6 +2009,24 @@ function sameIdentity(left, right) {
   );
 }
 
+function fetchGitCommitAuthority(execute, producer, commit, label, options) {
+  return parseGitHubJson(
+    runGh(
+      execute,
+      [
+        'api',
+        '--hostname',
+        'github.com',
+        '--method',
+        'GET',
+        `repos/${producer.repository}/git/commits/${commit}`,
+      ],
+      options,
+    ),
+    label,
+  );
+}
+
 export function verifyGitHubConformanceEvidence({
   frozenLockText,
   assertionRegistryText,
@@ -2044,6 +2063,52 @@ export function verifyGitHubConformanceEvidence({
   });
 
   try {
+    const githubOptions = { cwd: owned.rootPath, env };
+    const producerCommit = fetchGitCommitAuthority(
+      execute,
+      producer,
+      producer.commit,
+      'GitHub merged Chat producer commit',
+      githubOptions,
+    );
+    const sourceCommit = fetchGitCommitAuthority(
+      execute,
+      producer,
+      producer.source.commit,
+      'GitHub source-bound Chat producer commit',
+      githubOptions,
+    );
+    const harnessCommit = fetchGitCommitAuthority(
+      execute,
+      producer,
+      producer.harnessAuthority.commit,
+      'GitHub historical Chat harness commit',
+      githubOptions,
+    );
+    const phase1LockText = runGh(
+      execute,
+      [
+        'api',
+        '--hostname',
+        'github.com',
+        '--method',
+        'GET',
+        '--header',
+        'Accept: application/vnd.github.raw+json',
+        `repos/${producer.repository}/contents/phase1-conformance.lock.json?ref=${producer.commit}`,
+      ],
+      githubOptions,
+    );
+    validateChatProducerAuthorityBinding(
+      lock,
+      {
+        producerCommit,
+        sourceCommit,
+        harnessCommit,
+        phase1LockText,
+      },
+      'GitHub Chat producer authority',
+    );
     const workflowText = runGh(
       execute,
       [
@@ -2056,7 +2121,7 @@ export function verifyGitHubConformanceEvidence({
         'Accept: application/vnd.github.raw+json',
         `repos/${producer.repository}/contents/${producer.workflow.path}?ref=${producer.commit}`,
       ],
-      { cwd: owned.rootPath, env },
+      githubOptions,
     );
     verifyProtectedWorkflow(workflowText, producer, lock.toolchain);
     const environment = parseGitHubJson(
@@ -2070,7 +2135,7 @@ export function verifyGitHubConformanceEvidence({
           'GET',
           `repos/${producer.repository}/environments/${encodeURIComponent(producer.workflow.environment)}`,
         ],
-        { cwd: owned.rootPath, env },
+        githubOptions,
       ),
       'GitHub protected evidence environment',
     );

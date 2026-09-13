@@ -102,8 +102,8 @@ head `bc5c5caf6938f2273bca609b5610dc78f9febdb0`. It lowers the advertised
 floor for the existing implementation and regenerates the authority fixture.
 At that checkpoint SDK adoption was pending reviewed landing. The later
 protected merge at `e806655a7100e9d589662a6f3817c3fd8cde48ad` and source
-adoption above complete the compatibility prerequisite, not the frozen
-candidate or release-evidence gates.
+adoption above completed the compatibility prerequisite, but did not at that
+time freeze the current candidate or satisfy the release-evidence gates.
 
 Protected [OpenCoven/chat run 34681042400](https://github.com/OpenCoven/chat/actions/runs/34681042400)
 used producer `8e33e2a78c0ef639e88466de21d8580604bd28f0` and SDK validator
@@ -113,7 +113,7 @@ but Windows job `103519812121` failed with
 and aggregation were skipped. This result follows the Cave discovery ACL
 repair bound by #215; that repair has not established complete protected
 acceptance. Both validator scopes already select the expected SDK revision.
-These jobs concern the existing 0.1.0 candidate, not the planned 0.0.1 release.
+These jobs concern the historical 0.1.0 candidate, not the frozen 0.0.1 release.
 
 The live release-environment policy verifier accepted all three environments
 at this checkpoint. That observation is not an approval and must be repeated
@@ -330,7 +330,8 @@ The frozen Chat consumer is
 `8e20adb1d55f17fb5b5a833bad6c9535d41c98ce`, with all four committed vendor
 archives byte-identical to candidate 77d825d. This binding selects the true
 merged Chat #261 producer `3a1f4e355853b0ab44c317afb36f5e99f3d14037`,
-tree `63078257368d2bda8b1066d7b7dd1149ff1657f5`, not its reviewed PR head.
+tree `63078257368d2bda8b1066d7b7dd1149ff1657f5`. Its source-bound producer
+head is `c237ea5315d2bf2f68972ed6f332852634bcfa70` with the same tree.
 Its committed Phase 1 lock separately authenticates executable harness source
 `d55b40c3315035be4267424b5d5d55c416bb609d`, tree
 `ceb98c9ace85138ef8ddab5a6f7a0aeb7d2008fb`, and reviewed native deltas.
@@ -352,8 +353,16 @@ The adopted Cave authority adds bounded, source-attributed discovery
 read/publication diagnostics without forwarding raw errors or changing
 authority gates. The frozen Chat production decoder is unchanged; the signed
 harness decoder advances only to recognize those bounded categories.
-Independent source comparison, readiness acceptance, and fail-closed behavior
-remain unchanged.
+Independent merged-producer, source-head, executable-harness, production,
+candidate, Cave, and Coven comparisons remain fail closed. A fresh protected
+run after this validator merges and both validator scopes rotate is required
+to surface Cave's bounded `[read=...; publication=...]` diagnostic pair and
+determine whether a further behavioral repair is necessary.
+Live evidence verification fetches the merged producer, source-head, and
+harness Git commit objects plus the merged producer's
+`phase1-conformance.lock.json`; it rejects commit-graph, tree, revision,
+release-manifest, tarball, consumer-lock, Cave, or Coven drift before examining
+the protected run.
 
 Both harness clients give `cave_launch` a 40-second response budget around
 Rust's 30-second readiness deadline. Other RPCs retain their 10-second bound.

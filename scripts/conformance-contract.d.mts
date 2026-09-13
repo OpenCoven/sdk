@@ -158,6 +158,12 @@ export interface FrozenConformanceLock {
     | (CheckoutIdentity & {
         status: 'compatible';
         repository: 'OpenCoven/chat';
+        source: CheckoutIdentity & {
+          repository: 'OpenCoven/chat';
+        };
+        harnessAuthority: CheckoutIdentity & {
+          repository: 'OpenCoven/chat';
+        };
         packageManifest: FileMetadata & { path: 'package.json' };
         harness: FileMetadata & {
           path: 'scripts/phase1-conformance.mjs';
@@ -466,6 +472,12 @@ export interface ReviewedEvidenceIndex {
     repository: 'OpenCoven/chat';
     commit: string;
     tree: string;
+    source: CheckoutIdentity & {
+      repository: 'OpenCoven/chat';
+    };
+    harnessAuthority: CheckoutIdentity & {
+      repository: 'OpenCoven/chat';
+    };
     harness: FileMetadata & {
       path: 'scripts/phase1-conformance.mjs';
       version: string;
@@ -518,6 +530,20 @@ export function validateFrozenConformanceBindings(
 export function assertEvidenceProducerCompatibility(
   lock: FrozenConformanceLock,
 ): Extract<FrozenConformanceLock['evidenceProducer'], { status: 'compatible' }>;
+export function validateChatProducerAuthorityBinding(
+  lock: FrozenConformanceLock,
+  authority: {
+    producerCommit: unknown;
+    sourceCommit: unknown;
+    harnessCommit: unknown;
+    phase1LockText: string;
+  },
+  source?: string,
+): {
+  producerCommit: { sha: string; tree: string; parents: string[] };
+  sourceCommit: { sha: string; tree: string; parents: string[] };
+  harnessCommit: { sha: string; tree: string; parents: string[] };
+};
 export function readAssertionRegistry(path?: string): AssertionRegistry;
 export function parseAssertionRegistry(
   text: string,
