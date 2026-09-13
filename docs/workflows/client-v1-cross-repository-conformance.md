@@ -27,21 +27,23 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The SDK candidate remains
 `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
-This binding selects merged Chat #257 producer `717fe22224a58c19f6ff39747dfea8e9a60e1136`,
-pinning harness source revision `006f4f1a05ef06dd9cb7627e0d083fbd96db141a`
+This binding selects merged Chat #258 producer `421beab1404c52638ce0063196a27791e6b05f02`,
+pinning harness source revision `edc742c61451a9ebc762451224a9f47160d56846`
 and merged Cave OpenCoven/coven-cave#5378 at
 `cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. The actual merge preserves the tested tree and signed frozen source ancestry. The diagnostic source
-adds a bounded `service_unavailable` launch category without changing launch
-behavior or resource limits. Prior protected run `34741820511` passed Linux
-and macOS but failed Windows at
-`phase1.native-scenarios.launch.launch-rpc-unknown`; validation, aggregation,
-and attestation were skipped. Fresh protected evidence remains required.
+retains the bounded launch categories and distinguishes seven reviewed Win32
+quota I/O failures without changing launch behavior, quota enforcement, or
+resource limits. Prior protected run `34746733029` passed Linux and macOS but
+failed Windows with `io; root=cave-checkout; scope=none;
+operation=directory-enumeration-depth-3-plus; repeat=persistent`; validation,
+aggregation, and attestation were skipped. Fresh protected evidence remains
+required.
 
 Both harness clients give `cave_launch` a 40-second response budget around
 Rust's 30-second readiness deadline. Other RPCs retain their 10-second bound.
-The exact allowlisted `service_unavailable` code is now reported as a bounded
-category; all other service codes remain unknown, and the category alone does
-not establish which launch phase exhausted the deadline.
+The exact allowlisted `service_unavailable` code is reported as a bounded
+category; all other service codes remain unknown. Quota I/O categories expose
+neither paths nor raw HRESULTs, and unreviewed values remain generic `io`.
 
 The supervisor creates and owns the actual restricted-token profile before
 child launch, verifies token/profile agreement, and retains profile and
@@ -433,7 +435,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`717fe22224a58c19f6ff39747dfea8e9a60e1136` compatible with the reviewed
+`421beab1404c52638ce0063196a27791e6b05f02` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
