@@ -5,13 +5,17 @@ import { describe, expect, test } from 'vitest';
 import { decodeWindowsSupervisorSource, renderWindowsSupervisorSource } from '../scripts/windows-supervisor-source.mjs';
 
 const source = brotliDecompressSync(readFileSync(new URL('./fixtures/chat-debee-windows-supervisor.cs.br', import.meta.url)));
-const identity = { size: 349530, sha256: 'b7ec5455ad394b58cafd93cc85c7e87da37b04cdbd6f936aad0a1768432064df' };
+const identity = { size: 350211, sha256: '20b7881696e00dd9f1aae780fdeb9474d4144c76d030f272eceb05a0caae5c2d' };
 
 describe('reviewed compressed Windows supervisor source', () => {
   test('binds the canonical decoded block to the independent frozen C# identity', () => {
     expect(source.length).toBe(identity.size);
     expect(createHash('sha256').update(source).digest('hex')).toBe(identity.sha256);
     expect(decodeWindowsSupervisorSource(renderWindowsSupervisorSource(source), identity)).toEqual(source);
+    const bootstrap = brotliDecompressSync(readFileSync(new URL('./fixtures/chat-8856ad-windows-bootstrap.ps1.br', import.meta.url))).toString('utf8');
+    const blocks = bootstrap.match(/^# BEGIN bounded Windows supervisor source v1\n[\s\S]*?^# END bounded Windows supervisor source v1$/gmu);
+    expect(blocks).toHaveLength(1);
+    expect(decodeWindowsSupervisorSource(blocks![0], identity)).toEqual(source);
   });
 
   test('rejects source and decoder changes despite valid compressed input', () => {
