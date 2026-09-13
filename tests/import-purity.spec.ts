@@ -1,3 +1,4 @@
+import type * as CovenPackage from '@opencoven/coven-client';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 const entrypoints = [
@@ -62,6 +63,32 @@ describe('workspace entrypoints', () => {
       const imported: unknown = await import(entrypoint);
 
       expect(imported).toBeDefined();
+
+      if (entrypoint === '@opencoven/coven-client') {
+        const policy = imported as typeof CovenPackage;
+        expect(policy.createCovenSessionPolicyClient).toBeTypeOf('function');
+        expect(policy.createCovenSessionPolicyUnixTransport).toBeTypeOf('function');
+        const peerInspection = vi.fn(() => Promise.resolve({ uid: 501 }));
+        const createPolicy = () => policy.createCovenSessionPolicyClient({
+          transport: policy.createCovenSessionPolicyUnixTransport({
+            version: 1,
+            protocol: policy.COVEN_DAEMON_PROTOCOL,
+            source: 'coven_home',
+            endpoint: { kind: 'unix', path: '/example/coven.sock' },
+          }, {
+            security: {
+              platform: 'unix',
+              peerIdentity: { inspectConnected: peerInspection },
+            },
+          }),
+        });
+        if (process.platform === 'win32') {
+          expect(createPolicy).toThrow(expect.objectContaining({ code: 'unsupported_platform' }));
+        } else {
+          expect(createPolicy()).toBeInstanceOf(policy.CovenSessionPolicyClient);
+        }
+        expect(peerInspection).not.toHaveBeenCalled();
+      }
 
       if (entrypoint === '@opencoven/sdk-core') {
         const discovery = imported as {

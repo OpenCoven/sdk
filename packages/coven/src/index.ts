@@ -68,3 +68,24 @@ export type {
   CovenWindowsTransportOptions,
   CovenWindowsTransportSecurityProvider,
 } from './transport-windows.js';
+export {
+  COVEN_SESSION_POLICY_CONTRACT,
+  COVEN_SESSION_POLICY_PROFILE,
+  CovenSessionPolicyClient,
+  CovenSessionPolicyError,
+  createCovenSessionPolicyClient,
+  isCovenSessionPolicyError,
+} from './session-policy.js';
+export { createCovenSessionPolicyUnixTransport } from './session-policy-unix.js';
+export type { CovenSessionPolicyUnixTransportOptions } from './session-policy-unix.js';
+export type {
+  CovenRestrictedLaunchRequest,
+  CovenSessionPolicyClientOptions,
+  CovenSessionPolicyDelivery,
+  CovenSessionPolicyDiscovery,
+  CovenSessionPolicyErrorCode,
+  CovenSessionPolicyRefusal,
+  CovenSessionPolicyTransport,
+  CovenSessionPolicyTransportRequest,
+  CovenSessionPolicyTransportResponse,
+} from './session-policy.js';

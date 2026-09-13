@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/OpenCoven/coven",
+  "commit": "8ae022a70ce2506e0e3b4345b8e567fe94380ce5",
+  "fixturePath": "spec/coven-session-policy/v1/fixtures/manifest.json",
+  "sha256": "71b24b45e5e7a9fedd1fc188ce3e15b43ca9e91312aa70685e03895af500b5cc"
+}
