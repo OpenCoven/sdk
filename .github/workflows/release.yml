@@ -129,7 +129,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: OpenCoven/coven-cave
-          ref: cb3d22d1f403dd3b94b02668a599a2bf94999e8b
+          ref: 1bb0a21773fcc2966308ed1900ec6b746fcfdbc8
           path: .artifacts/cave-authority
           fetch-depth: 1
           persist-credentials: false
@@ -198,7 +198,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: OpenCoven/coven-cave
-          ref: cb3d22d1f403dd3b94b02668a599a2bf94999e8b
+          ref: 1bb0a21773fcc2966308ed1900ec6b746fcfdbc8
           path: .artifacts/cave-authority
           fetch-depth: 1
           persist-credentials: false
@@ -331,7 +331,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: OpenCoven/coven-cave
-          ref: cb3d22d1f403dd3b94b02668a599a2bf94999e8b
+          ref: 1bb0a21773fcc2966308ed1900ec6b746fcfdbc8
           path: .artifacts/cave-authority
           fetch-depth: 1
           persist-credentials: false
