@@ -12,11 +12,21 @@ import {
 import { assessCompatibility } from '@opencoven/sdk-core';
 import { describe, expect, test } from 'vitest';
 
+import { CAVE_CONTRACT_ERROR_CODES } from '../packages/cave/src/contract-constraints.js';
+
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const fixturePath = resolve(root, 'packages/cave/fixtures/contract-fixture.json');
 const digestPath = resolve(root, 'packages/cave/fixtures/contract-fixture.sha256');
 
 describe('Cave contract fixture parsing', () => {
+  test('keeps the runtime error allowlist aligned with the reviewed authority', () => {
+    const fixture = parseVerifiedCaveContractFixture(
+      readFileSync(fixturePath),
+      readFileSync(digestPath, 'utf8'),
+    );
+    expect(CAVE_CONTRACT_ERROR_CODES).toEqual(fixture.contract.errorCodes);
+  });
+
   test('negotiates the actual 0.0.1 authority without fabricating the runtime version', async () => {
     const fixture = parseVerifiedCaveContractFixture(
       readFileSync(fixturePath),

@@ -1740,6 +1740,7 @@ describe('discovered Cave pairing helpers', () => {
     test.each([
       ['not_found', 404, 'getConversation', false],
       ['scope_denied', 403, 'listProjects', false],
+      ['ownership_refused', 403, 'listProjects', false],
       ['reconcile_required', 409, 'listConversationMessages', true],
     ] as const)(
       'preserves canonical %s errors and never retries',
@@ -3458,6 +3459,11 @@ describe('discovered Cave pairing helpers', () => {
     },
     {
       code: 'pairing_denied',
+      retryable: false,
+      status: 403,
+    },
+    {
+      code: 'ownership_refused',
       retryable: false,
       status: 403,
     },

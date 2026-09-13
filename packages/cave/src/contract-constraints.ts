@@ -4,6 +4,7 @@ export const CAVE_CONTRACT_ERROR_CODES = [
   'invalid_request',
   'unauthorized',
   'scope_denied',
+  'ownership_refused',
   'not_found',
   'conflict',
   'rate_limited',

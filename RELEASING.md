@@ -38,8 +38,10 @@ clients, but not 0.0.0 or 0.0.1 prereleases.
 `packages/cave/src/version.ts` still derives `CAVE_CLIENT_VERSION` from the
 package manifest. Health negotiation, pairing, and canonical reads retain
 strict comparisons with no fabricated version or bypass. Additive authority,
-operation, discovery-v2, and cursor fixture metadata require no public parser
-or API change. The original HPKE vectors retain their 0.1.0 crypto inputs;
+operation, discovery-v2, and cursor fixture metadata require no public API
+shape change. The runtime error allowlist includes the authority's
+`ownership_refused` code so valid refusals are not converted to
+`invalid_response`. The original HPKE vectors retain their 0.1.0 crypto inputs;
 the Coven daemon fixtures are byte-for-byte unchanged.
 
 Any changed source or fixture requires fresh candidate identity and conformance
