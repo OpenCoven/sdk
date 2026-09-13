@@ -214,7 +214,7 @@ passing evidence record for each target.
 The frozen Chat production source remains
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` with its reviewed native deltas.
 This binding selects merged Chat #254 producer `9a750513f3ffc7a09242993b6b1fac9e2ff88207`,
-pinning executable harness `e7b9d73cfb3c067333bb2c78194b2cad6e16a34c`
+pinning harness source revision `e7b9d73cfb3c067333bb2c78194b2cad6e16a34c`
 and merged Cave OpenCoven/coven-cave#5378 at
 `cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. The actual merge preserves the tested tree and signed frozen source ancestry. The diagnostic source
 adds bounded pairing failure categories without changing pairing behavior or
