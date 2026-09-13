@@ -318,22 +318,26 @@ passing evidence record for each target.
 
 The frozen Chat production source remains
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` with its reviewed native deltas.
-This binding selects merged Chat #258 producer `421beab1404c52638ce0063196a27791e6b05f02`,
-pinning harness source revision `edc742c61451a9ebc762451224a9f47160d56846`
-and merged Cave OpenCoven/coven-cave#5378 at
-`cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. The actual merge preserves the tested tree and signed frozen source ancestry. The diagnostic source
-retains the bounded launch categories and distinguishes seven reviewed Win32
-quota I/O failures without changing launch behavior, quota enforcement, or
-resource limits. Prior protected run `34746733029` passed Linux and macOS but
-failed Windows with `io; root=cave-checkout; scope=none;
-operation=directory-enumeration-depth-3-plus; repeat=persistent`; validation,
-aggregation, and attestation were skipped. Fresh protected evidence remains
+This binding selects merged Chat #259 at
+`311dda625b20aaa91c7bf2b19718387ec56acab0`, with signed harness source
+`8d8d093655c0558a468ae9055550a308df909498` and unchanged counterpart revisions.
+The verified actual merge preserves the tested tree and signed frozen source ancestry.
+
+The conformance build distinguishes fixed native launch stages while preserving
+the desktop `service_unavailable` boundary. The worker-fence correction retains
+exclusion while a launch worker is outstanding and permits recovery when its
+result channel has closed. Quotas, permissions, and readiness deadlines remain
+unchanged. Historical protected run `34756443652` used the pre-#259 Chat producer
+`421beab1404c52638ce0063196a27791e6b05f02`. It passed independently inspected Linux
+and macOS identity, timing, and all 197 ordered assertions, but Windows failed at
+`phase1.native-scenarios.launch.service-unavailable`. There was no Windows record;
+aggregate validation and attestation were skipped. Fresh protected evidence is
 required.
 
 Both harness clients give `cave_launch` a 40-second response budget around
 Rust's 30-second readiness deadline. Other RPCs retain their 10-second bound.
-The exact allowlisted `service_unavailable` code is reported as a bounded
-category; all other service codes remain unknown. Quota I/O categories expose
+Only allowlisted launch-stage codes are retained; unreviewed codes remain
+unknown. A service-unavailable result alone does not prove timeout. Quota I/O categories expose
 neither paths nor raw HRESULTs, and unreviewed values remain generic `io`.
 
 The supervisor creates and owns the actual restricted-token profile before
