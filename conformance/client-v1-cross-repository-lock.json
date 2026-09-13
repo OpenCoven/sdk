@@ -165,8 +165,8 @@
   "evidenceProducer": {
     "status": "compatible",
     "repository": "OpenCoven/chat",
-    "commit": "4682a4aa758c8d958f8b87b9976addf14856f76b",
-    "tree": "40e1495a6e6c24dd438824fd9e73ede4ae4075fe",
+    "commit": "ee83236b759db544912c0f1761513238a637671b",
+    "tree": "a5279e8d13ef200bf1104ed45f3387e1a2cf61eb",
     "packageManifest": {
       "path": "package.json",
       "size": 4044,
@@ -183,8 +183,8 @@
     "workflow": {
       "name": "client-v1 conformance",
       "path": ".github/workflows/client-v1-conformance.yml",
-      "size": 511778,
-      "sha256": "8f17982e473485f2cb228561be507b9427dc01a8043dfc2e34208a4289c6693a",
+      "size": 161808,
+      "sha256": "ad52f1e1b83d70617866bd454aa55865135bc31db301390214596e6aeae6881d",
       "job": "platform-conformance",
       "jobNameTemplate": "platform-conformance ({platform})",
       "aggregationJob": "aggregate-conformance",
@@ -219,7 +219,7 @@
       ],
       "downloadArtifactAction": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
       "attestationAction": "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8",
-      "windowsBootstrapScriptSha256": "8740b1152cdc551d78f05791be15ec47c7565175aa3be832f5afe086ca24659f",
+      "windowsBootstrapScriptSha256": "4b0f632a20df37622cc0b9bba1a4dd935f8a17a642bd03e7b9d1e198e30f7291",
       "validatorRevisionScriptSha256": "9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9",
       "phase1RevisionsScriptSha256": "507ce777b643d97154472eb23135f7965fd55cf0fcedcec30e93b23e6472d225",
       "linuxKeyringSetupScriptSha256": "7b1ff87ab5d2230950632560230899cc450458a800a630c2788b53be8b13d200",
@@ -249,8 +249,8 @@
         ]
       },
       "signerWorkflow": "OpenCoven/chat/.github/workflows/client-v1-conformance.yml",
-      "signerDigest": "4682a4aa758c8d958f8b87b9976addf14856f76b",
-      "sourceDigest": "4682a4aa758c8d958f8b87b9976addf14856f76b",
+      "signerDigest": "ee83236b759db544912c0f1761513238a637671b",
+      "sourceDigest": "ee83236b759db544912c0f1761513238a637671b",
       "predicateType": "https://slsa.dev/provenance/v1",
       "denySelfHostedRunners": true
     }

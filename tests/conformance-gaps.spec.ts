@@ -52,11 +52,11 @@ const schemaPath = resolve(
 );
 const windowsBootstrapFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-8856ad-windows-bootstrap.ps1.br',
+  'tests/fixtures/chat-198455-windows-bootstrap.ps1.br',
 );
 const protectedWorkflowFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-8856ad-client-v1-conformance.yml.br',
+  'tests/fixtures/chat-198455-client-v1-conformance.yml.br',
 );
 const unixSupervisorPreparationFixturePath = resolve(
   workspaceRoot,
@@ -1770,8 +1770,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '4682a4aa758c8d958f8b87b9976addf14856f76b',
-      tree: '40e1495a6e6c24dd438824fd9e73ede4ae4075fe',
+      commit: 'ee83236b759db544912c0f1761513238a637671b',
+      tree: 'a5279e8d13ef200bf1104ed45f3387e1a2cf61eb',
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -1790,9 +1790,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 511_778,
+        size: 161_808,
         sha256:
-          '8f17982e473485f2cb228561be507b9427dc01a8043dfc2e34208a4289c6693a',
+          'ad52f1e1b83d70617866bd454aa55865135bc31db301390214596e6aeae6881d',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1811,7 +1811,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          '8740b1152cdc551d78f05791be15ec47c7565175aa3be832f5afe086ca24659f',
+          '4b0f632a20df37622cc0b9bba1a4dd935f8a17a642bd03e7b9d1e198e30f7291',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1848,8 +1848,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '4682a4aa758c8d958f8b87b9976addf14856f76b',
-        sourceDigest: '4682a4aa758c8d958f8b87b9976addf14856f76b',
+        signerDigest: 'ee83236b759db544912c0f1761513238a637671b',
+        sourceDigest: 'ee83236b759db544912c0f1761513238a637671b',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1921,7 +1921,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       TEST_WINDOWS_BOOTSTRAP_COMMAND.split(
         TEST_WINDOWS_SESSION_ZERO_QUARANTINE,
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
     expect(TEST_WINDOWS_BOOTSTRAP_COMMAND).not.toContain(
       '"WTS process primary token SID query was ambiguous.");',
     );
@@ -3820,41 +3820,6 @@ describe('unresolved SDK #38 conformance gaps', () => {
           '$validatorRevision -cne $protectedValidatorRevision',
           '$false -and $validatorRevision -cne $protectedValidatorRevision',
         ),
-      },
-      {
-        name: 'Windows quarantine skips an unreadable nonzero-session owner',
-        workflow: replaceWorkflowRun(
-          TEST_PRODUCER_WORKFLOW_TEXT,
-          TEST_WINDOWS_BOOTSTRAP_COMMAND,
-          TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(
-            'information.SessionId == 0)',
-            'information.SessionId != 0)',
-          ),
-        ),
-        synchronizedScriptDigest: {
-          field: 'windowsBootstrapScriptSha256',
-          step: 'Bootstrap supervised Windows conformance',
-        },
-        expectedError: /exact canonical Windows bootstrap source/u,
-      },
-      {
-        name: 'Windows quarantine drops ambiguous owner process diagnostics',
-        workflow: replaceWorkflowRun(
-          TEST_PRODUCER_WORKFLOW_TEXT,
-          TEST_WINDOWS_BOOTSTRAP_COMMAND,
-          TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(
-            [
-              '"WTS process primary token SID query was ambiguous "',
-              '                                + "for process {0} in session {1}.",',
-            ].join('\n'),
-            '"WTS process primary token SID query was ambiguous.",',
-          ),
-        ),
-        synchronizedScriptDigest: {
-          field: 'windowsBootstrapScriptSha256',
-          step: 'Bootstrap supervised Windows conformance',
-        },
-        expectedError: /exact canonical Windows bootstrap source/u,
       },
       {
         name: 'substituted Windows bootstrap shell',
