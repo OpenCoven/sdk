@@ -12,6 +12,10 @@ describe('reviewed compressed Windows supervisor source', () => {
     expect(source.length).toBe(identity.size);
     expect(createHash('sha256').update(source).digest('hex')).toBe(identity.sha256);
     expect(decodeWindowsSupervisorSource(renderWindowsSupervisorSource(source), identity)).toEqual(source);
+    const bootstrap = brotliDecompressSync(readFileSync(new URL('./fixtures/chat-8856ad-windows-bootstrap.ps1.br', import.meta.url))).toString('utf8');
+    const blocks = bootstrap.match(/^# BEGIN bounded Windows supervisor source v1\n[\s\S]*?^# END bounded Windows supervisor source v1$/gmu);
+    expect(blocks).toHaveLength(1);
+    expect(decodeWindowsSupervisorSource(blocks![0], identity)).toEqual(source);
   });
 
   test('rejects source and decoder changes despite valid compressed input', () => {
