@@ -213,13 +213,13 @@ passing evidence record for each target.
 
 The frozen Chat production source remains
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` with its reviewed native deltas.
-This binding selects merged Chat #254 producer `9a750513f3ffc7a09242993b6b1fac9e2ff88207`,
-pinning harness source revision `e7b9d73cfb3c067333bb2c78194b2cad6e16a34c`
+This binding selects merged Chat #255 producer `0016164f58528fa42ca1cacb85fe9886ebf32238`,
+pinning harness source revision `4daa7334a10f621271b9fbf86f19379f91425434`
 and merged Cave OpenCoven/coven-cave#5378 at
 `cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. The actual merge preserves the tested tree and signed frozen source ancestry. The diagnostic source
-adds bounded pairing failure categories without changing pairing behavior or
-resource limits. Prior protected run `34734409422` passed Linux and macOS but
-failed Windows at the generic pairing stage; validation, aggregation, and
+adds bounded launch operation categories without changing launch behavior or
+resource limits. Prior protected run `34738396429` passed Linux and macOS but
+failed Windows at `phase1.native-scenarios.launch.unknown`; validation, aggregation, and
 attestation were skipped. Fresh protected evidence remains required.
 
 Both harness clients give `cave_launch` a 40-second response budget around
