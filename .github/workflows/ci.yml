@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: OpenCoven/coven-cave
-          ref: 1bb0a21773fcc2966308ed1900ec6b746fcfdbc8
+          ref: 8a06421a705c2d7891c3f44cc580c569f6cbe2c1
           path: .artifacts/cave-authority
           fetch-depth: 1
           persist-credentials: false

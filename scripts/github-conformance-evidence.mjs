@@ -2078,6 +2078,16 @@ export function verifyGitHubConformanceEvidence({
       'GitHub source-bound Chat producer commit',
       githubOptions,
     );
+    const sourceAuthorityCommits = producer.sourceAuthorityPath.map(
+      (entry, index) =>
+        fetchGitCommitAuthority(
+          execute,
+          producer,
+          entry.commit,
+          `GitHub Chat source authority path commit ${index + 1}`,
+          githubOptions,
+        ),
+    );
     const harnessCommit = fetchGitCommitAuthority(
       execute,
       producer,
@@ -2104,6 +2114,7 @@ export function verifyGitHubConformanceEvidence({
       {
         producerCommit,
         sourceCommit,
+        sourceAuthorityCommits,
         harnessCommit,
         phase1LockText,
       },

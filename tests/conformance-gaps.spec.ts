@@ -767,6 +767,38 @@ const TEST_COMPATIBLE_PRODUCER = {
     commit: 'e'.repeat(40),
     tree: 'c'.repeat(40),
   },
+  sourceAuthorityPath: [
+    {
+      repository: 'OpenCoven/chat',
+      commit: '5be5775e43cfdb3424e1a8361e11d5d59cbaaabb',
+      tree: 'c4889adf0e84deda98d7709f0cac45e70c847683',
+    },
+    {
+      repository: 'OpenCoven/chat',
+      commit: 'a3c6ff98294320ba37e3f147d5db5b2a85121923',
+      tree: 'c4889adf0e84deda98d7709f0cac45e70c847683',
+    },
+    {
+      repository: 'OpenCoven/chat',
+      commit: 'f7565bad1ca132e6235154b82606e43d3b1fdbfd',
+      tree: '7655b06f547f6556fdb858804141d8e79882c418',
+    },
+    {
+      repository: 'OpenCoven/chat',
+      commit: '78d7fe1324d25ffdb529a603197fce5b367d7d69',
+      tree: '9ae31862906c1de1008ef2cb31edccb941a4b241',
+    },
+    {
+      repository: 'OpenCoven/chat',
+      commit: '7d338aadf181277e8b9be4a91d5f0b4ca814fb3b',
+      tree: '3997950ca05c8fdcbafe00f36ae80b4b728c8fdc',
+    },
+    {
+      repository: 'OpenCoven/chat',
+      commit: 'bcb53bbbf72bd4cc2af848d8db29c76fb9071762',
+      tree: '3997950ca05c8fdcbafe00f36ae80b4b728c8fdc',
+    },
+  ],
   harnessAuthority: {
     repository: 'OpenCoven/chat',
     commit: 'd'.repeat(40),
@@ -1668,8 +1700,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     ]);
     expect(lock.sources).toMatchObject({
       cave: {
-        commit: '1bb0a21773fcc2966308ed1900ec6b746fcfdbc8',
-        tree: 'b05c2baa4b586e2523e1803db8d9fd1182ecd148',
+        commit: '8a06421a705c2d7891c3f44cc580c569f6cbe2c1',
+        tree: 'aee0a949cfe058f6c50dc95135f1e6579e759a41',
       },
       coven: {
         commit: '8c3735f374d6bc95e5b6fd107f7e7308fa26a2f8',
@@ -1799,13 +1831,45 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '5be5775e43cfdb3424e1a8361e11d5d59cbaaabb',
-      tree: 'c4889adf0e84deda98d7709f0cac45e70c847683',
+      commit: '68c49d8a1a1ebedc06bdc8793a64c972945a265c',
+      tree: '2b8bf03673800e33f0f2c1de49ec7b0717c45ea2',
       source: {
         repository: 'OpenCoven/chat',
-        commit: 'a3c6ff98294320ba37e3f147d5db5b2a85121923',
-        tree: 'c4889adf0e84deda98d7709f0cac45e70c847683',
+        commit: '0e511721769a2946bc6b637218ffce603be36014',
+        tree: '2b8bf03673800e33f0f2c1de49ec7b0717c45ea2',
       },
+      sourceAuthorityPath: [
+        {
+          repository: 'OpenCoven/chat',
+          commit: '5be5775e43cfdb3424e1a8361e11d5d59cbaaabb',
+          tree: 'c4889adf0e84deda98d7709f0cac45e70c847683',
+        },
+        {
+          repository: 'OpenCoven/chat',
+          commit: 'a3c6ff98294320ba37e3f147d5db5b2a85121923',
+          tree: 'c4889adf0e84deda98d7709f0cac45e70c847683',
+        },
+        {
+          repository: 'OpenCoven/chat',
+          commit: 'f7565bad1ca132e6235154b82606e43d3b1fdbfd',
+          tree: '7655b06f547f6556fdb858804141d8e79882c418',
+        },
+        {
+          repository: 'OpenCoven/chat',
+          commit: '78d7fe1324d25ffdb529a603197fce5b367d7d69',
+          tree: '9ae31862906c1de1008ef2cb31edccb941a4b241',
+        },
+        {
+          repository: 'OpenCoven/chat',
+          commit: '7d338aadf181277e8b9be4a91d5f0b4ca814fb3b',
+          tree: '3997950ca05c8fdcbafe00f36ae80b4b728c8fdc',
+        },
+        {
+          repository: 'OpenCoven/chat',
+          commit: 'bcb53bbbf72bd4cc2af848d8db29c76fb9071762',
+          tree: '3997950ca05c8fdcbafe00f36ae80b4b728c8fdc',
+        },
+      ],
       harnessAuthority: {
         repository: 'OpenCoven/chat',
         commit: 'ad8d5f3e5e937c398c5d6d8f7bbbb190b4ed499a',
@@ -1887,8 +1951,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '5be5775e43cfdb3424e1a8361e11d5d59cbaaabb',
-        sourceDigest: '5be5775e43cfdb3424e1a8361e11d5d59cbaaabb',
+        signerDigest: '68c49d8a1a1ebedc06bdc8793a64c972945a265c',
+        sourceDigest: '68c49d8a1a1ebedc06bdc8793a64c972945a265c',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -2033,6 +2097,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         commit: string;
         tree: string;
         source: { commit: string; tree: string };
+        sourceAuthorityPath: Array<{ commit: string; tree: string }>;
         harnessAuthority: { commit: string; tree: string };
       }) => void
     > = [
@@ -2048,6 +2113,17 @@ describe('unresolved SDK #38 conformance gaps', () => {
       (producer) => {
         producer.harnessAuthority.tree = producer.tree;
       },
+      (producer) => {
+        const [firstAuthorityCommit, secondAuthorityCommit] =
+          producer.sourceAuthorityPath;
+        if (
+          firstAuthorityCommit === undefined
+          || secondAuthorityCommit === undefined
+        ) {
+          throw new Error('Test producer must contain an authority path');
+        }
+        secondAuthorityCommit.commit = firstAuthorityCommit.commit;
+      },
     ];
 
     for (const mutate of mutations) {
@@ -2056,6 +2132,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         commit: string;
         tree: string;
         source: { commit: string; tree: string };
+        sourceAuthorityPath: Array<{ commit: string; tree: string }>;
         harnessAuthority: { commit: string; tree: string };
       };
       mutate(producer);
@@ -2091,8 +2168,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(registry.schemaVersion).toBe(2);
     expect(registry.provenance).toEqual({
       repository: 'OpenCoven/coven-cave',
-      commit: '1bb0a21773fcc2966308ed1900ec6b746fcfdbc8',
-      tree: 'b05c2baa4b586e2523e1803db8d9fd1182ecd148',
+      commit: '8a06421a705c2d7891c3f44cc580c569f6cbe2c1',
+      tree: 'aee0a949cfe058f6c50dc95135f1e6579e759a41',
       engine: {
         path: 'scripts/client-v1-conformance.mjs',
         size: 150_592,
@@ -2904,7 +2981,33 @@ describe('unresolved SDK #38 conformance gaps', () => {
             return JSON.stringify({
               sha: commit,
               tree: { sha: producer.source.tree },
-              parents: [{ sha: producer.harnessAuthority.commit }],
+              parents: [{ sha: producer.sourceAuthorityPath[0].commit }],
+            });
+          }
+          const authorityPathIndex = producer.sourceAuthorityPath.findIndex(
+            (entry) => entry.commit === commit,
+          );
+          if (authorityPathIndex >= 0) {
+            const authorityCommit =
+              producer.sourceAuthorityPath.at(authorityPathIndex);
+            if (authorityCommit === undefined) {
+              throw new Error('Missing test source authority commit');
+            }
+            const nextCommit =
+              producer.sourceAuthorityPath[authorityPathIndex + 1]?.commit
+              ?? producer.harnessAuthority.commit;
+            return JSON.stringify({
+              sha: commit,
+              tree: { sha: authorityCommit.tree },
+              parents:
+                authorityPathIndex === 0
+                  ? [
+                      {
+                        sha: '3a1f4e355853b0ab44c317afb36f5e99f3d14037',
+                      },
+                      { sha: nextCommit },
+                    ]
+                  : [{ sha: nextCommit }],
             });
           }
           if (commit === producer.harnessAuthority.commit) {
@@ -3267,7 +3370,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       ghCalls.filter(
         (arguments_) => arguments_[0] === 'api',
       ),
-    ).toHaveLength(17);
+    ).toHaveLength(17 + producer.sourceAuthorityPath.length);
     expect(
       ghCalls.some((arguments_) =>
         arguments_.includes(
@@ -3282,6 +3385,15 @@ describe('unresolved SDK #38 conformance gaps', () => {
         ),
       ),
     ).toBe(true);
+    for (const authorityCommit of producer.sourceAuthorityPath) {
+      expect(
+        ghCalls.some((arguments_) =>
+          arguments_.includes(
+            `repos/OpenCoven/chat/git/commits/${authorityCommit.commit}`,
+          ),
+        ),
+      ).toBe(true);
+    }
     expect(
       ghCalls.some((arguments_) =>
         arguments_.includes(
@@ -3356,6 +3468,20 @@ describe('unresolved SDK #38 conformance gaps', () => {
           JSON.stringify({
             sha: producer.source.commit,
             tree: { sha: 'a'.repeat(40) },
+            parents: [{ sha: 'b'.repeat(40) }],
+          }),
+        ),
+      } as never),
+    ).toThrow(/Git identities do not match the frozen producer/u);
+
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInput,
+        execute: authorityResponseOverride(
+          `/git/commits/${producer.sourceAuthorityPath[0].commit}`,
+          JSON.stringify({
+            sha: producer.sourceAuthorityPath[0].commit,
+            tree: { sha: producer.sourceAuthorityPath[0].tree },
             parents: [{ sha: 'b'.repeat(40) }],
           }),
         ),
@@ -5317,7 +5443,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       'OPENCOVEN_CAVE_AUTHORITY_ROOT: ${{ github.workspace }}/.artifacts/cave-authority',
     );
     expect(workflow).toContain(
-      'ref: 1bb0a21773fcc2966308ed1900ec6b746fcfdbc8',
+      'ref: 8a06421a705c2d7891c3f44cc580c569f6cbe2c1',
     );
     expect(workflow).toContain('path: .artifacts/cave-authority');
   });
