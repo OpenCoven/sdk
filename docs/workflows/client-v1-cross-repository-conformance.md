@@ -27,27 +27,33 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The SDK candidate remains
 `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
-This binding selects merged Chat #249 producer `4682a4aa758c8d958f8b87b9976addf14856f76b`, pinning executable
-harness `0392645db9ec3b6e06cbc91ed0c09a868a50aea5` and merged Cave
-OpenCoven/coven-cave#5378 at
-`cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. Pre-merge Chat CI run
-`34724946685` passed all ten checks at head
-`73b9acf8bc069911ebbd2b847e65383bf9b91677`. The actual merge retains
-that tested tree; this CI run is not protected evidence for the merged producer.
-Windows `cave_launch` receives an 85-second outer RPC response budget around
-the native 75-second readiness deadline; non-Windows remains 40 seconds around
-30 seconds. Every other RPC retains its 10-second bound. Both harness clients
-use these budgets; generic service errors remain unknown, not timeout evidence.
-The merge retains the immutable harness source ancestry.
+This binding selects merged Chat #251 producer `c487e29492c2fee5d02d630ab26cb1c6dd277f67`,
+pinning executable harness `debeeecf54770c033f65f5b4d2dd1061d3cd3ad3`
+and merged Cave OpenCoven/coven-cave#5378 at
+`cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. All ten checks passed in pre-merge CI `34732434401` at head
+`00b3c75339f20467bf15e30fb5f7a050f8bae381`. The signed actual merge
+retains that tested tree and the frozen source ancestry. This ordinary CI run
+does not replace fresh protected evidence for the merged producer.
 
-The trusted supervisor overwrites the dedicated Windows profile-root binding
-with the operating-system profile registered for the restricted process token.
-The producer validates it independently from the bootstrap-local `USERPROFILE`
-redirect and publishes only the native fixture beneath that profile's
+Both harness clients give `cave_launch` a 40-second response budget around
+Rust's 30-second readiness deadline. Other RPCs retain their 10-second bound.
+Generic service errors remain unknown and do not establish a timeout.
+
+The supervisor creates and owns the actual restricted-token profile before
+child launch, verifies token/profile agreement, and retains profile and
+application directory handles with directory-list access and no delete
+sharing. The producer publishes its native fixture beneath that profile's
 `.coven/cave`, matching Rust token-profile discovery. A forged caller value
-cannot redirect publication. Fixture deletion follows confirmed RPC closure;
-failed graceful shutdown defers termination and profile removal to the
-supervisor.
+cannot redirect publication. The owned application subtree shares the existing
+bootstrap and harness aggregate quotas. Quarantine must complete before pins
+are released and owned profile/account cleanup proceeds; failure retains
+ownership for retry.
+
+The Windows bootstrap is accepted only after the exact parent script hash
+gate. Its one canonical bounded gzip/base64 block is then decoded against an
+independently reviewed C# size and digest. Quarantine regression tests mutate
+and re-encode that source through the actual workflow verifier, preserving
+coverage across the compressed representation.
 
 The bound quota diagnostic distinguishes a readable follow-up from a missing
 file or directory. Every outcome preserves the initial quota failure and
@@ -423,7 +429,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`4682a4aa758c8d958f8b87b9976addf14856f76b` compatible with the reviewed
+`c487e29492c2fee5d02d630ab26cb1c6dd277f67` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
