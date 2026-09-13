@@ -27,8 +27,8 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The SDK candidate remains
 `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
-This binding selects merged Chat #257 producer `717fe22224a58c19f6ff39747dfea8e9a60e1136`,
-pinning harness source revision `006f4f1a05ef06dd9cb7627e0d083fbd96db141a`
+This binding selects merged Chat #257 producer `e6bf92c6ec47fd6a5e859afa17db314618b1c2c5`,
+pinning harness source revision `719cb5d6e0653956773743522b9267b87a5e9b05`
 and merged Cave OpenCoven/coven-cave#5378 at
 `cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. The actual merge preserves the tested tree and signed frozen source ancestry. The diagnostic source
 adds a bounded `service_unavailable` launch category without changing launch
@@ -432,9 +432,10 @@ reusable workflow, upload path, or attestation path is accepted. The
 aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
-only. The committed lock marks the reachable Chat producer at
-`717fe22224a58c19f6ff39747dfea8e9a60e1136` compatible with the reviewed
-schema-v2 workflow bytes. Release readiness remains blocked until this SDK
+only. This binding selects merged Chat #256 producer at
+`e6bf92c6ec47fd6a5e859afa17db314618b1c2c5` with the reviewed schema-v2 bytes.
+The verified actual merge preserves the tested tree and frozen source ancestry. The independent supervisor source gate includes
+the retained-handle termination correction; unconfirmed exits still fail closed. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
 attestations exist and are reviewed.

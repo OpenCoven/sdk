@@ -213,15 +213,14 @@ passing evidence record for each target.
 
 The frozen Chat production source remains
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` with its reviewed native deltas.
-This binding selects merged Chat #257 producer `717fe22224a58c19f6ff39747dfea8e9a60e1136`,
-pinning harness source revision `006f4f1a05ef06dd9cb7627e0d083fbd96db141a`
-and merged Cave OpenCoven/coven-cave#5378 at
-`cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. The actual merge preserves the tested tree and signed frozen source ancestry. The diagnostic source
-adds a bounded `service_unavailable` launch category without changing launch
-behavior or resource limits. Prior protected run `34741820511` passed Linux
-and macOS but failed Windows at
-`phase1.native-scenarios.launch.launch-rpc-unknown`; validation, aggregation,
-and attestation were skipped. Fresh protected evidence remains required.
+This binding selects merged Chat #256 producer
+`e6bf92c6ec47fd6a5e859afa17db314618b1c2c5`, with frozen harness source
+`719cb5d6e0653956773743522b9267b87a5e9b05`. The verified actual merge preserves the tested tree and source ancestry.
+The source preserves the published service-unavailable launch identifier, adds
+six other allowlisted native codes, and confirms already-exited retained Windows
+process handles while preserving live denial and exit-code verification.
+Protected run `34746733029` failed Windows quota enumeration under cave-checkout
+before launch. Fresh protected evidence remains required after verified landing.
 
 Both harness clients give `cave_launch` a 40-second response budget around
 Rust's 30-second readiness deadline. Other RPCs retain their 10-second bound.
