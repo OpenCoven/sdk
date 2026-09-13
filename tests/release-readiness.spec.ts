@@ -375,7 +375,7 @@ describe('release readiness contract', () => {
     expect(developmentResult.status).toBe(0);
     expect(developmentResult.stderr).toBe('');
     expect(JSON.parse(developmentResult.stdout)).toMatchObject({
-      version: '0.1.0',
+      version: '0.0.1',
       publishingEnabled: false,
       conformanceEvidenceRecord: null,
     });
@@ -630,7 +630,7 @@ describe('release readiness contract', () => {
         requireConformanceEvidence: false,
       }),
     ).toEqual({
-      version: '0.1.0',
+      version: '0.0.1',
       publishingEnabled: false,
       packages: PUBLIC_PACKAGES.map(({ packageName }) => packageName),
       conformanceEvidenceRecord: null,
@@ -802,8 +802,8 @@ describe('release readiness contract', () => {
       validateReleaseReadiness({
         root: workspaceRoot,
         mode: 'publish',
-        version: '0.1.0',
-        tag: 'sdk-v0.1.0',
+        version: '0.0.1',
+        tag: 'sdk-v0.0.1',
       }),
     ).toThrow('release.config.json must name a passing SDK #38 aggregate record');
   });
@@ -816,7 +816,7 @@ describe('release readiness contract', () => {
     });
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      '@opencoven/sdk dependency @opencoven/sdk-core must be workspace:0.1.0',
+      '@opencoven/sdk dependency @opencoven/sdk-core must be workspace:0.0.1',
     );
   });
 
@@ -962,13 +962,13 @@ describe('release readiness contract', () => {
     );
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      'All release package versions must match 0.1.0',
+      'All release package versions must match 0.0.1',
     );
 
     updateJson<MutablePackageManifest>(
       resolve(fixture, 'packages/cave/package.json'),
       (manifest) => {
-        manifest.version = '0.1.0';
+        manifest.version = '0.0.1';
       },
     );
     writeFileSync(
@@ -977,7 +977,7 @@ describe('release readiness contract', () => {
     );
 
     expect(() => validateReleaseReadiness({ root: fixture })).toThrow(
-      '@opencoven/cave-client CHANGELOG.md must contain ## 0.1.0',
+      '@opencoven/cave-client CHANGELOG.md must contain ## 0.0.1',
     );
   });
 
@@ -1032,7 +1032,7 @@ describe('release readiness contract', () => {
     expect(() =>
       validateReleaseReadiness({
         root: workspaceRoot,
-        version: '0.1.0',
+        version: '0.0.1',
         requireTag: true,
       }),
     ).toThrow('Release tag is required');
@@ -1040,7 +1040,7 @@ describe('release readiness contract', () => {
 
   test('returns the canonical locked release summary', () => {
     expect(validateReleaseReadiness({ root: workspaceRoot })).toEqual({
-      version: '0.1.0',
+      version: '0.0.1',
       publishingEnabled: false,
       packages: PUBLIC_PACKAGES.map(({ packageName }) => packageName),
       conformanceEvidenceRecord: null,
@@ -1079,7 +1079,7 @@ describe('release readiness contract', () => {
       publishReleaseArtifacts({
         root: workspaceRoot,
         artifactRoot: '/tmp/missing-artifacts',
-        version: '0.1.0',
+        version: '0.0.1',
         env: { OPENCOVEN_RELEASE_AUTHORIZATION: 'publish' },
         execute: () => {
           throw new Error('must not execute while locked');
@@ -1100,11 +1100,11 @@ describe('release readiness contract', () => {
     expect(() =>
       validateReleaseReadiness({
         root: workspaceRoot,
-        version: '0.1.0',
-        tag: 'sdk-v0.1.0',
+        version: '0.0.1',
+        tag: 'sdk-v0.0.1',
         requireTag: true,
       }),
-    ).toThrow('Release tag sdk-v0.1.0 is absent');
+    ).toThrow('Release tag sdk-v0.0.1 is absent');
   });
 
   test('requires the release tag to be an annotated tag object', () => {
@@ -1115,32 +1115,32 @@ describe('release readiness contract', () => {
       'tag.gpgSign=false',
       'tag',
       '--annotate',
-      'sdk-v0.1.0',
+      'sdk-v0.0.1',
       '--message',
-      'SDK v0.1.0',
+      'SDK v0.0.1',
     ]);
 
     expect(() =>
       validateReleaseReadiness({
         root: annotatedFixture,
-        version: '0.1.0',
-        tag: 'sdk-v0.1.0',
+        version: '0.0.1',
+        tag: 'sdk-v0.0.1',
         requireTag: true,
       }),
     ).not.toThrow();
 
     const lightweightFixture = createReleaseFixture();
     initializeReleaseFixtureRepository(lightweightFixture);
-    git(lightweightFixture, ['tag', 'sdk-v0.1.0']);
+    git(lightweightFixture, ['tag', 'sdk-v0.0.1']);
 
     expect(() =>
       validateReleaseReadiness({
         root: lightweightFixture,
-        version: '0.1.0',
-        tag: 'sdk-v0.1.0',
+        version: '0.0.1',
+        tag: 'sdk-v0.0.1',
         requireTag: true,
       }),
-    ).toThrow('Release tag sdk-v0.1.0 must be an annotated tag object');
+    ).toThrow('Release tag sdk-v0.0.1 must be an annotated tag object');
   });
 
   test('enforces the npm trusted-publisher environment on the final publish job', () => {

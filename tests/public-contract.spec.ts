@@ -503,7 +503,7 @@ describe('public package entry points', () => {
         health: () =>
           Promise.resolve({
             apiVersion: '1.0',
-            minimumClientVersion: '0.1.0',
+            minimumClientVersion: '0.0.1',
             capabilities: ['health'],
             operations: ['health.read'],
             data: {

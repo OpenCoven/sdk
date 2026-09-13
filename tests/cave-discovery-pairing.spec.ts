@@ -45,7 +45,7 @@ const CAVE_OPERATIONS = [
 
 const CURRENT_HEALTH_ENVELOPE = {
   apiVersion: '1.0',
-  minimumClientVersion: '0.1.0',
+  minimumClientVersion: '0.0.1',
   capabilities: [...CAVE_CAPABILITIES],
   operations: [...CAVE_OPERATIONS],
   data: {

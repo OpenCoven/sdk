@@ -29,7 +29,7 @@ describe('opencoven CLI binary defaults', () => {
               Promise.resolve({
                 status: 'ok' as const,
                 apiVersion: '1.0',
-                minimumClientVersion: '0.1.0',
+                minimumClientVersion: '0.0.1',
                 capabilities: ['health'],
                 operations: ['health.read'],
                 instanceId: 'production-cave',

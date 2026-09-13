@@ -50,7 +50,7 @@ const VALID_COVEN_HEALTH_RESPONSE = {
 
 const CURRENT_CAVE_HEALTH_RESPONSE = {
   apiVersion: '1.0',
-  minimumClientVersion: '0.1.0',
+  minimumClientVersion: '0.0.1',
   capabilities: [
     'health',
     'pairing',
@@ -86,7 +86,7 @@ const CURRENT_CAVE_HEALTH_RESPONSE = {
 const VALID_CAVE_HEALTH_RESPONSE = {
   apiVersion: '1.0',
   capabilities: ['health', 'pairing'],
-  minimumClientVersion: '0.1.0',
+  minimumClientVersion: '0.0.1',
   operations: ['health.read', 'pairing.create'],
   data: {
     instanceId: 'instance-1',
@@ -133,6 +133,23 @@ describe('health validation', () => {
       clientVersion: '0.2.0',
     });
   });
+
+  test.each([
+    { minimum: '0.0.1', client: '0.0.1', compatible: true },
+    { minimum: '0.0.1', client: '0.1.0', compatible: true },
+    { minimum: '0.0.1', client: '0.0.0', compatible: false },
+    { minimum: '0.0.1', client: '0.0.1-rc.1', compatible: false },
+    { minimum: '0.1.0', client: '0.0.1', compatible: false },
+  ])(
+    'enforces the first-release minimum $minimum for client $client',
+    ({ minimum, client, compatible }) => {
+      expect(getAssessCompatibility()(minimum, client)).toEqual({
+        compatible,
+        minimumClientVersion: minimum,
+        clientVersion: client,
+      });
+    },
+  );
 
   test('follows the SemVer prerelease precedence examples', () => {
     const assessCompatibility = getAssessCompatibility();
@@ -228,7 +245,7 @@ describe('health validation', () => {
           Promise.resolve({
             apiVersion: '1.1',
             capabilities: ['health', 'future-safe-family'],
-            minimumClientVersion: '0.1.0',
+            minimumClientVersion: '0.0.1',
             operations: ['health.read', 'future.safe.read'],
             data: {
               instanceId: 'instance-2',
@@ -313,33 +330,36 @@ describe('health validation', () => {
     });
   });
 
-  test('rejects Cave health responses that require a newer client version', async () => {
-    const client = new CaveClient({
-      transport: {
-        health: () => Promise.resolve({
-          ...VALID_CAVE_HEALTH_RESPONSE,
-          minimumClientVersion: '999.0.0',
-        }),
-      },
-    });
+  test.each(['0.0.2', '0.1.0', '999.0.0'])(
+    'rejects Cave health responses that require client %s',
+    async (minimumClientVersion) => {
+      const client = new CaveClient({
+        transport: {
+          health: () => Promise.resolve({
+            ...VALID_CAVE_HEALTH_RESPONSE,
+            minimumClientVersion,
+          }),
+        },
+      });
 
-    const response = client.health();
+      const response = client.health();
 
-    await expect(response).rejects.toBeInstanceOf(CaveClientError);
-    await expect(response).rejects.toMatchObject({
-      normalized: {
-        system: 'cave',
-        operation: 'health',
-        code: 'incompatible_version',
-        retryable: false,
-      },
-      compatibility: {
-        compatible: false,
-        minimumClientVersion: '999.0.0',
-        clientVersion: cavePackageVersion,
-      },
-    });
-  });
+      await expect(response).rejects.toBeInstanceOf(CaveClientError);
+      await expect(response).rejects.toMatchObject({
+        normalized: {
+          system: 'cave',
+          operation: 'health',
+          code: 'incompatible_version',
+          retryable: false,
+        },
+        compatibility: {
+          compatible: false,
+          minimumClientVersion,
+          clientVersion: cavePackageVersion,
+        },
+      });
+    },
+  );
 
   test('accepts compatible additive Cave apiVersion updates on the same major version', async () => {
     const client = new CaveClient({

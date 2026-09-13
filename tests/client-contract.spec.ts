@@ -130,7 +130,7 @@ async function collect<T>(iterator: AsyncIterable<T>): Promise<T[]> {
 const VALID_CAVE_HEALTH_RESPONSE = {
   apiVersion: '1.0',
   capabilities: ['health'],
-  minimumClientVersion: '0.1.0',
+  minimumClientVersion: '0.0.1',
   operations: ['health.read'],
   data: {
     instanceId: 'test-cave',
@@ -177,7 +177,7 @@ describe('constrained client transports', () => {
   test('keeps legacy familiars and the five canonical reads on one CaveTransport', async () => {
     const metadata = {
       apiVersion: '1.0',
-      minimumClientVersion: '0.1.0',
+      minimumClientVersion: '0.0.1',
       capabilities: [
         'familiars',
         'projects',

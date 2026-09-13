@@ -138,7 +138,7 @@ function successEnvelope(
 ): Record<string, unknown> {
   return {
     apiVersion: '1.0',
-    minimumClientVersion: '0.1.0',
+    minimumClientVersion: '0.0.1',
     ...(options.capabilities === undefined
       ? {}
       : { capabilities: options.capabilities }),
@@ -516,7 +516,7 @@ describe('managed native Cave client', () => {
         statusCode: 410,
         payload: {
           apiVersion: '1.0',
-          minimumClientVersion: '0.1.0',
+          minimumClientVersion: '0.0.1',
           capabilities: ['pairing'],
           operations: ['pairing.poll'],
           error: {
@@ -896,7 +896,7 @@ describe('managed native Cave client', () => {
           statusCode: 500,
           payload: {
             apiVersion: '1.0',
-            minimumClientVersion: '0.1.0',
+            minimumClientVersion: '0.0.1',
             capabilities: ['pairing'],
             operations: ['pairing.create'],
             error: {
@@ -984,7 +984,7 @@ describe('managed native Cave client', () => {
           statusCode: 429,
           payload: {
             apiVersion: '1.0',
-            minimumClientVersion: '0.1.0',
+            minimumClientVersion: '0.0.1',
             capabilities: ['health'],
             operations: ['health.read'],
             requestId: 'request-429',

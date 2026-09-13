@@ -1,6 +1,6 @@
 {
   "name": "@opencoven/coven-client",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Transport-neutral constrained Coven client",
   "type": "module",
@@ -40,6 +40,6 @@
     "typecheck": "tsc --pretty false --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@opencoven/sdk-core": "workspace:0.1.0"
+    "@opencoven/sdk-core": "workspace:0.0.1"
   }
 }

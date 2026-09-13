@@ -21,7 +21,7 @@ const HPKE_RUNTIME_NONCE = 'gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8';
 
 const HEALTH = {
   apiVersion: '1.0',
-  minimumClientVersion: '0.1.0',
+  minimumClientVersion: '0.0.1',
   capabilities: ['health'],
   operations: ['health.read'],
   data: {

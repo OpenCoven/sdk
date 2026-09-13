@@ -1,6 +1,6 @@
 {
   "name": "@opencoven/sdk",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Optional OpenCoven client coordinator",
   "type": "module",
@@ -39,8 +39,8 @@
     "typecheck": "tsc --pretty false --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@opencoven/cave-client": "workspace:0.1.0",
-    "@opencoven/coven-client": "workspace:0.1.0",
-    "@opencoven/sdk-core": "workspace:0.1.0"
+    "@opencoven/cave-client": "workspace:0.0.1",
+    "@opencoven/coven-client": "workspace:0.0.1",
+    "@opencoven/sdk-core": "workspace:0.0.1"
   }
 }

@@ -78,27 +78,27 @@ const EXPECTED_WORKSPACE_DEPENDENCIES = {
   cave: {
     '@hpke/core': '1.9.0',
     '@hpke/dhkem-x25519': '1.8.0',
-    '@opencoven/sdk-core': 'workspace:0.1.0',
+    '@opencoven/sdk-core': 'workspace:0.0.1',
     canonicalize: '4.0.0',
   },
   coven: {
-    '@opencoven/sdk-core': 'workspace:0.1.0',
+    '@opencoven/sdk-core': 'workspace:0.0.1',
   },
   sdk: {
-    '@opencoven/cave-client': 'workspace:0.1.0',
-    '@opencoven/coven-client': 'workspace:0.1.0',
-    '@opencoven/sdk-core': 'workspace:0.1.0',
+    '@opencoven/cave-client': 'workspace:0.0.1',
+    '@opencoven/coven-client': 'workspace:0.0.1',
+    '@opencoven/sdk-core': 'workspace:0.0.1',
   },
   cli: {
     '@napi-rs/keyring': '2.0.0',
-    '@opencoven/cave-client': 'workspace:0.1.0',
-    '@opencoven/coven-client': 'workspace:0.1.0',
-    '@opencoven/sdk-core': 'workspace:0.1.0',
+    '@opencoven/cave-client': 'workspace:0.0.1',
+    '@opencoven/coven-client': 'workspace:0.0.1',
+    '@opencoven/sdk-core': 'workspace:0.0.1',
   },
 } as const;
 
 describe('workspace package manifests', () => {
-  test('keeps the private CLI outside the four-package 0.1 release inventory', () => {
+  test('keeps the private CLI outside the four-package 0.0.1 release inventory', () => {
     expect(PUBLIC_PACKAGES.map(({ packageName }) => packageName)).toEqual([
       '@opencoven/sdk-core',
       '@opencoven/cave-client',
@@ -201,7 +201,7 @@ describe('workspace package manifests', () => {
       );
 
       expect(manifest.files).toContain('CHANGELOG.md');
-      expect(changelog).toContain('## 0.1.0');
+      expect(changelog).toContain('## 0.0.1');
     }
   }, 15_000);
 
@@ -300,7 +300,7 @@ describe('workspace package manifests', () => {
       expect(manifest.exports).toEqual(expectedPackageExports(workspaceDirectory));
       expect(manifest.dependencies ?? {}).toEqual(expectedDependencies);
       expect(manifest.license).toBe('AGPL-3.0-only OR MIT');
-      expect(manifest.version).toBe('0.1.0');
+      expect(manifest.version).toBe(workspaceDirectory === 'cli' ? '0.1.0' : '0.0.1');
       if (publicPackageNames.has(packageName)) {
         versions.add(manifest.version ?? '');
       }
@@ -313,12 +313,37 @@ describe('workspace package manifests', () => {
 
       for (const [dependency, range] of Object.entries(manifest.dependencies ?? {})) {
         if (dependency.startsWith('@opencoven/')) {
-          expect(range).toBe(`workspace:${manifest.version}`);
+          const target = PUBLIC_PACKAGES.find(({ packageName }) => packageName === dependency);
+          expect(target).toBeDefined();
+          if (target === undefined) {
+            throw new Error(`Unknown SDK workspace dependency ${dependency}`);
+          }
+          const targetManifest = JSON.parse(
+            readFileSync(resolve(workspaceRoot, target.manifestPath), 'utf8'),
+          ) as { version: string };
+          expect(range).toBe(`workspace:${targetManifest.version}`);
         }
       }
     }
 
-    expect(versions).toEqual(new Set(['0.1.0']));
+    expect(versions).toEqual(new Set(['0.0.1']));
+  });
+
+  test.each([
+    'cave-discovery',
+    'cave-health',
+    'cave-managed-native',
+    'coven-health',
+    'unified-health',
+  ])('pins the private %s example to the initial SDK release', (example) => {
+    const manifest = JSON.parse(
+      readFileSync(resolve(workspaceRoot, 'examples', example, 'package.json'), 'utf8'),
+    ) as { private: boolean; dependencies: Record<string, string> };
+
+    expect(manifest.private).toBe(true);
+    for (const range of Object.values(manifest.dependencies)) {
+      expect(range).toBe('workspace:0.0.1');
+    }
   });
 
   test('derives exported runtime versions from package manifests', () => {

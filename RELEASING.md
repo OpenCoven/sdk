@@ -2,12 +2,115 @@
 
 The repository contains release-readiness automation, but this phase does not publish packages.
 It does not create npm package records, configure GitHub
-environments, or register trusted publishers. The four-package 0.1 release
+environments, or register trusted publishers. The four-package 0.0.1 release
 group and the private CLI workspace all remain private, and the repository
 publication lock remains closed.
 
-`@opencoven/dev-cli` is not part of the 0.1 release group. Release tooling must
+`@opencoven/dev-cli` is not part of the 0.0.1 release group. Release tooling must
 not pack, publish, attest, or configure a trusted publisher for it.
+
+## v0.0.1 preparation decision (2026-09-12)
+
+The intended first public release is now **v0.0.1**, replacing the earlier
+0.1.0 target without changing the four-package scope:
+`@opencoven/sdk-core`, `@opencoven/cave-client`, `@opencoven/coven-client`,
+and `@opencoven/sdk`. The private CLI remains excluded. References to 0.1
+in the existing delivery program describe the original scope and evidence,
+not authorization to publish either version.
+
+The source preparation now adopts 0.0.1 in all four package manifests and
+initial changelogs; it is not a SHIP disposition or a new frozen candidate.
+`publishingEnabled` remains `false`, all packages remain private, and
+`conformanceEvidence.aggregateRecord` remains unset. The private CLI retains
+its independent 0.1.0 version while consuming exact 0.0.1 workspace dependencies.
+
+### Compatibility prerequisite
+
+The prerequisite landed in
+[OpenCoven/coven-cave#5376](https://github.com/OpenCoven/coven-cave/pull/5376)
+at `e806655a7100e9d589662a6f3817c3fd8cde48ad`. The actual authority fixture
+was imported through `sync:contracts`, with SHA-256
+`0c03baea9c21f0985df41eef3c5ae5223497b9081c665b53ddecab36598f5ede`.
+Provenance and verifier pins bind that exact commit and those bytes.
+Its `minimumClientVersion: "0.0.1"` accepts both 0.0.1 and existing 0.1.0
+clients, but not 0.0.0 or 0.0.1 prereleases.
+
+`packages/cave/src/version.ts` still derives `CAVE_CLIENT_VERSION` from the
+package manifest. Health negotiation, pairing, and canonical reads retain
+strict comparisons with no fabricated version or bypass. Additive authority,
+operation, discovery-v2, and cursor fixture metadata require no public parser
+or API change. The original HPKE vectors retain their 0.1.0 crypto inputs;
+the Coven daemon fixtures are byte-for-byte unchanged.
+
+Any changed source or fixture requires fresh candidate identity and conformance
+evidence under the existing release rules. Do not use the old source freeze to
+claim verification of this preparation.
+`conformance/client-v1-cross-repository-lock.json` still binds candidate
+`1597835325cf3762b51408ff0a565037eeb25f64` at 0.1.0, including its
+12,308-byte Cave fixture; the adopted fixture is 18,280 bytes. That historical
+lock, its tarball hashes, and `release.config.json` have not been relabeled.
+
+### Ordered preparation checklist
+
+- [x] Coordinate and review the Cave authority's minimum-client contract for
+  0.0.1, including health, pairing, and canonical reads.
+- [x] Once that contract is available, prepare all four SDK manifests and
+  changelogs at 0.0.1 together. Update exact internal workspace dependencies,
+  including private CLI and example consumers, and regenerate the lockfile.
+  Keep the CLI's own version independent and its manifest private.
+- [x] Reconcile pending Changesets into the initial-release changelogs.
+  The managed-native and browser-safe content of `quiet-caves-stay.md` is
+  included in the initial core/Cave changelogs and that patch request is
+  consumed. Do not run `release:version` to prepare this release: no 0.0.2
+  increment is intended.
+- [x] Validate the rebuilt 0.0.1 packed packages and examples locally against the
+  reviewed contract, including rejection of genuinely incompatible versions.
+  Retain the existing Node support policy and release safeguards. These local
+  checks are not committed-candidate or cross-platform release evidence.
+- [ ] Freeze a new reviewed candidate and obtain complete #38 evidence for
+  `darwin-arm64`, `linux-x64`, and `win32-x64`. Preserve the existing 0.1.0
+  evidence as historical input; do not relabel its tarballs or hashes.
+  Commit the accepted aggregate and its index, and bind them in release
+  configuration using the documented evidence workflow.
+- [ ] Prepare the reviewed release-enablement changes and verify the live
+  GitHub environment and npm trusted-publisher prerequisites. Produce and
+  attest the exact 0.0.1 publication candidate from the release commit.
+- [ ] Obtain #40 SHIP authorization for those exact bytes and the annotated
+  `sdk-v0.0.1` tag object, then complete the protected approval and #41
+  publication/provenance sequence described below.
+
+Until these prerequisites are satisfied, 0.0.1 is a blocked release target,
+not a publishable artifact. This preparation does not create a tag, GitHub
+release, npm package, deployment approval, or publication authorization.
+
+### Gate investigation checkpoint (2026-09-12)
+
+At this checkpoint the Cave-owned minimum-client prerequisite was proposed in
+[OpenCoven/coven-cave#5376](https://github.com/OpenCoven/coven-cave/pull/5376),
+head `bc5c5caf6938f2273bca609b5610dc78f9febdb0`. It lowers the advertised
+floor for the existing implementation and regenerates the authority fixture.
+At that checkpoint SDK adoption was pending reviewed landing. The later
+protected merge at `e806655a7100e9d589662a6f3817c3fd8cde48ad` and source
+adoption above complete the compatibility prerequisite, not the frozen
+candidate or release-evidence gates.
+
+Protected [OpenCoven/chat run 34681042400](https://github.com/OpenCoven/chat/actions/runs/34681042400)
+used producer `8e33e2a78c0ef639e88466de21d8580604bd28f0` and SDK validator
+`e8122a9ea63a9ca1b354a2730d77e627cffe87c3`. Darwin and Linux jobs succeeded,
+but Windows job `103519812121` failed with
+`phase1.cave-authority.startup.discovery.missing`. Validation, attestation,
+and aggregation were skipped. This result follows the Cave discovery ACL
+repair bound by #215; that repair has not established complete protected
+acceptance. Both validator scopes already select the expected SDK revision.
+These jobs concern the existing 0.1.0 candidate, not the planned 0.0.1 release.
+
+The live release-environment policy verifier accepted all three environments
+at this checkpoint. That observation is not an approval and must be repeated
+for the final candidate. Preliminary SDK security review established no new
+high-confidence vulnerability within its reviewed scope, but did not clear
+the pending Cave compatibility change, native evidence, or future 0.0.1
+artifacts. #40 remains BLOCK until the complete final-candidate review and
+authorized immutable SHIP record exist.
 
 ## 1. Release locks and prerequisites
 
