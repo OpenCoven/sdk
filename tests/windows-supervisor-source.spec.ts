@@ -5,7 +5,7 @@ import { describe, expect, test } from 'vitest';
 import { decodeWindowsSupervisorSource, renderWindowsSupervisorSource } from '../scripts/windows-supervisor-source.mjs';
 
 const source = brotliDecompressSync(readFileSync(new URL('./fixtures/chat-debee-windows-supervisor.cs.br', import.meta.url)));
-const identity = { size: 351497, sha256: '281acdeba5ee8dd022fd0451bd4ede6af8431aba8810f1683ce7077cc627fcb0' };
+const identity = { size: 352878, sha256: 'd08748d1a7ce3cc3964ce4520cc501f514d5777ed102ac5f57ebc20b75e7bb65' };
 
 describe('reviewed compressed Windows supervisor source', () => {
   test('binds the canonical decoded block to the independent frozen C# identity', () => {
