@@ -19,7 +19,8 @@ in the existing delivery program describe the original scope and evidence,
 not authorization to publish either version.
 
 The source preparation now adopts 0.0.1 in all four package manifests and
-initial changelogs; it is not a SHIP disposition or a new frozen candidate.
+initial changelogs and freezes that private candidate's exact source and
+tarball identities. This is not accepted #38 evidence or a #40 SHIP disposition.
 `publishingEnabled` remains `false`, all packages remain private, and
 `conformanceEvidence.aggregateRecord` remains unset. The private CLI retains
 its independent 0.1.0 version while consuming exact 0.0.1 workspace dependencies.

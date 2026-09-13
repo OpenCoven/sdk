@@ -21,17 +21,18 @@ marked private, are not published, and have standard publishing blocked. The
 `@opencoven/dev-cli` remains private and is not packed, versioned with, or
 published beside that group. Standard publishing also requires
 `OPENCOVEN_RELEASE_AUTHORIZATION=publish`; remove or change these gates only as
-part of an intentional release process. The 0.1 native Chat/real-authority
+part of an intentional release process. The 0.0.1 native Chat/real-authority
 conformance release matrix is separately frozen to `darwin-arm64`,
 `linux-x64`, and `win32-x64`; see [SUPPORT.md](SUPPORT.md) for the distinction
 between Node runtime support and this release gate.
 
 The four release manifests and initial changelogs are prepared at **0.0.1**,
 with the merged Cave authority contract advertising a `0.0.1` client minimum.
-Strict version checks remain unchanged. The frozen candidate and tarball
-evidence still describe the unpublished **0.1.0** candidate, not these bytes.
-A new committed source freeze, complete #38 evidence, and #40 authorization
-are still required; see the
+Strict version checks remain unchanged. The source lock now freezes the
+private **0.0.1** candidate at
+`77d825d17809cfec2fad4acb9b1526b3c4752f9d` and its exact tarball bytes.
+Earlier 0.1.0 artifacts and evidence remain historical, not relabeled.
+Complete protected #38 evidence and #40 authorization are still required; see the
 [v0.0.1 preparation checklist](RELEASING.md#v001-preparation-decision-2026-09-12)
 for the remaining gates and required release sequence.
 
