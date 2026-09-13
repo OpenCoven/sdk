@@ -68,7 +68,7 @@ describe('release and support policies', () => {
       /`GH_TOKEN` is injected only into the exact `gh api`, `gh run download`, and\s+`gh attestation` subprocesses/u,
     );
     expect(releasing).toContain(
-      '`@opencoven/dev-cli` is not part of the 0.1 release group',
+      '`@opencoven/dev-cli` is not part of the 0.0.1 release group',
     );
   });
 
