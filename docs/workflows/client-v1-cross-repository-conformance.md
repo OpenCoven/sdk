@@ -24,18 +24,32 @@ verification on those hosts authenticates the root-owned, non-writable
 a required record platform, but Node does not expose the directory-relative
 publication primitives needed to support the aggregator safely on Windows.
 
-There is no passing aggregate in this repository yet. The SDK candidate remains
-`1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
-`0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
-This binding selects merged Chat #262 at
-`cd4be039fd9f49268791dd439b5c024476189ed0`, with signed harness source
-`323c05749dc5d0f970989e85c3859dc178f44944`, tree
-`02950571efd37ef1d1fd7fcc56cf446e9447a0fd`, and unchanged candidate, Coven,
-and frozen Chat production identities. The Cave authority advances to
+There is no passing aggregate in this repository yet. The new 0.0.1 SDK candidate
+is `77d825d17809cfec2fad4acb9b1526b3c4752f9d`, tree
+`697764ae382ca56d6fde39b9929405d86e739d67`, with normalized runtime SHA-256
+`75373cee44e210b6f95491d1e1276506f217a275094835baba6170d919f68801`.
+The frozen Chat consumer is `636f7da96fa178c2c14648f84137091b15a1cb8a`,
+tree `8e20adb1d55f17fb5b5a833bad6c9535d41c98ce`; its four committed vendor
+archives exactly match the preserved candidate tarballs and raw release manifest.
+This binding selects the true merged Chat #261 producer
+`3a1f4e355853b0ab44c317afb36f5e99f3d14037`, tree
+`63078257368d2bda8b1066d7b7dd1149ff1657f5`, not its reviewed PR head.
+The committed Phase 1 lock separately authenticates executable harness source
+`d55b40c3315035be4267424b5d5d55c416bb609d`, tree
+`ceb98c9ace85138ef8ddab5a6f7a0aeb7d2008fb`, and reviewed native deltas.
+The Coven pin is unchanged. The production Cave authority remains
 `1bb0a21773fcc2966308ed1900ec6b746fcfdbc8`, tree
 `b05c2baa4b586e2523e1803db8d9fd1182ecd148`, release `0.4.3`.
 
-This is diagnostic authority adoption only. Protected run `34763766701` used
+The SDK package fixture provenance remains
+`e806655a7100e9d589662a6f3817c3fd8cde48ad`, distinct from production Cave.
+The registry retains all 110 ordered Cave assertions and the Cave1bb engine
+provenance. Registry bytes bind the schema, then both bind the lock.
+The old 0.1.0 candidate and its evidence remain historical records.
+`aggregateRecord` remains `null`, `publishingEnabled` remains `false`, and
+all packages remain private. This binding accepts no #38 evidence or #40 SHIP.
+
+The historical diagnostic checkpoint from protected run `34763766701` used
 the pre-adoption Chat producer
 `311dda625b20aaa91c7bf2b19718387ec56acab0` with SDK validator
 `56fcf68e819c7f73201989e3c0f77fc2d17c0112`. Linux and Darwin passed; Windows
@@ -158,7 +172,7 @@ Chat #219 and the final protected acceptance gate remain open.
 The Coven daemon and observation source is merged revision
 `8c3735f374d6bc95e5b6fd107f7e7308fa26a2f8`, tree
 `163ea5b3fb89c741679dce0e121a2c1d9391472f`. Frozen Chat source
-`0da8c4749f57e63601b29d66032f80c9bbac1cb5` retains its native `coven-client`
+`636f7da96fa178c2c14648f84137091b15a1cb8a` retains its native `coven-client`
 Cargo dependency at Coven commit `721437b84026c042e431b0882dcd14fdb29ac07d`.
 This adoption includes
 intervening Coven production and dependency-version changes; a fresh complete
@@ -222,7 +236,7 @@ protected validation after both scopes rotate.
 is the single machine-readable artifact and source lock. It freezes:
 
 - SDK package candidate
-  `1597835325cf3762b51408ff0a565037eeb25f64` and its committed tree;
+  `77d825d17809cfec2fad4acb9b1526b3c4752f9d` and its committed tree;
 - the private-source **conformance artifact** `release-manifest.json`,
   including its exact 1,031-byte canonical JSON representation and SHA-256;
 - the four package names, versions, release filenames, Chat vendor paths,
@@ -384,13 +398,13 @@ After the protected jobs complete, the SDK verifier downloads and authenticates
 the records before producing the exact aggregate bytes. Copy those bytes into:
 
 ```text
-docs/client-v1-cross-repository-results/1597835325cf3762b51408ff0a565037eeb25f64.json
+docs/client-v1-cross-repository-results/77d825d17809cfec2fad4acb9b1526b3c4752f9d.json
 ```
 
 Create the sibling reviewed evidence index:
 
 ```text
-docs/client-v1-cross-repository-results/1597835325cf3762b51408ff0a565037eeb25f64.index.json
+docs/client-v1-cross-repository-results/77d825d17809cfec2fad4acb9b1526b3c4752f9d.index.json
 ```
 
 The index records the expected aggregate and primary-record digests, exact
@@ -447,7 +461,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`cd4be039fd9f49268791dd439b5c024476189ed0` compatible with the reviewed
+`3a1f4e355853b0ab44c317afb36f5e99f3d14037` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub

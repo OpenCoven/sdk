@@ -19,7 +19,8 @@ in the existing delivery program describe the original scope and evidence,
 not authorization to publish either version.
 
 The source preparation now adopts 0.0.1 in all four package manifests and
-initial changelogs; it is not a SHIP disposition or a new frozen candidate.
+initial changelogs and freezes that private candidate's exact source and
+tarball identities. This is not accepted #38 evidence or a #40 SHIP disposition.
 `publishingEnabled` remains `false`, all packages remain private, and
 `conformanceEvidence.aggregateRecord` remains unset. The private CLI retains
 its independent 0.1.0 version while consuming exact 0.0.1 workspace dependencies.
@@ -47,10 +48,16 @@ the Coven daemon fixtures are byte-for-byte unchanged.
 Any changed source or fixture requires fresh candidate identity and conformance
 evidence under the existing release rules. Do not use the old source freeze to
 claim verification of this preparation.
-`conformance/client-v1-cross-repository-lock.json` still binds candidate
-`1597835325cf3762b51408ff0a565037eeb25f64` at 0.1.0, including its
-12,308-byte Cave fixture; the adopted fixture is 18,280 bytes. That historical
-lock, its tarball hashes, and `release.config.json` have not been relabeled.
+`conformance/client-v1-cross-repository-lock.json` now binds the new 0.0.1
+candidate `77d825d17809cfec2fad4acb9b1526b3c4752f9d`, tree
+`697764ae382ca56d6fde39b9929405d86e739d67`, including its 18,280-byte Cave
+fixture. Package fixture provenance remains the reviewed
+`e806655a7100e9d589662a6f3817c3fd8cde48ad`; production Cave authority is
+separately pinned to `1bb0a21773fcc2966308ed1900ec6b746fcfdbc8`.
+The historical 0.1.0 candidate
+`1597835325cf3762b51408ff0a565037eeb25f64`, its 12,308-byte fixture, tarballs,
+and prior evidence remain historical inputs, not relabeled 0.0.1 evidence.
+This source binding does not accept #38 evidence or authorize #40 SHIP.
 
 ### Ordered preparation checklist
 
@@ -69,7 +76,9 @@ lock, its tarball hashes, and `release.config.json` have not been relabeled.
   reviewed contract, including rejection of genuinely incompatible versions.
   Retain the existing Node support policy and release safeguards. These local
   checks are not committed-candidate or cross-platform release evidence.
-- [ ] Freeze a new reviewed candidate and obtain complete #38 evidence for
+- [x] Freeze the new 0.0.1 candidate and bind its actual package bytes to the
+  reviewed Chat consumer and merged producer.
+- [ ] Obtain complete #38 evidence for
   `darwin-arm64`, `linux-x64`, and `win32-x64`. Preserve the existing 0.1.0
   evidence as historical input; do not relabel its tarballs or hashes.
   Commit the accepted aggregate and its index, and bind them in release
@@ -275,10 +284,10 @@ trailing newline. Its shape is:
     "commit": "<release-commit>",
     "repository": "OpenCoven/sdk",
     "runtimeManifest": {
-      "candidateCommit": "1597835325cf3762b51408ff0a565037eeb25f64",
-      "candidateTree": "f2c2478c77293560be6b04199b641fa467a2cc2b",
+      "candidateCommit": "77d825d17809cfec2fad4acb9b1526b3c4752f9d",
+      "candidateTree": "697764ae382ca56d6fde39b9929405d86e739d67",
       "file": "publication-source-manifest.json",
-      "runtimeSha256": "ba1b822d45e130579209f6da4fa11bdac775b0213c08ffb3af1838448207733f",
+      "runtimeSha256": "75373cee44e210b6f95491d1e1276506f217a275094835baba6170d919f68801",
       "sha256": "<raw-source-manifest-sha256>",
       "size": "<raw-source-manifest-size>"
     },
@@ -310,23 +319,27 @@ trailing newline. Its shape is:
 }
 ```
 
-For 0.1, `release.config.json` also freezes the native Chat/real-authority
+For 0.0.1, `release.config.json` also freezes the native Chat/real-authority
 conformance matrix to `darwin-arm64`, `linux-x64`, and `win32-x64`. That
 release-gate matrix is narrower than the published package Node runtime
 support and does not by itself authorize release; #38 still requires one
 passing evidence record for each target.
 
-The frozen Chat production source remains
-`0da8c4749f57e63601b29d66032f80c9bbac1cb5` with its reviewed native deltas.
-This binding selects merged Chat #262 at
-`cd4be039fd9f49268791dd439b5c024476189ed0`, with signed harness source
-`323c05749dc5d0f970989e85c3859dc178f44944`, tree
-`02950571efd37ef1d1fd7fcc56cf446e9447a0fd`, and unchanged candidate, Coven,
-and frozen Chat production identities. The Cave authority advances to
+The frozen Chat consumer is
+`636f7da96fa178c2c14648f84137091b15a1cb8a`, tree
+`8e20adb1d55f17fb5b5a833bad6c9535d41c98ce`, with all four committed vendor
+archives byte-identical to candidate 77d825d. This binding selects the true
+merged Chat #261 producer `3a1f4e355853b0ab44c317afb36f5e99f3d14037`,
+tree `63078257368d2bda8b1066d7b7dd1149ff1657f5`, not its reviewed PR head.
+Its committed Phase 1 lock separately authenticates executable harness source
+`d55b40c3315035be4267424b5d5d55c416bb609d`, tree
+`ceb98c9ace85138ef8ddab5a6f7a0aeb7d2008fb`, and reviewed native deltas.
+The Coven pin is unchanged. The production Cave authority remains
 `1bb0a21773fcc2966308ed1900ec6b746fcfdbc8`, tree
 `b05c2baa4b586e2523e1803db8d9fd1182ecd148`, release `0.4.3`.
 
-This is diagnostic authority adoption only. Protected run `34763766701` used
+This is a source-only candidate binding, not accepted platform evidence.
+The historical diagnostic checkpoint from protected run `34763766701` used
 the pre-adoption Chat producer
 `311dda625b20aaa91c7bf2b19718387ec56acab0` with SDK validator
 `56fcf68e819c7f73201989e3c0f77fc2d17c0112`. Linux and Darwin passed; Windows
@@ -493,9 +506,9 @@ as documented in
 
 Before advancing this candidate after that blocker is resolved, copy the
 canonical aggregate to
-`docs/client-v1-cross-repository-results/1597835325cf3762b51408ff0a565037eeb25f64.json`,
+`docs/client-v1-cross-repository-results/77d825d17809cfec2fad4acb9b1526b3c4752f9d.json`,
 and add the sibling reviewed evidence index
-`docs/client-v1-cross-repository-results/1597835325cf3762b51408ff0a565037eeb25f64.index.json`.
+`docs/client-v1-cross-repository-results/77d825d17809cfec2fad4acb9b1526b3c4752f9d.index.json`.
 The index is a reviewed locator and expected-value record, not an
 authentication oracle. Release readiness uses the standard GitHub workflow
 token to fetch the exact Chat workflow bytes, run, job, and artifact records
