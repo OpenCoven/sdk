@@ -36,8 +36,9 @@ The conformance build distinguishes fixed native launch stages while preserving
 the desktop `service_unavailable` boundary. The worker-fence correction retains
 exclusion while a launch worker is outstanding and permits recovery when its
 result channel has closed. Quotas, permissions, and readiness deadlines remain
-unchanged. Protected run `34756443652` passed independently inspected Linux and
-macOS identity, timing, and all 197 ordered assertions, but Windows failed at
+unchanged. Historical protected run `34756443652` used the pre-#259 Chat producer
+`421beab1404c52638ce0063196a27791e6b05f02`. It passed independently inspected Linux
+and macOS identity, timing, and all 197 ordered assertions, but Windows failed at
 `phase1.native-scenarios.launch.service-unavailable`. There was no Windows record;
 aggregate validation and attestation were skipped. Fresh protected evidence is
 required.
