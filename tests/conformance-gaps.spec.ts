@@ -3839,6 +3839,29 @@ describe('unresolved SDK #38 conformance gaps', () => {
           '$false -and $validatorRevision -cne $protectedValidatorRevision',
         ),
       },
+      ...[
+        { name: 'missing bounded supervisor block', block: '' },
+        {
+          name: 'repeated bounded supervisor block',
+          block: `${TEST_WINDOWS_SUPERVISOR_BLOCK}\n${TEST_WINDOWS_SUPERVISOR_BLOCK}`,
+        },
+        {
+          name: 'altered bounded supervisor decoder',
+          block: TEST_WINDOWS_SUPERVISOR_BLOCK.replace('ReadByte() -ne -1', 'ReadByte() -ne -2'),
+        },
+      ].map(({ name, block }) => ({
+        name,
+        workflow: replaceWorkflowRun(
+          TEST_PRODUCER_WORKFLOW_TEXT,
+          TEST_WINDOWS_BOOTSTRAP_COMMAND,
+          TEST_WINDOWS_BOOTSTRAP_COMMAND.replace(TEST_WINDOWS_SUPERVISOR_BLOCK, block),
+        ),
+        synchronizedScriptDigest: {
+          field: 'windowsBootstrapScriptSha256',
+          step: 'Bootstrap supervised Windows conformance',
+        },
+        expectedError: /exact reviewed decoded Windows supervisor source/u,
+      })),
       {
         name: 'Windows quarantine skips an unreadable nonzero-session owner',
         workflow: mutateWindowsSupervisor((source) => source.replace(
@@ -3850,7 +3873,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           field: 'windowsBootstrapScriptSha256',
           step: 'Bootstrap supervised Windows conformance',
         },
-        expectedError: /exact canonical Windows bootstrap source/u,
+        expectedError: /exact reviewed decoded Windows supervisor source/u,
       },
       {
         name: 'Windows quarantine drops ambiguous owner process diagnostics',
@@ -3866,7 +3889,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           field: 'windowsBootstrapScriptSha256',
           step: 'Bootstrap supervised Windows conformance',
         },
-        expectedError: /exact canonical Windows bootstrap source/u,
+        expectedError: /exact reviewed decoded Windows supervisor source/u,
       },
       {
         name: 'substituted Windows bootstrap shell',

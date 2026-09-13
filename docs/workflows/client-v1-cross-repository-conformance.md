@@ -49,9 +49,9 @@ bootstrap and harness aggregate quotas. Quarantine must complete before pins
 are released and owned profile/account cleanup proceeds; failure retains
 ownership for retry.
 
-The Windows bootstrap is accepted only after the exact parent script hash
-gate. Its one canonical bounded gzip/base64 block is then decoded against an
-independently reviewed C# size and digest. Quarantine regression tests mutate
+The Windows bootstrap must contain exactly one canonical bounded gzip/base64
+block matching the independently reviewed C# size and digest. The exact parent
+script hash gate remains mandatory after this bounded source check. Quarantine regression tests mutate
 and re-encode that source through the actual workflow verifier, preserving
 coverage across the compressed representation.
 

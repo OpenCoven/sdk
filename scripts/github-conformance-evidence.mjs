@@ -1009,14 +1009,6 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
   ) {
     workflowError('does not use the exact canonical Windows child bootstrap source');
   }
-  if (
-    producer.workflow.windowsBootstrapScriptSha256
-      !== REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256
-    || sha256(windowsBootstrap.run)
-      !== REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256
-  ) {
-    workflowError('does not use the exact canonical Windows bootstrap source');
-  }
   try {
     const blocks = windowsBootstrap.run.match(
       /^# BEGIN bounded Windows supervisor source v1\n[\s\S]*?^# END bounded Windows supervisor source v1$/gmu,
@@ -1025,6 +1017,14 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
     decodeWindowsSupervisorSource(blocks[0], REVIEWED_WINDOWS_SUPERVISOR_SOURCE);
   } catch {
     workflowError('does not bind the exact reviewed decoded Windows supervisor source');
+  }
+  if (
+    producer.workflow.windowsBootstrapScriptSha256
+      !== REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256
+    || sha256(windowsBootstrap.run)
+      !== REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256
+  ) {
+    workflowError('does not use the exact canonical Windows bootstrap source');
   }
   if (
     !usesReviewedWindowsProcessLauncher(
