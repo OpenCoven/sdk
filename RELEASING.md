@@ -329,12 +329,12 @@ The frozen Chat consumer is
 `636f7da96fa178c2c14648f84137091b15a1cb8a`, tree
 `8e20adb1d55f17fb5b5a833bad6c9535d41c98ce`, with all four committed vendor
 archives byte-identical to candidate 77d825d. This binding selects the true
-merged Chat #261 producer `3a1f4e355853b0ab44c317afb36f5e99f3d14037`,
-tree `63078257368d2bda8b1066d7b7dd1149ff1657f5`. Its source-bound producer
-head is `c237ea5315d2bf2f68972ed6f332852634bcfa70` with the same tree.
+merged Chat #263 producer `5be5775e43cfdb3424e1a8361e11d5d59cbaaabb`,
+tree `c4889adf0e84deda98d7709f0cac45e70c847683`. Its source-bound producer
+head is `a3c6ff98294320ba37e3f147d5db5b2a85121923` with the same tree.
 Its committed Phase 1 lock separately authenticates executable harness source
-`d55b40c3315035be4267424b5d5d55c416bb609d`, tree
-`ceb98c9ace85138ef8ddab5a6f7a0aeb7d2008fb`, and reviewed native deltas.
+`ad8d5f3e5e937c398c5d6d8f7bbbb190b4ed499a`, tree
+`dd4ffa0af4c39aefee9fc675ba5c804d7fe0e678`, and reviewed native deltas.
 The Coven pin is unchanged. The production Cave authority remains
 `1bb0a21773fcc2966308ed1900ec6b746fcfdbc8`, tree
 `b05c2baa4b586e2523e1803db8d9fd1182ecd148`, release `0.4.3`.
@@ -348,6 +348,18 @@ failed at `phase1.native-scenarios.launch.discovery-not-found`. Artifact
 validation, attestations, and aggregation were skipped, so no aggregate
 exists. The run is pre-adoption evidence and does not establish protected
 success or a root-cause repair. Fresh protected evidence is required.
+
+Protected run `34773356378` later failed closed on Windows with
+`access-denied`, root `cave-checkout`, operation
+`directory-enumeration-depth-3-plus`, and `repeat=readable`. Chat #263 repairs
+only that classified case by accepting one fresh, complete, bounded retry
+under the same validated isolated identity after an initial access denial.
+Partial, missing, persistently denied, metadata, and file-length outcomes
+remain terminal. Full ordinary Chat CI run `34779648793` passed, including the
+native Windows supervisor regression, but is not protected conformance
+evidence. The SDK validator must merge and both protected validator scopes
+must rotate before a fresh protected run can satisfy platform, artifact,
+attestation, and aggregation gates.
 
 The adopted Cave authority adds bounded, source-attributed discovery
 read/publication diagnostics without forwarding raw errors or changing

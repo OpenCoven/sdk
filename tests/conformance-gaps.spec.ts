@@ -197,8 +197,8 @@ const supervisorBlocks = TEST_WINDOWS_BOOTSTRAP_COMMAND.match(
 if (supervisorBlocks?.length !== 1) throw new Error('Missing canonical supervisor block');
 const TEST_WINDOWS_SUPERVISOR_BLOCK = supervisorBlocks[0];
 const TEST_WINDOWS_SUPERVISOR_SOURCE = decodeWindowsSupervisorSource(TEST_WINDOWS_SUPERVISOR_BLOCK, {
-  size: 351497,
-  sha256: '281acdeba5ee8dd022fd0451bd4ede6af8431aba8810f1683ce7077cc627fcb0',
+  size: 352878,
+  sha256: 'd08748d1a7ce3cc3964ce4520cc501f514d5777ed102ac5f57ebc20b75e7bb65',
 }).toString('utf8');
 const TEST_WINDOWS_CHILD_BOOTSTRAP = requireTestWindowsChildBootstrap(
   TEST_WINDOWS_BOOTSTRAP_COMMAND,
@@ -1799,17 +1799,17 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '3a1f4e355853b0ab44c317afb36f5e99f3d14037',
-      tree: '63078257368d2bda8b1066d7b7dd1149ff1657f5',
+      commit: '5be5775e43cfdb3424e1a8361e11d5d59cbaaabb',
+      tree: 'c4889adf0e84deda98d7709f0cac45e70c847683',
       source: {
         repository: 'OpenCoven/chat',
-        commit: 'c237ea5315d2bf2f68972ed6f332852634bcfa70',
-        tree: '63078257368d2bda8b1066d7b7dd1149ff1657f5',
+        commit: 'a3c6ff98294320ba37e3f147d5db5b2a85121923',
+        tree: 'c4889adf0e84deda98d7709f0cac45e70c847683',
       },
       harnessAuthority: {
         repository: 'OpenCoven/chat',
-        commit: 'd55b40c3315035be4267424b5d5d55c416bb609d',
-        tree: 'ceb98c9ace85138ef8ddab5a6f7a0aeb7d2008fb',
+        commit: 'ad8d5f3e5e937c398c5d6d8f7bbbb190b4ed499a',
+        tree: 'dd4ffa0af4c39aefee9fc675ba5c804d7fe0e678',
       },
       packageManifest: {
         path: 'package.json',
@@ -1829,9 +1829,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 166_782,
+        size: 167_054,
         sha256:
-          'a64fcdaf3fbd51e6cc0d3eb293ec5ac6a27df820182f0e89c272ce9cadfea566',
+          'e0d848fc82bd97d968b661a442420174d0690dd108d9a2c926c292f6505fb342',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1850,7 +1850,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          'd2fab26fd42568848a7c7c77ffdaa4046f9cdf7527febe4d7fd85ec9d1cf52c8',
+          'e83614ba7d09c02034db470c5d6c7b9681801ac4a20420b5df6342fc9916d539',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1887,8 +1887,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '3a1f4e355853b0ab44c317afb36f5e99f3d14037',
-        sourceDigest: '3a1f4e355853b0ab44c317afb36f5e99f3d14037',
+        signerDigest: '5be5775e43cfdb3424e1a8361e11d5d59cbaaabb',
+        sourceDigest: '5be5775e43cfdb3424e1a8361e11d5d59cbaaabb',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
