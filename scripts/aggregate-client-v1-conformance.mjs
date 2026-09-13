@@ -30,6 +30,7 @@ import {
   parseFrozenConformanceLock,
   parsePlatformEvidence,
   serializeCanonicalJson,
+  validateChatProducerAuthorityBinding,
   validateFrozenConformanceBindings,
 } from './conformance-contract.mjs';
 import {
@@ -153,6 +154,31 @@ function runGit(
       cause: error,
     });
   }
+}
+
+function inspectGitCommitAuthority(root, commit, label) {
+  const sha = runGit(
+    root,
+    ['rev-parse', `${commit}^{commit}`],
+    label,
+  ).trim();
+  const tree = runGit(
+    root,
+    ['rev-parse', `${commit}^{tree}`],
+    label,
+  ).trim();
+  const parentText = runGit(
+    root,
+    ['show', '-s', '--format=%P', commit],
+    label,
+  ).trim();
+  return {
+    sha,
+    tree: { sha: tree },
+    parents: parentText.length === 0
+      ? []
+      : parentText.split(' ').map((parent) => ({ sha: parent })),
+  };
 }
 
 function countLocalExcludeRules(root, label, gitOptions) {
@@ -1271,6 +1297,35 @@ async function runConformanceAggregationWithScrubbedEnvironment(argv) {
       tree: evidenceProducer.tree,
     },
     'Chat harness checkout',
+  );
+  validateChatProducerAuthorityBinding(
+    frozenLock,
+    {
+      producerCommit: inspectGitCommitAuthority(
+        harnessCheckout.root,
+        evidenceProducer.commit,
+        'Chat merged producer commit',
+      ),
+      sourceCommit: inspectGitCommitAuthority(
+        harnessCheckout.root,
+        evidenceProducer.source.commit,
+        'Chat source-bound producer commit',
+      ),
+      harnessCommit: inspectGitCommitAuthority(
+        harnessCheckout.root,
+        evidenceProducer.harnessAuthority.commit,
+        'Chat historical harness commit',
+      ),
+      phase1LockText: runGit(
+        harnessCheckout.root,
+        [
+          'show',
+          `${evidenceProducer.commit}:phase1-conformance.lock.json`,
+        ],
+        'Chat producer phase1 lock',
+      ),
+    },
+    'Chat producer checkout authority',
   );
   for (const expected of frozenLock.candidate.cavePackageFiles) {
     assertCommittedFileMetadata(

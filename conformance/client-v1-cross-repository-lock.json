@@ -10,8 +10,8 @@
     "identity": "urn:opencoven:schema:client-v1-cross-repository-platform-evidence:2",
     "path": "conformance/client-v1-cross-repository-evidence.schema.json",
     "version": 2,
-    "size": 23174,
-    "sha256": "0bdbee8cb143cfd9c2a4e29acb1f63b172ceb2dbfef92fbdfb1515e2e76e084a"
+    "size": 23176,
+    "sha256": "fdb7760db38155959e9ec4a8429ea2187982bc9d2cecb109ddf06ad66c5a466a"
   },
   "candidate": {
     "repository": "OpenCoven/sdk",
@@ -167,6 +167,16 @@
     "repository": "OpenCoven/chat",
     "commit": "3a1f4e355853b0ab44c317afb36f5e99f3d14037",
     "tree": "63078257368d2bda8b1066d7b7dd1149ff1657f5",
+    "source": {
+      "repository": "OpenCoven/chat",
+      "commit": "c237ea5315d2bf2f68972ed6f332852634bcfa70",
+      "tree": "63078257368d2bda8b1066d7b7dd1149ff1657f5"
+    },
+    "harnessAuthority": {
+      "repository": "OpenCoven/chat",
+      "commit": "d55b40c3315035be4267424b5d5d55c416bb609d",
+      "tree": "ceb98c9ace85138ef8ddab5a6f7a0aeb7d2008fb"
+    },
     "packageManifest": {
       "path": "package.json",
       "size": 4044,

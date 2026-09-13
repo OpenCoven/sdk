@@ -762,6 +762,16 @@ const TEST_COMPATIBLE_PRODUCER = {
   repository: 'OpenCoven/chat',
   commit: 'f'.repeat(40),
   tree: 'c'.repeat(40),
+  source: {
+    repository: 'OpenCoven/chat',
+    commit: 'e'.repeat(40),
+    tree: 'c'.repeat(40),
+  },
+  harnessAuthority: {
+    repository: 'OpenCoven/chat',
+    commit: 'd'.repeat(40),
+    tree: 'b'.repeat(40),
+  },
   packageManifest: {
     path: 'package.json',
     size: 3_500,
@@ -1791,6 +1801,16 @@ describe('unresolved SDK #38 conformance gaps', () => {
       repository: 'OpenCoven/chat',
       commit: '3a1f4e355853b0ab44c317afb36f5e99f3d14037',
       tree: '63078257368d2bda8b1066d7b7dd1149ff1657f5',
+      source: {
+        repository: 'OpenCoven/chat',
+        commit: 'c237ea5315d2bf2f68972ed6f332852634bcfa70',
+        tree: '63078257368d2bda8b1066d7b7dd1149ff1657f5',
+      },
+      harnessAuthority: {
+        repository: 'OpenCoven/chat',
+        commit: 'd55b40c3315035be4267424b5d5d55c416bb609d',
+        tree: 'ceb98c9ace85138ef8ddab5a6f7a0aeb7d2008fb',
+      },
       packageManifest: {
         path: 'package.json',
         size: 4_044,
@@ -2007,6 +2027,47 @@ describe('unresolved SDK #38 conformance gaps', () => {
     }
   });
 
+  test('keeps merged producer, source head, and harness authority distinct', () => {
+    const mutations: Array<
+      (producer: {
+        commit: string;
+        tree: string;
+        source: { commit: string; tree: string };
+        harnessAuthority: { commit: string; tree: string };
+      }) => void
+    > = [
+      (producer) => {
+        producer.source.commit = producer.commit;
+      },
+      (producer) => {
+        producer.source.tree = 'a'.repeat(40);
+      },
+      (producer) => {
+        producer.harnessAuthority.commit = producer.source.commit;
+      },
+      (producer) => {
+        producer.harnessAuthority.tree = producer.tree;
+      },
+    ];
+
+    for (const mutate of mutations) {
+      const lock = createCompatibleLock();
+      const producer = lock.evidenceProducer as {
+        commit: string;
+        tree: string;
+        source: { commit: string; tree: string };
+        harnessAuthority: { commit: string; tree: string };
+      };
+      mutate(producer);
+      expect(() =>
+        contract.parseFrozenConformanceLock(
+          contract.serializeCanonicalJson(lock),
+          'conflated compatible producer',
+        ),
+      ).toThrow(/does not identify a schema-v2 Chat producer/u);
+    }
+  });
+
   test('freezes every Cave assertion and the complete exclusion set', () => {
     const registry = readRegistry() as {
       schemaVersion: number;
@@ -2215,7 +2276,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       ).sdkPackages;
       for (const entry of packages) {
         entry.sha256 =
-          '9a574e8bd5178ce2aa20db97e8a741c7c9569515546a2d3089406f41a9d040fe';
+          '5f41291d303cf25e5ff4a3c40d0169f025f7e218da8637fc905935524b5e4e2b';
       }
     }
     expect(() => aggregate(repeated)).toThrow(/frozen SDK package metadata/u);
@@ -2434,6 +2495,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
         repository: 'OpenCoven/chat',
         commit: 'f'.repeat(40),
         tree: 'c'.repeat(40),
+        source: structuredClone(TEST_COMPATIBLE_PRODUCER.source),
+        harnessAuthority: structuredClone(
+          TEST_COMPATIBLE_PRODUCER.harnessAuthority,
+        ),
         harness: {
           path: 'scripts/phase1-conformance.mjs',
           version: '0.1.0',
@@ -2495,6 +2560,20 @@ describe('unresolved SDK #38 conformance gaps', () => {
         name: 'tree',
         mutate: (producer) => {
           producer.tree = 'b'.repeat(40);
+        },
+      },
+      {
+        name: 'source head',
+        mutate: (producer) => {
+          (producer.source as { commit: string }).commit = 'a'.repeat(40);
+        },
+      },
+      {
+        name: 'harness authority',
+        mutate: (producer) => {
+          (
+            producer.harnessAuthority as { commit: string }
+          ).commit = 'a'.repeat(40);
         },
       },
       {
@@ -2637,6 +2716,55 @@ describe('unresolved SDK #38 conformance gaps', () => {
     const aggregatePath =
       'docs/client-v1-cross-repository-results/77d825d17809cfec2fad4acb9b1526b3c4752f9d.json';
     const producer = TEST_COMPATIBLE_PRODUCER;
+    const typedLock = lock as unknown as FrozenConformanceLock;
+    const phase1AuthorityLock = {
+      version: 5,
+      chat: {
+        repository: typedLock.sources.chat.repository,
+        revision: typedLock.sources.chat.commit,
+      },
+      sdk: {
+        repository: typedLock.candidate.repository,
+        revision: typedLock.candidate.commit,
+      },
+      cave: {
+        repository: typedLock.sources.cave.repository,
+        revision: typedLock.sources.cave.commit,
+      },
+      coven: {
+        repository: typedLock.sources.coven.repository,
+        revision: typedLock.sources.coven.commit,
+      },
+      harness: {
+        repository: producer.harnessAuthority.repository,
+        revision: producer.harnessAuthority.commit,
+      },
+      harnessAuthority: {
+        revision: producer.harnessAuthority.commit,
+        tree: producer.harnessAuthority.tree,
+      },
+      release: {
+        sdkManifest: {
+          version: typedLock.candidate.releaseManifest.version,
+          sha256: typedLock.candidate.releaseManifest.sha256,
+        },
+        sdkArtifacts: typedLock.candidate.sdkPackages.map((entry) => ({
+          packageName: entry.packageName,
+          releaseFile: entry.releaseFile,
+          vendorFile: entry.vendorPath.split('/').at(-1),
+          size: entry.size,
+          sha256: entry.sha256,
+        })),
+        caveVersion: typedLock.sources.cave.releaseVersion,
+        covenVersion: typedLock.sources.coven.releaseVersion,
+        consumerLock: typedLock.sources.chat.consumerLock,
+        caveArtifacts: {
+          assertionEngine: typedLock.sources.cave.files[0]!,
+          contractFixture: typedLock.sources.cave.files[1]!,
+          hpkeVectors: typedLock.sources.cave.files[3]!,
+        },
+      },
+    };
     const toolchain = lock.toolchain as {
       nodeVersion: string;
       pnpmVersion: string;
@@ -2675,6 +2803,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         repository: producer.repository,
         commit: producer.commit,
         tree: producer.tree,
+        source: producer.source,
+        harnessAuthority: producer.harnessAuthority,
         harness: producer.harness,
         workflow: producer.workflow,
       },
@@ -2751,8 +2881,39 @@ describe('unresolved SDK #38 conformance gaps', () => {
       ghCalls.push([...arguments_]);
       if (arguments_[0] === 'api') {
         const endpoint = arguments_.at(-1) ?? '';
+        if (endpoint.includes('/contents/phase1-conformance.lock.json')) {
+          return contract.serializeCanonicalJson(phase1AuthorityLock);
+        }
         if (endpoint.includes('/contents/.github/workflows/')) {
           return TEST_PRODUCER_WORKFLOW_TEXT;
+        }
+        const commitMatch = /\/git\/commits\/([0-9a-f]{40})$/u.exec(endpoint);
+        if (commitMatch !== null) {
+          const commit = commitMatch[1];
+          if (commit === producer.commit) {
+            return JSON.stringify({
+              sha: commit,
+              tree: { sha: producer.tree },
+              parents: [
+                { sha: 'a'.repeat(40) },
+                { sha: producer.source.commit },
+              ],
+            });
+          }
+          if (commit === producer.source.commit) {
+            return JSON.stringify({
+              sha: commit,
+              tree: { sha: producer.source.tree },
+              parents: [{ sha: producer.harnessAuthority.commit }],
+            });
+          }
+          if (commit === producer.harnessAuthority.commit) {
+            return JSON.stringify({
+              sha: commit,
+              tree: { sha: producer.harnessAuthority.tree },
+              parents: [{ sha: 'a'.repeat(40) }],
+            });
+          }
         }
         if (endpoint.endsWith('/environments/client-v1-conformance')) {
           return JSON.stringify(protectedEnvironment);
@@ -3106,7 +3267,35 @@ describe('unresolved SDK #38 conformance gaps', () => {
       ghCalls.filter(
         (arguments_) => arguments_[0] === 'api',
       ),
-    ).toHaveLength(13);
+    ).toHaveLength(17);
+    expect(
+      ghCalls.some((arguments_) =>
+        arguments_.includes(
+          `repos/OpenCoven/chat/git/commits/${producer.commit}`,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      ghCalls.some((arguments_) =>
+        arguments_.includes(
+          `repos/OpenCoven/chat/git/commits/${producer.source.commit}`,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      ghCalls.some((arguments_) =>
+        arguments_.includes(
+          `repos/OpenCoven/chat/git/commits/${producer.harnessAuthority.commit}`,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      ghCalls.some((arguments_) =>
+        arguments_.some((argument) =>
+          argument.includes('/contents/phase1-conformance.lock.json'),
+        ),
+      ),
+    ).toBe(true);
     expect(
       ghCalls.filter(
         (arguments_) =>
@@ -3139,6 +3328,78 @@ describe('unresolved SDK #38 conformance gaps', () => {
         );
       }),
     ).toBe(true);
+
+    const authorityResponseOverride = (
+      endpointSuffix: string,
+      response: string,
+    ) => (
+      command: string,
+      arguments_: string[],
+      options: {
+        cwd?: string;
+        env?: Record<string, string | undefined>;
+      },
+    ) => {
+      if (
+        arguments_[0] === 'api'
+        && (arguments_.at(-1) ?? '').includes(endpointSuffix)
+      ) {
+        return response;
+      }
+      return execute(command, arguments_, options);
+    };
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInput,
+        execute: authorityResponseOverride(
+          `/git/commits/${producer.source.commit}`,
+          JSON.stringify({
+            sha: producer.source.commit,
+            tree: { sha: 'a'.repeat(40) },
+            parents: [{ sha: 'b'.repeat(40) }],
+          }),
+        ),
+      } as never),
+    ).toThrow(/Git identities do not match the frozen producer/u);
+
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInput,
+        execute: authorityResponseOverride(
+          `/git/commits/${producer.source.commit}`,
+          JSON.stringify({
+            sha: producer.source.commit,
+            tree: { sha: producer.source.tree },
+            parents: [{ sha: 'b'.repeat(40) }],
+          }),
+        ),
+      } as never),
+    ).toThrow(/Git identities do not match the frozen producer/u);
+
+    const wrongPhase1Authority = structuredClone(phase1AuthorityLock);
+    wrongPhase1Authority.harnessAuthority.revision = 'a'.repeat(40);
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInput,
+        execute: authorityResponseOverride(
+          '/contents/phase1-conformance.lock.json',
+          contract.serializeCanonicalJson(wrongPhase1Authority),
+        ),
+      } as never),
+    ).toThrow(/phase1 harness authority does not match/u);
+
+    const wrongCaveArtifact = structuredClone(phase1AuthorityLock);
+    wrongCaveArtifact.release.caveArtifacts.assertionEngine.sha256 =
+      'a'.repeat(64);
+    expect(() =>
+      verifyGitHubConformanceEvidence({
+        ...verificationInput,
+        execute: authorityResponseOverride(
+          '/contents/phase1-conformance.lock.json',
+          contract.serializeCanonicalJson(wrongCaveArtifact),
+        ),
+      } as never),
+    ).toThrow(/phase1 Cave artifacts do not match/u);
 
     const arbitraryActionDisabledOfficialSteps = beforeProtectedUpload(
       TEST_PRODUCER_WORKFLOW_TEXT,
