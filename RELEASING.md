@@ -318,21 +318,29 @@ passing evidence record for each target.
 
 The frozen Chat production source remains
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` with its reviewed native deltas.
-This binding selects merged Chat #259 at
-`311dda625b20aaa91c7bf2b19718387ec56acab0`, with signed harness source
-`8d8d093655c0558a468ae9055550a308df909498` and unchanged counterpart revisions.
-The verified actual merge preserves the tested tree and signed frozen source ancestry.
+This binding selects merged Chat #262 at
+`cd4be039fd9f49268791dd439b5c024476189ed0`, with signed harness source
+`323c05749dc5d0f970989e85c3859dc178f44944`, tree
+`02950571efd37ef1d1fd7fcc56cf446e9447a0fd`, and unchanged candidate, Coven,
+and frozen Chat production identities. The Cave authority advances to
+`1bb0a21773fcc2966308ed1900ec6b746fcfdbc8`, tree
+`b05c2baa4b586e2523e1803db8d9fd1182ecd148`, release `0.4.3`.
 
-The conformance build distinguishes fixed native launch stages while preserving
-the desktop `service_unavailable` boundary. The worker-fence correction retains
-exclusion while a launch worker is outstanding and permits recovery when its
-result channel has closed. Quotas, permissions, and readiness deadlines remain
-unchanged. Historical protected run `34756443652` used the pre-#259 Chat producer
-`421beab1404c52638ce0063196a27791e6b05f02`. It passed independently inspected Linux
-and macOS identity, timing, and all 197 ordered assertions, but Windows failed at
-`phase1.native-scenarios.launch.service-unavailable`. There was no Windows record;
-aggregate validation and attestation were skipped. Fresh protected evidence is
-required.
+This is diagnostic authority adoption only. Protected run `34763766701` used
+the pre-adoption Chat producer
+`311dda625b20aaa91c7bf2b19718387ec56acab0` with SDK validator
+`56fcf68e819c7f73201989e3c0f77fc2d17c0112`. Linux and Darwin passed; Windows
+failed at `phase1.native-scenarios.launch.discovery-not-found`. Artifact
+validation, attestations, and aggregation were skipped, so no aggregate
+exists. The run is pre-adoption evidence and does not establish protected
+success or a root-cause repair. Fresh protected evidence is required.
+
+The adopted Cave authority adds bounded, source-attributed discovery
+read/publication diagnostics without forwarding raw errors or changing
+authority gates. The frozen Chat production decoder is unchanged; the signed
+harness decoder advances only to recognize those bounded categories.
+Independent source comparison, readiness acceptance, and fail-closed behavior
+remain unchanged.
 
 Both harness clients give `cave_launch` a 40-second response budget around
 Rust's 30-second readiness deadline. Other RPCs retain their 10-second bound.
