@@ -27,13 +27,14 @@ publication primitives needed to support the aggregator safely on Windows.
 There is no passing aggregate in this repository yet. The SDK candidate remains
 `1597835325cf3762b51408ff0a565037eeb25f64`, with frozen Chat production
 `0da8c4749f57e63601b29d66032f80c9bbac1cb5` and its reviewed native deltas.
-This binding selects merged Chat #251 producer `c487e29492c2fee5d02d630ab26cb1c6dd277f67`,
-pinning executable harness `debeeecf54770c033f65f5b4d2dd1061d3cd3ad3`
+This binding selects merged Chat #254 producer `9a750513f3ffc7a09242993b6b1fac9e2ff88207`,
+pinning harness source revision `e7b9d73cfb3c067333bb2c78194b2cad6e16a34c`
 and merged Cave OpenCoven/coven-cave#5378 at
-`cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. All ten checks passed in pre-merge CI `34732434401` at head
-`00b3c75339f20467bf15e30fb5f7a050f8bae381`. The signed actual merge
-retains that tested tree and the frozen source ancestry. This ordinary CI run
-does not replace fresh protected evidence for the merged producer.
+`cb3d22d1f403dd3b94b02668a599a2bf94999e8b`. The actual merge preserves the tested tree and signed frozen source ancestry. The diagnostic source
+adds bounded pairing failure categories without changing pairing behavior or
+resource limits. Prior protected run `34734409422` passed Linux and macOS but
+failed Windows at the generic pairing stage; validation, aggregation, and
+attestation were skipped. Fresh protected evidence remains required.
 
 Both harness clients give `cave_launch` a 40-second response budget around
 Rust's 30-second readiness deadline. Other RPCs retain their 10-second bound.
@@ -429,7 +430,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the reachable Chat producer at
-`c487e29492c2fee5d02d630ab26cb1c6dd277f67` compatible with the reviewed
+`9a750513f3ffc7a09242993b6b1fac9e2ff88207` compatible with the reviewed
 schema-v2 workflow bytes. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
 merged revision, and all three protected platform records and their GitHub
