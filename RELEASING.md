@@ -53,7 +53,7 @@ candidate `77d825d17809cfec2fad4acb9b1526b3c4752f9d`, tree
 `697764ae382ca56d6fde39b9929405d86e739d67`, including its 18,280-byte Cave
 fixture. Package fixture provenance remains the reviewed
 `e806655a7100e9d589662a6f3817c3fd8cde48ad`; production Cave authority is
-separately pinned to `1bb0a21773fcc2966308ed1900ec6b746fcfdbc8`.
+separately pinned to `8a06421a705c2d7891c3f44cc580c569f6cbe2c1`.
 The historical 0.1.0 candidate
 `1597835325cf3762b51408ff0a565037eeb25f64`, its 12,308-byte fixture, tarballs,
 and prior evidence remain historical inputs, not relabeled 0.0.1 evidence.
@@ -329,15 +329,18 @@ The frozen Chat consumer is
 `636f7da96fa178c2c14648f84137091b15a1cb8a`, tree
 `8e20adb1d55f17fb5b5a833bad6c9535d41c98ce`, with all four committed vendor
 archives byte-identical to candidate 77d825d. This binding selects the true
-merged Chat #263 producer `5be5775e43cfdb3424e1a8361e11d5d59cbaaabb`,
-tree `c4889adf0e84deda98d7709f0cac45e70c847683`. Its source-bound producer
-head is `a3c6ff98294320ba37e3f147d5db5b2a85121923` with the same tree.
+merged Chat #264 producer `68c49d8a1a1ebedc06bdc8793a64c972945a265c`,
+tree `2b8bf03673800e33f0f2c1de49ec7b0717c45ea2`. Its source-bound producer
+head is `0e511721769a2946bc6b637218ffce603be36014` with the same tree.
+The bounded source-authority path authenticates that head through prior merge
+`5be5775e43cfdb3424e1a8361e11d5d59cbaaabb` and source
+`a3c6ff98294320ba37e3f147d5db5b2a85121923`.
 Its committed Phase 1 lock separately authenticates executable harness source
 `ad8d5f3e5e937c398c5d6d8f7bbbb190b4ed499a`, tree
 `dd4ffa0af4c39aefee9fc675ba5c804d7fe0e678`, and reviewed native deltas.
-The Coven pin is unchanged. The production Cave authority remains
-`1bb0a21773fcc2966308ed1900ec6b746fcfdbc8`, tree
-`b05c2baa4b586e2523e1803db8d9fd1182ecd148`, release `0.4.3`.
+The Coven pin is unchanged. The production Cave authority is
+`8a06421a705c2d7891c3f44cc580c569f6cbe2c1`, tree
+`aee0a949cfe058f6c50dc95135f1e6579e759a41`, release `0.4.3`.
 
 This is a source-only candidate binding, not accepted platform evidence.
 The historical diagnostic checkpoint from protected run `34763766701` used
@@ -361,15 +364,28 @@ evidence. The SDK validator must merge and both protected validator scopes
 must rotate before a fresh protected run can satisfy platform, artifact,
 attestation, and aggregation gates.
 
-The adopted Cave authority adds bounded, source-attributed discovery
-read/publication diagnostics without forwarding raw errors or changing
-authority gates. The frozen Chat production decoder is unchanged; the signed
-harness decoder advances only to recognize those bounded categories.
+Protected run `34782181876` then proved that the quota repair cleared the
+previous blocker: Linux and Darwin passed, while Windows reached native launch
+and failed closed at `phase1.native-scenarios.launch.discovery-not-found`.
+The protected supervisor's real-profile `.coven` DACL contains a read-only
+`OWNER RIGHTS` (`S-1-3-4`) ACE. Cave treated that special SID as a foreign
+principal and attempted a DACL rewrite, but the ACE intentionally suppresses
+the owner's implicit `WRITE_DAC`; Cave therefore withheld discovery.
+OpenCoven/coven-cave#5388 admits `OWNER RIGHTS` only when it is an `Allow` ACE
+with no writable rights. Writable owner-rights entries, foreign writers, deny
+entries, inherited DACLs, malformed reports, and unreadable DACLs remain
+refused. Chat #264 binds that Cave merge without changing the supervisor ACL,
+quotas, isolation, waiver policy, publication checks, or deadlines.
+
+The adopted Cave authority retains bounded, source-attributed discovery
+read/publication diagnostics and adds the narrow read-only `OWNER RIGHTS`
+compatibility without forwarding raw errors or changing authority gates. The
+frozen Chat production decoder and signed harness decoder are unchanged.
 Independent merged-producer, source-head, executable-harness, production,
 candidate, Cave, and Coven comparisons remain fail closed. A fresh protected
 run after this validator merges and both validator scopes rotate is required
-to surface Cave's bounded `[read=...; publication=...]` diagnostic pair and
-determine whether a further behavioral repair is necessary.
+to establish whether the repaired publisher produces the Windows record and
+allows validation, attestation, and aggregation to complete.
 Live evidence verification fetches the merged producer, source-head, and
 harness Git commit objects plus the merged producer's
 `phase1-conformance.lock.json`; it rejects commit-graph, tree, revision,

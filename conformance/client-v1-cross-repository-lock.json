@@ -11,7 +11,7 @@
     "path": "conformance/client-v1-cross-repository-evidence.schema.json",
     "version": 2,
     "size": 23176,
-    "sha256": "fdb7760db38155959e9ec4a8429ea2187982bc9d2cecb109ddf06ad66c5a466a"
+    "sha256": "bf80202c36dc21fb6360666102214942e1853caa9c6a4b3d59966221e239888e"
   },
   "candidate": {
     "repository": "OpenCoven/sdk",
@@ -88,8 +88,8 @@
   "sources": {
     "cave": {
       "repository": "OpenCoven/coven-cave",
-      "commit": "1bb0a21773fcc2966308ed1900ec6b746fcfdbc8",
-      "tree": "b05c2baa4b586e2523e1803db8d9fd1182ecd148",
+      "commit": "8a06421a705c2d7891c3f44cc580c569f6cbe2c1",
+      "tree": "aee0a949cfe058f6c50dc95135f1e6579e759a41",
       "releaseVersion": "0.4.3",
       "files": [
         {
@@ -165,13 +165,45 @@
   "evidenceProducer": {
     "status": "compatible",
     "repository": "OpenCoven/chat",
-    "commit": "5be5775e43cfdb3424e1a8361e11d5d59cbaaabb",
-    "tree": "c4889adf0e84deda98d7709f0cac45e70c847683",
+    "commit": "68c49d8a1a1ebedc06bdc8793a64c972945a265c",
+    "tree": "2b8bf03673800e33f0f2c1de49ec7b0717c45ea2",
     "source": {
       "repository": "OpenCoven/chat",
-      "commit": "a3c6ff98294320ba37e3f147d5db5b2a85121923",
-      "tree": "c4889adf0e84deda98d7709f0cac45e70c847683"
+      "commit": "0e511721769a2946bc6b637218ffce603be36014",
+      "tree": "2b8bf03673800e33f0f2c1de49ec7b0717c45ea2"
     },
+    "sourceAuthorityPath": [
+      {
+        "repository": "OpenCoven/chat",
+        "commit": "5be5775e43cfdb3424e1a8361e11d5d59cbaaabb",
+        "tree": "c4889adf0e84deda98d7709f0cac45e70c847683"
+      },
+      {
+        "repository": "OpenCoven/chat",
+        "commit": "a3c6ff98294320ba37e3f147d5db5b2a85121923",
+        "tree": "c4889adf0e84deda98d7709f0cac45e70c847683"
+      },
+      {
+        "repository": "OpenCoven/chat",
+        "commit": "f7565bad1ca132e6235154b82606e43d3b1fdbfd",
+        "tree": "7655b06f547f6556fdb858804141d8e79882c418"
+      },
+      {
+        "repository": "OpenCoven/chat",
+        "commit": "78d7fe1324d25ffdb529a603197fce5b367d7d69",
+        "tree": "9ae31862906c1de1008ef2cb31edccb941a4b241"
+      },
+      {
+        "repository": "OpenCoven/chat",
+        "commit": "7d338aadf181277e8b9be4a91d5f0b4ca814fb3b",
+        "tree": "3997950ca05c8fdcbafe00f36ae80b4b728c8fdc"
+      },
+      {
+        "repository": "OpenCoven/chat",
+        "commit": "bcb53bbbf72bd4cc2af848d8db29c76fb9071762",
+        "tree": "3997950ca05c8fdcbafe00f36ae80b4b728c8fdc"
+      }
+    ],
     "harnessAuthority": {
       "repository": "OpenCoven/chat",
       "commit": "ad8d5f3e5e937c398c5d6d8f7bbbb190b4ed499a",
@@ -259,8 +291,8 @@
         ]
       },
       "signerWorkflow": "OpenCoven/chat/.github/workflows/client-v1-conformance.yml",
-      "signerDigest": "5be5775e43cfdb3424e1a8361e11d5d59cbaaabb",
-      "sourceDigest": "5be5775e43cfdb3424e1a8361e11d5d59cbaaabb",
+      "signerDigest": "68c49d8a1a1ebedc06bdc8793a64c972945a265c",
+      "sourceDigest": "68c49d8a1a1ebedc06bdc8793a64c972945a265c",
       "predicateType": "https://slsa.dev/provenance/v1",
       "denySelfHostedRunners": true
     }
@@ -284,6 +316,6 @@
   "assertionRegistry": {
     "path": "conformance/client-v1-cross-repository-assertions.json",
     "size": 10715,
-    "sha256": "4698252dedb75e4f818fc60f97c2eea0e403ad162a6c846695b31763d9fe584c"
+    "sha256": "69e2b86b04013814c3341d5766366cc861dc769c2f5115353fa2764c68444fd2"
   }
 }

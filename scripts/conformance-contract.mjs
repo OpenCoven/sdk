@@ -728,6 +728,7 @@ function expectEvidenceProducer(value, label) {
         'commit',
         'tree',
         'source',
+        'sourceAuthorityPath',
         'harnessAuthority',
         'packageManifest',
         'harness',
@@ -783,6 +784,22 @@ function expectEvidenceProducer(value, label) {
       ],
       `${label}.workflow`,
     );
+    if (
+      !Array.isArray(object.sourceAuthorityPath)
+      || object.sourceAuthorityPath.length > 16
+    ) {
+      throw new Error(
+        `${label}.sourceAuthorityPath must be an array with at most 16 entries`,
+      );
+    }
+    const sourceAuthorityPath = object.sourceAuthorityPath.map(
+      (entry, index) =>
+        expectIdentity(
+          entry,
+          `${label}.sourceAuthorityPath[${index}]`,
+          'OpenCoven/chat',
+        ),
+    );
     const producer = {
       status: 'compatible',
       repository: expectRepository(
@@ -796,6 +813,7 @@ function expectEvidenceProducer(value, label) {
         `${label}.source`,
         'OpenCoven/chat',
       ),
+      sourceAuthorityPath,
       harnessAuthority: expectIdentity(
         object.harnessAuthority,
         `${label}.harnessAuthority`,
@@ -1070,6 +1088,14 @@ function expectEvidenceProducer(value, label) {
       || producer.source.repository !== producer.repository
       || producer.source.commit === producer.commit
       || producer.source.tree !== producer.tree
+      || new Set([
+        producer.source.commit,
+        ...producer.sourceAuthorityPath.map((entry) => entry.commit),
+        producer.harnessAuthority.commit,
+      ]).size !== producer.sourceAuthorityPath.length + 2
+      || producer.sourceAuthorityPath.some(
+        (entry) => entry.repository !== producer.repository,
+      )
       || producer.harnessAuthority.repository !== producer.repository
       || producer.harnessAuthority.commit === producer.commit
       || producer.harnessAuthority.commit === producer.source.commit
@@ -1504,7 +1530,13 @@ export function validateChatProducerAuthorityBinding(
   const producer = assertEvidenceProducerCompatibility(lock);
   const authority = expectExactObject(
     authorityValue,
-    ['producerCommit', 'sourceCommit', 'harnessCommit', 'phase1LockText'],
+    [
+      'producerCommit',
+      'sourceCommit',
+      'sourceAuthorityCommits',
+      'harnessCommit',
+      'phase1LockText',
+    ],
     source,
   );
   const producerCommit = expectGitCommitAuthority(
@@ -1514,6 +1546,22 @@ export function validateChatProducerAuthorityBinding(
   const sourceCommit = expectGitCommitAuthority(
     authority.sourceCommit,
     `${source}.sourceCommit`,
+  );
+  if (
+    !Array.isArray(authority.sourceAuthorityCommits)
+    || authority.sourceAuthorityCommits.length
+      !== producer.sourceAuthorityPath.length
+  ) {
+    throw new Error(
+      `${source}.sourceAuthorityCommits must match the frozen authority path`,
+    );
+  }
+  const sourceAuthorityCommits = authority.sourceAuthorityCommits.map(
+    (commit, index) =>
+      expectGitCommitAuthority(
+        commit,
+        `${source}.sourceAuthorityCommits[${index}]`,
+      ),
   );
   const harnessCommit = expectGitCommitAuthority(
     authority.harnessCommit,
@@ -1526,12 +1574,34 @@ export function validateChatProducerAuthorityBinding(
     || producerCommit.parents[1] !== producer.source.commit
     || sourceCommit.sha !== producer.source.commit
     || sourceCommit.tree !== producer.source.tree
-    || sourceCommit.parents.length !== 1
-    || sourceCommit.parents[0] !== producer.harnessAuthority.commit
     || harnessCommit.sha !== producer.harnessAuthority.commit
     || harnessCommit.tree !== producer.harnessAuthority.tree
   ) {
     throw new Error(`${source} Git identities do not match the frozen producer`);
+  }
+  for (const [index, expected] of producer.sourceAuthorityPath.entries()) {
+    const actual = sourceAuthorityCommits[index];
+    if (
+      actual.sha !== expected.commit
+      || actual.tree !== expected.tree
+    ) {
+      throw new Error(`${source} Git identities do not match the frozen producer`);
+    }
+  }
+  const authorityPath = [
+    sourceCommit,
+    ...sourceAuthorityCommits,
+    harnessCommit,
+  ];
+  for (let index = 0; index < authorityPath.length - 1; index += 1) {
+    const current = authorityPath[index];
+    const parent = authorityPath[index + 1];
+    if (
+      current.parents.length === 0
+      || !current.parents.includes(parent.sha)
+    ) {
+      throw new Error(`${source} Git identities do not match the frozen producer`);
+    }
   }
 
   if (typeof authority.phase1LockText !== 'string') {
@@ -1620,6 +1690,7 @@ export function validateChatProducerAuthorityBinding(
   return {
     producerCommit,
     sourceCommit,
+    sourceAuthorityCommits,
     harnessCommit,
   };
 }

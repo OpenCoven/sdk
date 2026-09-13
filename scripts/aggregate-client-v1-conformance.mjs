@@ -1311,6 +1311,14 @@ async function runConformanceAggregationWithScrubbedEnvironment(argv) {
         evidenceProducer.source.commit,
         'Chat source-bound producer commit',
       ),
+      sourceAuthorityCommits: evidenceProducer.sourceAuthorityPath.map(
+        (entry, index) =>
+          inspectGitCommitAuthority(
+            harnessCheckout.root,
+            entry.commit,
+            `Chat source authority path commit ${index + 1}`,
+          ),
+      ),
       harnessCommit: inspectGitCommitAuthority(
         harnessCheckout.root,
         evidenceProducer.harnessAuthority.commit,
