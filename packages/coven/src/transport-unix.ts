@@ -12,6 +12,7 @@ import {
   type CovenIpcDiagnostics,
 } from './discovery.js';
 import type { CovenHealthResponse } from './schemas.js';
+import type { CovenSessionPolicyTransportResponse } from './session-policy.js';
 import type { CovenTransport } from './transport.js';
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 2_000;
@@ -852,6 +853,35 @@ export function requestCovenHealthOverSocket(
   context: OperationContext | undefined,
   configuredLimits: CovenHealthTransportLimits,
 ): Promise<CovenHealthResponse> {
+  return requestCovenOverSocket(
+    path, hooks, context, configuredLimits, HEALTH_REQUEST, decodeHealth,
+  );
+}
+
+export function requestCovenPolicyOverSocket(
+  path: string,
+  hooks: SocketRequestHooks,
+  context: OperationContext,
+  requestBytes: Buffer,
+): Promise<CovenSessionPolicyTransportResponse> {
+  const controlError = operationControlError(context, 'connect');
+  if (controlError !== undefined) return Promise.reject(controlError);
+  return requestCovenOverSocket(
+    path, hooks, context, { maxBodyBytes: 16_384 }, requestBytes,
+    (response) => ({ status: response.statusCode, body: new Uint8Array(response.body) }),
+    DEFAULT_MAX_HEADER_BYTES + 16_384 + 4,
+  );
+}
+
+function requestCovenOverSocket<T>(
+  path: string,
+  hooks: SocketRequestHooks,
+  context: OperationContext | undefined,
+  configuredLimits: CovenHealthTransportLimits,
+  requestBytes: Buffer,
+  decodeResponse: (response: FramedHttpResponse) => T,
+  maxReceivedBytes?: number,
+): Promise<T> {
   const limits = healthRequestOptions(configuredLimits);
   const initialConnectTimeout = remainingTimeout(
     limits.connectTimeoutMs,
@@ -921,7 +951,7 @@ export function requestCovenHealthOverSocket(
       return true;
     };
 
-    const resolveHealth = (health: CovenHealthResponse): void => {
+    const resolveResponse = (response: T): void => {
       if (
         failIfDeadlineExpired(
           'read_response',
@@ -931,7 +961,7 @@ export function requestCovenHealthOverSocket(
         return;
       }
       finish(() => {
-        resolvePromise(health);
+        resolvePromise(response);
       });
     };
 
@@ -980,6 +1010,14 @@ export function requestCovenHealthOverSocket(
         return;
       }
       try {
+        if (maxReceivedBytes !== undefined && received.length + chunk.byteLength > maxReceivedBytes) {
+          throw ipcError(
+            'frame_limit',
+            'Coven policy response exceeded its frame limit.',
+            'read_response',
+            { limitBytes: maxReceivedBytes },
+          );
+        }
         received = Buffer.concat([received, Buffer.from(chunk)]);
         validateReceivedSize(received, limits);
         if (!requestSent) {
@@ -988,8 +1026,7 @@ export function requestCovenHealthOverSocket(
         }
         const response = completeResponse(received, limits);
         if (response !== undefined) {
-          const health = decodeHealth(response);
-          resolveHealth(health);
+          resolveResponse(decodeResponse(response));
         }
       } catch (error) {
         failRequest(error);
@@ -1010,8 +1047,7 @@ export function requestCovenHealthOverSocket(
         return;
       }
       try {
-        const health = decodeHealth(parseCompletedResponse(received, limits));
-        resolveHealth(health);
+        resolveResponse(decodeResponse(parseCompletedResponse(received, limits)));
       } catch (error) {
         failRequest(error);
       }
@@ -1090,7 +1126,7 @@ export function requestCovenHealthOverSocket(
           }
           try {
             requestSent = true;
-            socket.write(HEALTH_REQUEST);
+            socket.write(requestBytes);
             socket.end();
             socket.resume();
           } catch {
@@ -1299,10 +1335,10 @@ function defaultUnixConnector(path: string): CovenConnectedSocket {
   return createConnection({ path });
 }
 
-export function createCovenUnixTransport(
+export function createCovenUnixSocketAccess(
   discovered: CovenDiscoveredEndpoint,
   options: CovenUnixTransportOptions,
-): CovenTransport {
+) {
   const endpoint = validUnixEndpoint(discovered);
   if (
     options?.security?.platform !== 'unix' ||
@@ -1322,7 +1358,8 @@ export function createCovenUnixTransport(
     (() => process.geteuid?.());
 
   return {
-    async health(context) {
+    path: endpoint.path,
+    async prepare(context: OperationContext | undefined): Promise<SocketRequestHooks> {
       const { expectedUid, initial } = await awaitOperationStep(
         async () => {
           const effectiveUid = getEffectiveUid();
@@ -1371,47 +1408,55 @@ export function createCovenUnixTransport(
         'validate_endpoint',
       );
 
-      return requestCovenHealthOverSocket(
-        endpoint.path,
-        {
-          connect,
-          async revalidate(socket) {
-            const connectedPeer = await Promise.resolve()
-              .then(() => peerIdentity.inspectConnected(socket))
-              .catch(() => {
-                throw ipcError(
-                  'unsafe_endpoint',
-                  'Connected Coven Unix peer identity could not be established.',
-                  'revalidate_endpoint',
-                );
-              });
-            validateUnixPeerIdentity(connectedPeer, expectedUid);
-            const confirmed = await Promise.resolve()
-              .then(() => lstat(endpoint.path))
-              .catch(() => {
-                throw ipcError(
-                  'unsafe_endpoint',
-                  'Coven Unix socket changed during connection.',
-                  'revalidate_endpoint',
-                );
-              });
-            validateUnixIdentity(
-              confirmed,
-              expectedUid,
-              'revalidate_endpoint',
-            );
-            if (!sameUnixPathIdentity(initial, confirmed)) {
+      return {
+        connect,
+        async revalidate(socket) {
+          const connectedPeer = await Promise.resolve()
+            .then(() => peerIdentity.inspectConnected(socket))
+            .catch(() => {
+              throw ipcError(
+                'unsafe_endpoint',
+                'Connected Coven Unix peer identity could not be established.',
+                'revalidate_endpoint',
+              );
+            });
+          validateUnixPeerIdentity(connectedPeer, expectedUid);
+          const confirmed = await Promise.resolve()
+            .then(() => lstat(endpoint.path))
+            .catch(() => {
               throw ipcError(
                 'unsafe_endpoint',
                 'Coven Unix socket changed during connection.',
                 'revalidate_endpoint',
               );
-            }
-          },
+            });
+          validateUnixIdentity(
+            confirmed,
+            expectedUid,
+            'revalidate_endpoint',
+          );
+          if (!sameUnixPathIdentity(initial, confirmed)) {
+            throw ipcError(
+              'unsafe_endpoint',
+              'Coven Unix socket changed during connection.',
+              'revalidate_endpoint',
+            );
+          }
         },
-        context,
-        options,
-      );
+      };
+    },
+  };
+}
+
+export function createCovenUnixTransport(
+  discovered: CovenDiscoveredEndpoint,
+  options: CovenUnixTransportOptions,
+): CovenTransport {
+  const access = createCovenUnixSocketAccess(discovered, options);
+  return {
+    async health(context) {
+      const hooks = await access.prepare(context);
+      return requestCovenHealthOverSocket(access.path, hooks, context, options);
     },
   };
 }
