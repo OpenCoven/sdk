@@ -14,6 +14,7 @@ import {
   type CovenAutomationDefinition,
   type CovenAutomationDefinitionList,
   type CovenAutomationDefinitionReadRequest,
+  type CovenAutomationHealthResult,
   type CovenAutomationListOptions,
 } from './automations-definitions.js';
 
@@ -154,11 +155,16 @@ export class CovenAutomationsClient {
     return await this.#read({ action: 'coven.automations.definition.get.v1', id }, options) as CovenAutomationDefinition;
   }
 
+  async health(id: string, options: OperationOptions = {}): Promise<CovenAutomationHealthResult> {
+    return await this.#read({ action: 'coven.automations.health', id }, options) as CovenAutomationHealthResult;
+  }
+
   async #read(
     request: CovenAutomationDefinitionReadRequest,
     options: OperationOptions,
-  ): Promise<CovenAutomationDefinitionList | CovenAutomationDefinition> {
-    const operation = request.action === 'coven.automations.definition.list.v1' ? 'automations.list' : 'automations.get';
+  ): Promise<CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult> {
+    const operation = request.action === 'coven.automations.definition.list.v1' ? 'automations.list'
+      : request.action === 'coven.automations.health' ? 'automations.health' : 'automations.get';
     const observer = options.observer ?? this.#options.operation?.observer;
     try {
       definitionReadBytes(request);

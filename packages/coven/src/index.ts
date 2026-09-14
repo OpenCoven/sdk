@@ -12,6 +12,8 @@ export type {
   CovenAutomationDefinition,
   CovenAutomationDefinitionList,
   CovenAutomationDefinitionReadRequest,
+  CovenAutomationHealth,
+  CovenAutomationHealthResult,
   CovenAutomationListOptions,
   CovenAutomationRoutine,
 } from './automations-definitions.js';

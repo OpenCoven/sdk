@@ -32,7 +32,7 @@ and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
   capability GET and allowlisted read-action POST requests; neither extends the
   health client.
 
-## Automations phase 1: capability discovery and definition reads
+## Automations phase 1: capability discovery, definition and health reads
 
 Import `createCovenAutomationsClient` and `createCovenAutomationsUnixTransport`
 directly from `@opencoven/coven-client`. Explicitly discover an endpoint, then
@@ -76,12 +76,13 @@ accepted authority.
 
 Each read refreshes the capability advertisement and requires its exact action:
 `coven.automations.definition.list.v1` or
-`coven.automations.definition.get.v1`. Missing/planned/unnegotiated profiles or
+`coven.automations.definition.get.v1`, or `coven.automations.health`.
+Missing/planned/unnegotiated profiles or
 missing action names fail with `capability_unsupported` without posting an action.
 Custom capability-only transports remain compatible; reads without the optional
 `readDefinitions` hook fail with `unsupported_operation`.
 
-The built-in Unix transport sends only these two allowlisted JSON actions to
+The built-in Unix transport sends only these three allowlisted JSON actions to
 `POST /api/v1/actions`. It authenticates each connection, including the separate
 capability request, under one client deadline/cancellation scope. It cannot send
 mutations through this hook. IDs are trimmed as the producer does; the SDK
@@ -106,8 +107,36 @@ with `event.kind: "automations.changed"` even for reads, and defines
 owns the compatibility routine fields. No GET definition routes, normative
 command-envelope adaptation, pagination, changefeed emission, or certification
 are inferred from the schemas in `spec/coven-automations/v1`. Existing artifact
-pins are unchanged. Runs, health, occurrences, receipt reads/verification,
+pins are unchanged. Runs, occurrences, receipt reads/verification,
 subscriptions and authority-bearing phases remain separate #80 work.
+
+### Routine health
+
+```ts
+const { health } = await automations.health('morning', { timeoutMs: 5_000 });
+console.log(health.nextDueAt, health.currentAttempt, health.quarantinedAt);
+```
+
+`health(id)` reads the exact `coven.automations.health` action (no `.v1`
+suffix), returning `{ health }` from the canonical completed event payload.
+All timestamp, lease, stale-reason, retry and quarantine string fields retain
+explicit `null` values; `currentAttempt` is a nullable positive safe integer.
+Failure/exhaustion counters are nonnegative safe integers and `maxAttempts` is
+1–255. The returned `automationId` must match the trimmed requested ID.
+Missing routines produce sanitized `action_rejected`, not an invented null result.
+Health is store-derived diagnostic data, not execution or receipt authority.
+Custom transports use the existing optional `readDefinitions` hook, whose
+historical name now covers all three explicitly allowlisted read actions.
+
+Health source authority was independently read from Coven
+[`b3b2d043a4ee586ccbf25ef6aad21db8a1171a54`](https://github.com/OpenCoven/coven/tree/b3b2d043a4ee586ccbf25ef6aad21db8a1171a54):
+[`api_routes.rs`](https://github.com/OpenCoven/coven/blob/b3b2d043a4ee586ccbf25ef6aad21db8a1171a54/crates/coven-cli/src/api_routes.rs)
+normalizes `/api/v1/actions`;
+[`control_plane.rs`](https://github.com/OpenCoven/coven/blob/b3b2d043a4ee586ccbf25ef6aad21db8a1171a54/crates/coven-cli/src/control_plane.rs)
+advertises and dispatches the health action, and `automation_health_payload`
+explicitly serializes its camelCase keys beneath `event.payload.health`;
+[`automations/health.rs`](https://github.com/OpenCoven/coven/blob/b3b2d043a4ee586ccbf25ef6aad21db8a1171a54/crates/coven-cli/src/automations/health.rs)
+owns the store-derived `RoutineHealth` values. No new route or mutation is enabled.
 
 `capabilities()` sends only `GET /api/v1/capabilities`. It reads the uniquely identified
 `coven.automations` catalog entry, preserves supported, experimental and refused
