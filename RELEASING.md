@@ -460,33 +460,41 @@ The frozen Chat consumer is
 `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`, tree
 `ffd1963ef9539c7a679909200175fb11a9305c95`, with all four committed vendor
 archives byte-identical to candidate 96804bc. This binding selects the true
-merged OpenCoven/chat#272 producer `535d48196d96a4fde39cd62c47ccec2307a5b3d6`,
-tree `244f46e6abf616c717d75268cb366c9ed6077f9e`. Its source-bound producer
-head is `843c13652c76c48d9a9d7042d8ae3df751315c6b` with the same tree.
-The bounded `sourceAuthorityPath` includes source-binding commit
-`e3584d236ccdcdbfda3880c056b2a75b20e60609`, whose tree matches the producer.
-That commit has the executable harness source as its direct parent.
+merged OpenCoven/chat#276 producer `9c4aa1f2de8f38fd776e76f7882ffc871f9b426e`,
+tree `6c5d050e6cce12b8d73ca92a26acae8cdd81388c`. Its source-bound producer
+head is `aba0af793b8aaa9d719cac6f71af926e500418fb` with the same tree.
+The `sourceAuthorityPath` is empty: the source-bound producer has the
+executable harness source as its direct parent. The actual merge retains both histories.
 Its committed Phase 1 lock separately authenticates executable harness source
-`a9c44b643523f4a4adeb6a03bebf71a449cfa7b5`, tree
-`d850bf84e299840c565e19449d0601b7a225b824`, and reviewed native deltas.
+`d8d18fa991c03a28417fdd5b98e70c702d332a0f`, tree
+`f9064ad8892e8a0b90eeac296110b63358f19d93`, and reviewed native deltas.
 The Coven pin is unchanged. The production Cave authority is
 `d655b2c3b6ecabf3a5eaea9e314b180028321d81`, tree
 `974d43afc735dc9017460a5b95b4c86a13388c1f`, release `0.4.4`.
 
 This is a source-only candidate binding, not accepted platform evidence.
-The latest completed protected run, `34833377609`, used Chat producer
-`92c4c453b57b2f9365627f01ec883f98aa8b7ba3` and SDK validator
-`051795eb66ac9ff97f1274de9eaba3d5d37e788e` with the previous candidate
-`77d825d`. Linux and Darwin each passed 197 assertions. Windows exited before
+The latest completed protected run, `34849881134`, used Chat #272 producer
+`535d48196d96a4fde39cd62c47ccec2307a5b3d6` and SDK #257 validator
+`118b3da46d9b91608272d242918237b1cacc9943` with candidate `96804bc`.
+Linux and Darwin each passed 197 ordered assertions. Windows exited before
 Cave readiness at `phase1.cave-authority.startup.exit` and produced no record;
 validation, attestation, and aggregation were skipped. The later profile
 cleanup failure is a separate observation. This does not classify the startup
-cause as a record identity, timing, or assertion mismatch. These records are
-historical evidence for that binding, not acceptance of candidate `96804bc`.
-Chat #270 adopts the new candidate; Chat #271 binds the integrated executable
-source after the CI image update. Chat #272 corrects its Cave release binding
-to the pinned authority's actual `0.4.4`, preserving rejection of `0.4.3`.
-Fresh protected validation remains required.
+cause as a record identity, timing, or assertion mismatch.
+
+Chat #276 integrates reviewed residual cleanup, native cleanup readback, and
+bounded Cave diagnostic consumers. All eleven ordinary CI checks passed on
+binding head `aba0af793b8aaa9d719cac6f71af926e500418fb` in run `34871280913`;
+its actual merge preserves the tested tree and executable source ancestry.
+Cave d655/0.4.4 still emits the generic startup-exit message. Adopting the
+separate Cave diagnostic source requires full source/security review and
+explicit version, engine, and registry-provenance rebinding.
+
+SDK #262's familiar-contract repair is on validator main, but this binding
+retains the frozen SDK candidate and Chat consumer. Candidate adoption for
+Chat #86 is separate. Fresh protected validation requires this validator to
+land, both validator scopes to rotate to that actual merge, and a new protected
+run. Ordinary CI does not establish protected cross-platform acceptance.
 
 The historical diagnostic checkpoint from protected run `34763766701` used
 the pre-adoption Chat producer
