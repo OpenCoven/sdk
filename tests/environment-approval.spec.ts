@@ -200,7 +200,9 @@ const pendingDeployments = [
 ];
 
 describe('protected environment approval evidence', () => {
-  test('snapshots environment rules only after the pending deployment is observed', () => {
+  test.each(['refs/heads/main', 'refs/heads/release/sdk-v0.0.1'])(
+    'snapshots pending environment rules on the exact release ref %s',
+    (ref) => {
     const root = resolve(import.meta.dirname, '..');
     const outputRoot = mkdtempSync(
       resolve(tmpdir(), 'opencoven-pending-snapshot-'),
@@ -222,8 +224,8 @@ describe('protected environment approval evidence', () => {
           GITHUB_SHA: commit,
           GITHUB_WORKFLOW_SHA: commit,
           GITHUB_WORKFLOW_REF:
-            'OpenCoven/sdk/.github/workflows/release.yml@refs/heads/main',
-          GITHUB_REF: 'refs/heads/main',
+            `OpenCoven/sdk/.github/workflows/release.yml@${ref}`,
+          GITHUB_REF: ref,
           GITHUB_RUN_ID: '11000',
           GITHUB_RUN_ATTEMPT: '1',
         },
@@ -242,7 +244,7 @@ describe('protected environment approval evidence', () => {
               event: 'workflow_dispatch',
               run_attempt: 1,
               head_sha: commit,
-              head_branch: 'main',
+              head_branch: ref.slice('refs/heads/'.length),
               path: '.github/workflows/release.yml',
               repository: { full_name: 'OpenCoven/sdk' },
               head_repository: { full_name: 'OpenCoven/sdk' },
@@ -295,6 +297,62 @@ describe('protected environment approval evidence', () => {
     } finally {
       rmSync(outputRoot, { recursive: true, force: true });
     }
+  });
+
+  test.each([
+    ['workflow ref', { GITHUB_WORKFLOW_REF: 'OpenCoven/sdk/.github/workflows/release.yml@refs/heads/main' }],
+    ['workflow commit', { GITHUB_WORKFLOW_SHA: 'e'.repeat(40) }],
+    ['checkout commit', { GITHUB_SHA: 'e'.repeat(40) }],
+    ['near-miss ref', {
+      GITHUB_REF: 'refs/heads/release/sdk-v0.0.10',
+      GITHUB_WORKFLOW_REF: 'OpenCoven/sdk/.github/workflows/release.yml@refs/heads/release/sdk-v0.0.10',
+    }],
+  ])('rejects substituted %s before requesting approval evidence', (_label, overrides) => {
+    const root = resolve(import.meta.dirname, '..');
+    const commit = execFileSync('/usr/bin/git', ['rev-parse', 'HEAD'], {
+      cwd: root,
+      encoding: 'utf8',
+    }).trim();
+    expect(() => capturePendingApprovalEvidence({
+      root,
+      env: {
+        GITHUB_REPOSITORY: 'OpenCoven/sdk',
+        GITHUB_SHA: commit,
+        GITHUB_WORKFLOW_SHA: commit,
+        GITHUB_REF: 'refs/heads/release/sdk-v0.0.1',
+        GITHUB_WORKFLOW_REF: 'OpenCoven/sdk/.github/workflows/release.yml@refs/heads/release/sdk-v0.0.1',
+        GITHUB_RUN_ID: '11000',
+        GITHUB_RUN_ATTEMPT: '1',
+        ...overrides,
+      },
+      resolveRuntime: () => undefined,
+      execute: () => { throw new Error('Unexpected GitHub request'); },
+    })).toThrow('requires the exact release workflow run');
+  });
+
+  test.each([
+    'refs/heads/release',
+    'refs/heads/release/sdk-v0.0.10',
+    'refs/heads/release/sdk-v0.0.1/extra',
+    'refs/heads/release/sdk-v0.0.1 ',
+    'refs/heads/Release/sdk-v0.0.1',
+    'refs/tags/release/sdk-v0.0.1',
+    'refs/pull/1/merge',
+    'release/sdk-v0.0.1',
+  ])('rejects unapproved pending approval ref %s', (ref) => {
+    expect(() => approval().createPendingApprovalEvidence({
+      source,
+      workflow: { ...workflow, ref },
+      witnessJob: {
+        id: '21000',
+        name: 'approval-witness',
+        startedAt: '2026-08-29T16:00:00Z',
+      },
+      environment,
+      pendingDeployments,
+      observedAt: '2026-08-29T16:00:02Z',
+      expected,
+    })).toThrow(/exact OpenCoven\/sdk release workflow/u);
   });
 
   test('fails closed when current rules exist but no pending deployment was witnessed', () => {

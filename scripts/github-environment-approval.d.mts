@@ -1,3 +1,5 @@
+import type { ReleaseRef } from './release-ref-policy.mjs';
+
 export interface ApprovalSource {
   repository: 'OpenCoven/sdk';
   commit: string;
@@ -7,7 +9,7 @@ export interface ApprovalSource {
 export interface ApprovalWorkflow {
   path: '.github/workflows/release.yml';
   commit: string;
-  ref: 'refs/heads/main';
+  ref: ReleaseRef;
   runId: string;
   runAttempt: number;
 }

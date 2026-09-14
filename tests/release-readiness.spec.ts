@@ -176,6 +176,7 @@ const VALIDATOR_RUNTIME_PATHS = [
   'scripts/publication-source-identity.mjs',
   'scripts/publish-release-artifacts.mjs',
   'scripts/release-readiness.mjs',
+  'scripts/release-ref-policy.mjs',
   'scripts/release-runtime-integrity.mjs',
   'scripts/repository-metadata.mjs',
   'scripts/verify-committed-conformance-evidence.mjs',
@@ -1836,11 +1837,10 @@ describe('release readiness contract', () => {
   test.each([
     [
       'preflight shell',
-      '          echo "Releases must run from main." >&2\n          exit 1\n',
+      '              echo "Releases require main or the exact release/sdk-v0.0.1 ref." >&2\n',
       [
-        '          node ./scripts/secondary-release-check.mjs',
-        '          echo "Releases must run from main." >&2',
-        '          exit 1',
+        '              node ./scripts/secondary-release-check.mjs',
+        '              echo "Releases require main or the exact release/sdk-v0.0.1 ref." >&2',
         '',
       ].join('\n'),
     ],

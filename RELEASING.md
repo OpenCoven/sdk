@@ -52,6 +52,39 @@ changes are not implicitly included in this immutable candidate. Candidate77's
 manifests, tarballs, and partial records remain historical evidence for
 candidate77. All #38/#40 acceptance and publication gates remain closed.
 
+### Exact release-ref policy preparation
+
+The release workflow and publication evidence validators support only
+`refs/heads/main` and `refs/heads/release/sdk-v0.0.1`, with case-sensitive
+matching. This is policy-code preparation, not authorization to create or
+protect the release branch, dispatch a workflow, enable publication, or SHIP.
+It does not change candidate968, adopt later APIs from main, or create new
+accepted conformance evidence.
+
+The workflow commit W must still equal the release source R: checkout HEAD,
+`GITHUB_SHA`, `GITHUB_WORKFLOW_SHA`, manifest source, tag target and attestation
+source/signer digests all bind that same reviewed R. There is no independent
+release-commit input. Workflow refs, run branches, deployment refs and
+attestation certificate refs must agree exactly; the two allowed refs cannot
+be substituted for each other even when they point at the same commit.
+
+Before final #38 acceptance, these governed controls must land in the reviewed
+validator V, including the ref-policy helper in its runtime-file inventory.
+The eventual R must genuinely descend V, and V must descend candidate968 C.
+R's governed controls must be byte-equal to V, while R's normalized public
+runtime must equal C. V need not have C's public runtime. Creating a branch
+at C and copying V's files does not satisfy this ancestry requirement.
+
+A separately authorized, reviewed release-line change must preserve C's
+public scope only on that line, without reverting main or silently including
+its later APIs. Effective release-branch protection, unchanged policies for
+all three environments, publication enablement, final artifact review and
+immutable #40 SHIP authorization remain operational prerequisites.
+`npm-release` still prevents self-review: its sole required reviewer needs a
+distinct authorized dispatcher. This preparation creates neither identity nor
+permissions, and leaves all packages private, `publishingEnabled: false` and
+`aggregateRecord: null`.
+
 ### Compatibility prerequisite
 
 The prerequisite landed in
@@ -744,7 +777,8 @@ required reviewers and therefore no self-review gate. `npm-release` must keep
 environment ID `20778492972`, contain exactly one `required_reviewers` rule
 for immutable GitHub user ID `68980965`, and set `prevent_self_review: true`.
 No custom branch or tag pattern, including `evil`, is permitted. The release
-workflow itself remains dispatch-only and main-only, but those workflow checks
+workflow itself remains dispatch-only and accepts only `refs/heads/main` or
+`refs/heads/release/sdk-v0.0.1`, but those workflow checks
 do not replace the live environment policy.
 
 Run the authoritative read-only check with a token that can read the
@@ -812,7 +846,8 @@ must not regenerate baselines merely to make verification pass.
 ## 4. Tag
 
 Create the annotated tag `sdk-v<version>` only after the reviewed release
-commit is on `main`. Record its annotated tag object ID in the immutable #40
+commit is on `main` or the separately authorized, protected
+`release/sdk-v0.0.1` line. Record its annotated tag object ID in the immutable #40
 authorization. The release workflow verifies that the tag ref still names
 that exact tag object and that the tag peels to the authorized commit/tree.
 It repeats this check after protected approval and immediately before the
@@ -820,7 +855,8 @@ first npm publish.
 
 ## 5. Verify-mode workflow
 
-Run `.github/workflows/release.yml` from `main` with mode `verify` and the
+Run `.github/workflows/release.yml` from `main` or the separately authorized,
+protected `release/sdk-v0.0.1` line with mode `verify` and the
 exact fixed version. Both verify and publish preflight require named evidence.
 Before any repository-controlled dependency installation, the workflow checks
 that `.node-version`, the aggregate/index, workflow, authoritative GitHub
@@ -903,7 +939,7 @@ commit, tree, source-manifest, or sterile publisher change requires new
 evidence and, where candidate bytes change, a new #40 review.
 After all protected approval evidence is validated, the publisher re-fetches
 the tag ref and annotated tag object, rechecks the local peeled commit/tree and
-the main workflow provenance, and performs the same check immediately before
+the exact selected release-ref workflow provenance, and performs the same check immediately before
 the first npm publish. A moved, replaced, lightweight, or differently peeled
 tag fails closed without invoking npm.
 

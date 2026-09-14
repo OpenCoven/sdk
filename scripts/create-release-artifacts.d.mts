@@ -1,4 +1,5 @@
 import type { OwnedTempDirectoryContext } from './owned-temp-directory.mjs';
+import type { ReleaseRef } from './release-ref-policy.mjs';
 
 export interface ReleaseArtifactEntry {
   name: string;
@@ -60,7 +61,7 @@ export interface PublicationArtifactManifest {
     repository: 'OpenCoven/sdk';
     workflow: '.github/workflows/release.yml';
     workflowCommit: string;
-    sourceRef: 'refs/heads/main';
+    sourceRef: ReleaseRef;
     runId: string;
     runAttempt: number;
     job: 'publication-candidate';

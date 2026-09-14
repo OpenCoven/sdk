@@ -320,7 +320,7 @@
               "$ref": "#/$defs/gitOid"
             },
             "sourceRef": {
-              "const": "refs/heads/main"
+              "enum": ["refs/heads/main", "refs/heads/release/sdk-v0.0.1"]
             },
             "runId": {
               "$ref": "#/$defs/positiveId"

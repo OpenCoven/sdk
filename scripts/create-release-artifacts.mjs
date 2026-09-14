@@ -14,6 +14,8 @@ import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path
 import { fileURLToPath } from 'node:url';
 import { devNull } from 'node:os';
 
+import { isReleaseRef } from './release-ref-policy.mjs';
+
 import {
   cleanupOwnedTempRoot,
   createOwnedTempDirectory,
@@ -1011,7 +1013,8 @@ function readPublicationProvenance(env, source, config, version) {
     || env.GITHUB_WORKFLOW_SHA !== source.sourceCommit
     || typeof workflowRef !== 'string'
     || !workflowRef.startsWith(workflowRefPrefix)
-    || workflowRef.slice(workflowRefPrefix.length) !== 'refs/heads/main'
+    || !isReleaseRef(env.GITHUB_REF)
+    || workflowRef.slice(workflowRefPrefix.length) !== env.GITHUB_REF
     || env.GITHUB_JOB !== config.publicationCandidate.job
     || env.OPENCOVEN_PUBLICATION_ENVIRONMENT
       !== config.publicationCandidate.environment
@@ -1030,7 +1033,7 @@ function readPublicationProvenance(env, source, config, version) {
     repository: 'OpenCoven/sdk',
     workflow: config.publicationCandidate.workflow,
     workflowCommit: source.sourceCommit,
-    sourceRef: 'refs/heads/main',
+    sourceRef: env.GITHUB_REF,
     runId: env.GITHUB_RUN_ID,
     runAttempt,
     job: config.publicationCandidate.job,
@@ -1172,7 +1175,7 @@ function verifyPublicationArtifactSet({
     || manifest.provenance.workflow
       !== config.publicationCandidate.workflow
     || manifest.provenance.workflowCommit !== source.sourceCommit
-    || manifest.provenance.sourceRef !== 'refs/heads/main'
+    || !isReleaseRef(manifest.provenance.sourceRef)
     || manifest.provenance.job !== config.publicationCandidate.job
     || manifest.provenance.environment
       !== config.publicationCandidate.environment

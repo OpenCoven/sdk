@@ -197,7 +197,7 @@ interface PublicationManifest {
     repository: 'OpenCoven/sdk';
     workflow: '.github/workflows/release.yml';
     workflowCommit: string;
-    sourceRef: 'refs/heads/main';
+    sourceRef: 'refs/heads/main' | 'refs/heads/release/sdk-v0.0.1';
     runId: string;
     runAttempt: number;
     job: 'publication-candidate';
@@ -402,6 +402,7 @@ function writePublicationArtifacts(
   sourceRoot: string,
   artifactRoot: string,
   options: {
+    sourceRef?: PublicationManifest['provenance']['sourceRef'];
     compressionLevel?: number;
     lifecyclePackage?: string;
     uncompressedTarballs?: Map<string, Buffer>;
@@ -533,7 +534,7 @@ function writePublicationArtifacts(
       repository: 'OpenCoven/sdk',
       workflow: '.github/workflows/release.yml',
       workflowCommit: commit,
-      sourceRef: 'refs/heads/main',
+      sourceRef: options.sourceRef ?? 'refs/heads/main',
       runId: '10000',
       runAttempt: 1,
       job: 'publication-candidate',
@@ -581,7 +582,7 @@ function createGitHubExecute(
                 runnerEnvironment: 'github-hosted',
                 sourceRepositoryURI: 'https://github.com/OpenCoven/sdk',
                 sourceRepositoryDigest: authorization.source.commit,
-                sourceRepositoryRef: 'refs/heads/main',
+                sourceRepositoryRef: authorization.provenance.sourceRef,
                 buildSignerDigest: authorization.source.commit,
               },
             },
@@ -686,7 +687,7 @@ function createGitHubExecute(
         event: 'workflow_dispatch',
         run_attempt: 1,
         head_sha: authorization.source.commit,
-        head_branch: 'main',
+        head_branch: authorization.provenance.sourceRef.slice('refs/heads/'.length),
         path: authorization.provenance.workflow,
         status: 'completed',
         conclusion: 'success',
@@ -701,7 +702,7 @@ function createGitHubExecute(
         event: 'workflow_dispatch',
         run_attempt: 1,
         head_sha: authorization.source.commit,
-        head_branch: 'main',
+        head_branch: authorization.provenance.sourceRef.slice('refs/heads/'.length),
         path: authorization.provenance.workflow,
         status: 'in_progress',
         conclusion: null,
@@ -833,7 +834,7 @@ function createGitHubExecute(
       return JSON.stringify({
         id: 40000,
         sha: authorization.source.commit,
-        ref: 'main',
+        ref: authorization.provenance.sourceRef.slice('refs/heads/'.length),
         task: 'deploy',
         environment: 'publication-candidate',
         transient_environment: false,
@@ -871,7 +872,7 @@ function createGitHubExecute(
       return JSON.stringify({
         id: 41000,
         sha: authorization.source.commit,
-        ref: 'main',
+        ref: authorization.provenance.sourceRef.slice('refs/heads/'.length),
         task: 'deploy',
         environment: 'npm-release',
         transient_environment: false,
@@ -1129,7 +1130,7 @@ function writeApprovalArtifacts(
   const workflow = {
     path: '.github/workflows/release.yml' as const,
     commit,
-    ref: 'refs/heads/main' as const,
+    ref: securityReview.provenance.sourceRef,
     runId: '11000',
     runAttempt: 1,
   };
@@ -1222,7 +1223,7 @@ function writeApprovalArtifacts(
     deployment: {
       id: 41000,
       sha: commit,
-      ref: 'main',
+      ref: workflow.ref.slice('refs/heads/'.length),
       task: 'deploy',
       environment: 'npm-release',
       transient_environment: false,
@@ -2101,13 +2102,70 @@ describe('publication security', { timeout: 30_000 }, () => {
     ).toThrow(/live GitHub release environment policy does not match/iu);
   });
 
-  test('verifies attestations for every downloaded candidate file from the exact run attempt', () => {
+  test.each([
+    ['candidate run', 'repos/OpenCoven/sdk/actions/runs/10000', '"head_branch":"release/sdk-v0.0.1"', '"head_branch":"main"'],
+    ['approval run', 'repos/OpenCoven/sdk/actions/runs/11000', '"head_branch":"release/sdk-v0.0.1"', '"head_branch":"main"'],
+    ['candidate deployment', 'repos/OpenCoven/sdk/deployments/40000', '"ref":"release/sdk-v0.0.1"', '"ref":"main"'],
+    ['candidate attestation', 'candidate-attestation', '"sourceRepositoryRef":"refs/heads/release/sdk-v0.0.1"', '"sourceRepositoryRef":"refs/heads/main"'],
+    ['approval attestation', 'approval-attestation', '"sourceRepositoryRef":"refs/heads/release/sdk-v0.0.1"', '"sourceRepositoryRef":"refs/heads/main"'],
+  ])('rejects a cross-ref %s even at the identical release commit', (
+    _label, endpoint, search, replacement,
+  ) => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(resolve(tmpdir(), 'opencoven-cross-ref-'));
+    fixtures.push(artifactRoot);
+    const sourceRef = 'refs/heads/release/sdk-v0.0.1';
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot, { sourceRef });
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const apiExecute = createGitHubExecute(authorization);
+    const publishCalls: Array<{
+      arguments_: string[];
+      cwd: string;
+      env: Record<string, string | undefined>;
+    }> = [];
+    let substituted = false;
+    expect(() => publishTestRelease({
+      authorization,
+      root: sourceRoot,
+      artifactRoot,
+      version: VERSION,
+      env: publicationEnvironment(sourceRoot, {
+        GITHUB_REF: sourceRef,
+        GITHUB_WORKFLOW_REF: `OpenCoven/sdk/.github/workflows/release.yml@${sourceRef}`,
+      }),
+      execute: createNpmExecute(publishCalls),
+      githubExecute: (command: string, arguments_: string[]) => {
+        const response = apiExecute(command, arguments_);
+        const approval = arguments_[2]?.endsWith('/pending-approval.json')
+          || arguments_[2]?.endsWith('/protected-approval.json');
+        if (arguments_.at(-1) === endpoint
+          || (arguments_[0] === 'attestation'
+            && endpoint === (approval ? 'approval-attestation' : 'candidate-attestation'))) {
+          expect(response).toContain(search);
+          substituted = true;
+          return response.replace(search, replacement);
+        }
+        return response;
+      },
+    } as never)).toThrow(/exact.*(?:run|deployment)|attested/u);
+    expect(substituted).toBe(true);
+    expect(publishCalls).toHaveLength(0);
+  });
+
+  test.each(['refs/heads/main', 'refs/heads/release/sdk-v0.0.1'] as const)(
+    'verifies every candidate and approval attestation on exact ref %s',
+    (sourceRef) => {
     const sourceRoot = createReleaseFixture();
     const artifactRoot = mkdtempSync(
       resolve(tmpdir(), 'opencoven-candidate-attestations-'),
     );
     fixtures.push(artifactRoot);
-    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot, { sourceRef });
     const authorization = createPublicationAuthorizationRecord({
       artifactId: '30000',
       jobId: '20000',
@@ -2127,7 +2185,10 @@ describe('publication security', { timeout: 30_000 }, () => {
       root: sourceRoot,
       artifactRoot,
       version: VERSION,
-      env: publicationEnvironment(sourceRoot),
+      env: publicationEnvironment(sourceRoot, {
+        GITHUB_REF: sourceRef,
+        GITHUB_WORKFLOW_REF: `OpenCoven/sdk/.github/workflows/release.yml@${sourceRef}`,
+      }),
       execute: createNpmExecute(publishCalls),
       githubExecute: (command: string, arguments_: string[]) => {
         if (
@@ -2154,7 +2215,7 @@ describe('publication security', { timeout: 30_000 }, () => {
                     runnerEnvironment: 'github-hosted',
                     sourceRepositoryURI: 'https://github.com/OpenCoven/sdk',
                     sourceRepositoryDigest: authorization.source.commit,
-                    sourceRepositoryRef: 'refs/heads/main',
+                    sourceRepositoryRef: sourceRef,
                     buildSignerDigest: authorization.source.commit,
                   },
                 },
@@ -2187,7 +2248,7 @@ describe('publication security', { timeout: 30_000 }, () => {
           && arguments_.includes('--signer-digest')
           && arguments_.includes(authorization.source.commit)
           && arguments_.includes('--source-ref')
-          && arguments_.includes('refs/heads/main')
+          && arguments_.includes(sourceRef)
           && arguments_.includes('--deny-self-hosted-runners'),
       ),
     ).toBe(true);
