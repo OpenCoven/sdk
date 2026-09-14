@@ -175,6 +175,11 @@ interface HealthRequestOptions {
   requestTimeoutMs: number;
 }
 
+export interface CovenSocketAccess {
+  readonly path: string;
+  prepare(context: OperationContext | undefined): Promise<SocketRequestHooks>;
+}
+
 interface SocketRequestHooks {
   connect: CovenSocketConnector;
   revalidate(socket: CovenConnectedSocket): Promise<void>;
@@ -921,6 +926,7 @@ function requestCovenOverSocket<T>(
       socket.removeListener('connect', onConnect);
       socket.removeListener('data', onData);
       socket.removeListener('end', onEnd);
+      socket.removeListener('close', onClose);
       socket.removeListener('error', onError);
       safeDestroy(socket);
       action();
@@ -987,6 +993,14 @@ function requestCovenOverSocket<T>(
             : 'Could not connect to the Coven daemon.',
           connected ? 'read_response' : 'connect',
         ),
+      );
+    };
+
+    const onClose = (): void => {
+      const phase = connected ? (requestSent ? 'read_response' : 'revalidate_endpoint') : 'connect';
+      failRequest(
+        operationControlError(context, phase) ??
+          ipcError('connect_failure', 'Coven daemon connection closed before the response completed.', phase),
       );
     };
 
@@ -1173,7 +1187,12 @@ function requestCovenOverSocket<T>(
     socket.once('connect', onConnect);
     socket.on('data', onData);
     socket.once('end', onEnd);
+    socket.once('close', onClose);
     socket.once('error', onError);
+    if (socket.destroyed) {
+      onClose();
+      return;
+    }
     context?.signal.addEventListener('abort', onAbort, { once: true });
     if (context?.signal.aborted === true) {
       onAbort();
@@ -1338,7 +1357,7 @@ function defaultUnixConnector(path: string): CovenConnectedSocket {
 export function createCovenUnixSocketAccess(
   discovered: CovenDiscoveredEndpoint,
   options: CovenUnixTransportOptions,
-) {
+): CovenSocketAccess {
   const endpoint = validUnixEndpoint(discovered);
   if (
     options?.security?.platform !== 'unix' ||

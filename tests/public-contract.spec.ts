@@ -466,6 +466,7 @@ describe('public package entry points', () => {
       'CovenSessionPolicyError',
       'createCovenAutomationsClient',
       'createCovenAutomationsUnixTransport',
+      'createCovenAutomationsWindowsTransport',
       'createCovenClient',
       'createCovenSessionPolicyClient',
       'createCovenSessionPolicyUnixTransport',

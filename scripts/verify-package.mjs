@@ -308,7 +308,10 @@ function createFixture(fixtureRoot, tarballs) {
   type CaveConversationMessage,
   type CaveProject,
 } from '@opencoven/cave-client';
-import { COVEN_DAEMON_PROTOCOL, CovenClient } from '@opencoven/coven-client';
+import {
+  COVEN_DAEMON_PROTOCOL, CovenClient, createCovenAutomationsWindowsTransport,
+  type CovenAutomationsClient, type CovenAutomationsWindowsTransportOptions,
+} from '@opencoven/coven-client';
 import {
   createFileOpenCovenProfileStore,
   createManagedMemorySecretStore,
@@ -359,6 +362,12 @@ const cave = new CaveClient({
   },
 });
 const coven = new CovenClient({
+  operation: { timeoutMs: 1_000, observer },
+  automationsTransport: {
+    capabilities: async () => ({
+      status: 200, body: new TextEncoder().encode('{"capabilities":[]}'),
+    }),
+  },
   transport: {
     health: async (context?: OperationContext) => {
       void context?.signal;
@@ -378,6 +387,15 @@ const coven = new CovenClient({
   },
 });
 const sdk = createOpenCovenSdk({ cave, coven });
+const automations: CovenAutomationsClient = sdk.requireCoven().requireAutomations();
+const optionalAutomations: CovenAutomationsClient | undefined = sdk.coven?.automations;
+const windowsAutomationsFactory: (
+  endpoint: Parameters<typeof createCovenAutomationsWindowsTransport>[0],
+  options: CovenAutomationsWindowsTransportOptions,
+) => ReturnType<typeof createCovenAutomationsWindowsTransport> = createCovenAutomationsWindowsTransport;
+await automations.capabilities();
+void optionalAutomations;
+void windowsAutomationsFactory;
 const store = createMemorySecretStore();
 const managedStore = createManagedMemorySecretStore();
 const profile: OpenCovenProfile = {
@@ -443,10 +461,60 @@ void caveIterators;
   );
   writeFileSync(
     resolve(fixtureRoot, 'verify.mjs'),
-    `const core = await import('@opencoven/sdk-core');
+    `const { strict: assert } = await import('node:assert');
+const core = await import('@opencoven/sdk-core');
 const { CaveClient } = await import('@opencoven/cave-client');
-await import('@opencoven/coven-client');
-await import('@opencoven/sdk');
+const { CovenClient, CovenClientError, isCovenClientError, createCovenAutomationsWindowsTransport } =
+  await import('@opencoven/coven-client');
+const { createOpenCovenSdk } = await import('@opencoven/sdk');
+
+assert.equal(typeof createCovenAutomationsWindowsTransport, 'function');
+const operationEvents = [];
+const contexts = [];
+const listAction = 'coven.automations.definition.list.v1';
+const automationsClient = new CovenClient({
+  transport: { health: () => { throw new Error('Automations must not invoke health'); } },
+  operation: {
+    timeoutMs: 1_000,
+    observer: { onEvent: (event) => operationEvents.push(event), onObserverError: (error) => { throw error; } },
+  },
+  automationsTransport: {
+    capabilities: async (context) => {
+      contexts.push(context);
+      return { status: 200, body: Buffer.from(JSON.stringify({ capabilities: [{
+        id: 'coven.automations', label: 'Automations', adapter: 'coven-daemon', status: 'available',
+        policy: 'allow', actions: [listAction], variantNegotiation: {
+          version: 1, contractProfile: 'coven.automations.v1', description: 'Negotiation',
+          supported: { triggers: [], conditions: [], actions: [], triggerPolicies: [], deliveryPolicies: [], retentionPolicies: [] },
+          experimental: [], refused: [], negotiationRules: [],
+        },
+      }] })) };
+    },
+    readDefinitions: async (request, context) => {
+      contexts.push(context);
+      assert.deepEqual(request, { action: listAction, includeTombstoned: false });
+      return { status: 200, body: Buffer.from(JSON.stringify({
+        ok: true, accepted: true, action: listAction, status: 'completed',
+        event: { kind: 'automations.changed', action: listAction,
+          payload: { routines: [], revisionById: {}, tombstonedAtById: {} } },
+      })) };
+    },
+  },
+});
+const sdk = createOpenCovenSdk({ coven: automationsClient });
+assert.equal(contexts.length, 0);
+assert.equal(sdk.coven.automations, sdk.requireCoven().requireAutomations());
+const beforeRead = performance.now();
+assert.deepEqual(await sdk.requireCoven().requireAutomations().list(),
+  { routines: [], revisionById: {}, tombstonedAtById: {} });
+assert.equal(contexts[0], contexts[1]);
+assert.ok(contexts[0].deadline >= beforeRead + 990);
+assert.ok(operationEvents.length > 0);
+const unconfigured = new CovenClient({ transport: { health: async () => ({}) } });
+assert.equal(unconfigured.automations, undefined);
+assert.throws(() => unconfigured.requireAutomations(), (error) =>
+  error instanceof CovenClientError && isCovenClientError(error) && error.code === 'not_configured');
+console.log('Packed umbrella Automations integration passed.');
 
 for (const coreExport of [
   'createOpenCovenDiagnosticReport',

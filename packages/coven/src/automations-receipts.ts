@@ -1,4 +1,4 @@
-import { CovenClientError, normalizeCovenError } from './client.js';
+import { CovenClientError, normalizeCovenError } from './client-errors.js';
 import { integer, object } from './automations-read-validation.js';
 
 /** Hand-authored read projection of Coven 4e35dd4c99013159fcee4c1ab2f183accdf7a5f8, not generated types. */

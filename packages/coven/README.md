@@ -13,8 +13,8 @@ and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
 
 - `discoverCovenEndpoint(options)` resolves the owner-local daemon endpoint
   only when called.
-- `createDiscoveredCovenClient(...)` wraps that discovery with a health-only
-  `CovenClient`.
+- `createDiscoveredCovenClient(...)` wraps that discovery with a `CovenClient`.
+  It stays health-only by default; `automations: true` adds the read-only namespace.
 - `createCovenUnixTransport(...)` and `createCovenWindowsTransport(...)`
   expose the exact reviewed built-in transports for the authenticated local
   daemon health contract.
@@ -29,11 +29,132 @@ and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
 - `createCovenAutomationsClient(...)` reads the advertised Automations v1
   negotiation profile, compatibility definitions, routine health, run history
   global occurrence inspection, and receipt retrieval.
-  `createCovenAutomationsUnixTransport(...)` supplies authenticated Unix
-  capability GET and allowlisted read-action POST requests; neither extends the
-  health client.
+  `createCovenAutomationsUnixTransport(...)` and
+  `createCovenAutomationsWindowsTransport(...)` supply authenticated owner-local
+  capability GET and allowlisted read-action POST requests.
+  Inject `automationsTransport` into `CovenClient` to share its operation defaults,
+  or keep using the standalone client.
 
 ## Automations phase 1: capability discovery and diagnostic reads
+
+### Opt into the normal client
+
+Set `automations: true` when you discover a Coven client. On Unix, pass your
+embedding runtime's reviewed native connected-peer adapter:
+
+```ts
+import {
+  createDiscoveredCovenClient,
+  type CovenUnixPeerIdentityAdapter,
+} from '@opencoven/coven-client';
+import { createOpenCovenSdk } from '@opencoven/sdk';
+
+export async function createUnixSdk(peerIdentity: CovenUnixPeerIdentityAdapter) {
+  const coven = await createDiscoveredCovenClient({
+    transportSecurity: { platform: 'unix', peerIdentity },
+    automations: true,
+    operation: { timeoutMs: 5_000 },
+  });
+  return createOpenCovenSdk({ coven });
+}
+
+// With your native adapter:
+// const sdk = await createUnixSdk(peerIdentity);
+// const definitions = await sdk.requireCoven().requireAutomations().list();
+```
+
+On Windows, supply the reviewed native pipe-ownership adapter and discovery
+options, including the native `windowsFileTrust` validator:
+
+```ts
+import {
+  createDiscoveredCovenClient,
+  type CovenDiscoveredWindowsClientOptions,
+} from '@opencoven/coven-client';
+
+export function createWindowsClient(options: CovenDiscoveredWindowsClientOptions) {
+  return createDiscoveredCovenClient({
+    ...options,
+    automations: true,
+    operation: { timeoutMs: 5_000, ...options.operation },
+  });
+}
+```
+
+Discovery runs once. Health and Automations reuse that exact endpoint, security
+provider, and platform dependencies. Construction sends no health, capability,
+or action request. Each later request authenticates its own connection.
+The `unix`/`windows` health response-limit options still apply only to health;
+Automations keeps its fixed 16 KiB body limit.
+
+`client.automations` is `CovenAutomationsClient | undefined`.
+`client.requireAutomations()` returns that same namespace or throws
+`CovenClientError` with `code: "not_configured"` and operation `"automations"`.
+It does not perform discovery or enable a transport. The umbrella SDK retains
+the same client at `sdk.coven` and `sdk.requireCoven()`; there is no separate
+`sdk.automations` alias.
+
+For manual construction, inject the Automations transport explicitly:
+
+```ts
+import {
+  createCovenClient,
+  createCovenWindowsTransport,
+  createCovenAutomationsWindowsTransport,
+  type CovenDiscoveredEndpoint,
+  type CovenWindowsTransportOptions,
+} from '@opencoven/coven-client';
+
+export function createWindowsClient(
+  endpoint: CovenDiscoveredEndpoint,
+  options: CovenWindowsTransportOptions,
+) {
+  return createCovenClient({
+    transport: createCovenWindowsTransport(endpoint, options),
+    automationsTransport: createCovenAutomationsWindowsTransport(endpoint, options),
+    operation: { timeoutMs: 5_000 },
+  });
+}
+```
+
+Use the corresponding Unix factories for manual Unix construction. Custom
+transports remain explicit trust boundaries: you must give health and Automations
+the intended authority and enforce the documented authentication and limits.
+The SDK never infers Automations support from a health transport.
+
+Both namespaces inherit the normal client's timeout and observer defaults.
+Per-call `timeoutMs` and `observer` override those defaults; `signal` cancels the
+whole call. An Automations read shares one budget across capability negotiation,
+endpoint/peer inspection, and the action response. SDK health coordination
+does not poll or activate Automations.
+
+| Surface | Unix socket | Windows named pipe |
+| --- | --- | --- |
+| `capabilities()` | Authenticated GET | Authenticated GET |
+| `list()`, `get()`, `health()` | Allowlisted reads | Same actions and decoders |
+| `runs()`, `occurrences()`, `getOccurrence()` | Bounded diagnostic reads | Same actions and decoders |
+| `getReceipt()` | Public/operational receipt result | Same result and privacy checks |
+| Normal/discovered client and `sdk.coven` | Explicit opt-in | Explicit opt-in |
+| TCP fallback, mutations, independent receipt authentication | Not supported | Not supported |
+
+Windows requires a current-user SID, owner-only ACL, nonempty pipe identity,
+positive server PID, and process creation time before connecting. Before any
+request bytes are written, the connected pipe must match all initial identity
+fields and the discovered PID/creation-time freshness. Missing native adapters,
+changed permissions/identity, unsafe paths, or inspection failures fail closed.
+Path-only or shell-derived checks are not substitutes for native inspection.
+
+Windows source authority is Coven v0.4.4 commit
+[`4e35dd4c99013159fcee4c1ab2f183accdf7a5f8`](https://github.com/OpenCoven/coven/tree/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8):
+[`daemon.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/daemon.rs#L6144-L6219)
+creates an owner-only named-pipe listener and dispatches both accept paths with
+`HostGuard::Disabled`, which maps to `RequestAuthority::OwnerLocalIpc`.
+[`request_authority.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/request_authority.rs)
+permits receipt access only through that authority, never TCP. Injected adapter
+tests, including hosted Windows execution, do not certify a native adapter or
+claim live-daemon conformance.
+
+### Standalone client
 
 Import `createCovenAutomationsClient` and `createCovenAutomationsUnixTransport`
 directly from `@opencoven/coven-client`. Explicitly discover an endpoint, then
@@ -85,7 +206,7 @@ missing action names fail with `capability_unsupported` without posting an actio
 Custom capability-only transports remain compatible; reads without the optional
 `readDefinitions` hook fail with `unsupported_operation`.
 
-The built-in Unix transport sends only these seven allowlisted JSON actions to
+The built-in Unix and Windows transports send only these seven allowlisted JSON actions to
 `POST /api/v1/actions`. It authenticates each connection, including the separate
 capability request, under one client deadline/cancellation scope. It cannot send
 mutations through this hook. IDs are trimmed as the producer does; the SDK
@@ -194,7 +315,7 @@ No unrelated conformance artifact pins change.
 
 ### Receipt retrieval
 
-Read a receipt through the same explicitly configured owner-local Unix transport:
+Read a receipt through the same explicitly configured owner-local transport:
 
 ```ts
 const { receipt, verification } = await automations.getReceipt(
@@ -335,13 +456,13 @@ an HTTP failure is **not** projected as absence. Errors do not retain response
 bodies or provider error causes. Unknown advertised variant strings are data,
 not SDK execution support; experimental entries are not implicitly opted into.
 
-The built-in transport enforces current-UID, socket permissions, connected-peer
-authentication and post-connect identity checks before writing, with no retries
-or redirects. It bounds headers to 64 KiB and response bodies to 16 KiB,
+The built-in transports enforce platform ownership, permissions, connected-peer
+authentication, and post-connect identity checks before writing, with no retries,
+TCP fallback, or redirects. They bound headers to 64 KiB and response bodies to 16 KiB,
 including error bodies. A five-second default operation deadline covers
 endpoint inspection as well as I/O; direct transport calls are capped at five
-minutes. Cancellation destroys active sockets. Windows has no automation
-transport factory yet and is rejected by the Unix factory. Injected
+minutes. Cancellation destroys active sockets. Windows uses its named-pipe
+factory and is still rejected by the Unix factory. Injected
 `CovenAutomationsTransport` implementations must enforce equivalent trust,
 framing and operation limits and return raw response bytes.
 
@@ -363,7 +484,8 @@ are **not receipt authentication, execution authorization, or certification**.
 No individual-run retrieval, independent receipt verification, subscription,
 mutation, or positive authority acceptance is implemented here. Producer rich
 execution (#1054), trust (#857), and certification (#858) remain separate.
-The unified `@opencoven/sdk` stays health-only.
+The unified `@opencoven/sdk` coordinates health and exposes the configured
+Automations namespace through its existing Coven client.
 
 ## Session-policy admission v1 (refusal only)
 
