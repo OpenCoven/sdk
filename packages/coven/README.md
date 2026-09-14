@@ -27,10 +27,12 @@ and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
   transport with mandatory connected-peer security and only the two fixed
   policy routes. Windows policy transport is explicitly unsupported.
 - `createCovenAutomationsClient(...)` reads the advertised Automations v1
-  negotiation profile. `createCovenAutomationsUnixTransport(...)` supplies its
-  fixed, authenticated Unix GET route; neither extends the health client.
+  negotiation profile and compatibility definitions.
+  `createCovenAutomationsUnixTransport(...)` supplies authenticated Unix
+  capability GET and allowlisted read-action POST requests; neither extends the
+  health client.
 
-## Automations phase 1: capability discovery
+## Automations phase 1: capability discovery and definition reads
 
 Import `createCovenAutomationsClient` and `createCovenAutomationsUnixTransport`
 directly from `@opencoven/coven-client`. Explicitly discover an endpoint, then
@@ -48,7 +50,66 @@ if (advertised.status === 'available') {
 }
 ```
 
-This sends only `GET /api/v1/capabilities`. It reads the uniquely identified
+The same standalone client supports definition reads:
+
+```ts
+const definitions = await automations.list(
+  { includeTombstoned: false },
+  { timeoutMs: 5_000 },
+);
+for (const routine of definitions.routines) {
+  console.log(routine.id, definitions.revisionById[routine.id]);
+}
+const definition = await automations.get('morning', { timeoutMs: 5_000 });
+if (definition.routine !== null) {
+  console.log(definition.routine.status, definition.revision, definition.tombstonedAt);
+}
+```
+
+These methods consume the producer's **executable compatibility** `RoutineDefinition`
+(numeric `schemaVersion: 1`), not the normative rich `AutomationDefinition`.
+`list()` defaults to excluding tombstones; `get()` includes a tombstoned definition
+if it exists and returns `{ routine: null }` if it does not. Returned revision and
+tombstone maps are checked against the returned routine IDs. Routine fields are
+decoded for read interoperability, not revalidated as an executable schedule or
+accepted authority.
+
+Each read refreshes the capability advertisement and requires its exact action:
+`coven.automations.definition.list.v1` or
+`coven.automations.definition.get.v1`. Missing/planned/unnegotiated profiles or
+missing action names fail with `capability_unsupported` without posting an action.
+Custom capability-only transports remain compatible; reads without the optional
+`readDefinitions` hook fail with `unsupported_operation`.
+
+The built-in Unix transport sends only these two allowlisted JSON actions to
+`POST /api/v1/actions`. It authenticates each connection, including the separate
+capability request, under one client deadline/cancellation scope. It cannot send
+mutations through this hook. IDs are trimmed as the producer does; the SDK
+additionally rejects malformed Unicode and IDs over 4,096 UTF-8 bytes. Responses
+use the existing strict 16 KiB / 16-level JSON bound (including duplicate-key and
+malformed-Unicode rejection). Larger catalogs fail closed, not partially; this
+producer list action has no pagination contract. Canonical action rejection
+becomes `action_rejected`, while malformed/crossed responses become
+`invalid_response`; daemon rejection reasons and payloads are not copied into
+errors. Capability advertisement and transport authentication do not establish
+receipt authenticity or runtime authority.
+
+Definition-read source authority is Coven
+[`c56c2e2f10329c05df9273ac48914cf6b7ebb410`](https://github.com/OpenCoven/coven/tree/c56c2e2f10329c05df9273ac48914cf6b7ebb410):
+[`api.rs`](https://github.com/OpenCoven/coven/blob/c56c2e2f10329c05df9273ac48914cf6b7ebb410/crates/coven-cli/src/api.rs)
+routes `POST /actions` after API-version normalization;
+[`control_plane.rs`](https://github.com/OpenCoven/coven/blob/c56c2e2f10329c05df9273ac48914cf6b7ebb410/crates/coven-cli/src/control_plane.rs)
+advertises and dispatches these exact read actions, emits `ControlActionResponse`
+with `event.kind: "automations.changed"` even for reads, and defines
+`automation_list_payload` / `automation_get_payload`;
+[`definition.rs`](https://github.com/OpenCoven/coven/blob/c56c2e2f10329c05df9273ac48914cf6b7ebb410/crates/coven-cli/src/automations/definition.rs)
+owns the compatibility routine fields. No GET definition routes, normative
+command-envelope adaptation, pagination, changefeed emission, or certification
+are inferred from the schemas in `spec/coven-automations/v1`. Existing artifact
+pins are unchanged. Runs, health, occurrences, receipt reads/verification,
+subscriptions and authority-bearing phases remain separate #80 work.
+
+`capabilities()` sends only `GET /api/v1/capabilities`. It reads the uniquely identified
 `coven.automations` catalog entry, preserves supported, experimental and refused
 variants separately, and accepts only profile version 1,
 `coven.automations.v1`. Missing advertisements, planned capabilities, and older
@@ -69,7 +130,7 @@ transport factory yet and is rejected by the Unix factory. Injected
 `CovenAutomationsTransport` implementations must enforce equivalent trust,
 framing and operation limits and return raw response bytes.
 
-**Provenance:** this read surface follows Coven commit
+**Capability provenance:** this read surface follows Coven commit
 [`c56c2e2f10329c05df9273ac48914cf6b7ebb410`](https://github.com/OpenCoven/coven/tree/c56c2e2f10329c05df9273ac48914cf6b7ebb410):
 [`control_plane.rs`](https://github.com/OpenCoven/coven/blob/c56c2e2f10329c05df9273ac48914cf6b7ebb410/crates/coven-cli/src/control_plane.rs)
 defines `CapabilityCatalog` and the Automations entry;
@@ -84,7 +145,7 @@ The earlier immutable artifact canary pin remains unchanged.
 This is a focused part of [SDK #80](https://github.com/OpenCoven/sdk/issues/80),
 not its completion. A local authenticated channel and an advertised capability
 are **not receipt authentication, execution authorization, or certification**.
-No definition/run/receipt retrieval, receipt verification, subscription,
+No run/receipt retrieval, receipt verification, subscription,
 mutation, or positive authority acceptance is implemented here. Producer rich
 execution (#1054), trust (#857), and certification (#858) remain separate.
 The unified `@opencoven/sdk` stays health-only.
