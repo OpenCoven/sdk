@@ -160,11 +160,25 @@ describe('native secret store', () => {
     },
   );
 
-  test('does not delete a replacement written by another native store instance', async () => {
+  test.each([
+    ...Array.from({ length: 25 }, (_, iteration) => ({
+      scenario: `replacement retained (iteration ${String(iteration + 1)})`,
+      failure: 'none',
+    })),
+    { scenario: 'deletion failure', failure: 'delete' },
+    { scenario: 'immediate replacement rejection', failure: 'set' },
+  ])('drains the native store replacement race: $scenario', async ({ failure }) => {
     const secrets = new Map<string, string>([
       [`${SERVICE}:cave-credential`, 'credential-current'],
     ]);
-    let replacement: Promise<void> | undefined;
+    let replacement: Promise<[PromiseSettledResult<void>]> | undefined;
+    const deletionFailure = new Error('injected deletion failure');
+    const replacementFailure = new SecureStoreUnavailableError('set', {
+      cause: Object.assign(new Error('injected lock failure'), {
+        code: 'EPERM',
+        syscall: 'mkdir',
+      }),
+    });
 
     class Entry {
       readonly #slot: string;
@@ -180,7 +194,10 @@ describe('native secret store', () => {
           value === 'credential-current' &&
           replacement === undefined
         ) {
-          replacement = replacementStore.set('cave-credential', 'credential-new');
+          // Observe rejection immediately, without ending the test before deletion releases its lock.
+          replacement = Promise.allSettled([
+            replacementStore.set('cave-credential', 'credential-new'),
+          ]);
         }
         return value;
       }
@@ -190,20 +207,54 @@ describe('native secret store', () => {
       }
 
       deletePassword(): boolean {
+        if (failure === 'delete') {
+          throw deletionFailure;
+        }
         return secrets.delete(this.#slot);
       }
     }
 
-    const options = moduleWithEntry(Entry);
+    const options = {
+      ...moduleWithEntry(Entry),
+      lockDirectory: mkdtempSync(join(TEST_LOCK_DIRECTORY, 'replacement-race-')),
+    };
     const deletingStore = await createNativeSecretStore(options);
     const replacementStore = await createNativeSecretStore(options);
+    if (failure === 'set') {
+      vi.spyOn(replacementStore, 'set').mockRejectedValue(replacementFailure);
+    }
     const atomicStore = deletingStore as typeof deletingStore & AtomicNativeSecretStore;
 
-    await expect(
+    const [deletionResult] = await Promise.allSettled([
       atomicStore.compareAndDelete('cave-credential', 'credential-current'),
-    ).resolves.toBe('deleted');
-    await replacement;
-    await expect(deletingStore.get('cave-credential')).resolves.toBe('credential-new');
+    ]);
+    // Drain both operations before any assertion can abort the test or permit cleanup.
+    const replacementResults = await replacement;
+
+    expect(replacementResults).toBeDefined();
+    if (failure === 'delete') {
+      expect(deletionResult).toMatchObject({
+        status: 'rejected',
+        reason: {
+          code: 'secure_store_unavailable',
+          operation: 'delete',
+          cause: deletionFailure,
+        },
+      });
+    } else {
+      expect(deletionResult).toEqual({ status: 'fulfilled', value: 'deleted' });
+    }
+    if (failure === 'set') {
+      expect(replacementResults).toEqual([{
+        status: 'rejected',
+        reason: replacementFailure,
+      }]);
+      await expect(deletingStore.get('cave-credential')).resolves.toBeUndefined();
+    } else {
+      expect(replacementResults).toEqual([{ status: 'fulfilled', value: undefined }]);
+      await expect(deletingStore.get('cave-credential')).resolves.toBe('credential-new');
+    }
+    expect(existsSync(lockPath(options.lockDirectory, SERVICE, 'cave-credential'))).toBe(false);
   });
 
   test('recovers a stale owner lock even when its PID has been reused', async () => {
