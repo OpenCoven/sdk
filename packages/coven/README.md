@@ -2,7 +2,7 @@
 
 A constrained, owner-local Coven client. Importing the package performs
 no filesystem, process, network, socket, or daemon I/O. Discovery, health, and
-policy requests happen only through explicit runtime calls.
+policy and automation capability requests happen only through explicit runtime calls.
 
 The supported root API, pre-1.0 compatibility rules, and deprecation process
 are documented in the repository
@@ -26,6 +26,68 @@ and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
 - `createCovenSessionPolicyUnixTransport(...)` is the opt-in real Unix policy
   transport with mandatory connected-peer security and only the two fixed
   policy routes. Windows policy transport is explicitly unsupported.
+- `createCovenAutomationsClient(...)` reads the advertised Automations v1
+  negotiation profile. `createCovenAutomationsUnixTransport(...)` supplies its
+  fixed, authenticated Unix GET route; neither extends the health client.
+
+## Automations phase 1: capability discovery
+
+Import `createCovenAutomationsClient` and `createCovenAutomationsUnixTransport`
+directly from `@opencoven/coven-client`. Explicitly discover an endpoint, then
+provide the same reviewed native Unix `peerIdentity` security adapter required
+by the health transport:
+
+```ts
+const transport = createCovenAutomationsUnixTransport(endpoint, {
+  security: { platform: 'unix', peerIdentity },
+});
+const automations = createCovenAutomationsClient({ transport });
+const advertised = await automations.capabilities({ timeoutMs: 5_000 });
+if (advertised.status === 'available') {
+  console.log(advertised.variantNegotiation.supported);
+}
+```
+
+This sends only `GET /api/v1/capabilities`. It reads the uniquely identified
+`coven.automations` catalog entry, preserves supported, experimental and refused
+variants separately, and accepts only profile version 1,
+`coven.automations.v1`. Missing advertisements, planned capabilities, and older
+entries without negotiation profiles return explicit `unavailable` reasons.
+Malformed/duplicate entries, incompatible profiles, invalid UTF-8/JSON,
+oversized bodies and non-200 HTTP responses fail with `CovenClientError`;
+an HTTP failure is **not** projected as absence. Errors do not retain response
+bodies or provider error causes. Unknown advertised variant strings are data,
+not SDK execution support; experimental entries are not implicitly opted into.
+
+The built-in transport enforces current-UID, socket permissions, connected-peer
+authentication and post-connect identity checks before writing, with no retries
+or redirects. It bounds headers to 64 KiB and response bodies to 16 KiB,
+including error bodies. A five-second default operation deadline covers
+endpoint inspection as well as I/O; direct transport calls are capped at five
+minutes. Cancellation destroys active sockets. Windows has no automation
+transport factory yet and is rejected by the Unix factory. Injected
+`CovenAutomationsTransport` implementations must enforce equivalent trust,
+framing and operation limits and return raw response bytes.
+
+**Provenance:** this read surface follows Coven commit
+[`c56c2e2f10329c05df9273ac48914cf6b7ebb410`](https://github.com/OpenCoven/coven/tree/c56c2e2f10329c05df9273ac48914cf6b7ebb410):
+[`control_plane.rs`](https://github.com/OpenCoven/coven/blob/c56c2e2f10329c05df9273ac48914cf6b7ebb410/crates/coven-cli/src/control_plane.rs)
+defines `CapabilityCatalog` and the Automations entry;
+[`capability_negotiation.rs`](https://github.com/OpenCoven/coven/blob/c56c2e2f10329c05df9273ac48914cf6b7ebb410/crates/coven-cli/src/automations/capability_negotiation.rs)
+defines the serialized profile;
+[`api.rs`'s `routes_control_capabilities_discovery_to_json` test](https://github.com/OpenCoven/coven/blob/c56c2e2f10329c05df9273ac48914cf6b7ebb410/crates/coven-cli/src/api.rs#L20489)
+binds the actual GET response to packaged
+[`capabilities.json`](https://github.com/OpenCoven/coven/blob/c56c2e2f10329c05df9273ac48914cf6b7ebb410/spec/coven-automations/v1/capabilities.json).
+SDK tests use synthetic contract-shaped responses, not a new certified artifact.
+The earlier immutable artifact canary pin remains unchanged.
+
+This is a focused part of [SDK #80](https://github.com/OpenCoven/sdk/issues/80),
+not its completion. A local authenticated channel and an advertised capability
+are **not receipt authentication, execution authorization, or certification**.
+No definition/run/receipt retrieval, receipt verification, subscription,
+mutation, or positive authority acceptance is implemented here. Producer rich
+execution (#1054), trust (#857), and certification (#858) remain separate.
+The unified `@opencoven/sdk` stays health-only.
 
 ## Session-policy admission v1 (refusal only)
 

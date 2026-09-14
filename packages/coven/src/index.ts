@@ -1,3 +1,13 @@
+export { CovenAutomationsClient, createCovenAutomationsClient } from './automations.js';
+export type {
+  CovenAutomationCapabilities,
+  CovenAutomationCapabilityProfile,
+  CovenAutomationVariant,
+  CovenAutomationsClientOptions,
+  CovenAutomationsTransport,
+} from './automations.js';
+export { createCovenAutomationsUnixTransport } from './automations-unix.js';
+export type { CovenAutomationsUnixTransportOptions } from './automations-unix.js';
 export {
   CovenClient,
   CovenClientError,
