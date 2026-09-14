@@ -10,6 +10,7 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs';
+import type * as FsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,6 +18,62 @@ import { createNativeSecretStore, SecureStoreUnavailableError } from '@opencoven
 import { afterAll, describe, expect, test, vi } from 'vitest';
 
 import { probeNativeSecretStore } from '../packages/cli/src/native-secret-store.js';
+
+const lockTrace = vi.hoisted(() => ({
+  target: '',
+  events: [] as { operation: string; phase: string; code?: string; removing: number }[],
+  removing: 0,
+}));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const fs = await importOriginal<typeof FsPromises>();
+  return {
+    ...fs,
+    mkdir: async (...args: Parameters<typeof fs.mkdir>) => {
+      if (args[0] !== lockTrace.target) {
+        return fs.mkdir(...args);
+      }
+      lockTrace.events.push({ operation: 'mkdir', phase: 'start', removing: lockTrace.removing });
+      try {
+        const result = await fs.mkdir(...args);
+        lockTrace.events.push({ operation: 'mkdir', phase: 'done', removing: lockTrace.removing });
+        return result;
+      } catch (error) {
+        lockTrace.events.push({
+          operation: 'mkdir',
+          phase: 'error',
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+          removing: lockTrace.removing,
+        });
+        throw error;
+      } finally {
+        lockTrace.events.splice(0, Math.max(0, lockTrace.events.length - 40));
+      }
+    },
+    rm: async (...args: Parameters<typeof fs.rm>) => {
+      if (args[0] !== lockTrace.target) {
+        return fs.rm(...args);
+      }
+      lockTrace.removing++;
+      lockTrace.events.push({ operation: 'rm', phase: 'start', removing: lockTrace.removing });
+      try {
+        await fs.rm(...args);
+        lockTrace.events.push({ operation: 'rm', phase: 'done', removing: lockTrace.removing });
+      } catch (error) {
+        lockTrace.events.push({
+          operation: 'rm',
+          phase: 'error',
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+          removing: lockTrace.removing,
+        });
+        throw error;
+      } finally {
+        lockTrace.removing--;
+        lockTrace.events.splice(0, Math.max(0, lockTrace.events.length - 40));
+      }
+    },
+  };
+});
 
 interface EntryShape {
   getPassword(): string | null | undefined;
@@ -218,6 +275,9 @@ describe('native secret store', () => {
       ...moduleWithEntry(Entry),
       lockDirectory: mkdtempSync(join(TEST_LOCK_DIRECTORY, 'replacement-race-')),
     };
+    // Trace only this synthetic fixture's canonical lock; never record paths or credentials.
+    lockTrace.target = lockPath(options.lockDirectory, SERVICE, 'cave-credential');
+    lockTrace.events = [];
     const deletingStore = await createNativeSecretStore(options);
     const replacementStore = await createNativeSecretStore(options);
     if (failure === 'set') {
@@ -230,7 +290,18 @@ describe('native secret store', () => {
     ]);
     // Drain both operations before any assertion can abort the test or permit cleanup.
     const replacementResults = await replacement;
+    if (replacementResults?.[0].status === 'rejected' && failure !== 'set') {
+      console.error('synthetic-lock-lifecycle', JSON.stringify({
+        platform: process.platform,
+        node: process.versions.node,
+        uv: process.versions.uv,
+        events: lockTrace.events,
+      }));
+    }
+    lockTrace.target = '';
 
+    expect(lockTrace.events).toContainEqual({ operation: 'rm', phase: 'done', removing: 1 });
+    expect(lockTrace.removing).toBe(0);
     expect(replacementResults).toBeDefined();
     if (failure === 'delete') {
       expect(deletionResult).toMatchObject({
