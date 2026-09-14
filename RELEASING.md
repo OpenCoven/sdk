@@ -123,6 +123,75 @@ the pending Cave compatibility change, native evidence, or future 0.0.1
 artifacts. #40 remains BLOCK until the complete final-candidate review and
 authorized immutable SHIP record exist.
 
+### Release gate checkpoint (2026-09-14)
+
+**0.0.1 remains blocked.** The private conformance candidate is frozen, but
+there is no accepted three-platform aggregate, final publication candidate,
+or SHIP authorization. GitHub issue state alone is not release evidence.
+At this checkpoint #38 was marked closed even though its latest
+[evidence disposition](https://github.com/OpenCoven/sdk/issues/38#issuecomment-5659174495)
+explicitly withheld acceptance. Do not advance #40, #41, or #31 on that closure.
+
+The reviewed source binding is SDK #246,
+`ff96d08e19e534e982b3e9ea24fb9cc7e9e22a67`, with Chat producer
+`7ec15b20b5526ef809c8f237a4dab1f640cb8a4d`, Cave authority
+`8a06421a705c2d7891c3f44cc580c569f6cbe2c1`, and unchanged private SDK
+candidate `77d825d17809cfec2fad4acb9b1526b3c4752f9d`.
+
+Protected [run `34796638173`, attempt 1](https://github.com/OpenCoven/chat/actions/runs/34796638173/attempts/1)
+has authenticated partial `darwin-arm64` and `linux-x64` records, each with
+197 ordered passing assertions. Windows failed at
+`phase1.native-scenarios.launch.discovery-not-found`, followed by profile
+cleanup failures. No Windows record exists for that attempt; downstream
+validation, attestation, and aggregation were skipped. The expected Windows
+record has 196 assertions, not 197.
+
+[Attempt 2](https://github.com/OpenCoven/chat/actions/runs/34796638173/attempts/2)
+also failed Windows, this time at the fail-closed quota monitor with
+`access-denied; root=cave-checkout; scope=none; operation=directory-enumeration-depth-3-plus; repeat=missing`,
+followed by profile cleanup failures. That classification does not establish
+resource exhaustion or authorize larger quotas. Do not combine records from
+different attempts or treat an unexamined retry as authenticated evidence.
+
+[Chat #266](https://github.com/OpenCoven/chat/pull/266) proposes bounded
+publication-refusal and profile-survival diagnostics. At this checkpoint it
+is an active diagnostic follow-up, not a proven native repair. Preserve its
+owner's work and the existing trust, cleanup, quota, and deadline controls.
+
+The authoritative environment-policy verifier accepted `publication-candidate`,
+`npm-release`, and `npm-publish` at `2026-09-14T05:12:12.939Z`, with policy
+digest `90e1ef003ffa5bf45ef494a0ebe164bdc6af41ce0a58da5219b1949bc7f1c990`.
+This read-only observation is not deployment approval or SHIP authorization.
+Repeat it for the final publication candidate; do not reuse it as a future
+policy receipt.
+
+Continue through these gates in order:
+
+1. Resolve the actual Windows failures through reviewed source changes.
+   Bind the actual merged producer in the SDK validator, then obtain
+   authorization for the exact protected run and deployment. Re-read both
+   validator scopes before dispatch and approval; an intervening rotation
+   invalidates a waiting run's assumptions.
+2. Authenticate all platform records and the complete successful run,
+   including validation, attestations, and aggregation. Commit the accepted
+   aggregate and reviewed index and select them in
+   `conformanceEvidence.aggregateRecord`. A private candidate's four tarballs
+   are conformance inputs only, never npm publication inputs.
+3. Prepare the reviewed release-enablement changes. Obtain fresh explicit
+   authorization before enabling publication or creating the annotated tag.
+   Generate the exact attested publication candidate, repeat the live
+   environment-policy verification, and obtain the immutable #40 SHIP
+   authorization described below for those bytes and the tag object.
+4. Obtain fresh explicit authorization for any npm bootstrap,
+   trusted-publisher setup, and publication in #41. Complete protected
+   approval and registry byte/provenance verification before closing #41
+   and #31.
+
+`publishingEnabled` remains `false`, all five workspace packages remain
+private, and `conformanceEvidence.aggregateRecord` remains `null`. The CLI
+is still excluded. This checkpoint authorizes no remote mutation and
+relabels no historical artifact.
+
 ## 1. Release locks and prerequisites
 
 A normal publication requires every independent lock to be open:

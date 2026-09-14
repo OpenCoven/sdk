@@ -67,8 +67,13 @@ real-authority record on `darwin-arm64`. SDK
 [OpenCoven/coven-cave#5044](https://github.com/OpenCoven/coven-cave/pull/5044),
 which closed
 [OpenCoven/coven-cave#4996](https://github.com/OpenCoven/coven-cave/issues/4996).
-The prepared 0.0.1 source now needs fresh candidate-bound records on all three
-platforms; the earlier Darwin record does not validate the new candidate.
+The frozen 0.0.1 candidate now has
+[authenticated partial Unix records](https://github.com/OpenCoven/sdk/issues/38#issuecomment-5659174495)
+from protected run `34796638173`, attempt 1. Windows failed; validation,
+attestation, and aggregation were skipped. The earlier Darwin record does
+not validate this candidate, and the new Unix records do not establish
+complete release acceptance. See the
+[dated release-gate checkpoint](RELEASING.md#release-gate-checkpoint-2026-09-14).
 
 Message sending, streaming, attachments, task handoffs, GitHub mutations, and
 offline mutation queues are explicitly deferred to separately reviewed

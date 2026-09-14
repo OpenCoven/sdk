@@ -1,6 +1,10 @@
 # OpenCoven SDK Roadmap
 
-The OpenCoven SDK is experimental and unpublished. The current objective is a secure read-only 0.1 release that proves discovery, consent, identity, credential custody, canonical reads, native trust, and packed-consumer behavior before adding mutation authority.
+The OpenCoven SDK is experimental and unpublished. The current objective is a secure read-only **0.0.1** release that proves discovery, consent, identity, credential custody, canonical reads, native trust, and packed-consumer behavior before adding mutation authority.
+
+The [0.0.1 release decision](../RELEASING.md#v001-preparation-decision-2026-09-12)
+replaces the original 0.1.0 version target, not its scope or acceptance gates.
+The dated 0.1 design and delivery program below retain their historical names.
 
 For the complete design and execution graph, see:
 
@@ -24,7 +28,7 @@ Delivered foundations include:
 - a locked two-key release system with checksummed artifacts and OIDC-oriented publishing.
 
 All workspace packages remain private and public publishing remains
-intentionally disabled. The 0.1 release inventory contains the four SDK
+intentionally disabled. The 0.0.1 release inventory contains the four SDK
 libraries; `@opencoven/dev-cli` remains a source-tested private workspace and
 is excluded from release artifacts and the Changesets fixed group.
 
@@ -34,8 +38,11 @@ SDK [#35](https://github.com/OpenCoven/sdk/issues/35) merged through PR #69 at
 [`OpenCoven/coven-cave#5044`](https://github.com/OpenCoven/coven-cave/pull/5044)
 and closed
 [`OpenCoven/coven-cave#4996`](https://github.com/OpenCoven/coven-cave/issues/4996).
-The frozen release authority is current Cave main
-`6325fc4c1154c7d7398074a9760a2e2dc323b424`.
+The original pairing milestone used Cave authority
+`6325fc4c1154c7d7398074a9760a2e2dc323b424`; it is not the current release
+authority. The current source and artifact identities are pinned in
+[`conformance/client-v1-cross-repository-lock.json`](../conformance/client-v1-cross-repository-lock.json)
+and [the release process](../RELEASING.md#v001-preparation-decision-2026-09-12).
 Issue #35 is closed after
 [OpenCoven/chat#30](https://github.com/OpenCoven/chat/pull/30) and
 [Actions run `33250233035`](https://github.com/OpenCoven/chat/actions/runs/33250233035)
@@ -53,16 +60,24 @@ the maximum `100`, and use opaque strict canonical base64url cursors bounded to
 and never prefetch, retry, or implicitly walk the whole corpus.
 
 SDK [#37](https://github.com/OpenCoven/sdk/issues/37) records that the private
-CLI is deferred from 0.1 and that Chat's Tauri layer owns the Phase 1 native
-trust adapters. The 0.1 native Chat/real-authority conformance matrix is now
+CLI is deferred from the first release and that Chat's Tauri layer owns the
+Phase 1 native trust adapters. The native Chat/real-authority conformance matrix is
 frozen to `darwin-arm64`, `linux-x64`, and `win32-x64`. Chat
 [#27](https://github.com/OpenCoven/chat/issues/27) is closed after the native
 integration landed. OpenCoven/chat#30 and Actions run `33250233035` provide
-the first named packed real-authority record for `darwin-arm64`; SDK
-[#38](https://github.com/OpenCoven/sdk/issues/38) still requires equivalent
-passing records for `linux-x64` and `win32-x64`.
+the first named packed real-authority record for `darwin-arm64`. That historical
+record does not qualify the new 0.0.1 candidate.
 
-## Now — secure read-only 0.1
+The private 0.0.1 candidate is frozen at
+`77d825d17809cfec2fad4acb9b1526b3c4752f9d`. Protected
+[run `34796638173`, attempt 1](https://github.com/OpenCoven/chat/actions/runs/34796638173/attempts/1)
+produced [authenticated partial Unix records](https://github.com/OpenCoven/sdk/issues/38#issuecomment-5659174495),
+but Windows failed and downstream validation, attestation, and aggregation
+were skipped. A closed issue or successful ordinary CI does not satisfy this
+gate. See the [dated release checkpoint](../RELEASING.md#release-gate-checkpoint-2026-09-14)
+for the remaining evidence and authorization requirements.
+
+## Now: secure read-only 0.0.1
 
 ### Contract truth
 
@@ -77,15 +92,15 @@ passing records for `linux-x64` and `win32-x64`.
   custody; closed after strict discovery v2 + `hpke-bound-v1` merged through
   PR #69 and the packaged `darwin-arm64` pairing/custody evidence passed
 - [#36](https://github.com/OpenCoven/sdk/issues/36) — canonical reads merged through PR #55
-- [#37](https://github.com/OpenCoven/sdk/issues/37) — defer private CLI from 0.1; assign Phase 1 native trust adapters to Chat
+- [#37](https://github.com/OpenCoven/sdk/issues/37): defer the private CLI from the first release; assign Phase 1 native trust adapters to Chat
 
 ### Consumer and evidence
 
 - [Chat #27](https://github.com/OpenCoven/chat/issues/27) — packed SDK/native
   integration complete
-- [#38](https://github.com/OpenCoven/sdk/issues/38) — cross-repository
-  real-authority conformance; `darwin-arm64` has a passing record, while
-  `linux-x64` and `win32-x64` still require one passing record each
+- [#38](https://github.com/OpenCoven/sdk/issues/38): cross-repository
+  real-authority conformance; the 0.0.1 candidate has partial Unix evidence,
+  but Windows and the complete authenticated aggregate remain required
 - [#39](https://github.com/OpenCoven/sdk/issues/39) — profiles, diagnostics, and public API governance
 
 ### Release
@@ -149,15 +164,15 @@ Authority-bearing commands remain additionally blocked by
 [OpenCoven/coven#857](https://github.com/OpenCoven/coven/issues/857) and
 [OpenCoven/coven#858](https://github.com/OpenCoven/coven/issues/858).
 
-Automations are not part of the 0.1 release bar. The SDK will consume pinned
+Automations are not part of the 0.0.1 release bar. The SDK will consume pinned
 Coven-owned contracts and evidence rather than defining scheduling, authority,
 or run state independently.
 
 ## Parallel maintenance
 
-[#45](https://github.com/OpenCoven/sdk/issues/45) audits legacy branches, worktrees, and stash state. Cleanup is separately authorized and does not block 0.1 unless unique work or release/provenance risk is discovered.
+[#45](https://github.com/OpenCoven/sdk/issues/45) audits legacy branches, worktrees, and stash state. Cleanup is separately authorized and does not block 0.0.1 unless unique work or release/provenance risk is discovered.
 
-## 0.1 release bar
+## 0.0.1 release bar
 
 The first release does not ship until all of the following are true:
 
@@ -168,9 +183,14 @@ The first release does not ship until all of the following are true:
 - Chat completes the journey through native custody and trust adapters;
 - SDK and Chat are removed from conformance `notCovered`;
 - the frozen native conformance matrix has one passing record each for
-  `darwin-arm64`, `linux-x64`, and `win32-x64`;
+  `darwin-arm64`, `linux-x64`, and `win32-x64`, bound to the same accepted
+  candidate and authenticated through the complete protected evidence chain;
+- the accepted aggregate and its reviewed index are committed and selected by
+  `conformanceEvidence.aggregateRecord` in `release.config.json`;
 - public API baselines and redacted diagnostics are complete;
-- the security review recommends ship;
+- the security review authorizes the exact publication artifacts, annotated
+  tag object, and protected environment policy, not merely the private
+  conformance candidate;
 - registry bytes and provenance match the reviewed release manifest;
 - bootstrap credentials are revoked;
 - ordinary future publishing uses protected OIDC with no token fallback.
