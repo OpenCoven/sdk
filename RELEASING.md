@@ -80,10 +80,12 @@ public scope only on that line, without reverting main or silently including
 its later APIs. Effective release-branch protection, unchanged policies for
 all three environments, publication enablement, final artifact review and
 immutable #40 SHIP authorization remain operational prerequisites.
-`npm-release` still prevents self-review: its sole required reviewer needs a
-distinct authorized dispatcher. This preparation creates neither identity nor
-permissions, and leaves all packages private, `publishingEnabled: false` and
-`aggregateRecord: null`.
+For normal OIDC publication (section 8), `npm-release` still prevents
+self-review: its sole required reviewer needs a distinct authorized dispatcher.
+That workflow requirement is not an inferred prerequisite for the separate,
+manually approved first-publish bootstrap (section 6). This preparation creates
+neither identity nor permissions, and leaves all packages private,
+`publishingEnabled: false` and `aggregateRecord: null`.
 
 ### Compatibility prerequisite
 
@@ -956,6 +958,14 @@ one-time operation:
 
 Do not add that credential to repository secrets, workflow files, shell
 history, or normal release automation.
+
+The `npm-release` self-review rule governs the normal protected workflow, not
+this separate manual procedure. Do not infer a distinct workflow dispatcher
+requirement for bootstrap from that rule alone; the explicit bootstrap
+authorization must establish its participants and audit controls. This is not
+bootstrap automation or permission to add a token fallback to normal OIDC
+publication. Preflight observations about collaborators, npm authentication or
+environment secrets are not bootstrap authorization or final release receipts.
 
 ## 7. Configure trusted publishers
 
