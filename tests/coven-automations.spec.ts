@@ -11,6 +11,8 @@ import {
   type CovenAutomationDefinitionReadRequest,
   type CovenAutomationHealthResult,
   type CovenAutomationListOptions,
+  type CovenAutomationRunsOptions,
+  type CovenAutomationRunsResult,
   type CovenConnectedSocket,
   type CovenDiscoveredEndpoint,
 } from '@opencoven/coven-client';
@@ -22,7 +24,7 @@ function advertisement() {
     capabilities: [{
       id: 'coven.automations', label: 'Coven-native routine automations',
       adapter: 'coven-daemon', status: 'available', policy: 'allow',
-      actions: ['coven.automations.definition.get.v1', 'coven.automations.definition.list.v1', 'coven.automations.health'],
+      actions: ['coven.automations.definition.get.v1', 'coven.automations.definition.list.v1', 'coven.automations.health', 'coven.automations.runs'],
       variantNegotiation: {
         version: 1, contractProfile: 'coven.automations.v1', description: 'Variant negotiation',
         supported: {
@@ -42,6 +44,168 @@ function advertisement() {
 const listAction = 'coven.automations.definition.list.v1';
 const getAction = 'coven.automations.definition.get.v1';
 const healthAction = 'coven.automations.health';
+const runsAction = 'coven.automations.runs';
+
+function runSnapshot() {
+  return {
+    id: 'run-1', automationId: 'morning', occurrenceId: 'occurrence-1', sessionId: null,
+    familiarId: null, runtime: null, status: 'running', exitCode: null, logJson: null,
+    outputCommit: null, startedAt: '2026-09-14T00:00:00Z', finishedAt: null, receiptId: null,
+    attempts: [{
+      id: 'attempt-1', runId: 'run-1', occurrenceId: 'occurrence-1', attemptNumber: 1,
+      adoptionKey: 'adoption-1', occurrenceFenceGeneration: 1, dispatchGeneration: 0,
+      state: 'adopted', failureClass: null, priorAttemptNumber: null, priorDisposition: null,
+      retryClassification: 'initial', notBefore: '2026-09-14T00:00:00Z',
+      sessionId: null, stateReason: null, openedAt: '2026-09-14T00:00:00Z', settledAt: null,
+    }],
+  };
+}
+
+test('reads canonical bounded run history under one operation scope', async () => {
+  const payload = { runs: [runSnapshot()] };
+  const { client, transport } = readSetup(payload, runsAction);
+  const result = await client.runs(' morning ');
+  expectTypeOf(result).toEqualTypeOf<CovenAutomationRunsResult>();
+  expectTypeOf<CovenAutomationRunsOptions>().toEqualTypeOf<{ readonly limit?: number }>();
+  expect(result).toEqual(payload);
+  const [request, context] = transport.readDefinitions.mock.calls[0]!;
+  expect(request).toEqual({ action: runsAction, id: ' morning ', limit: 20 });
+  expect(Object.isFrozen(request)).toBe(true);
+  expect(transport.capabilities.mock.calls[0]?.[0]).toBe(context);
+  expect(await readSetup({ runs: [] }, runsAction).client.runs('missing', { limit: 100 })).toEqual({ runs: [] });
+});
+
+test('preserves legacy runs and populated retry/cancellation diagnostics without inventing authority', async () => {
+  const first = runSnapshot().attempts[0]!;
+  const payload = { runs: [{
+    ...runSnapshot(), status: 'producer-status', exitCode: -1, receiptId: 'receipt-ref',
+    logJson: 'opaque text, not necessarily JSON', outputCommit: 'producer-output',
+    sessionId: 'session-2', familiarId: 'familiar-1', runtime: 'coven-code', finishedAt: 'finished',
+    attempts: [
+      { ...first, state: 'failed', failureClass: 'runtime_unavailable', settledAt: 'settled', stateReason: 'reason' },
+      {
+        ...first, id: 'attempt-2', adoptionKey: 'adoption-2', attemptNumber: 2, priorAttemptNumber: 1,
+        priorDisposition: 'failed', retryClassification: 'automatic_retry', sessionId: 'session-2',
+        occurrenceFenceGeneration: Number.MAX_SAFE_INTEGER, dispatchGeneration: Number.MAX_SAFE_INTEGER,
+      },
+    ],
+    cancellation: {
+      scope: 'run', requestedBy: { principalId: 'owner-local' }, status: 'cancelled',
+      requestedAt: 'requested', reason: 'operator request', acknowledgedAt: 'ack', reconciledAt: 'reconciled',
+    },
+  }, {
+    ...runSnapshot(), id: 'legacy-run', occurrenceId: null, attempts: [],
+  }] };
+  const result = await readSetup(payload, runsAction).client.runs('morning');
+  expect(result).toEqual(payload);
+  expect(result.runs[0]).not.toHaveProperty('automationRevision');
+  expect(result.runs[0]).not.toHaveProperty('definitionDigest');
+  expect(result.runs[0]).not.toHaveProperty('authorityProfile');
+});
+
+test.each([
+  {}, { scope: 'attempt' }, { requestedBy: null }, { requestedBy: {} },
+  { requestedBy: { principalId: 1 } }, { status: 'invented' }, { requestedAt: null },
+  { reason: null }, { acknowledgedAt: null }, { reconciledAt: null },
+])('rejects malformed cancellation projections %#', async (change) => {
+  const cancellation = {
+    scope: 'run', requestedBy: { principalId: 'owner-local' }, status: 'requested', requestedAt: 'requested',
+    ...change,
+  };
+  const payload = { runs: [{ ...runSnapshot(), cancellation: Object.keys(change).length === 0 ? {} : cancellation }] };
+  await expect(readSetup(payload, runsAction).client.runs('morning')).rejects.toMatchObject({ code: 'invalid_response' });
+});
+
+test.each(['requested', 'stopping', 'cancelled', 'recovery_required', 'rejected'])(
+  'preserves minimal cancellation status %s with absent optional fields', async (status) => {
+    const payload = { runs: [{
+      ...runSnapshot(), cancellation: { scope: 'run', requestedBy: { principalId: 'owner' }, status, requestedAt: 'now' },
+    }] };
+    expect(await readSetup(payload, runsAction).client.runs('morning')).toEqual(payload);
+  },
+);
+
+test.each([null, [], '20', 20])('refuses malformed run query %#', async (query) => {
+  const { client, transport } = readSetup({ runs: [] }, runsAction);
+  await expect(client.runs('morning', query as CovenAutomationRunsOptions)).rejects.toMatchObject({ code: 'invalid_options' });
+  expect(transport.capabilities).not.toHaveBeenCalled();
+});
+
+test.each([null, [], {}, { runs: null }, { runs: {} }])('refuses noncanonical history payload %#', async (payload) => {
+  await expect(readSetup(payload, runsAction).client.runs('morning')).rejects.toMatchObject({ code: 'invalid_response' });
+});
+
+test('run history refuses crossed envelopes and sanitizes canonical rejections', async () => {
+  const { client, transport } = readSetup({ runs: [] }, getAction);
+  await expect(client.runs('morning')).rejects.toMatchObject({ code: 'invalid_response' });
+  transport.readDefinitions.mockResolvedValue({
+    status: 400,
+    body: Buffer.from(JSON.stringify({
+      ok: false, accepted: false, action: runsAction, status: 'rejected', reason: '/private/store',
+    })),
+  });
+  await expect(client.runs('morning')).rejects.toMatchObject({
+    code: 'action_rejected', normalized: { operation: 'automations.runs' },
+  });
+  await expect(client.runs('morning')).rejects.not.toThrow('/private/store');
+});
+
+test.each([0, 101, -1, 1.5, NaN, Infinity, '20', null])('refuses invalid run limits before I/O %#', async (limit) => {
+  const { client, transport } = readSetup({ runs: [] }, runsAction);
+  await expect(client.runs('morning', { limit: limit as number })).rejects.toMatchObject({ code: 'invalid_options' });
+  expect(transport.capabilities).not.toHaveBeenCalled();
+  expect(transport.readDefinitions).not.toHaveBeenCalled();
+});
+
+test.each([
+  ...Object.keys(runSnapshot()).map((key) => ({ [key]: undefined })),
+  { automationId: 'other' }, { id: '' }, { exitCode: 1.5 }, { exitCode: Number.MAX_SAFE_INTEGER + 1 },
+  { attempts: null }, { receiptId: 2 }, { cancellation: null },
+])('rejects malformed or crossed run history fields %#', async (change) => {
+  await expect(readSetup({ runs: [{ ...runSnapshot(), ...change }] }, runsAction).client.runs('morning'))
+    .rejects.toMatchObject({ code: 'invalid_response', normalized: { operation: 'automations.runs' } });
+});
+
+test.each([
+  ...Object.keys(runSnapshot().attempts[0]!).map((key) => ({ [key]: undefined })),
+  { runId: 'other' }, { occurrenceId: 'other' }, { attemptNumber: 0 }, { attemptNumber: 11 },
+  { occurrenceFenceGeneration: 0 }, { dispatchGeneration: -1 }, { dispatchGeneration: 1.1 },
+  { state: 'invented' }, { failureClass: 'invented' }, { retryClassification: 'invented' },
+  { priorAttemptNumber: 1 }, { priorDisposition: 'failed' },
+])('rejects malformed or uncorrelated attempts %#', async (change) => {
+  const run = runSnapshot();
+  run.attempts = [{ ...run.attempts[0]!, ...change }] as typeof run.attempts;
+  await expect(readSetup({ runs: [run] }, runsAction).client.runs('morning'))
+    .rejects.toMatchObject({ code: 'invalid_response' });
+});
+
+test('rejects duplicate runs/attempts and histories exceeding the requested limit', async () => {
+  const run = runSnapshot();
+  await expect(readSetup({ runs: [run, run] }, runsAction).client.runs('morning'))
+    .rejects.toMatchObject({ code: 'invalid_response' });
+  await expect(readSetup({ runs: [run, { ...run, id: 'run-2', attempts: [] }] }, runsAction).client.runs('morning', { limit: 1 }))
+    .rejects.toMatchObject({ code: 'invalid_response' });
+  await expect(readSetup({ runs: [{ ...run, attempts: [run.attempts[0], run.attempts[0]] }] }, runsAction).client.runs('morning'))
+    .rejects.toMatchObject({ code: 'invalid_response' });
+});
+
+test('run history gates fresh capabilities, cancellation, timeout and bounded strict JSON', async () => {
+  const { client, transport } = readSetup({ runs: [] }, runsAction);
+  await client.runs('morning');
+  transport.capabilities.mockResolvedValueOnce({
+    status: 200, body: Buffer.from(JSON.stringify({ capabilities: [] })),
+  });
+  await expect(client.runs('morning')).rejects.toMatchObject({ code: 'capability_unsupported' });
+  expect(transport.readDefinitions).toHaveBeenCalledOnce();
+  await expect(setup().client.runs('morning')).rejects.toMatchObject({ code: 'unsupported_operation' });
+  await expect(client.runs('morning', {}, { signal: AbortSignal.abort() })).rejects.toMatchObject({ code: 'aborted' });
+  for (const body of [Buffer.alloc(16_385, 32), Buffer.from('{"runs":[],"runs":[]}'), Buffer.from([0xff])]) {
+    transport.readDefinitions.mockResolvedValueOnce({ status: 200, body });
+    await expect(client.runs('morning')).rejects.toMatchObject({ code: 'invalid_response' });
+  }
+  transport.readDefinitions.mockImplementationOnce(() => new Promise(() => {}));
+  await expect(client.runs('morning', {}, { timeoutMs: 10 })).rejects.toMatchObject({ code: 'timeout' });
+});
 
 function healthSnapshot() {
   return {
@@ -300,6 +464,7 @@ test.each(['missing', 'planned', 'unnegotiated', 'action_missing'])('gates reads
   transport.capabilities.mockResolvedValue({ status: 200, body: Buffer.from(JSON.stringify(value)) });
   await expect(client.list()).rejects.toMatchObject({ code: 'capability_unsupported' });
   await expect(client.health('morning')).rejects.toMatchObject({ code: 'capability_unsupported' });
+  await expect(client.runs('morning')).rejects.toMatchObject({ code: 'capability_unsupported' });
   expect(transport.readDefinitions).not.toHaveBeenCalled();
 });
 
@@ -318,6 +483,7 @@ test.each(['', '  ', '\ud800', 'x'.repeat(4_097), null, 42])('refuses invalid re
   const { client, transport } = readSetup();
   await expect(client.get(id as string)).rejects.toMatchObject({ code: 'invalid_options' });
   await expect(client.health(id as string)).rejects.toMatchObject({ code: 'invalid_options' });
+  await expect(client.runs(id as string)).rejects.toMatchObject({ code: 'invalid_options' });
   expect(transport.capabilities).not.toHaveBeenCalled();
 });
 
@@ -496,6 +662,7 @@ test.skipIf(process.platform === 'win32').each([
   { action: listAction, includeTombstoned: true },
   { action: getAction, id: ' morning ' },
   { action: healthAction, id: ' morning ' },
+  { action: runsAction, id: ' morning ', limit: 20 },
   { action: getAction, id: 'é\r\nInjected: true' },
 ])('Unix read transport authenticates and sends only allowlisted JSON actions %#', async (request) => {
   const { transport, socket, inspectConnected } = unixSetup();
@@ -522,10 +689,25 @@ test.skipIf(process.platform === 'win32').each([getAction, healthAction] as cons
   expect(socket.writes).toEqual([]);
 });
 
+test.skipIf(process.platform === 'win32')('Unix history transport refuses untrusted peers before writing', async () => {
+  const { transport, socket } = unixSetup(502);
+  await expect(transport.readDefinitions!({ action: runsAction, id: 'morning', limit: 1 }, {
+    signal: new AbortController().signal, deadline: undefined,
+  })).rejects.toBeDefined();
+  expect(socket.writes).toEqual([]);
+});
+
 test.skipIf(process.platform === 'win32').each([
   null, {}, { action: 'coven.automations.definition.create.v1', id: 'morning' },
   { action: 'coven.automations.health.v1', id: 'morning' },
   { action: 'coven.automations.unquarantine', id: 'morning' },
+  { action: 'coven.automations.runs.v1', id: 'morning', limit: 20 },
+  { action: runsAction, id: 'morning' },
+  { action: runsAction, id: 'morning', limit: 0 },
+  { action: runsAction, id: 'morning', limit: 101 },
+  { action: runsAction, id: 'morning', limit: '20' },
+  { action: runsAction, id: 'morning', limit: 20, receiptId: 'secret' },
+  { action: runsAction, id: 'morning', get limit() { throw new Error('accessor must not run'); } },
   { action: getAction, id: 'morning', definition: {} }, { action: getAction, id: '' },
   { action: listAction, includeTombstoned: 'true' },
   Object.create({ action: getAction, id: 'morning' }) as unknown,
@@ -549,9 +731,9 @@ test.skipIf(process.platform === 'win32')('read transport rejects oversized resp
   expect(socket.destroyed).toBe(true);
 });
 
-test.skipIf(process.platform === 'win32').each(['get', 'health'] as const)('client %s reads through two independently authenticated Unix connections', async (method) => {
-  const action = method === 'get' ? getAction : healthAction;
-  const payload = method === 'get' ? definitionGet() : { health: healthSnapshot() };
+test.skipIf(process.platform === 'win32').each(['get', 'health', 'runs'] as const)('client %s reads through two independently authenticated Unix connections', async (method) => {
+  const action = method === 'get' ? getAction : method === 'health' ? healthAction : runsAction;
+  const payload = method === 'get' ? definitionGet() : method === 'health' ? { health: healthSnapshot() } : { runs: [runSnapshot()] };
   const sockets: Socket[] = [];
   const inspectConnected = vi.fn((socket: CovenConnectedSocket) => {
     expect(socket).toBe(sockets.at(-1));
