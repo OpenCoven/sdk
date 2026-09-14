@@ -7,6 +7,15 @@ import {
 
 import { CovenClientError, normalizeCovenError } from './client.js';
 import { parsePolicyJson } from './policy-json.js';
+import {
+  decodeDefinitionRead,
+  definitionReadBytes,
+  definitionReadFailure,
+  type CovenAutomationDefinition,
+  type CovenAutomationDefinitionList,
+  type CovenAutomationDefinitionReadRequest,
+  type CovenAutomationListOptions,
+} from './automations-definitions.js';
 
 export interface CovenAutomationVariant {
   readonly variant: string;
@@ -41,6 +50,10 @@ export type CovenAutomationCapabilities =
   };
 
 export interface CovenAutomationsTransport {
+  readDefinitions?(request: CovenAutomationDefinitionReadRequest, context: OperationContext): Promise<{
+    readonly status: number;
+    readonly body: Uint8Array;
+  }>;
   capabilities(context: OperationContext): Promise<{
     readonly status: number;
     readonly body: Uint8Array;
@@ -125,6 +138,53 @@ export class CovenAutomationsClient {
 
   constructor(options: CovenAutomationsClientOptions) {
     this.#options = options;
+  }
+
+  async list(query: CovenAutomationListOptions = {}, options: OperationOptions = {}): Promise<CovenAutomationDefinitionList> {
+    if (!object(query) || (query.includeTombstoned !== undefined && typeof query.includeTombstoned !== 'boolean')) {
+      return definitionReadFailure('invalid_options', 'automations.list');
+    }
+    return await this.#read({
+      action: 'coven.automations.definition.list.v1',
+      includeTombstoned: query.includeTombstoned ?? false,
+    }, options) as CovenAutomationDefinitionList;
+  }
+
+  async get(id: string, options: OperationOptions = {}): Promise<CovenAutomationDefinition> {
+    return await this.#read({ action: 'coven.automations.definition.get.v1', id }, options) as CovenAutomationDefinition;
+  }
+
+  async #read(
+    request: CovenAutomationDefinitionReadRequest,
+    options: OperationOptions,
+  ): Promise<CovenAutomationDefinitionList | CovenAutomationDefinition> {
+    const operation = request.action === 'coven.automations.definition.list.v1' ? 'automations.list' : 'automations.get';
+    const observer = options.observer ?? this.#options.operation?.observer;
+    try {
+      definitionReadBytes(request);
+      return await runOperation(
+        { system: 'coven', operation },
+        {
+          ...this.#options.operation,
+          ...options,
+          timeoutMs: options.timeoutMs ?? this.#options.operation?.timeoutMs ?? 5_000,
+          ...(observer === undefined ? {} : { observer }),
+        },
+        async (context) => {
+          const read = this.#options.transport.readDefinitions?.bind(this.#options.transport);
+          if (read === undefined) return definitionReadFailure('unsupported_operation', operation);
+          const response = await this.#options.transport.capabilities(context);
+          const advertised = decode(response.status, response.body);
+          if (advertised.status !== 'available' || !advertised.actions.includes(request.action)) {
+            return definitionReadFailure('capability_unsupported', operation);
+          }
+          const result = await read(Object.freeze(request), context);
+          return decodeDefinitionRead(result.status, result.body, request, operation);
+        },
+      );
+    } catch (error) {
+      throw new CovenClientError(normalizeCovenError(error, operation));
+    }
   }
 
   async capabilities(options: OperationOptions = {}): Promise<CovenAutomationCapabilities> {

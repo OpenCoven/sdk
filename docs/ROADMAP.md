@@ -164,12 +164,19 @@ independently recomputes golden definition/receipt integrity and checks the
 receipt's definition binding before exercising replay vectors. This is
 constrained contract conformance, not a public receipt-authentication API.
 
+The standalone Automations client now discovers capabilities and reads
+compatibility definitions with `list()` / `get()` through the source-pinned,
+authenticated Unix `POST /api/v1/actions` surface. Reads require their exact
+advertised action and retain revision/tombstone/missing-definition distinctions.
+They do not implement the normative rich definition envelope, pagination,
+subscriptions, receipt verification, mutations or authority acceptance.
+
 OpenCoven/coven#991 (`d277ade3`) and OpenCoven/coven#999 (`735e2f05`) publish packaged base capability
 negotiation, durable `CAPABILITY_UNSUPPORTED` outcomes, and exact wire request
 fingerprinting. The rich normative `AutomationDefinition` remains
 negotiation-only. Read/verify/subscribe implementation can progress against
 committed producer surfaces without treating certification as a blanket gate;
-public retrieval/subscription APIs, production lifecycle emission, rich
+remaining retrieval/subscription APIs, production lifecycle emission, rich
 executable persistence, command-catalog parity, and current packed
 cross-repository certification are not credited as complete.
 Authority-bearing commands remain additionally blocked by

@@ -8,6 +8,13 @@ export type {
 } from './automations.js';
 export { createCovenAutomationsUnixTransport } from './automations-unix.js';
 export type { CovenAutomationsUnixTransportOptions } from './automations-unix.js';
+export type {
+  CovenAutomationDefinition,
+  CovenAutomationDefinitionList,
+  CovenAutomationDefinitionReadRequest,
+  CovenAutomationListOptions,
+  CovenAutomationRoutine,
+} from './automations-definitions.js';
 export {
   CovenClient,
   CovenClientError,
