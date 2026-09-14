@@ -27,7 +27,8 @@ and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
   transport with mandatory connected-peer security and only the two fixed
   policy routes. Windows policy transport is explicitly unsupported.
 - `createCovenAutomationsClient(...)` reads the advertised Automations v1
-  negotiation profile, compatibility definitions, routine health and run history.
+  negotiation profile, compatibility definitions, routine health, run history
+  and global occurrence inspection.
   `createCovenAutomationsUnixTransport(...)` supplies authenticated Unix
   capability GET and allowlisted read-action POST requests; neither extends the
   health client.
@@ -76,13 +77,14 @@ accepted authority.
 
 Each read refreshes the capability advertisement and requires its exact action:
 `coven.automations.definition.list.v1` or
-`coven.automations.definition.get.v1`, `coven.automations.health`, or `coven.automations.runs`.
+`coven.automations.definition.get.v1`, `coven.automations.health`, `coven.automations.runs`,
+`coven.automations.occurrence.list.v1`, or `coven.automations.occurrence.get.v1`.
 Missing/planned/unnegotiated profiles or
 missing action names fail with `capability_unsupported` without posting an action.
 Custom capability-only transports remain compatible; reads without the optional
 `readDefinitions` hook fail with `unsupported_operation`.
 
-The built-in Unix transport sends only these four allowlisted JSON actions to
+The built-in Unix transport sends only these six allowlisted JSON actions to
 `POST /api/v1/actions`. It authenticates each connection, including the separate
 capability request, under one client deadline/cancellation scope. It cannot send
 mutations through this hook. IDs are trimmed as the producer does; the SDK
@@ -126,7 +128,7 @@ Failure/exhaustion counters are nonnegative safe integers and `maxAttempts` is
 Missing routines produce sanitized `action_rejected`, not an invented null result.
 Health is store-derived diagnostic data, not execution or receipt authority.
 Custom transports use the existing optional `readDefinitions` hook, whose
-historical name now covers all four explicitly allowlisted read actions.
+historical name now covers all six explicitly allowlisted read actions.
 
 Health source authority was independently read from Coven
 [`b3b2d043a4ee586ccbf25ef6aad21db8a1171a54`](https://github.com/OpenCoven/coven/tree/b3b2d043a4ee586ccbf25ef6aad21db8a1171a54):

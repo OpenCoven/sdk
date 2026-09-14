@@ -16,6 +16,7 @@ import {
   type CovenAutomationOccurrencesOptions,
   type CovenAutomationOccurrencesResult,
   type CovenAutomationOccurrenceResult,
+  type CovenAutomationOccurrenceRun,
   type CovenConnectedSocket,
   type CovenDiscoveredEndpoint,
 } from '@opencoven/coven-client';
@@ -89,6 +90,7 @@ test('reads correlated occurrence detail and preserves explicit missing/truncati
   const { client, transport } = readSetup(payload, occurrenceAction);
   const result = await client.getOccurrence(' occurrence-1 ');
   expectTypeOf(result).toEqualTypeOf<CovenAutomationOccurrenceResult>();
+  expectTypeOf<CovenAutomationOccurrenceRun['occurrenceId']>().toEqualTypeOf<string>();
   expect(result).toEqual(payload);
   expect(transport.readDefinitions.mock.calls[0]?.[0]).toEqual({ action: occurrenceAction, id: ' occurrence-1 ' });
   expect(transport.readDefinitions.mock.calls[0]?.[1]).toBe(transport.capabilities.mock.calls[0]?.[0]);

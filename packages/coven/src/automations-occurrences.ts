@@ -29,6 +29,7 @@ export interface CovenAutomationOccurrence {
 }
 
 export interface CovenAutomationOccurrenceRun extends Omit<CovenAutomationRun, 'cancellation'> {
+  readonly occurrenceId: string;
   readonly automationRevision: number;
   readonly definitionDigest: string | null;
   readonly authorityProfile: string | null;
