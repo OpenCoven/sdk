@@ -11,6 +11,9 @@ public static class LockLifecycle {
   [DllImport("kernel32.dll", SetLastError = true)]
   public static extern bool SetFileInformationByHandle(IntPtr handle, int kind,
     ref uint flags, uint size);
+  [DllImport("kernel32.dll", EntryPoint = "SetFileInformationByHandle", SetLastError = true)]
+  public static extern bool SetLegacyDisposition(IntPtr handle, int kind,
+    ref byte deleteFile, uint size);
   [DllImport("kernel32.dll", SetLastError = true)]
   public static extern bool CloseHandle(IntPtr handle);
 }
@@ -45,7 +48,12 @@ try {
         & node -e 'const fs=require("node:fs");const p=process.env.OPENCOVEN_SYNTHETIC_LOCK;fs.renameSync(p,p+".released")'
         if ($LASTEXITCODE -ne 0) { throw 'Synthetic retirement failed' }
       }
-      $marked = [LockLifecycle]::SetFileInformationByHandle($handle, $kind, [ref]$flags, 4)
+      if ($control -eq 'legacy-disposition') {
+        [byte]$deleteFile = 1
+        $marked = [LockLifecycle]::SetLegacyDisposition($handle, $kind, [ref]$deleteFile, 1)
+      } else {
+        $marked = [LockLifecycle]::SetFileInformationByHandle($handle, $kind, [ref]$flags, 4)
+      }
       $nativeError = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
       $pending = Probe-Mkdir
     } finally {
