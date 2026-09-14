@@ -25,6 +25,33 @@ tarball identities. This is not accepted #38 evidence or a #40 SHIP disposition.
 `conformanceEvidence.aggregateRecord` remains unset. The private CLI retains
 its independent 0.1.0 version while consuming exact 0.0.1 workspace dependencies.
 
+### Fresh candidate source preparation (2026-09-14)
+
+The release owner has selected a fresh private **0.0.1** candidate that
+includes the Coven Automations capability-discovery APIs merged in #251.
+Source preparation starts from reviewed main
+`6a1c4b0a074e60f816ce4fcc98150e19c3438ea2`, preserving the later #252
+diagnostic producer binding and all other merged work. This metadata update
+does not change runtime code, package versions, dependency pins, or privacy.
+
+The applicable `automations-capability-read.md` Changeset is incorporated
+into the Coven client's existing unpublished `0.0.1` changelog and consumed.
+Its actual classification was `minor`, not `patch`; folding it into the
+initial release is not an instruction to run automatic versioning. Do not
+create a `0.0.2` or `0.1.0` release for this preparation. The unrelated
+session-policy feature, private CLI patch, and empty maintenance Changesets
+remain unchanged.
+
+No fresh candidate has been captured by this source-preparation change.
+After its reviewed merge, build and pack that exact committed source twice
+using the existing local-verification artifact mode, then record its actual
+commit, tree, canonical source manifest, and package bytes. If public runtime
+changes land meanwhile, stop and coordinate rather than silently including
+them. Candidate77's lock, manifests, tarballs, and partial evidence remain
+unchanged and identify only candidate77 until an authentic replacement
+candidate and reviewed consumer/producer binding are available.
+All #38/#40 acceptance and publication gates remain closed.
+
 ### Compatibility prerequisite
 
 The prerequisite landed in
