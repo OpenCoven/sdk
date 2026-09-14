@@ -116,10 +116,31 @@ corepack pnpm@10.34.0 canary:automations-v1 -- \
 
 The canary verifies gzip and tar structure, the exact 17-file manifest, every
 file size and digest, the content digest, and the expected v1 contract shape.
+Before trusting the golden fixtures, it independently recomputes each embedded
+`integrity` SHA-256 using the producer's recursive removal of `integrity`
+members and canonical key ordering. It requires the golden definition, receipt,
+and create-command definition digests, and checks the receipt's definition
+digest, automation ID, and revision against the golden definition. Matching
+archive/manifest hashes alone do not establish this semantic consistency.
 It extracts only into an owned temporary directory, typechecks a consumer
 fixture against the bundled declaration, and runs the bundled duplicate,
 out-of-order, and reconnect/replay golden vectors through SDK-side reducer
 logic.
+
+Integrity checking deliberately accepts only the pinned fixture domain (ASCII
+strings and safe integers, plus JSON objects, arrays, booleans, and null).
+It is not a general-purpose JCS or public `verifyReceipt` implementation.
+`fixtureIntegrity=passed` and `receiptDefinitionBinding=passed` report fixture
+consistency only: a receipt with `authentication: "none"` is not authenticated,
+and no trust root, principal authorization, runtime evidence, or production
+lifecycle certification is inferred. Negative schema cases are not treated as
+valid integrity fixtures.
+
+The historical base-artifact pin remains unchanged; it does not certify the
+later capability-negotiation changes from OpenCoven/coven#991 and
+OpenCoven/coven#999. See the
+[Automations roadmap](docs/ROADMAP.md#future--coven-automations) for the current
+producer status and remaining SDK phases.
 
 The exact-runtime CI job checks out Coven at the locked source commit,
 reproduces the deterministic bundle into runner temporary storage, verifies

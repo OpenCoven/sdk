@@ -157,9 +157,21 @@ distribution gate is approved.
 ## Future — Coven Automations
 
 [#80](https://github.com/OpenCoven/sdk/issues/80) adds a constrained Automations
-SDK after the canonical `coven.automations.v1` artifacts are stable. Its first
-read/verify/subscribe phase is blocked by
-[OpenCoven/coven#855](https://github.com/OpenCoven/coven/issues/855).
+SDK consuming canonical `coven.automations.v1` artifacts.
+[OpenCoven/coven#855](https://github.com/OpenCoven/coven/issues/855) is closed:
+the immutable base-artifact canary landed in SDK #106. The canary now also
+independently recomputes golden definition/receipt integrity and checks the
+receipt's definition binding before exercising replay vectors. This is
+constrained contract conformance, not a public receipt-authentication API.
+
+OpenCoven/coven#991 (`d277ade3`) and OpenCoven/coven#999 (`735e2f05`) publish packaged base capability
+negotiation, durable `CAPABILITY_UNSUPPORTED` outcomes, and exact wire request
+fingerprinting. The rich normative `AutomationDefinition` remains
+negotiation-only. Read/verify/subscribe implementation can progress against
+committed producer surfaces without treating certification as a blanket gate;
+public retrieval/subscription APIs, production lifecycle emission, rich
+executable persistence, command-catalog parity, and current packed
+cross-repository certification are not credited as complete.
 Authority-bearing commands remain additionally blocked by
 [OpenCoven/coven#857](https://github.com/OpenCoven/coven/issues/857) and
 [OpenCoven/coven#858](https://github.com/OpenCoven/coven/issues/858).

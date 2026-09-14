@@ -123,6 +123,33 @@ function fixtureEvents(): Array<Record<string, unknown>> {
   }));
 }
 
+function integrityFixtures(): Record<string, unknown> {
+  const definition = { automationId: 'automation-1', revision: 1 };
+  const digest = {
+    algorithm: 'sha256',
+    canonicalization: 'jcs-rfc8785',
+    value: sha256('{"automationId":"automation-1","revision":1}'),
+  };
+  const receipt = {
+    automationId: 'automation-1',
+    automationRevision: 1,
+    definitionDigest: digest,
+  };
+  return {
+    'definition.golden': { ...definition, integrity: digest },
+    'receipt.golden': {
+      ...receipt,
+      integrity: {
+        algorithm: 'sha256',
+        canonicalization: 'jcs-rfc8785',
+        value: sha256(JSON.stringify(receipt)),
+        authentication: 'none',
+      },
+    },
+    'command.create.golden': { payload: { definition: { ...definition, integrity: digest } } },
+  };
+}
+
 function createContractFiles(): Map<string, Buffer> {
   const files = new Map<string, Buffer>();
   const schemas = contractFiles.filter((path) => path.endsWith('.schema.json'));
@@ -251,6 +278,7 @@ function createContractFiles(): Map<string, Buffer> {
         changefeed: 'Duplicate, ordering, and replay semantics.',
       },
       fixtures: {
+        ...integrityFixtures(),
         'event.occurrence.sequence': fixtureEvents(),
       },
       cases: [
@@ -466,6 +494,85 @@ describe('Automations v1 exact-artifact canary', () => {
     expect(result.stdout).toContain('duplicateDelivery=passed');
     expect(result.stdout).toContain('outOfOrderRefusal=passed');
     expect(result.stdout).toContain('reconnectReplay=passed');
+    expect(result.stdout).toContain('fixtureIntegrity=passed');
+    expect(result.stdout).toContain('receiptDefinitionBinding=passed');
+  });
+
+  test.each([
+    ['definition bytes', ['definition.golden', 'revision'], 2],
+    ['receipt bytes', ['receipt.golden', 'automationRevision'], 2],
+    ['embedded definition bytes', ['command.create.golden', 'payload', 'definition', 'revision'], 2],
+    ['missing integrity', ['definition.golden', 'integrity'], undefined],
+    ['unknown digest algorithm', ['receipt.golden', 'integrity', 'algorithm'], 'sha512'],
+    ['unknown canonicalization', ['definition.golden', 'integrity', 'canonicalization'], 'json'],
+    ['unsupported fixture number', ['definition.golden', 'revision'], 1.5],
+    ['unsupported fixture string', ['definition.golden', 'automationId'], 'é'],
+  ] as const)('rejects %s despite matching archive and manifest digests', (_label, path, value) => {
+    const artifact = createArtifact({
+      contractTransform: (files) => mutateVectors(files, (vectors) => {
+        let target = vectors.fixtures as Record<string, unknown>;
+        for (const key of path.slice(0, -1)) {
+          target = target[key] as Record<string, unknown>;
+        }
+        target[path[path.length - 1]!] = value;
+      }),
+    });
+    const result = runCanary(writeArtifact(artifact.archive), artifact);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toMatch(/fixture integrity/iu);
+  });
+
+  test.each(['automationId', 'automationRevision', 'definitionDigest'] as const)(
+    'refuses a self-consistent receipt with the wrong %s binding',
+    (field) => {
+      const artifact = createArtifact({
+        contractTransform: (files) => mutateVectors(files, (vectors) => {
+          const fixtures = vectors.fixtures as Record<string, Record<string, unknown>>;
+          const receipt = fixtures['receipt.golden']!;
+          if (field === 'definitionDigest') {
+            (receipt.definitionDigest as Record<string, unknown>).value = '0'.repeat(64);
+          } else {
+            receipt[field] = field === 'automationId' ? 'other' : 2;
+          }
+          const { integrity, ...body } = receipt;
+          (integrity as Record<string, unknown>).value = sha256(JSON.stringify(body));
+        }),
+      });
+      const result = runCanary(writeArtifact(artifact.archive), artifact);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('receipt definition binding does not match');
+    },
+  );
+
+  test.each([false, true])('canonicalizes nested integrity and lexical keys (tampered=%s)', (tampered) => {
+    const artifact = createArtifact({
+      contractTransform: (files) => mutateVectors(files, (vectors) => {
+        const fixtures = vectors.fixtures as Record<string, unknown>;
+        const digest = (canonical: string) => ({
+          algorithm: 'sha256',
+          canonicalization: 'jcs-rfc8785',
+          value: sha256(canonical),
+        });
+        fixtures['nested.golden'] = {
+          z: [
+            {
+              value: [null, true, tampered ? 2 : 1, 'line\n"quoted"'],
+              integrity: digest('{"value":[null,true,1,"line\\n\\"quoted\\""]}'),
+            },
+          ],
+          '2': 'two',
+          '10': 'ten',
+          integrity: digest('{"10":"ten","2":"two","z":[{"value":[null,true,1,"line\\n\\"quoted\\""]}]}'),
+        };
+      }),
+    });
+    const result = runCanary(writeArtifact(artifact.archive), artifact);
+    if (tampered) {
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('Golden fixture integrity: SHA-256 mismatch');
+    } else {
+      expect(result.status, result.stderr).toBe(0);
+    }
   });
 
   test.each([
