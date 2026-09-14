@@ -1,13 +1,15 @@
 import {
   isOperationAbortedError,
   isOperationTimeoutError,
-  normalizeError,
   runOperation,
-  type NormalizedError,
   type OperationDefaults,
   type OperationOptions,
 } from '@opencoven/sdk-core';
 
+import { CovenAutomationsClient, type CovenAutomationsTransport } from './automations.js';
+import { createCovenAutomationsUnixTransport } from './automations-unix.js';
+import { createCovenAutomationsWindowsTransport } from './automations-windows.js';
+import { CovenClientError, isCovenClientError, normalizeCovenError } from './client-errors.js';
 import {
   CovenIpcError,
   discoverCovenEndpoint,
@@ -20,8 +22,6 @@ import type {
 } from './transport.js';
 import {
   createCovenUnixTransport,
-  daemonFailureFromError,
-  type CovenDaemonFailure,
   type CovenUnixTransportSecurityProvider,
   type CovenUnixTransportOptions,
 } from './transport-unix.js';
@@ -31,16 +31,18 @@ import {
   type CovenWindowsTransportOptions,
 } from './transport-windows.js';
 
-const COVEN_CLIENT_ERROR_BRAND = Symbol.for('@opencoven/coven-client/CovenClientError');
+export { CovenClientError, isCovenClientError, normalizeCovenError } from './client-errors.js';
 
 export interface CovenClientOptions {
   transport: CovenTransport;
+  automationsTransport?: CovenAutomationsTransport;
   operation?: OperationDefaults;
 }
 
 interface CovenDiscoveredClientBaseOptions {
   discovery?: DiscoverCovenEndpointOptions;
   operation?: OperationDefaults;
+  automations?: boolean;
 }
 
 export type CovenDiscoveredUnixTransportOptions = Omit<
@@ -70,78 +72,6 @@ export interface CovenDiscoveredWindowsClientOptions
 export type CovenDiscoveredClientOptions =
   | CovenDiscoveredUnixClientOptions
   | CovenDiscoveredWindowsClientOptions;
-
-function ownDataErrorShape(error: unknown): Record<string, unknown> {
-  if (typeof error !== 'object' || error === null) {
-    return {};
-  }
-  try {
-    const descriptors = Object.getOwnPropertyDescriptors(error);
-    const shape: Record<string, unknown> = {};
-    for (const key of [
-      'code',
-      'requestId',
-      'retryable',
-      'status',
-      'statusCode',
-    ] as const) {
-      const descriptor = descriptors[key];
-      if (descriptor !== undefined && Object.hasOwn(descriptor, 'value')) {
-        shape[key] = descriptor.value;
-      }
-    }
-    return shape;
-  } catch {
-    return {};
-  }
-}
-
-export function normalizeCovenError(error: unknown, operation: string): NormalizedError {
-  return normalizeError(ownDataErrorShape(error), {
-    system: 'coven',
-    operation,
-    message: `Coven ${operation} request failed`,
-  });
-}
-
-export class CovenClientError extends Error {
-  readonly normalized: NormalizedError;
-  readonly code: string;
-  readonly retryable: boolean;
-  readonly requestId: string | undefined;
-  readonly statusCode: number | undefined;
-  readonly daemon: CovenDaemonFailure | undefined;
-
-  constructor(normalized: NormalizedError, options?: ErrorOptions) {
-    super(`${normalized.system}.${normalized.operation}: ${normalized.code}`, options);
-    this.name = 'CovenClientError';
-    this.normalized = normalized;
-    this.code = normalized.code;
-    this.retryable = normalized.retryable;
-    this.requestId = normalized.requestId;
-    this.statusCode = normalized.statusCode;
-    this.daemon = daemonFailureFromError(options?.cause);
-    Object.defineProperty(this, COVEN_CLIENT_ERROR_BRAND, { value: true });
-  }
-}
-
-export function isCovenClientError(error: unknown): error is CovenClientError {
-  if (typeof error !== 'object' || error === null) {
-    return false;
-  }
-
-  try {
-    const descriptor = Object.getOwnPropertyDescriptor(
-      error,
-      COVEN_CLIENT_ERROR_BRAND,
-    );
-    return descriptor !== undefined &&
-      Object.hasOwn(descriptor, 'value') &&
-      descriptor.value === true;
-  } catch {
-    return false;
-  }
-}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -188,12 +118,26 @@ function validateHealthResponse(response: unknown): response is CovenHealthRespo
 }
 
 export class CovenClient {
+  readonly automations: CovenAutomationsClient | undefined;
   readonly #transport: CovenTransport;
   readonly #operation: OperationDefaults | undefined;
 
   constructor(options: CovenClientOptions) {
     this.#transport = options.transport;
     this.#operation = options.operation;
+    this.automations = options.automationsTransport === undefined
+      ? undefined
+      : new CovenAutomationsClient({
+        transport: options.automationsTransport,
+        ...(options.operation === undefined ? {} : { operation: options.operation }),
+      });
+  }
+
+  requireAutomations(): CovenAutomationsClient {
+    if (this.automations === undefined) {
+      throw new CovenClientError(normalizeCovenError({ code: 'not_configured' }, 'automations'));
+    }
+    return this.automations;
   }
 
   async health(options: OperationOptions = {}): Promise<CovenHealth> {
@@ -272,6 +216,7 @@ export async function createDiscoveredCovenClient(
   }
   const endpoint = await discoverCovenEndpoint(options.discovery);
   let transport: CovenTransport;
+  let automationsTransport: CovenAutomationsTransport | undefined;
 
   if (endpoint.endpoint.kind === 'unix') {
     if (transportSecurity.platform !== 'unix') {
@@ -285,6 +230,12 @@ export async function createDiscoveredCovenClient(
       ...options.unix,
       security: transportSecurity,
     });
+    if (options.automations === true) {
+      automationsTransport = createCovenAutomationsUnixTransport(endpoint, {
+        ...options.unix,
+        security: transportSecurity,
+      });
+    }
   } else {
     if (transportSecurity.platform !== 'windows') {
       throw new CovenIpcError(
@@ -297,10 +248,17 @@ export async function createDiscoveredCovenClient(
       ...options.windows,
       security: transportSecurity,
     });
+    if (options.automations === true) {
+      automationsTransport = createCovenAutomationsWindowsTransport(endpoint, {
+        ...options.windows,
+        security: transportSecurity,
+      });
+    }
   }
 
   return new CovenClient({
     transport,
+    ...(automationsTransport === undefined ? {} : { automationsTransport }),
     ...(options.operation === undefined ? {} : { operation: options.operation }),
   });
 }

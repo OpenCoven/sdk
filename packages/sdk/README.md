@@ -47,6 +47,39 @@ if (report.cave.status === 'unhealthy') {
 - `healthy` with the health value
 - `unhealthy` with the typed client error
 
+## Opt-in Coven Automations
+
+You can reach the configured Automations namespace through the same Coven
+client, without extra SDK options or a second discovery:
+
+```ts
+import {
+  createDiscoveredCovenClient,
+  type CovenDiscoveredClientOptions,
+} from '@opencoven/coven-client';
+import { createOpenCovenSdk } from '@opencoven/sdk';
+
+export async function readAutomations(options: CovenDiscoveredClientOptions) {
+  const coven = await createDiscoveredCovenClient({
+    ...options,
+    automations: true,
+  });
+  const sdk = createOpenCovenSdk({ coven });
+  return sdk.requireCoven().requireAutomations().list();
+}
+```
+
+Provide your reviewed Unix peer-identity or Windows pipe-ownership and discovery
+adapters in `options`. See the [Coven setup and supported matrix](../coven/README.md#opt-into-the-normal-client).
+Manual clients opt in with `automationsTransport`. Omission keeps them
+health-only: `sdk.coven?.automations` is optional, and `requireAutomations()`
+throws a Coven `not_configured` error rather than enabling a transport.
+
+Automations inherits the Coven client's operation defaults and accepts per-call
+overrides. `sdk.health()` and `sdk.healthReport()` never invoke it. There is no
+direct `sdk.automations` alias, implicit TCP fallback, mutation support, or
+independent receipt authentication.
+
 ## Deadlines, compatibility, and retry guidance
 
 The top-level timeout is one total budget. Sequential `health()` subtracts time

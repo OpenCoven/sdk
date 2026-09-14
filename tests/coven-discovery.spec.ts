@@ -4020,6 +4020,105 @@ describe('Windows owner-local health transport', () => {
 });
 
 describe('structured client behavior', () => {
+  test.skipIf(process.platform === 'win32').each([false, true])(
+    'Unix discovered client opts into Automations only when requested: %s', async (automations) => {
+      const socketPath = resolve(unixRootPath, 'coven.sock');
+      const execFile = execResult(configPathsReport(socketPath, resolve(unixRootPath, 'daemon.json')));
+      const sockets: FakeSocket[] = [];
+      const connect = vi.fn((path: string) => {
+        expect(path).toBe(socketPath);
+        const socket = connectedSocket(httpResponse(sockets.length === 0 ? HEALTH_BODY : '{"capabilities":[]}'));
+        sockets.push(socket);
+        return socket;
+      });
+      const inspectConnected = vi.fn(() => Promise.resolve(unixPeerIdentity()));
+      const observer = { onEvent: vi.fn(), onObserverError: vi.fn() };
+      const client = await createDiscoveredCovenClient({
+        automations,
+        transportSecurity: { platform: 'unix', peerIdentity: { inspectConnected } },
+        operation: { timeoutMs: 100, observer },
+        discovery: {
+          env: { PATH: '/safe/bin' }, platform: 'linux',
+          dependencies: trustedCommandDependencies(execFile, { getEffectiveUid: () => 501 }),
+        },
+        unix: { dependencies: {
+          connect, getEffectiveUid: () => 501, lstat: () => Promise.resolve(unixIdentity()),
+        } },
+      });
+      expect(execFile).toHaveBeenCalledOnce();
+      expect(connect).not.toHaveBeenCalled();
+      expect(inspectConnected).not.toHaveBeenCalled();
+      await expect(client.health()).resolves.toEqual({ status: 'ok' });
+      expect(sockets[0]?.writes[0]?.toString()).toMatch(/^GET \/api\/v1\/health /);
+      if (automations) {
+        observer.onEvent.mockClear();
+        await expect(client.requireAutomations().capabilities()).resolves.toEqual({
+          status: 'unavailable', reason: 'not_advertised',
+        });
+        expect(observer.onEvent).toHaveBeenCalled();
+        expect(inspectConnected).toHaveBeenCalledTimes(2);
+        expect(sockets[1]?.writes[0]?.toString()).toMatch(/^GET \/api\/v1\/capabilities /);
+      } else {
+        expect(client.automations).toBeUndefined();
+        expect(() => client.requireAutomations()).toThrow(expect.objectContaining({ code: 'not_configured' }));
+        expect(connect).toHaveBeenCalledOnce();
+      }
+      expect(execFile).toHaveBeenCalledOnce();
+      expect(sockets.every((socket) => socket.destroyed)).toBe(true);
+    },
+  );
+
+  test.each([undefined, false, true])(
+    'Windows discovered client shares one endpoint and security adapter, opt-in %s', async (automations) => {
+      const metadataPath = 'C:\\profiles\\coven\\daemon.json';
+      const pipePath = '\\\\.\\pipe\\coven-daemon-v2-deadbeef.sock';
+      const execFile = execResult(configPathsReport(pipePath, metadataPath, 'C:\\profiles\\coven'));
+      const sockets: FakeSocket[] = [];
+      const connect = vi.fn((path: string) => {
+        expect(path).toBe(pipePath);
+        const socket = connectedSocket(httpResponse(sockets.length === 0 ? HEALTH_BODY : '{"capabilities":[]}'));
+        sockets.push(socket);
+        return socket;
+      });
+      const ownership = {
+        currentUserIdentity: vi.fn(() => Promise.resolve('S-1-5-21-current-user')),
+        inspect: vi.fn(() => Promise.resolve(windowsIdentity())),
+        inspectConnected: vi.fn((_path: string, socket: CovenSocket) => {
+          expect(socket).toBe(sockets.at(-1));
+          expect(sockets.at(-1)?.writes).toEqual([]);
+          return Promise.resolve(windowsIdentity());
+        }),
+      };
+      const client = await createDiscoveredCovenClient({
+        ...(automations === undefined ? {} : { automations }),
+        transportSecurity: { platform: 'windows', ownership },
+        operation: { timeoutMs: 100 },
+        discovery: {
+          cwd: 'C:\\workspace', env: { COVEN_HOME: 'C:\\profiles\\coven' }, platform: 'win32',
+          dependencies: windowsDiscoveryDependencies(execFile, metadataPath, JSON.stringify({
+            pid: 42, startedAt: '2026-08-21T06:00:00Z',
+            socket: 'coven-daemon-v2-deadbeef.sock', processCreationTime: '100',
+          })),
+        },
+        windows: { dependencies: { connect } },
+      });
+      expect(connect).not.toHaveBeenCalled();
+      expect(ownership.inspect).not.toHaveBeenCalled();
+      await expect(client.health()).resolves.toEqual({ status: 'ok' });
+      if (automations) {
+        expect(await client.requireAutomations().capabilities()).toEqual({
+          status: 'unavailable', reason: 'not_advertised',
+        });
+        expect(ownership.inspectConnected).toHaveBeenCalledTimes(2);
+      } else {
+        expect(client.automations).toBeUndefined();
+        expect(connect).toHaveBeenCalledOnce();
+      }
+      expect(execFile).toHaveBeenCalledOnce();
+      expect(sockets.every((socket) => socket.destroyed)).toBe(true);
+    },
+  );
+
   test('creates a discovered client with the constrained platform transport', async () => {
     const socketPath = resolve(unixRootPath, 'coven.sock');
     const metadataPath = resolve(unixRootPath, 'daemon.json');
@@ -4048,6 +4147,7 @@ describe('structured client behavior', () => {
     });
 
     await expect(client.health()).resolves.toEqual({ status: 'ok' });
+    expect(client.automations).toBeUndefined();
   });
 
   test('rejects a transport-security provider for the wrong discovered platform', async () => {

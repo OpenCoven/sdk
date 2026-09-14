@@ -1,4 +1,4 @@
-import { CovenClientError, normalizeCovenError } from './client.js';
+import { CovenClientError, normalizeCovenError } from './client-errors.js';
 import { parsePolicyJson } from './policy-json.js';
 import { integer, object } from './automations-read-validation.js';
 import { decodeReceiptRead, receiptId, type CovenAutomationReceiptResult } from './automations-receipts.js';

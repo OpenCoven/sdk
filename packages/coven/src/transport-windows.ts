@@ -14,6 +14,7 @@ import {
   type CovenHealthTransportLimits,
   type CovenSocket,
   type CovenSocketConnector,
+  type CovenSocketAccess,
 } from './transport-unix.js';
 
 export interface CovenWindowsPipeIdentity {
@@ -157,10 +158,10 @@ function defaultWindowsConnector(path: string): CovenConnectedSocket {
   return createConnection({ path });
 }
 
-export function createCovenWindowsTransport(
+export function createCovenWindowsSocketAccess(
   discovered: CovenDiscoveredEndpoint,
   options: CovenWindowsTransportOptions,
-): CovenTransport {
+): CovenSocketAccess {
   const endpoint = validWindowsEndpoint(discovered);
   if (
     options?.security?.platform !== 'windows' ||
@@ -177,7 +178,8 @@ export function createCovenWindowsTransport(
   const ownership = options.security.ownership;
 
   return {
-    async health(context) {
+    path: endpoint.path,
+    async prepare(context) {
       const [currentUserIdentity, initial] = await awaitOperationStep(
         async () => {
           try {
@@ -209,42 +211,50 @@ export function createCovenWindowsTransport(
         throw ownerMismatch('validate_endpoint');
       }
 
-      return requestCovenHealthOverSocket(
-        endpoint.path,
-        {
-          connect,
-          async revalidate(socket) {
-            let connected: CovenWindowsPipeIdentity;
-            try {
-              connected = await ownership.inspectConnected(
-                endpoint.path,
-                socket,
-              );
-            } catch {
-              throw unsafe(
-                'Connected Coven named pipe ownership could not be validated.',
-                'revalidate_endpoint',
-              );
-            }
-            validateIdentity(
-              connected,
-              currentUserIdentity,
+      return {
+        connect,
+        async revalidate(socket) {
+          let connected: CovenWindowsPipeIdentity;
+          try {
+            connected = await ownership.inspectConnected(
+              endpoint.path,
+              socket,
+            );
+          } catch {
+            throw unsafe(
+              'Connected Coven named pipe ownership could not be validated.',
               'revalidate_endpoint',
             );
-            if (
-              !samePipeIdentity(initial, connected) ||
-              !matchesDiscoveredFreshness(discovered, connected)
-            ) {
-              throw unsafe(
-                'Coven named pipe identity changed during connection.',
-                'revalidate_endpoint',
-              );
-            }
-          },
+          }
+          validateIdentity(
+            connected,
+            currentUserIdentity,
+            'revalidate_endpoint',
+          );
+          if (
+            !samePipeIdentity(initial, connected) ||
+            !matchesDiscoveredFreshness(discovered, connected)
+          ) {
+            throw unsafe(
+              'Coven named pipe identity changed during connection.',
+              'revalidate_endpoint',
+            );
+          }
         },
-        context,
-        options,
-      );
+      };
+    },
+  };
+}
+
+export function createCovenWindowsTransport(
+  discovered: CovenDiscoveredEndpoint,
+  options: CovenWindowsTransportOptions,
+): CovenTransport {
+  const access = createCovenWindowsSocketAccess(discovered, options);
+  return {
+    async health(context) {
+      const hooks = await access.prepare(context);
+      return requestCovenHealthOverSocket(access.path, hooks, context, options);
     },
   };
 }

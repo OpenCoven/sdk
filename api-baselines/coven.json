@@ -28,6 +28,7 @@
           "CovenSessionPolicyError",
           "createCovenAutomationsClient",
           "createCovenAutomationsUnixTransport",
+          "createCovenAutomationsWindowsTransport",
           "createCovenClient",
           "createCovenSessionPolicyClient",
           "createCovenSessionPolicyUnixTransport",

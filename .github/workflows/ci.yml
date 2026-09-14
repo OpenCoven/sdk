@@ -110,6 +110,10 @@ jobs:
           tests/cave-managed-native.spec.ts
           tests/cave-managed-native-staged.spec.ts
           tests/coven-discovery.spec.ts
+          tests/coven-automations-platforms.spec.ts
+          tests/coven-automations.spec.ts
+          tests/coven-automations-receipts.spec.ts
+          tests/coven-client-types.spec.ts
           tests/health-validation.spec.ts
           tests/client-contract.spec.ts
       - name: Diagnose synthetic Windows lock deletion and permissions

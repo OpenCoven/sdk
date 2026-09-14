@@ -2,6 +2,8 @@ import {
   COVEN_DAEMON_PROTOCOL,
   createCovenUnixTransport,
   createCovenWindowsTransport,
+  createCovenAutomationsWindowsTransport,
+  createCovenClient,
   createDiscoveredCovenClient,
   discoverCovenEndpoint,
   type CovenDiscoveredEndpoint,
@@ -74,7 +76,27 @@ function compileOnly(): void {
   void discoverCovenEndpoint();
   void createDiscoveredCovenClient({
     transportSecurity: unixSecurity,
+    automations: true,
   });
+  void createDiscoveredCovenClient({
+    transportSecurity: windowsSecurity,
+    automations: true,
+  });
+  void createCovenAutomationsWindowsTransport(windowsEndpoint, { security: windowsSecurity });
+  const client = createCovenClient({
+    transport: createCovenWindowsTransport(windowsEndpoint, { security: windowsSecurity }),
+    automationsTransport: createCovenAutomationsWindowsTransport(windowsEndpoint, { security: windowsSecurity }),
+  });
+  void client.automations?.getReceipt('receipt-1');
+  void client.requireAutomations().list();
+  // @ts-expect-error An optional namespace must be narrowed or explicitly required.
+  void client.automations.list();
+  // @ts-expect-error Windows Automations requires connected-pipe ownership security.
+  void createCovenAutomationsWindowsTransport(windowsEndpoint);
+  // @ts-expect-error Unix security cannot authenticate Windows named pipes.
+  void createCovenAutomationsWindowsTransport(windowsEndpoint, { security: unixSecurity });
+  // @ts-expect-error Discovery opts into a namespace, not an unrelated custom transport.
+  void createDiscoveredCovenClient({ transportSecurity: windowsSecurity, automations: {} });
   void createCovenUnixTransport(unixEndpoint, {
     security: unixSecurity,
   });

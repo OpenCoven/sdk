@@ -8,6 +8,8 @@ export type {
 } from './automations.js';
 export { createCovenAutomationsUnixTransport } from './automations-unix.js';
 export type { CovenAutomationsUnixTransportOptions } from './automations-unix.js';
+export { createCovenAutomationsWindowsTransport } from './automations-windows.js';
+export type { CovenAutomationsWindowsTransportOptions } from './automations-windows.js';
 export type {
   CovenAutomationReceipt,
   CovenAutomationReceiptDigest,
