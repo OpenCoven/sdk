@@ -6,7 +6,7 @@ import type {
 } from './github-environment-policy.mjs';
 
 export interface PublicationSecurityReview {
-  schemaVersion: 8;
+  schemaVersion: 9;
   kind: 'opencoven-sdk-publication-security-review';
   issue: 'OpenCoven/sdk#40';
   disposition: 'ship';
@@ -38,6 +38,7 @@ export interface PublicationSecurityReview {
     sha256: string;
   };
   packages: PublicationArtifactManifest['packages'];
+  npmProvenance: import('./npm-bootstrap-provenance.mjs').NpmProvenanceEntry[];
   toolchain: PublicationArtifactManifest['toolchain'];
   publisher: PublicationArtifactManifest['publisher'];
   provenance: Omit<
@@ -85,6 +86,7 @@ export function createPublicationAuthorizationRecord(options: {
   jobId: string;
   manifest: PublicationArtifactManifest;
   manifestText: string;
+  npmProvenance: PublicationSecurityReview['npmProvenance'];
   tag: PublicationSecurityReview['tag'];
 }): PublicationSecurityReview;
 

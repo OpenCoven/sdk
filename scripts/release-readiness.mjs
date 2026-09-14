@@ -60,13 +60,13 @@ const PUBLICATION_ATTESTATION_ARTIFACT_NAME =
 const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
 const PREFLIGHT_JOB_SHA256 =
-  '049cdfcc1216d7f2025f625968e50d571244b73a33890d1c32e21de853dc661e';
+  '81fc7250e6d0094738981bdd7af76194811b53c70fc41671097fe4e8b2a3ebc3';
 const REPOSITORY_VERIFICATION_JOB_SHA256 =
   '59c8739ee6c763a3a34e27b1e85f806535a78b09ffbe7b89eb57df385544543b';
 const PUBLICATION_CANDIDATE_JOB_SHA256 =
-  '375ba0c2b3aadf88bd31b386490912924e3fdbcb6224bcf7c68e7d08bfb880c7';
+  '92bb172690811270cc04452021880efd00288b66d1ac62fea84c43fc139bec6f';
 const PUBLICATION_CANDIDATE_ATTESTATION_JOB_SHA256 =
-  '2ef2e4c713c67d8123bb93eecf40d10cca6c571db263334c9d550a23509a31a5';
+  'c11318a0dad2970f1988482962602e417973fd336ebfe68ced4d7919fad8230f';
 const APPROVAL_WITNESS_JOB_SHA256 =
   'baf9668fa031de06a7c8afda619759af4183120282a98be666b235057dd847fa';
 const APPROVAL_WITNESS_ATTESTATION_JOB_SHA256 =
@@ -77,6 +77,38 @@ const APPROVAL_EVIDENCE_ATTESTATION_JOB_SHA256 =
   '2aacc30b67acd473ab0e2520487fbae1d22ed5e4fcc536b73d16e86d29afd566';
 const PUBLISH_JOB_SHA256 =
   'ff5743fef786dc09498fb5b40ec3aabcf76eea801180aedbb9b0c4780d7776fd';
+const NPM_PROVENANCE_PREDICATE = `{
+  "buildDefinition": {
+    "buildType": "https://slsa-framework.github.io/github-actions-buildtypes/workflow/v1",
+    "externalParameters": {
+      "workflow": {
+        "ref": \${{ toJSON(github.ref) }},
+        "repository": \${{ toJSON(format('{0}/{1}', github.server_url, github.repository)) }},
+        "path": ".github/workflows/release.yml"
+      }
+    },
+    "internalParameters": {
+      "github": {
+        "event_name": \${{ toJSON(github.event_name) }},
+        "repository_id": \${{ toJSON(github.repository_id) }},
+        "repository_owner_id": \${{ toJSON(github.repository_owner_id) }}
+      }
+    },
+    "resolvedDependencies": [{
+      "uri": \${{ toJSON(format('git+{0}/{1}@{2}', github.server_url, github.repository, github.ref)) }},
+      "digest": { "gitCommit": \${{ toJSON(github.sha) }} }
+    }]
+  },
+  "runDetails": {
+    "builder": {
+      "id": \${{ toJSON(format('{0}/actions/runner/{1}', github.server_url, runner.environment)) }}
+    },
+    "metadata": {
+      "invocationId": \${{ toJSON(format('{0}/{1}/actions/runs/{2}/attempts/{3}', github.server_url, github.repository, github.run_id, github.run_attempt)) }}
+    }
+  }
+}
+`;
 const EXPECTED_RELEASE_CONTROLS = Object.freeze({
   name: 'release',
   on: {
@@ -140,6 +172,7 @@ const VALIDATOR_RUNTIME_PATHS = Object.freeze([
   'scripts/github-environment-approval-evidence.mjs',
   'scripts/github-environment-approval.mjs',
   'scripts/github-release-authorization.mjs',
+  'scripts/npm-bootstrap-provenance.mjs',
   'scripts/owned-temp-directory.mjs',
   'scripts/package-artifacts.mjs',
   'scripts/publication-source-identity.mjs',
@@ -149,6 +182,7 @@ const VALIDATOR_RUNTIME_PATHS = Object.freeze([
   'scripts/release-runtime-integrity.mjs',
   'scripts/repository-metadata.mjs',
   CONFORMANCE_VERIFIER_PATH,
+  'scripts/verify-bootstrap-provenance.mjs',
   'scripts/verify-development-release-configuration.mjs',
   'scripts/verify-github-environment-policies.mjs',
   'scripts/verify-release-readiness.mjs',
@@ -1366,6 +1400,58 @@ function validateIsolatedAttestationJob(job, jobName, expectedActions) {
   }
 }
 
+function validateNpmProvenanceSteps(job) {
+  const expectedOutputs = {
+    'bundle-artifact-id': '${{ steps.upload-bundle.outputs.artifact-id }}',
+    'bundle-artifact-digest': '${{ steps.upload-bundle.outputs.artifact-digest }}',
+  };
+  for (const [index, { packageName }] of PUBLIC_PACKAGES.entries()) {
+    const attestId = `attest-npm-${index}`;
+    const uploadId = `upload-npm-provenance-${index}`;
+    const expectedSteps = [
+      {
+        id: attestId,
+        uses: ATTEST_ACTION,
+        with: {
+          'subject-name': `pkg:npm/${packageName.replace(/^@/u, '%40')}@\${{ inputs.version }}`,
+          'subject-digest': `sha512:\${{ needs.publication-candidate.outputs.npm-sha512-${index} }}`,
+          'predicate-type': 'https://slsa.dev/provenance/v1',
+          predicate: NPM_PROVENANCE_PREDICATE,
+          'push-to-registry': false,
+          'show-summary': false,
+        },
+      },
+      {
+        id: uploadId,
+        uses: UPLOAD_ARTIFACT_ACTION,
+        with: {
+          name: `opencoven-sdk-npm-provenance-${index}-\${{ github.sha }}-\${{ inputs.version }}`,
+          path: `\${{ steps.${attestId}.outputs.bundle-path }}`,
+          'if-no-files-found': 'error',
+          'retention-days': 30,
+        },
+      },
+    ];
+    if (
+      JSON.stringify(job.steps.slice(3 + index * 2, 5 + index * 2))
+        !== JSON.stringify(expectedSteps)
+    ) {
+      throw new Error(
+        `Release workflow npm provenance ${index} must use the exact singleton subject, trusted workflow predicate, and isolated bundle upload`,
+      );
+    }
+    for (const output of ['artifact-id', 'artifact-digest']) {
+      expectedOutputs[`npm-provenance-${index}-${output}`] =
+        `\${{ steps.${uploadId}.outputs.${output} }}`;
+    }
+  }
+  if (JSON.stringify(job.outputs) !== JSON.stringify(expectedOutputs)) {
+    throw new Error(
+      'Release workflow npm provenance outputs must expose the exact separate immutable artifact IDs and digests',
+    );
+  }
+}
+
 export function validateReleaseWorkflow(root, config) {
   const workflowPath = resolve(root, RELEASE_WORKFLOW_PATH);
   if (!existsSync(workflowPath)) {
@@ -1555,12 +1641,26 @@ export function validateReleaseWorkflow(root, config) {
     JSON.stringify(structuredCandidateJob.outputs) !== JSON.stringify({
       'artifact-id': '${{ steps.upload.outputs.artifact-id }}',
       'artifact-digest': '${{ steps.upload.outputs.artifact-digest }}',
+      ...Object.fromEntries(PUBLIC_PACKAGES.map((_, index) => [
+        `npm-sha512-${index}`,
+        `\${{ steps.create.outputs.npm-sha512-${index} }}`,
+      ])),
     })
     || JSON.stringify(structuredCandidateJob)
       .includes('ACTIONS_ID_TOKEN_REQUEST_')
   ) {
     throw new Error(
       'Release workflow publication-candidate job must expose only immutable artifact outputs and no OIDC capability',
+    );
+  }
+  if (
+    candidateCreationSteps[0].id !== 'create'
+    || typeof candidateCreationSteps[0].run !== 'string'
+    || !candidateCreationSteps[0].run.includes('GITHUB_OUTPUT="$GITHUB_OUTPUT" \\')
+    || !candidateCreationSteps[0].run.includes('--github-output "$GITHUB_OUTPUT"')
+  ) {
+    throw new Error(
+      'Release workflow candidate creation must explicitly export the four npm SHA-512 digests through GITHUB_OUTPUT',
     );
   }
   const candidateEnvironment = readWorkflowStepMapping(
@@ -1627,8 +1727,14 @@ export function validateReleaseWorkflow(root, config) {
   validateIsolatedAttestationJob(
     structuredCandidateAttestationJob,
     config.publicationCandidate.attestationJob,
-    [DOWNLOAD_ARTIFACT_ACTION, ATTEST_ACTION, UPLOAD_ARTIFACT_ACTION],
+    [
+      DOWNLOAD_ARTIFACT_ACTION,
+      ATTEST_ACTION,
+      UPLOAD_ARTIFACT_ACTION,
+      ...PUBLIC_PACKAGES.flatMap(() => [ATTEST_ACTION, UPLOAD_ARTIFACT_ACTION]),
+    ],
   );
+  validateNpmProvenanceSteps(structuredCandidateAttestationJob);
   if (
     countStringOccurrences(
       structuredCandidateAttestationJob,
@@ -1757,7 +1863,7 @@ export function validateReleaseWorkflow(root, config) {
     preflight: 9,
     'repository-verification': 7,
     'publication-candidate': 6,
-    'publication-candidate-attestation': 3,
+    'publication-candidate-attestation': 11,
     'approval-witness': 5,
     'approval-witness-attestation': 2,
     'approval-evidence': 8,
@@ -1805,7 +1911,7 @@ export function validateReleaseWorkflow(root, config) {
   ).length;
   const totalUploadCount =
     workflow.match(/actions\/upload-artifact@[0-9a-f]{40}/gu)?.length ?? 0;
-  if (candidateUploadCount !== 1 || totalUploadCount !== 4) {
+  if (candidateUploadCount !== 1 || totalUploadCount !== 8) {
     throw new Error(
       'Release workflow must contain exactly one publication candidate upload',
     );
@@ -1901,11 +2007,11 @@ export function validateReleaseWorkflow(root, config) {
       /actions\/attest@[0-9a-f]{40}/gu,
     )?.length ?? 0;
   if (
-    candidateAttestationCount !== 1
+    candidateAttestationCount !== 5
     || approvalWitnessAttestationCount !== 1
     || approvalEvidenceAttestationCount !== 1
     || publishAttestationCount !== 0
-    || totalAttestationCount !== 3
+    || totalAttestationCount !== 7
   ) {
     throw new Error(
       'Release workflow must attest only candidate and approval evidence bytes',

@@ -3,6 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  appendFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -66,6 +67,7 @@ const RELEASE_MANIFEST_SCHEMA_PATH = resolve(
 );
 const PUBLISHER_PATH = 'scripts/publish-release-artifacts.mjs';
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const SHA512_PATTERN = /^[a-f0-9]{128}$/;
 const PUBLICATION_PACK_COMMAND =
   'sanitize package manifests; node <authenticated-corepack> pnpm@10.34.0 --config.pnpmfile=/dev/null --config.global-pnpmfile=/dev/null pack';
 const CANONICAL_REPOSITORY_NPMRC = [
@@ -288,6 +290,24 @@ function assertExactFields(value, fields, context) {
   }
 }
 
+function assertArtifactEntryFields(entry, index, schemaVersion) {
+  assertExactFields(
+    entry,
+    schemaVersion === 7
+      ? ['name', 'version', 'file', 'size', 'sha256', 'sha512']
+      : ['name', 'version', 'file', 'size', 'sha256'],
+    `${RELEASE_MANIFEST_NAME} package ${index}`,
+  );
+  if (
+    schemaVersion === 7
+    && (typeof entry.sha512 !== 'string' || !SHA512_PATTERN.test(entry.sha512))
+  ) {
+    throw new Error(
+      `${entry.name} artifact sha512 must be 128 lowercase hex characters`,
+    );
+  }
+}
+
 export function serializeReleaseManifest(manifest) {
   const canonicalManifest =
     manifest.schemaVersion === 1
@@ -302,9 +322,9 @@ export function serializeReleaseManifest(manifest) {
             sha256: entry.sha256,
           })),
         }
-      : manifest.schemaVersion === 6
+      : manifest.schemaVersion === 7
         ? {
-            schemaVersion: 6,
+            schemaVersion: 7,
             artifactSet: manifest.artifactSet,
             version: manifest.version,
             source: {
@@ -361,18 +381,22 @@ export function serializeReleaseManifest(manifest) {
               environment: manifest.provenance.environment,
               artifactName: manifest.provenance.artifactName,
             },
-            packages: manifest.packages.map((entry) => ({
-              name: entry.name,
-              version: entry.version,
-              file: entry.file,
-              size: entry.size,
-              sha256: entry.sha256,
-            })),
+            packages: manifest.packages.map((entry, index) => {
+              assertArtifactEntryFields(entry, index, manifest.schemaVersion);
+              return {
+                name: entry.name,
+                version: entry.version,
+                file: entry.file,
+                size: entry.size,
+                sha256: entry.sha256,
+                sha512: entry.sha512,
+              };
+            }),
           }
         : null;
   if (canonicalManifest === null) {
     throw new Error(
-      `${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 6`,
+      `${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 7`,
     );
   }
   return `${JSON.stringify(
@@ -446,12 +470,22 @@ function readReleaseManifest(artifactRoot) {
     manifestText,
     RELEASE_MANIFEST_NAME,
   );
+  if (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 7) {
+    throw new Error(`${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 7`);
+  }
+  const schema = parseJsonText(
+    readFileSync(RELEASE_MANIFEST_SCHEMA_PATH, 'utf8'),
+    'release artifact manifest schema',
+  );
   validateJsonSchemaValue(
     manifest,
-    parseJsonText(
-      readFileSync(RELEASE_MANIFEST_SCHEMA_PATH, 'utf8'),
-      'release artifact manifest schema',
-    ),
+    {
+      ...schema,
+      // The shared validator follows $ref, not oneOf; select the exact version.
+      $ref: manifest.schemaVersion === 1
+        ? '#/$defs/conformanceArtifactSet'
+        : '#/$defs/publicationArtifactSet',
+    },
     RELEASE_MANIFEST_NAME,
   );
   if (manifest.schemaVersion === 1) {
@@ -460,7 +494,7 @@ function readReleaseManifest(artifactRoot) {
       ['schemaVersion', 'version', 'packages'],
       RELEASE_MANIFEST_NAME,
     );
-  } else if (manifest.schemaVersion === 6) {
+  } else if (manifest.schemaVersion === 7) {
     assertExactFields(
       manifest,
       [
@@ -476,7 +510,7 @@ function readReleaseManifest(artifactRoot) {
       RELEASE_MANIFEST_NAME,
     );
   } else {
-    throw new Error(`${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 6`);
+    throw new Error(`${RELEASE_MANIFEST_NAME} schemaVersion must be 1 or 7`);
   }
   if (!Array.isArray(manifest.packages)) {
     throw new Error(`${RELEASE_MANIFEST_NAME} packages must be an array`);
@@ -540,11 +574,7 @@ function verifyArtifactPackages({
   const names = new Set();
   for (const [index, packageMetadata] of PUBLIC_PACKAGES.entries()) {
     const entry = manifest.packages[index];
-    assertExactFields(
-      entry,
-      ['name', 'version', 'file', 'size', 'sha256'],
-      `${RELEASE_MANIFEST_NAME} package ${index}`,
-    );
+    assertArtifactEntryFields(entry, index, manifest.schemaVersion);
     if (names.has(entry.name)) {
       throw new Error(
         `${RELEASE_MANIFEST_NAME} contains duplicate package ${entry.name}`,
@@ -605,6 +635,14 @@ function verifyArtifactPackages({
     if (digest(bytes) !== entry.sha256) {
       throw new Error(
         `${entry.name} digest does not match ${RELEASE_MANIFEST_NAME}`,
+      );
+    }
+    if (
+      manifest.schemaVersion === 7
+      && createHash('sha512').update(bytes).digest('hex') !== entry.sha512
+    ) {
+      throw new Error(
+        `${entry.name} sha512 digest does not match ${RELEASE_MANIFEST_NAME}`,
       );
     }
 
@@ -669,6 +707,9 @@ function packArtifactEntries({
       file: relative(artifactRoot, tarballPath).split(sep).join('/'),
       size: bytes.byteLength,
       sha256: digest(bytes),
+      ...(requirePublishable
+        ? { sha512: createHash('sha512').update(bytes).digest('hex') }
+        : {}),
     };
   });
 }
@@ -1072,7 +1113,7 @@ function verifyPublicationArtifactSet({
   const source = inspectPublicationSource(root, config);
   const { manifest } = readReleaseManifest(artifactRoot);
   if (
-    manifest.schemaVersion !== 6
+    manifest.schemaVersion !== 7
     || manifest.artifactSet !== 'publication-candidate'
   ) {
     throw new Error(
@@ -1307,7 +1348,7 @@ export function createPublicationArtifacts({
       corepackPath: committedSource.runtime.corepackPath,
     });
     const manifest = {
-      schemaVersion: 6,
+      schemaVersion: 7,
       artifactSet: 'publication-candidate',
       version: readiness.version,
       source: {
@@ -1371,7 +1412,9 @@ export function parseReleaseArtifactArguments(arguments_) {
       options.build = false;
       continue;
     }
-    const key = argument === '--output' ? 'outputRoot' : argument === '--version' ? 'version' : undefined;
+    const key = argument === '--output' ? 'outputRoot'
+      : argument === '--version' ? 'version'
+        : argument === '--github-output' ? 'githubOutput' : undefined;
     if (key === undefined) {
       throw new Error(`Unknown option ${argument}`);
     }
@@ -1379,7 +1422,11 @@ export function parseReleaseArtifactArguments(arguments_) {
       throw new Error(`Option ${argument} may only be provided once`);
     }
     const value = arguments_[index + 1];
-    if (value === undefined || value.startsWith('--')) {
+    if (
+      value === undefined
+      || value.startsWith('--')
+      || (key === 'githubOutput' && value.length === 0)
+    ) {
       throw new Error(`Option ${argument} requires a value`);
     }
     options[key] = value;
@@ -1389,10 +1436,29 @@ export function parseReleaseArtifactArguments(arguments_) {
 }
 
 export function main(arguments_ = process.argv.slice(2)) {
+  const { githubOutput, ...options } = parseReleaseArtifactArguments(arguments_);
   const result = createPublicationArtifacts({
     root: resolve(dirname(fileURLToPath(import.meta.url)), '..'),
-    ...parseReleaseArtifactArguments(arguments_),
+    ...options,
   });
+  if (githubOutput !== undefined) {
+    const outputPath = resolve(githubOutput);
+    if (
+      outputPath === result.artifactRoot
+      || outputPath.startsWith(`${result.artifactRoot}${sep}`)
+    ) {
+      throw new Error(
+        'GitHub output file must be outside the publication artifact root',
+      );
+    }
+    appendFileSync(
+      outputPath,
+      result.manifest.packages.map((entry, index) =>
+        `npm-sha512-${index}=${entry.sha512}\n`,
+      ).join(''),
+      'utf8',
+    );
+  }
   process.stdout.write(
     `${JSON.stringify({
       artifactRoot: result.artifactRoot,

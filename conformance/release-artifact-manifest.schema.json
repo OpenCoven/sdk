@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:opencoven:schema:release-artifact-manifest:6",
+  "$id": "urn:opencoven:schema:release-artifact-manifest:7",
   "title": "OpenCoven release artifact manifest",
   "description": "Separates the frozen private-source conformance artifact set from an immutable publication candidate produced before and later bound by the external security review.",
   "oneOf": [
@@ -15,6 +15,10 @@
     "sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "sha512": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$"
     },
     "gitOid": {
       "type": "string",
@@ -97,6 +101,46 @@
         "$ref": "#/$defs/artifact"
       }
     },
+    "publicationArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "file",
+        "size",
+        "sha256",
+        "sha512"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/artifact/properties/name"
+        },
+        "version": {
+          "$ref": "#/$defs/artifact/properties/version"
+        },
+        "file": {
+          "$ref": "#/$defs/artifact/properties/file"
+        },
+        "size": {
+          "$ref": "#/$defs/artifact/properties/size"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sha512": {
+          "$ref": "#/$defs/sha512"
+        }
+      }
+    },
+    "publicationArtifactList": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/publicationArtifact"
+      }
+    },
     "conformanceArtifactSet": {
       "type": "object",
       "additionalProperties": false,
@@ -134,7 +178,7 @@
       ],
       "properties": {
         "schemaVersion": {
-          "const": 6
+          "const": 7
         },
         "artifactSet": {
           "const": "publication-candidate"
@@ -345,7 +389,7 @@
           }
         },
         "packages": {
-          "$ref": "#/$defs/artifactList"
+          "$ref": "#/$defs/publicationArtifactList"
         }
       }
     }

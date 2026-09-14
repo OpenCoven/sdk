@@ -40,6 +40,13 @@ Complete protected #38 evidence and #40 authorization are still required; see th
 [v0.0.1 preparation checklist](RELEASING.md#v001-preparation-decision-2026-09-12)
 for the remaining gates and required release sequence.
 
+Bootstrap provenance preparation adds separately signed npm-compatible bundles
+without changing the original GitHub build attestation or enabling publication.
+The read-only `verify:bootstrap-provenance` command requires actual SHIP evidence;
+it neither publishes nor grants the separate manual-bootstrap approval.
+Genuine final SDK bundle qualification and registry acceptance remain pending.
+See [First-publish bootstrap](RELEASING.md#6-first-publish-bootstrap).
+
 - [Roadmap](docs/ROADMAP.md)
 - [0.1 read-only release design](docs/superpowers/specs/2026-08-22-sdk-0.1-read-only-release-design.md)
 - [0.1 dependency-ordered delivery program](docs/superpowers/plans/2026-08-22-sdk-0.1-delivery-program.md)

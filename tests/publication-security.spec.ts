@@ -78,7 +78,7 @@ type ReleaseTagAuthorization = {
 
 type PublicationAuthorization =
   ReturnType<typeof createRawPublicationAuthorizationRecord> & {
-    schemaVersion: 8;
+    schemaVersion: 9;
     tag: ReleaseTagAuthorization;
   };
 
@@ -108,6 +108,7 @@ function createPublicationAuthorizationRecord(
     | 'environmentPolicy'
     | 'environmentId'
     | 'tag'
+    | 'npmProvenance'
   > & Partial<
     CandidateAttestationOptions & Pick<
       PublicationAuthorizationOptions,
@@ -137,6 +138,19 @@ function createPublicationAuthorizationRecord(
     },
     deploymentId: '40000',
     environmentId: '50000',
+    npmProvenance: manifest.packages.map((entry, index) => ({
+      packageName: entry.name,
+      subjectName: `pkg:npm/${entry.name.replace(/^@/u, '%40')}@${manifest.version}`,
+      sha512: entry.sha512,
+      bundle: {
+        artifactId: String(30002 + index),
+        artifactName: `opencoven-sdk-npm-provenance-${index}-${manifest.source.commit}-${manifest.version}`,
+        artifactDigest: `sha256:${String(index + 1).repeat(64)}`,
+        file: 'attestation.json',
+        size: Buffer.byteLength(CANDIDATE_ATTESTATION_BUNDLE_TEXT),
+        sha256: sha256(CANDIDATE_ATTESTATION_BUNDLE_TEXT),
+      },
+    })),
     ...options,
     tag,
     environmentPolicy: createEnvironmentPolicyReceipt(),
@@ -152,7 +166,7 @@ function createPublicationAuthorizationRecord(
 }
 
 interface PublicationManifest {
-  schemaVersion: 6;
+  schemaVersion: 7;
   artifactSet: 'publication-candidate';
   version: string;
   source: {
@@ -210,6 +224,7 @@ interface PublicationManifest {
     file: string;
     size: number;
     sha256: string;
+    sha512: string;
   }>;
 }
 
@@ -438,6 +453,7 @@ function writePublicationArtifacts(
         file,
         size: bytes.byteLength,
         sha256: sha256(bytes),
+        sha512: createHash('sha512').update(bytes).digest('hex'),
       };
     },
   );
@@ -486,7 +502,7 @@ function writePublicationArtifacts(
     runtimeManifestText,
   );
   const manifest: PublicationManifest = {
-    schemaVersion: 6,
+    schemaVersion: 7,
     artifactSet: 'publication-candidate',
     version: VERSION,
     source: {
@@ -601,6 +617,21 @@ function createGitHubExecute(
       ]);
     }
     const endpoint = arguments_.at(-1) ?? '';
+    for (const { bundle } of authorization.npmProvenance) {
+      const artifact = {
+        id: Number(bundle.artifactId),
+        name: bundle.artifactName,
+        digest: bundle.artifactDigest,
+        expired: false,
+        workflow_run: { id: 10000, head_sha: authorization.source.commit },
+      };
+      if (endpoint === `repos/OpenCoven/sdk/actions/artifacts/${bundle.artifactId}`) {
+        return JSON.stringify(artifact);
+      }
+      if (endpoint === `repos/OpenCoven/sdk/actions/runs/10000/artifacts?name=${encodeURIComponent(bundle.artifactName)}&per_page=100`) {
+        return JSON.stringify({ total_count: 1, artifacts: [artifact] });
+      }
+    }
     if (endpoint === 'repos/OpenCoven/sdk') {
       return JSON.stringify({
         id: 1337664127,
@@ -1344,7 +1375,7 @@ describe('publication security', { timeout: 30_000 }, () => {
     });
 
     expect(authorization).toMatchObject({
-      schemaVersion: 8,
+      schemaVersion: 9,
       tag: releaseTagsByCommit.get(candidate.manifest.source.commit),
       environmentPolicy: {
         kind: 'opencoven-sdk-release-environment-policy',
@@ -1379,6 +1410,45 @@ describe('publication security', { timeout: 30_000 }, () => {
         },
       },
     });
+    expect(authorization.npmProvenance).toHaveLength(4);
+    for (const [index, entry] of authorization.npmProvenance.entries()) {
+      expect(entry.packageName).toBe(PUBLIC_PACKAGES[index]!.packageName);
+      expect(entry.sha512).toBe(candidate.manifest.packages[index]!.sha512);
+      expect(entry.bundle.artifactName).toBe(
+        `opencoven-sdk-npm-provenance-${index}-${candidate.manifest.source.commit}-${VERSION}`,
+      );
+    }
+  });
+
+  test('rejects schema-eight and incomplete bootstrap SHIP records', { timeout: 60_000 }, () => {
+    const sourceRoot = createReleaseFixture();
+    const artifactRoot = mkdtempSync(resolve(tmpdir(), 'opencoven-bootstrap-schema-'));
+    fixtures.push(artifactRoot);
+    const candidate = writePublicationArtifacts(sourceRoot, artifactRoot);
+    const authorization = createPublicationAuthorizationRecord({
+      artifactId: '30000',
+      jobId: '20000',
+      manifest: candidate.manifest as never,
+      manifestText: candidate.manifestText,
+    });
+    const execute = createGitHubExecute(authorization);
+    for (const mutation of ['schema-eight', 'missing', 'duplicate', 'swapped']) {
+      const body: Record<string, unknown> = { ...structuredClone(authorization) };
+      if (mutation === 'schema-eight') body.schemaVersion = 8;
+      if (mutation === 'missing') delete body.npmProvenance;
+      if (mutation === 'duplicate') body.npmProvenance = Array(4).fill(authorization.npmProvenance[0]);
+      if (mutation === 'swapped') body.npmProvenance = [...authorization.npmProvenance].reverse();
+      expect(() => resolvePublicationSecurityReview({
+        root: sourceRoot,
+        commentId: '4001',
+        execute: (command: string, args: string[]) => {
+          const response = execute(command, args);
+          if (args.at(-1) !== 'repos/OpenCoven/sdk/issues/comments/4001') return response;
+          const comment = JSON.parse(response) as Record<string, unknown>;
+          return JSON.stringify({ ...comment, body: serializeCanonicalJson(body) });
+        },
+      } as never)).toThrow();
+    }
   });
 
   test('rejects an annotated release tag replaced after #40 authorization', () => {
@@ -1870,6 +1940,30 @@ describe('publication security', { timeout: 30_000 }, () => {
         value.digest = `sha256:${'e'.repeat(64)}`;
       },
       /exact candidate attestation bundle artifact/u,
+    ],
+    [
+      'npm provenance bundle artifact digest',
+      'repos/OpenCoven/sdk/actions/artifacts/30002',
+      (value: Record<string, unknown>) => {
+        value.digest = `sha256:${'e'.repeat(64)}`;
+      },
+      /exact npm provenance bundle artifact/u,
+    ],
+    [
+      'npm provenance bundle artifact ID',
+      'repos/OpenCoven/sdk/actions/artifacts/30002',
+      (value: Record<string, unknown>) => {
+        value.id = 30003;
+      },
+      /exact npm provenance bundle artifact/u,
+    ],
+    [
+      'npm provenance bundle artifact source',
+      'repos/OpenCoven/sdk/actions/artifacts/30002',
+      (value: Record<string, unknown>) => {
+        value.workflow_run = { id: 10001, head_sha: 'a'.repeat(40) };
+      },
+      /exact npm provenance bundle artifact/u,
     ],
   ])('rejects drift in the exact %s binding', (
     _label,
