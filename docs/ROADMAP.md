@@ -149,7 +149,7 @@ independently recomputes golden definition/receipt integrity and checks the
 receipt's definition binding before exercising replay vectors. This is
 constrained contract conformance, not a public receipt-authentication API.
 
-Producer #991 (`d277ade3`) and #999 (`735e2f05`) publish packaged base capability
+OpenCoven/coven#991 (`d277ade3`) and OpenCoven/coven#999 (`735e2f05`) publish packaged base capability
 negotiation, durable `CAPABILITY_UNSUPPORTED` outcomes, and exact wire request
 fingerprinting. The rich normative `AutomationDefinition` remains
 negotiation-only. Read/verify/subscribe implementation can progress against

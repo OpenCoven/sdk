@@ -132,7 +132,8 @@ lifecycle certification is inferred. Negative schema cases are not treated as
 valid integrity fixtures.
 
 The historical base-artifact pin remains unchanged; it does not certify the
-later capability-negotiation changes from Coven #991/#999. See the
+later capability-negotiation changes from OpenCoven/coven#991 and
+OpenCoven/coven#999. See the
 [Automations roadmap](docs/ROADMAP.md#future--coven-automations) for the current
 producer status and remaining SDK phases.
 
