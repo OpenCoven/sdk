@@ -121,6 +121,7 @@ jobs:
             scripts/publication-source-identity.mjs
             scripts/publish-release-artifacts.mjs
             scripts/release-readiness.mjs
+            scripts/release-ref-policy.mjs
             scripts/release-runtime-integrity.mjs
             scripts/repository-metadata.mjs
             scripts/verify-committed-conformance-evidence.mjs
