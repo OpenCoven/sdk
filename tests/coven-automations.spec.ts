@@ -9,6 +9,7 @@ import {
   type CovenAutomationDefinition,
   type CovenAutomationDefinitionList,
   type CovenAutomationDefinitionReadRequest,
+  type CovenAutomationHealthResult,
   type CovenAutomationListOptions,
   type CovenConnectedSocket,
   type CovenDiscoveredEndpoint,
@@ -21,7 +22,7 @@ function advertisement() {
     capabilities: [{
       id: 'coven.automations', label: 'Coven-native routine automations',
       adapter: 'coven-daemon', status: 'available', policy: 'allow',
-      actions: ['coven.automations.definition.get.v1', 'coven.automations.definition.list.v1'],
+      actions: ['coven.automations.definition.get.v1', 'coven.automations.definition.list.v1', 'coven.automations.health'],
       variantNegotiation: {
         version: 1, contractProfile: 'coven.automations.v1', description: 'Variant negotiation',
         supported: {
@@ -40,6 +41,91 @@ function advertisement() {
 
 const listAction = 'coven.automations.definition.list.v1';
 const getAction = 'coven.automations.definition.get.v1';
+const healthAction = 'coven.automations.health';
+
+function healthSnapshot() {
+  return {
+    automationId: 'morning', nextDueAt: null, lastPlannedAt: null, lastStartedAt: null,
+    lastSuccessAt: null, consecutiveFailures: 0, leaseOwner: null, leaseExpiresAt: null,
+    staleReason: null, currentAttempt: null, maxAttempts: 1, retryNotBefore: null,
+    consecutiveExhaustions: 0, quarantinedAt: null, quarantineFailureClass: null, quarantineReason: null,
+  };
+}
+
+test('reads canonical health with nullable fields under the shared operation scope', async () => {
+  const payload = { health: healthSnapshot() };
+  const { client, transport } = readSetup(payload, healthAction);
+  const result = await client.health(' morning ');
+  expectTypeOf(result).toEqualTypeOf<CovenAutomationHealthResult>();
+  expect(result).toEqual(payload);
+  const [request, context] = transport.readDefinitions.mock.calls[0]!;
+  expect(request).toEqual({ action: healthAction, id: ' morning ' });
+  expect(Object.isFrozen(request)).toBe(true);
+  expect(transport.capabilities.mock.calls[0]?.[0]).toBe(context);
+});
+
+test('preserves populated health, retry and quarantine fields without interpreting authority', async () => {
+  const health = Object.fromEntries(Object.entries(healthSnapshot()).map(([key, value]) =>
+    [key, value === null ? (key === 'currentAttempt' ? 2 : 'producer value') : value]));
+  Object.assign(health, { consecutiveFailures: Number.MAX_SAFE_INTEGER, consecutiveExhaustions: 3, maxAttempts: 255 });
+  expect(await readSetup({ health }, healthAction).client.health('morning')).toEqual({ health });
+});
+
+test.each([
+  ...Object.keys(healthSnapshot()).map((key) => ({ [key]: undefined })),
+  { automationId: 'other' }, { nextDueAt: 42 }, { leaseOwner: {} }, { quarantineReason: false },
+  { currentAttempt: 0 }, { currentAttempt: -1 }, { currentAttempt: 1.5 },
+  { currentAttempt: Number.MAX_SAFE_INTEGER + 1 }, { maxAttempts: 0 }, { maxAttempts: 256 },
+  { maxAttempts: 1.5 }, { consecutiveFailures: -1 }, { consecutiveFailures: 1.5 },
+  { consecutiveFailures: Number.MAX_SAFE_INTEGER + 1 }, { consecutiveExhaustions: -1 },
+  { consecutiveExhaustions: Number.MAX_SAFE_INTEGER + 1 },
+])('rejects malformed, missing, unsafe or crossed health fields %#', async (change) => {
+  await expect(readSetup({ health: { ...healthSnapshot(), ...change } }, healthAction).client.health('morning'))
+    .rejects.toMatchObject({ code: 'invalid_response', normalized: { operation: 'automations.health' } });
+});
+
+test.each([null, [], {}, { routine: null }, { health: null }, { health: [] }])(
+  'rejects noncanonical health payload %#', async (payload) => {
+    await expect(readSetup(payload, healthAction).client.health('morning'))
+      .rejects.toMatchObject({ code: 'invalid_response' });
+  },
+);
+
+test('gates health on its own fresh action and preserves unsupported transports', async () => {
+  const { client, transport } = readSetup({ health: healthSnapshot() }, healthAction);
+  await client.health('morning');
+  const value = advertisement();
+  value.capabilities[0]!.actions = [listAction, getAction];
+  transport.capabilities.mockResolvedValue({ status: 200, body: Buffer.from(JSON.stringify(value)) });
+  await expect(client.health('morning')).rejects.toMatchObject({ code: 'capability_unsupported' });
+  expect(transport.readDefinitions).toHaveBeenCalledOnce();
+  await expect(setup().client.health('morning')).rejects.toMatchObject({ code: 'unsupported_operation' });
+});
+
+test('health rejects crossed envelopes and sanitizes missing-routine rejections', async () => {
+  const { client, transport } = readSetup({ health: healthSnapshot() }, getAction);
+  await expect(client.health('morning')).rejects.toMatchObject({ code: 'invalid_response' });
+  transport.readDefinitions.mockResolvedValue({
+    status: 400, body: Buffer.from(JSON.stringify({
+      ok: false, accepted: false, action: healthAction, status: 'rejected', reason: '/private/database',
+    })),
+  });
+  await expect(client.health('morning')).rejects.toMatchObject({
+    code: 'action_rejected', normalized: { operation: 'automations.health' },
+  });
+  await expect(client.health('morning')).rejects.not.toThrow('/private/database');
+});
+
+test('health shares cancellation and bounded JSON behavior', async () => {
+  const { client, transport } = readSetup({ health: healthSnapshot() }, healthAction);
+  await expect(client.health('morning', { signal: AbortSignal.abort() })).rejects.toMatchObject({ code: 'aborted' });
+  expect(transport.capabilities).not.toHaveBeenCalled();
+  transport.readDefinitions.mockResolvedValue({ status: 200, body: Buffer.alloc(16_385) });
+  await expect(client.health('morning')).rejects.toMatchObject({ code: 'invalid_response' });
+  transport.readDefinitions.mockImplementation(() => new Promise(() => {}));
+  await expect(client.health('morning', { timeoutMs: 10 })).rejects.toMatchObject({ code: 'timeout' });
+  expect(transport.readDefinitions.mock.calls.at(-1)?.[1].signal.aborted).toBe(true);
+});
 
 function routine() {
   return {
@@ -213,6 +299,7 @@ test.each(['missing', 'planned', 'unnegotiated', 'action_missing'])('gates reads
   }] };
   transport.capabilities.mockResolvedValue({ status: 200, body: Buffer.from(JSON.stringify(value)) });
   await expect(client.list()).rejects.toMatchObject({ code: 'capability_unsupported' });
+  await expect(client.health('morning')).rejects.toMatchObject({ code: 'capability_unsupported' });
   expect(transport.readDefinitions).not.toHaveBeenCalled();
 });
 
@@ -230,6 +317,7 @@ test('does not cache an earlier capability advertisement or require a read hook 
 test.each(['', '  ', '\ud800', 'x'.repeat(4_097), null, 42])('refuses invalid read IDs before I/O %#', async (id) => {
   const { client, transport } = readSetup();
   await expect(client.get(id as string)).rejects.toMatchObject({ code: 'invalid_options' });
+  await expect(client.health(id as string)).rejects.toMatchObject({ code: 'invalid_options' });
   expect(transport.capabilities).not.toHaveBeenCalled();
 });
 
@@ -407,6 +495,7 @@ test.skipIf(process.platform === 'win32')('Unix reader refuses a mismatched conn
 test.skipIf(process.platform === 'win32').each([
   { action: listAction, includeTombstoned: true },
   { action: getAction, id: ' morning ' },
+  { action: healthAction, id: ' morning ' },
   { action: getAction, id: 'é\r\nInjected: true' },
 ])('Unix read transport authenticates and sends only allowlisted JSON actions %#', async (request) => {
   const { transport, socket, inspectConnected } = unixSetup();
@@ -425,9 +514,9 @@ test.skipIf(process.platform === 'win32').each([
   expect(socket.destroyed).toBe(true);
 });
 
-test.skipIf(process.platform === 'win32')('Unix read transport never sends action bytes to an untrusted peer', async () => {
+test.skipIf(process.platform === 'win32').each([getAction, healthAction] as const)('Unix read transport never sends %s to an untrusted peer', async (action) => {
   const { transport, socket } = unixSetup(502);
-  await expect(transport.readDefinitions!({ action: getAction, id: 'morning' }, {
+  await expect(transport.readDefinitions!({ action, id: 'morning' }, {
     signal: new AbortController().signal, deadline: undefined,
   })).rejects.toBeDefined();
   expect(socket.writes).toEqual([]);
@@ -435,6 +524,8 @@ test.skipIf(process.platform === 'win32')('Unix read transport never sends actio
 
 test.skipIf(process.platform === 'win32').each([
   null, {}, { action: 'coven.automations.definition.create.v1', id: 'morning' },
+  { action: 'coven.automations.health.v1', id: 'morning' },
+  { action: 'coven.automations.unquarantine', id: 'morning' },
   { action: getAction, id: 'morning', definition: {} }, { action: getAction, id: '' },
   { action: listAction, includeTombstoned: 'true' },
   Object.create({ action: getAction, id: 'morning' }) as unknown,
@@ -458,7 +549,9 @@ test.skipIf(process.platform === 'win32')('read transport rejects oversized resp
   expect(socket.destroyed).toBe(true);
 });
 
-test.skipIf(process.platform === 'win32')('client reads through two independently authenticated Unix connections', async () => {
+test.skipIf(process.platform === 'win32').each(['get', 'health'] as const)('client %s reads through two independently authenticated Unix connections', async (method) => {
+  const action = method === 'get' ? getAction : healthAction;
+  const payload = method === 'get' ? definitionGet() : { health: healthSnapshot() };
   const sockets: Socket[] = [];
   const inspectConnected = vi.fn((socket: CovenConnectedSocket) => {
     expect(socket).toBe(sockets.at(-1));
@@ -475,14 +568,14 @@ test.skipIf(process.platform === 'win32')('client reads through two independentl
       connect: () => {
         const socket = new Socket();
         socket.response = Buffer.from(JSON.stringify(sockets.length === 0
-          ? advertisement() : readEnvelope(getAction, definitionGet())));
+          ? advertisement() : readEnvelope(action, payload)));
         sockets.push(socket);
         queueMicrotask(() => socket.emit('connect'));
         return socket;
       },
     },
   });
-  expect(await createCovenAutomationsClient({ transport }).get('morning')).toEqual(definitionGet());
+  expect(await createCovenAutomationsClient({ transport })[method]('morning')).toEqual(payload);
   expect(sockets).toHaveLength(2);
   expect(inspectConnected).toHaveBeenCalledTimes(2);
   expect(sockets[0]?.writes[0]).toMatch(/^GET \/api\/v1\/capabilities /);

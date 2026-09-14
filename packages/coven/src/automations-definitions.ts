@@ -45,10 +45,34 @@ export interface CovenAutomationListOptions {
   readonly includeTombstoned?: boolean;
 }
 
-/** Only these two read actions are permitted by the built-in transport. */
+export interface CovenAutomationHealth {
+  readonly automationId: string;
+  readonly nextDueAt: string | null;
+  readonly lastPlannedAt: string | null;
+  readonly lastStartedAt: string | null;
+  readonly lastSuccessAt: string | null;
+  readonly consecutiveFailures: number;
+  readonly leaseOwner: string | null;
+  readonly leaseExpiresAt: string | null;
+  readonly staleReason: string | null;
+  readonly currentAttempt: number | null;
+  readonly maxAttempts: number;
+  readonly retryNotBefore: string | null;
+  readonly consecutiveExhaustions: number;
+  readonly quarantinedAt: string | null;
+  readonly quarantineFailureClass: string | null;
+  readonly quarantineReason: string | null;
+}
+
+export interface CovenAutomationHealthResult {
+  readonly health: CovenAutomationHealth;
+}
+
+/** Definition and health read actions permitted by the built-in transport. */
 export type CovenAutomationDefinitionReadRequest =
   | { readonly action: 'coven.automations.definition.list.v1'; readonly includeTombstoned: boolean }
-  | { readonly action: 'coven.automations.definition.get.v1'; readonly id: string };
+  | { readonly action: 'coven.automations.definition.get.v1'; readonly id: string }
+  | { readonly action: 'coven.automations.health'; readonly id: string };
 
 export function definitionReadFailure(code: string, operation: string): never {
   throw new CovenClientError(normalizeCovenError({ code }, operation));
@@ -103,7 +127,7 @@ export function definitionReadBytes(request: CovenAutomationDefinitionReadReques
     return Buffer.from(JSON.stringify({ action, includeTombstoned: own('includeTombstoned') }));
   }
   const id = own('id');
-  if (action !== 'coven.automations.definition.get.v1' || typeof id !== 'string' ||
+  if ((action !== 'coven.automations.definition.get.v1' && action !== 'coven.automations.health') || typeof id !== 'string' ||
     id.trim().length === 0 || Buffer.byteLength(id) > 4_096 || !id.isWellFormed()) return invalid();
   return Buffer.from(JSON.stringify({ action, id: id.trim() }));
 }
@@ -113,7 +137,7 @@ export function decodeDefinitionRead(
   bytes: Uint8Array,
   request: CovenAutomationDefinitionReadRequest,
   operation: string,
-): CovenAutomationDefinitionList | CovenAutomationDefinition {
+): CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult {
   const invalid = (): never => definitionReadFailure('invalid_response', operation);
   let value: unknown;
   try {
@@ -132,6 +156,18 @@ export function decodeDefinitionRead(
     !object(value.event) || value.event.kind !== 'automations.changed' || value.event.action !== request.action ||
     !object(value.event.payload)) return invalid();
   const payload = value.event.payload;
+  if (request.action === 'coven.automations.health') {
+    const health = payload.health;
+    if (!object(health) || health.automationId !== request.id.trim() ||
+      !integer(health.consecutiveFailures, 0) || !integer(health.consecutiveExhaustions, 0) ||
+      !integer(health.maxAttempts, 1, 255) ||
+      (health.currentAttempt !== null && !integer(health.currentAttempt, 1)) ||
+      !['nextDueAt', 'lastPlannedAt', 'lastStartedAt', 'lastSuccessAt', 'leaseOwner',
+        'leaseExpiresAt', 'staleReason', 'retryNotBefore', 'quarantinedAt',
+        'quarantineFailureClass', 'quarantineReason'].every((key) =>
+        health[key] === null || typeof health[key] === 'string')) return invalid();
+    return { health: health as unknown as CovenAutomationHealth };
+  }
   if (request.action === 'coven.automations.definition.get.v1') {
     if (payload.routine === null) {
       if (Object.hasOwn(payload, 'revision') || Object.hasOwn(payload, 'tombstonedAt')) return invalid();
