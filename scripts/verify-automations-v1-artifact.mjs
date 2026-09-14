@@ -500,6 +500,86 @@ function assertEvent(value, stream) {
   return event;
 }
 
+// The pinned producer explicitly limits its golden fixtures to ASCII and
+// integers. Refuse a wider domain rather than claim a general JCS verifier.
+function canonicalFixture(value) {
+  if (value === null || typeof value === 'boolean') {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'number' && Number.isSafeInteger(value)) {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'string' && [...value].every((character) => character.charCodeAt(0) <= 0x7f)) {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalFixture).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.keys(value)
+      .filter((key) => key !== 'integrity')
+      .sort()
+      .map((key) => `${canonicalFixture(key)}:${canonicalFixture(value[key])}`)
+      .join(',')}}`;
+  }
+  fail('Golden fixture integrity: value is outside the pinned ASCII/safe-integer domain.');
+}
+
+function assertFixtureDigest(value, label) {
+  const digest = assertObject(value, `fixture integrity ${label}`);
+  if (
+    digest.algorithm !== 'sha256' ||
+    digest.canonicalization !== 'jcs-rfc8785' ||
+    typeof digest.value !== 'string' ||
+    !sha256Pattern.test(digest.value)
+  ) {
+    fail(`Golden fixture integrity: unsupported or malformed digest at ${label}.`);
+  }
+  return digest;
+}
+
+function verifyFixtureIntegrity(vectors) {
+  const fixtures = assertObject(vectors.fixtures, 'fixture integrity fixtures');
+  const definition = assertObject(fixtures['definition.golden'], 'fixture integrity definition.golden');
+  const receipt = assertObject(fixtures['receipt.golden'], 'fixture integrity receipt.golden');
+  assertFixtureDigest(definition.integrity, 'definition.golden');
+  assertFixtureDigest(receipt.integrity, 'receipt.golden');
+  const command = assertObject(fixtures['command.create.golden'], 'fixture integrity command.create.golden');
+  const payload = assertObject(command.payload, 'fixture integrity command payload');
+  const embedded = assertObject(payload.definition, 'fixture integrity command definition');
+  assertFixtureDigest(embedded.integrity, 'command.create.golden.payload.definition');
+
+  function visit(value, label) {
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => visit(item, `${label}[${index}]`));
+    } else if (value !== null && typeof value === 'object') {
+      if (Object.hasOwn(value, 'integrity')) {
+        const digest = assertFixtureDigest(value.integrity, label);
+        if (sha256(canonicalFixture(value)) !== digest.value) {
+          fail(`Golden fixture integrity: SHA-256 mismatch at ${label}.`);
+        }
+      }
+      for (const [key, item] of Object.entries(value)) {
+        if (key !== 'integrity') {
+          visit(item, `${label}.${key}`);
+        }
+      }
+    }
+  }
+
+  // Validate the declared fixture domain even for objects without integrity.
+  canonicalFixture(fixtures);
+  visit(fixtures, 'fixtures');
+  const binding = assertFixtureDigest(receipt.definitionDigest, 'receipt.golden.definitionDigest');
+  if (
+    binding.value !== definition.integrity.value ||
+    receipt.automationId !== definition.automationId ||
+    receipt.automationRevision !== definition.revision
+  ) {
+    fail('Golden fixture integrity: receipt definition binding does not match definition.golden.');
+  }
+}
+
 function initialProjection() {
   return {
     cursor: -1,
@@ -925,6 +1005,7 @@ export function verifyAutomationsArtifact({
   }
 
   const vectors = validateContractSet(entries);
+  verifyFixtureIntegrity(vectors);
   typecheckPinnedDeclaration(entries);
   exerciseGoldenVectors(vectors);
 
@@ -947,6 +1028,8 @@ function main() {
       `bundleSha256=${result.bundleSha256}`,
       `contractContentSha256=${result.contractContentSha256}`,
       `manifestFiles=${result.manifestFiles}`,
+      'fixtureIntegrity=passed',
+      'receiptDefinitionBinding=passed',
       'typecheck=passed',
       'duplicateDelivery=passed',
       'outOfOrderRefusal=passed',
