@@ -140,7 +140,7 @@ function createPublicationAuthorizationRecord(
     environmentId: '50000',
     npmProvenance: manifest.packages.map((entry, index) => ({
       packageName: entry.name,
-      subjectName: `pkg:npm/${entry.name.replace('@', '%40')}@${manifest.version}`,
+      subjectName: `pkg:npm/${entry.name.replace(/^@/u, '%40')}@${manifest.version}`,
       sha512: entry.sha512,
       bundle: {
         artifactId: String(30002 + index),

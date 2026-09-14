@@ -55,7 +55,7 @@ export function normalizeNpmProvenance(entries, { packages, version, commit, art
     if (
       packages[index].name !== name || packages[index].version !== version
       || entry.packageName !== name
-      || entry.subjectName !== `pkg:npm/${name.replace('@', '%40')}@${version}`
+      || entry.subjectName !== `pkg:npm/${name.replace(/^@/u, '%40')}@${version}`
       || typeof entry.sha512 !== 'string' || !SHA512.test(entry.sha512)
       || entry.sha512 !== packages[index].sha512
       || typeof bundle.artifactId !== 'string' || !ID.test(bundle.artifactId)

@@ -1413,7 +1413,7 @@ function validateNpmProvenanceSteps(job) {
         id: attestId,
         uses: ATTEST_ACTION,
         with: {
-          'subject-name': `pkg:npm/${packageName.replace('@', '%40')}@\${{ inputs.version }}`,
+          'subject-name': `pkg:npm/${packageName.replace(/^@/u, '%40')}@\${{ inputs.version }}`,
           'subject-digest': `sha512:\${{ needs.publication-candidate.outputs.npm-sha512-${index} }}`,
           'predicate-type': 'https://slsa.dev/provenance/v1',
           predicate: NPM_PROVENANCE_PREDICATE,

@@ -33,7 +33,7 @@ const packages = PUBLIC_PACKAGES.map(({ packageName, workspaceDirectory }) => ({
 const context = { packages, version, commit, artifactIds: ['1', '2'] };
 const entries = () => packages.map((entry, index) => ({
   packageName: entry.name,
-  subjectName: `pkg:npm/${entry.name.replace('@', '%40')}@${version}`,
+  subjectName: `pkg:npm/${entry.name.replace(/^@/u, '%40')}@${version}`,
   sha512: entry.sha512,
   bundle: {
     artifactId: String(index + 3),
@@ -167,7 +167,7 @@ describe('manual bootstrap verifier required gates', () => {
   test.each(['0.0.1-rc.1', '0.0.1+reviewed'])('preserves existing release version syntax %s', releaseVersion => {
     const values = entries().map((entry, index) => ({
       ...entry,
-      subjectName: `pkg:npm/${entry.packageName.replace('@', '%40')}@${releaseVersion}`,
+      subjectName: `pkg:npm/${entry.packageName.replace(/^@/u, '%40')}@${releaseVersion}`,
       bundle: {
         ...entry.bundle,
         artifactName: `opencoven-sdk-npm-provenance-${index}-${commit}-${releaseVersion}`,
