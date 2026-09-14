@@ -1,5 +1,7 @@
 import { CovenClientError, normalizeCovenError } from './client.js';
 import { parsePolicyJson } from './policy-json.js';
+import { integer, object } from './automations-read-validation.js';
+import { runsPayload, type CovenAutomationRunsResult } from './automations-runs.js';
 
 /** Executable compatibility shape, not the normative rich AutomationDefinition. */
 export interface CovenAutomationRoutine {
@@ -68,22 +70,15 @@ export interface CovenAutomationHealthResult {
   readonly health: CovenAutomationHealth;
 }
 
-/** Definition and health read actions permitted by the built-in transport. */
+/** Definition, health and run-history read actions permitted by the built-in transport. */
 export type CovenAutomationDefinitionReadRequest =
   | { readonly action: 'coven.automations.definition.list.v1'; readonly includeTombstoned: boolean }
   | { readonly action: 'coven.automations.definition.get.v1'; readonly id: string }
-  | { readonly action: 'coven.automations.health'; readonly id: string };
+  | { readonly action: 'coven.automations.health'; readonly id: string }
+  | { readonly action: 'coven.automations.runs'; readonly id: string; readonly limit: number };
 
 export function definitionReadFailure(code: string, operation: string): never {
   throw new CovenClientError(normalizeCovenError({ code }, operation));
-}
-
-function object(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function integer(value: unknown, minimum: number, maximum = Number.MAX_SAFE_INTEGER): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum && value <= maximum;
 }
 
 function routine(value: unknown): value is CovenAutomationRoutine {
@@ -122,13 +117,19 @@ export function definitionReadBytes(request: CovenAutomationDefinitionReadReques
   };
   const action = own('action');
   const keys = Reflect.ownKeys(descriptors);
-  if (keys.length !== 2) return invalid();
+  if (keys.length !== (action === 'coven.automations.runs' ? 3 : 2)) return invalid();
   if (action === 'coven.automations.definition.list.v1' && typeof own('includeTombstoned') === 'boolean') {
     return Buffer.from(JSON.stringify({ action, includeTombstoned: own('includeTombstoned') }));
   }
   const id = own('id');
-  if ((action !== 'coven.automations.definition.get.v1' && action !== 'coven.automations.health') || typeof id !== 'string' ||
+  if ((action !== 'coven.automations.definition.get.v1' && action !== 'coven.automations.health' &&
+    action !== 'coven.automations.runs') || typeof id !== 'string' ||
     id.trim().length === 0 || Buffer.byteLength(id) > 4_096 || !id.isWellFormed()) return invalid();
+  if (action === 'coven.automations.runs') {
+    const limit = own('limit');
+    if (!integer(limit, 1, 100)) return invalid();
+    return Buffer.from(JSON.stringify({ action, id: id.trim(), limit }));
+  }
   return Buffer.from(JSON.stringify({ action, id: id.trim() }));
 }
 
@@ -137,7 +138,7 @@ export function decodeDefinitionRead(
   bytes: Uint8Array,
   request: CovenAutomationDefinitionReadRequest,
   operation: string,
-): CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult {
+): CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult | CovenAutomationRunsResult {
   const invalid = (): never => definitionReadFailure('invalid_response', operation);
   let value: unknown;
   try {
@@ -156,6 +157,9 @@ export function decodeDefinitionRead(
     !object(value.event) || value.event.kind !== 'automations.changed' || value.event.action !== request.action ||
     !object(value.event.payload)) return invalid();
   const payload = value.event.payload;
+  if (request.action === 'coven.automations.runs') {
+    return runsPayload(payload, request.id.trim(), request.limit) ?? invalid();
+  }
   if (request.action === 'coven.automations.health') {
     const health = payload.health;
     if (!object(health) || health.automationId !== request.id.trim() ||

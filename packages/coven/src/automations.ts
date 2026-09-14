@@ -7,6 +7,8 @@ import {
 
 import { CovenClientError, normalizeCovenError } from './client.js';
 import { parsePolicyJson } from './policy-json.js';
+import { integer, object } from './automations-read-validation.js';
+import type { CovenAutomationRunsOptions, CovenAutomationRunsResult } from './automations-runs.js';
 import {
   decodeDefinitionRead,
   definitionReadBytes,
@@ -72,10 +74,6 @@ function invalidResponse(): never {
   throw new CovenClientError(normalizeCovenError({ code: 'invalid_response' }, operation));
 }
 
-function object(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function strings(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry: unknown) => typeof entry === 'string');
 }
@@ -133,7 +131,7 @@ function decode(status: number, body: Uint8Array): CovenAutomationCapabilities {
   };
 }
 
-/** Reads advertisements only; neither receipt authentication nor execution authorization. */
+/** Reads advertisements and diagnostics; neither receipt authentication nor execution authorization. */
 export class CovenAutomationsClient {
   readonly #options: CovenAutomationsClientOptions;
 
@@ -159,12 +157,26 @@ export class CovenAutomationsClient {
     return await this.#read({ action: 'coven.automations.health', id }, options) as CovenAutomationHealthResult;
   }
 
+  async runs(
+    id: string,
+    query: CovenAutomationRunsOptions = {},
+    options: OperationOptions = {},
+  ): Promise<CovenAutomationRunsResult> {
+    if (!object(query) || (query.limit !== undefined && !integer(query.limit, 1, 100))) {
+      return definitionReadFailure('invalid_options', 'automations.runs');
+    }
+    return await this.#read({
+      action: 'coven.automations.runs', id, limit: query.limit ?? 20,
+    }, options) as CovenAutomationRunsResult;
+  }
+
   async #read(
     request: CovenAutomationDefinitionReadRequest,
     options: OperationOptions,
-  ): Promise<CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult> {
+  ): Promise<CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult | CovenAutomationRunsResult> {
     const operation = request.action === 'coven.automations.definition.list.v1' ? 'automations.list'
-      : request.action === 'coven.automations.health' ? 'automations.health' : 'automations.get';
+      : request.action === 'coven.automations.health' ? 'automations.health'
+      : request.action === 'coven.automations.runs' ? 'automations.runs' : 'automations.get';
     const observer = options.observer ?? this.#options.operation?.observer;
     try {
       definitionReadBytes(request);
