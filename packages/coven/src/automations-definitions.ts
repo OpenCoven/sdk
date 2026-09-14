@@ -2,6 +2,10 @@ import { CovenClientError, normalizeCovenError } from './client.js';
 import { parsePolicyJson } from './policy-json.js';
 import { integer, object } from './automations-read-validation.js';
 import { runsPayload, type CovenAutomationRunsResult } from './automations-runs.js';
+import {
+  occurrencePayload, occurrencesPayload, occurrenceView,
+  type CovenAutomationOccurrenceResult, type CovenAutomationOccurrencesResult, type CovenAutomationOccurrenceView,
+} from './automations-occurrences.js';
 
 /** Executable compatibility shape, not the normative rich AutomationDefinition. */
 export interface CovenAutomationRoutine {
@@ -70,12 +74,14 @@ export interface CovenAutomationHealthResult {
   readonly health: CovenAutomationHealth;
 }
 
-/** Definition, health and run-history read actions permitted by the built-in transport. */
+/** Read-only diagnostic actions permitted by the built-in transport. */
 export type CovenAutomationDefinitionReadRequest =
   | { readonly action: 'coven.automations.definition.list.v1'; readonly includeTombstoned: boolean }
   | { readonly action: 'coven.automations.definition.get.v1'; readonly id: string }
   | { readonly action: 'coven.automations.health'; readonly id: string }
-  | { readonly action: 'coven.automations.runs'; readonly id: string; readonly limit: number };
+  | { readonly action: 'coven.automations.runs'; readonly id: string; readonly limit: number }
+  | { readonly action: 'coven.automations.occurrence.list.v1'; readonly view: CovenAutomationOccurrenceView; readonly limit: number }
+  | { readonly action: 'coven.automations.occurrence.get.v1'; readonly id: string };
 
 export function definitionReadFailure(code: string, operation: string): never {
   throw new CovenClientError(normalizeCovenError({ code }, operation));
@@ -117,13 +123,19 @@ export function definitionReadBytes(request: CovenAutomationDefinitionReadReques
   };
   const action = own('action');
   const keys = Reflect.ownKeys(descriptors);
-  if (keys.length !== (action === 'coven.automations.runs' ? 3 : 2)) return invalid();
+  if (keys.length !== (action === 'coven.automations.runs' || action === 'coven.automations.occurrence.list.v1' ? 3 : 2)) return invalid();
+  if (action === 'coven.automations.occurrence.list.v1') {
+    const view = own('view');
+    const limit = own('limit');
+    if (!occurrenceView(view) || !integer(limit, 1, 100)) return invalid();
+    return Buffer.from(JSON.stringify({ action, view, limit }));
+  }
   if (action === 'coven.automations.definition.list.v1' && typeof own('includeTombstoned') === 'boolean') {
     return Buffer.from(JSON.stringify({ action, includeTombstoned: own('includeTombstoned') }));
   }
   const id = own('id');
   if ((action !== 'coven.automations.definition.get.v1' && action !== 'coven.automations.health' &&
-    action !== 'coven.automations.runs') || typeof id !== 'string' ||
+    action !== 'coven.automations.runs' && action !== 'coven.automations.occurrence.get.v1') || typeof id !== 'string' ||
     id.trim().length === 0 || Buffer.byteLength(id) > 4_096 || !id.isWellFormed()) return invalid();
   if (action === 'coven.automations.runs') {
     const limit = own('limit');
@@ -138,7 +150,8 @@ export function decodeDefinitionRead(
   bytes: Uint8Array,
   request: CovenAutomationDefinitionReadRequest,
   operation: string,
-): CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult | CovenAutomationRunsResult {
+): CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult | CovenAutomationRunsResult |
+  CovenAutomationOccurrencesResult | CovenAutomationOccurrenceResult {
   const invalid = (): never => definitionReadFailure('invalid_response', operation);
   let value: unknown;
   try {
@@ -157,6 +170,12 @@ export function decodeDefinitionRead(
     !object(value.event) || value.event.kind !== 'automations.changed' || value.event.action !== request.action ||
     !object(value.event.payload)) return invalid();
   const payload = value.event.payload;
+  if (request.action === 'coven.automations.occurrence.list.v1') {
+    return occurrencesPayload(payload, request.limit) ?? invalid();
+  }
+  if (request.action === 'coven.automations.occurrence.get.v1') {
+    return occurrencePayload(payload, request.id.trim()) ?? invalid();
+  }
   if (request.action === 'coven.automations.runs') {
     return runsPayload(payload, request.id.trim(), request.limit) ?? invalid();
   }
