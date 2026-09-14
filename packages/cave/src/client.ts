@@ -1105,8 +1105,11 @@ export function canonicalFamiliarContractData(value: unknown): { ok: true } & Ca
     operation: 'familiars.contract.read', capabilities: ['familiars'],
   });
   const contract = managedDataRecord(data.contract);
-  if (contract === undefined || typeof contract.id !== 'string' ||
-      !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u.test(contract.id)) {
+  if (contract === undefined) throw invalidResponse('familiarContract');
+  let id: string;
+  try {
+    id = validateCanonicalId(contract.id, 'familiarId');
+  } catch {
     throw invalidResponse('familiarContract');
   }
   const projection = contractProjection(contract);
@@ -1114,7 +1117,7 @@ export function canonicalFamiliarContractData(value: unknown): { ok: true } & Ca
   if (projection === undefined || typeof projection.present === 'boolean' || report === undefined) {
     throw invalidResponse('familiarContract');
   }
-  return immutableManagedResult({ ok: true, id: contract.id, ...projection, report });
+  return immutableManagedResult({ ok: true, id, ...projection, report });
 }
 
 /** Converts a canonical analytics envelope without retaining native extras. */
@@ -1190,9 +1193,9 @@ function isSlice(value: unknown): value is CaveExecutionSlice {
 function isCoverage(value: unknown): value is CaveExecutionCoverage {
   return (
     isObject(value) &&
-    typeof value.known === 'number' &&
-    typeof value.total === 'number' &&
-    typeof value.ratio === 'number'
+    typeof value.known === 'number' && Number.isSafeInteger(value.known) && value.known >= 0 &&
+    typeof value.total === 'number' && Number.isSafeInteger(value.total) && value.total >= value.known &&
+    typeof value.ratio === 'number' && Number.isFinite(value.ratio) && value.ratio >= 0 && value.ratio <= 1
   );
 }
 
@@ -1251,6 +1254,7 @@ function isAttempt(value: unknown): value is CaveExecutionAttempt {
   return (
     isString(value.id) &&
     isString(value.executionKind) &&
+    (value.provenance === undefined || value.provenance === 'live' || value.provenance === 'backfilled') &&
     isString(value.occurredAt) &&
     isString(value.harnessId) &&
     (value.status === 'completed' || value.status === 'failed' || value.status === 'cancelled') &&
@@ -1509,9 +1513,6 @@ function managedExecutionAttempt(
   value: unknown,
 ): CaveExecutionAttempt | undefined {
   if (!isAttempt(value)) {
-    return undefined;
-  }
-  if (value.provenance !== undefined && value.provenance !== 'live' && value.provenance !== 'backfilled') {
     return undefined;
   }
   const sessionId = optionalManagedString(value, 'sessionId');

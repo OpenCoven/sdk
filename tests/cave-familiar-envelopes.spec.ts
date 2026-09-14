@@ -81,3 +81,41 @@ test('rejects array-shaped identity rather than normalizing it to an empty recor
     ...envelope, data: { contract: { ...contract, identity: [] } },
   })).toThrow();
 });
+
+test.each([NaN, Infinity, -Infinity])('rejects non-finite canonical coverage %s', (ratio) => {
+  expect(() => managed.canonicalFamiliarAnalyticsData({
+    ...envelope, operations: ['familiars.analytics.read'], data: { analytics: {
+      ...analytics, windows: { '7d': { ...analytics.windows['7d'], coverage: {
+        model: { known: 1, total: 1, ratio },
+      } } },
+    } },
+  })).toThrow();
+});
+
+test('uses canonical identifier rules for familiar contract results', () => {
+  expect(managed.canonicalFamiliarContractData({
+    ...envelope, data: { contract: { ...contract, id: 'familiar/one' } },
+  }).id).toBe('familiar/one');
+});
+
+test.each(['', ' ', '.', '..'])('rejects invalid canonical familiar id %s', (id) => {
+  expect(() => managed.canonicalFamiliarContractData({
+    ...envelope, data: { contract: { ...contract, id } },
+  })).toThrow();
+});
+
+test.each([
+  { known: -1, total: 1, ratio: 0 },
+  { known: 0.5, total: 1, ratio: 0.5 },
+  { known: 2, total: 1, ratio: 1 },
+  { known: 0, total: -1, ratio: 0 },
+  { known: 0, total: 1.5, ratio: 0 },
+  { known: 1, total: 1, ratio: 1.5 },
+  { known: 0, total: 1, ratio: -0.5 },
+])('rejects out-of-range canonical coverage %#', (coverage) => {
+  expect(() => managed.canonicalFamiliarAnalyticsData({
+    ...envelope, operations: ['familiars.analytics.read'], data: { analytics: {
+      ...analytics, windows: { '7d': { ...analytics.windows['7d'], coverage: { model: coverage } } },
+    } },
+  })).toThrow();
+});

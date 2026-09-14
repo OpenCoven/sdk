@@ -436,3 +436,10 @@ describe('cave familiars', () => {
     expect(await codeOf(() => client.familiarContract('cody'))).toBe('forbidden');
   });
 });
+
+test('rejects invalid optional attempt provenance on ordinary transports', async () => {
+  const client = clientWith({ familiarAnalytics: () => Promise.resolve({ ok: true, analytics: {
+    ...ANALYTICS, recentAttempts: [{ ...ANALYTICS.recentAttempts[0], provenance: 'unknown' }],
+  } }) });
+  await expect(client.familiarAnalytics('cody')).rejects.toMatchObject({ code: 'invalid_response' });
+});

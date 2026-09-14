@@ -457,7 +457,8 @@ console.log(
 ```
 
 The legacy `familiars()`, `familiarContract()`, `familiarAnalytics()`, and
-`CaveFamiliar` contracts remain separate and unchanged. The canonical
+`CaveFamiliar` contracts remain separate. Familiar contract and analytics results
+now also preserve the client-v1 fields described below. The canonical
 `listFamiliars()` method coexists with the legacy plural `familiars()` method.
 
 Public-contract and packed-package tests import the canonical methods,
