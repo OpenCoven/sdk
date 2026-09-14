@@ -25,11 +25,25 @@ const lockTrace = vi.hoisted(() => ({
   removing: 0,
 }));
 
+const deletionWindow = vi.hoisted(() => ({
+  target: '',
+  pending: '',
+  rejectedCreates: 0,
+  hold: undefined as (() => Promise<void>) | undefined,
+}));
+
 vi.mock('node:fs/promises', async (importOriginal) => {
   const fs = await importOriginal<typeof FsPromises>();
   return {
     ...fs,
     mkdir: async (...args: Parameters<typeof fs.mkdir>) => {
+      if (args[0] === deletionWindow.pending) {
+        deletionWindow.rejectedCreates++;
+        throw Object.assign(new Error('synthetic pending deletion or denied creation'), {
+          code: 'EPERM',
+          syscall: 'mkdir',
+        });
+      }
       if (args[0] !== lockTrace.target) {
         return fs.mkdir(...args);
       }
@@ -51,17 +65,37 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       }
     },
     rm: async (...args: Parameters<typeof fs.rm>) => {
-      if (args[0] !== lockTrace.target) {
+      if (
+        deletionWindow.hold !== undefined &&
+        typeof args[0] === 'string' &&
+        (args[0] === deletionWindow.target || args[0].startsWith(`${deletionWindow.target}.released-`))
+      ) {
+        const hold = deletionWindow.hold;
+        deletionWindow.hold = undefined;
+        deletionWindow.pending = args[0];
+        try {
+          await hold();
+          return await fs.rm(...args);
+        } finally {
+          deletionWindow.pending = '';
+        }
+      }
+      if (
+        args[0] !== lockTrace.target &&
+        !(lockTrace.target !== '' && typeof args[0] === 'string' &&
+          args[0].startsWith(`${lockTrace.target}.released-`))
+      ) {
         return fs.rm(...args);
       }
+      const operation = args[0] === lockTrace.target ? 'rm' : 'rm-retired';
       lockTrace.removing++;
-      lockTrace.events.push({ operation: 'rm', phase: 'start', removing: lockTrace.removing });
+      lockTrace.events.push({ operation, phase: 'start', removing: lockTrace.removing });
       try {
         await fs.rm(...args);
-        lockTrace.events.push({ operation: 'rm', phase: 'done', removing: lockTrace.removing });
+        lockTrace.events.push({ operation, phase: 'done', removing: lockTrace.removing });
       } catch (error) {
         lockTrace.events.push({
-          operation: 'rm',
+          operation,
           phase: 'error',
           code: (error as NodeJS.ErrnoException).code ?? 'unknown',
           removing: lockTrace.removing,
@@ -123,6 +157,75 @@ function lockPath(lockDirectory: string, service: string, key: string): string {
 }
 
 describe('native secret store', () => {
+  test('acquires the next lock while the previous directory is pending deletion', async () => {
+    let value: string | undefined;
+    class Entry {
+      getPassword() { return value; }
+      setPassword(next: string) { value = next; }
+      deletePassword() { value = undefined; return true; }
+    }
+    const options = {
+      ...moduleWithEntry(Entry),
+      lockDirectory: mkdtempSync(join(TEST_LOCK_DIRECTORY, 'pending-deletion-')),
+    };
+    const first = await createNativeSecretStore(options);
+    const second = await createNativeSecretStore(options);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    deletionWindow.target = lockPath(options.lockDirectory, SERVICE, 'credential');
+    deletionWindow.rejectedCreates = 0;
+    deletionWindow.hold = () => {
+      entered.resolve();
+      return release.promise;
+    };
+    const original = Promise.allSettled([first.set('credential', 'old')]);
+    let replacement;
+    try {
+      const reachedRemoval = await Promise.race([
+        entered.promise.then(() => true),
+        original.then(() => false),
+      ]);
+      if (!reachedRemoval) {
+        throw new Error('Original mutation finished before reaching the deletion window.');
+      }
+      replacement = await Promise.allSettled([second.set('credential', 'new')]);
+    } finally {
+      release.resolve();
+      await original;
+      deletionWindow.target = '';
+      deletionWindow.hold = undefined;
+    }
+    expect(await original).toEqual([{ status: 'fulfilled', value: undefined }]);
+    expect(replacement).toEqual([{ status: 'fulfilled', value: undefined }]);
+    expect(deletionWindow.rejectedCreates).toBe(0);
+    expect(value).toBe('new');
+  });
+
+  test('does not retry a genuine mkdir permission failure', async () => {
+    const setPassword = vi.fn();
+    const options = {
+      ...moduleWithEntry(class {
+        getPassword() { return undefined; }
+        setPassword = setPassword;
+        deletePassword() { return false; }
+      }),
+      lockDirectory: mkdtempSync(join(TEST_LOCK_DIRECTORY, 'denied-creation-')),
+    };
+    const store = await createNativeSecretStore(options);
+    deletionWindow.pending = lockPath(options.lockDirectory, SERVICE, 'credential');
+    deletionWindow.rejectedCreates = 0;
+    try {
+      await expect(store.set('credential', 'value')).rejects.toMatchObject({
+        code: 'secure_store_unavailable',
+        cause: { code: 'EPERM', syscall: 'mkdir' },
+      });
+      expect(deletionWindow.rejectedCreates).toBe(1);
+      expect(setPassword).not.toHaveBeenCalled();
+    } finally {
+      deletionWindow.pending = '';
+    }
+  });
+
   test('loads the installed native binding without creating mutation state', async () => {
     const lockDirectory = join(TEST_LOCK_DIRECTORY, 'installed-binding');
     const store = await createNativeSecretStore({ lockDirectory });
@@ -300,7 +403,8 @@ describe('native secret store', () => {
     }
     lockTrace.target = '';
 
-    expect(lockTrace.events).toContainEqual({ operation: 'rm', phase: 'done', removing: 1 });
+    expect(lockTrace.events.some(({ operation, phase }) =>
+      operation === 'rm-retired' && phase === 'done')).toBe(true);
     expect(lockTrace.removing).toBe(0);
     expect(replacementResults).toBeDefined();
     if (failure === 'delete') {

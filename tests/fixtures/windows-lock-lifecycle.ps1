@@ -27,7 +27,7 @@ function Probe-Mkdir {
 }
 
 try {
-  foreach ($control in @('legacy-disposition', 'posix-disposition')) {
+  foreach ($control in @('legacy-disposition', 'posix-disposition', 'retired-posix-disposition')) {
     if ((Probe-Mkdir) -ne 'OK') { throw 'Initial synthetic mkdir failed' }
     $occupied = Probe-Mkdir
     # Match libuv's access/share/open flags; hold the deleting handle deliberately.
@@ -37,9 +37,13 @@ try {
     try {
       [uint32]$flags = 1
       $kind = 4 # FileDispositionInfo
-      if ($control -eq 'posix-disposition') {
+      if ($control -ne 'legacy-disposition') {
         $flags = 0x13 # DELETE | POSIX_SEMANTICS | IGNORE_READONLY_ATTRIBUTE
         $kind = 21 # FileDispositionInfoEx
+      }
+      if ($control -eq 'retired-posix-disposition') {
+        & node -e 'const fs=require("node:fs");const p=process.env.OPENCOVEN_SYNTHETIC_LOCK;fs.renameSync(p,p+".released")'
+        if ($LASTEXITCODE -ne 0) { throw 'Synthetic retirement failed' }
       }
       $marked = [LockLifecycle]::SetFileInformationByHandle($handle, $kind, [ref]$flags, 4)
       $nativeError = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
@@ -53,8 +57,12 @@ try {
       dispositionError = $(if ($marked) { 0 } else { $nativeError })
       deletingHandleOpen = $pending; deletingHandleClosed = $closed
     } | ConvertTo-Json -Compress | Write-Output
-    if (-not $marked -or $occupied -ne 'EEXIST' -or $closed -ne 'OK') {
+    $expectedClosed = $(if ($control -eq 'retired-posix-disposition') { 'EEXIST' } else { 'OK' })
+    if (-not $marked -or $occupied -ne 'EEXIST' -or $closed -ne $expectedClosed) {
       throw 'Synthetic deletion control did not complete'
+    }
+    if ($control -eq 'retired-posix-disposition' -and $pending -ne 'OK') {
+      throw 'Synthetic retired deletion blocked the canonical name'
     }
     Remove-Item -LiteralPath $env:OPENCOVEN_SYNTHETIC_LOCK
   }
