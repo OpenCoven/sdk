@@ -112,3 +112,7 @@ jobs:
           tests/coven-discovery.spec.ts
           tests/health-validation.spec.ts
           tests/client-contract.spec.ts
+      - name: Diagnose synthetic Windows lock deletion and permissions
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/fixtures/windows-lock-lifecycle.ps1

@@ -10,6 +10,7 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs';
+import type * as FsPromises from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,6 +18,96 @@ import { createNativeSecretStore, SecureStoreUnavailableError } from '@opencoven
 import { afterAll, describe, expect, test, vi } from 'vitest';
 
 import { probeNativeSecretStore } from '../packages/cli/src/native-secret-store.js';
+
+const lockTrace = vi.hoisted(() => ({
+  target: '',
+  events: [] as { operation: string; phase: string; code?: string; removing: number }[],
+  removing: 0,
+}));
+
+const deletionWindow = vi.hoisted(() => ({
+  target: '',
+  pending: '',
+  rejectedCreates: 0,
+  hold: undefined as (() => Promise<void>) | undefined,
+}));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const fs = await importOriginal<typeof FsPromises>();
+  return {
+    ...fs,
+    mkdir: async (...args: Parameters<typeof fs.mkdir>) => {
+      if (args[0] === deletionWindow.pending) {
+        deletionWindow.rejectedCreates++;
+        throw Object.assign(new Error('synthetic pending deletion or denied creation'), {
+          code: 'EPERM',
+          syscall: 'mkdir',
+        });
+      }
+      if (args[0] !== lockTrace.target) {
+        return fs.mkdir(...args);
+      }
+      lockTrace.events.push({ operation: 'mkdir', phase: 'start', removing: lockTrace.removing });
+      try {
+        const result = await fs.mkdir(...args);
+        lockTrace.events.push({ operation: 'mkdir', phase: 'done', removing: lockTrace.removing });
+        return result;
+      } catch (error) {
+        lockTrace.events.push({
+          operation: 'mkdir',
+          phase: 'error',
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+          removing: lockTrace.removing,
+        });
+        throw error;
+      } finally {
+        lockTrace.events.splice(0, Math.max(0, lockTrace.events.length - 40));
+      }
+    },
+    rm: async (...args: Parameters<typeof fs.rm>) => {
+      if (
+        deletionWindow.hold !== undefined &&
+        typeof args[0] === 'string' &&
+        (args[0] === deletionWindow.target || args[0].startsWith(`${deletionWindow.target}.released-`))
+      ) {
+        const hold = deletionWindow.hold;
+        deletionWindow.hold = undefined;
+        deletionWindow.pending = args[0];
+        try {
+          await hold();
+          return await fs.rm(...args);
+        } finally {
+          deletionWindow.pending = '';
+        }
+      }
+      if (
+        args[0] !== lockTrace.target &&
+        !(lockTrace.target !== '' && typeof args[0] === 'string' &&
+          args[0].startsWith(`${lockTrace.target}.released-`))
+      ) {
+        return fs.rm(...args);
+      }
+      const operation = args[0] === lockTrace.target ? 'rm' : 'rm-retired';
+      lockTrace.removing++;
+      lockTrace.events.push({ operation, phase: 'start', removing: lockTrace.removing });
+      try {
+        await fs.rm(...args);
+        lockTrace.events.push({ operation, phase: 'done', removing: lockTrace.removing });
+      } catch (error) {
+        lockTrace.events.push({
+          operation,
+          phase: 'error',
+          code: (error as NodeJS.ErrnoException).code ?? 'unknown',
+          removing: lockTrace.removing,
+        });
+        throw error;
+      } finally {
+        lockTrace.removing--;
+        lockTrace.events.splice(0, Math.max(0, lockTrace.events.length - 40));
+      }
+    },
+  };
+});
 
 interface EntryShape {
   getPassword(): string | null | undefined;
@@ -66,6 +157,75 @@ function lockPath(lockDirectory: string, service: string, key: string): string {
 }
 
 describe('native secret store', () => {
+  test('acquires the next lock while the previous directory is pending deletion', async () => {
+    let value: string | undefined;
+    class Entry {
+      getPassword() { return value; }
+      setPassword(next: string) { value = next; }
+      deletePassword() { value = undefined; return true; }
+    }
+    const options = {
+      ...moduleWithEntry(Entry),
+      lockDirectory: mkdtempSync(join(TEST_LOCK_DIRECTORY, 'pending-deletion-')),
+    };
+    const first = await createNativeSecretStore(options);
+    const second = await createNativeSecretStore(options);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    deletionWindow.target = lockPath(options.lockDirectory, SERVICE, 'credential');
+    deletionWindow.rejectedCreates = 0;
+    deletionWindow.hold = () => {
+      entered.resolve();
+      return release.promise;
+    };
+    const original = Promise.allSettled([first.set('credential', 'old')]);
+    let replacement;
+    try {
+      const reachedRemoval = await Promise.race([
+        entered.promise.then(() => true),
+        original.then(() => false),
+      ]);
+      if (!reachedRemoval) {
+        throw new Error('Original mutation finished before reaching the deletion window.');
+      }
+      replacement = await Promise.allSettled([second.set('credential', 'new')]);
+    } finally {
+      release.resolve();
+      await original;
+      deletionWindow.target = '';
+      deletionWindow.hold = undefined;
+    }
+    expect(await original).toEqual([{ status: 'fulfilled', value: undefined }]);
+    expect(replacement).toEqual([{ status: 'fulfilled', value: undefined }]);
+    expect(deletionWindow.rejectedCreates).toBe(0);
+    expect(value).toBe('new');
+  });
+
+  test('does not retry a genuine mkdir permission failure', async () => {
+    const setPassword = vi.fn();
+    const options = {
+      ...moduleWithEntry(class {
+        getPassword() { return undefined; }
+        setPassword = setPassword;
+        deletePassword() { return false; }
+      }),
+      lockDirectory: mkdtempSync(join(TEST_LOCK_DIRECTORY, 'denied-creation-')),
+    };
+    const store = await createNativeSecretStore(options);
+    deletionWindow.pending = lockPath(options.lockDirectory, SERVICE, 'credential');
+    deletionWindow.rejectedCreates = 0;
+    try {
+      await expect(store.set('credential', 'value')).rejects.toMatchObject({
+        code: 'secure_store_unavailable',
+        cause: { code: 'EPERM', syscall: 'mkdir' },
+      });
+      expect(deletionWindow.rejectedCreates).toBe(1);
+      expect(setPassword).not.toHaveBeenCalled();
+    } finally {
+      deletionWindow.pending = '';
+    }
+  });
+
   test('loads the installed native binding without creating mutation state', async () => {
     const lockDirectory = join(TEST_LOCK_DIRECTORY, 'installed-binding');
     const store = await createNativeSecretStore({ lockDirectory });
@@ -218,6 +378,9 @@ describe('native secret store', () => {
       ...moduleWithEntry(Entry),
       lockDirectory: mkdtempSync(join(TEST_LOCK_DIRECTORY, 'replacement-race-')),
     };
+    // Trace only this synthetic fixture's canonical lock; never record paths or credentials.
+    lockTrace.target = lockPath(options.lockDirectory, SERVICE, 'cave-credential');
+    lockTrace.events = [];
     const deletingStore = await createNativeSecretStore(options);
     const replacementStore = await createNativeSecretStore(options);
     if (failure === 'set') {
@@ -230,7 +393,19 @@ describe('native secret store', () => {
     ]);
     // Drain both operations before any assertion can abort the test or permit cleanup.
     const replacementResults = await replacement;
+    if (replacementResults?.[0].status === 'rejected' && failure !== 'set') {
+      console.error('synthetic-lock-lifecycle', JSON.stringify({
+        platform: process.platform,
+        node: process.versions.node,
+        uv: process.versions.uv,
+        events: lockTrace.events,
+      }));
+    }
+    lockTrace.target = '';
 
+    expect(lockTrace.events.some(({ operation, phase }) =>
+      operation === 'rm-retired' && phase === 'done')).toBe(true);
+    expect(lockTrace.removing).toBe(0);
     expect(replacementResults).toBeDefined();
     if (failure === 'delete') {
       expect(deletionResult).toMatchObject({

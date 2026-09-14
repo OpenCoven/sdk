@@ -265,6 +265,14 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
 
+async function removeOwnedLockDirectory(lockPath: string): Promise<void> {
+  // Windows retains a delete-pending name until the deleting handle closes.
+  // Retire the owned name so contenders do not recreate a delete-pending name.
+  const releasedPath = `${lockPath}.released-${randomUUID()}`;
+  await rename(lockPath, releasedPath);
+  await rm(releasedPath, { force: true, recursive: true });
+}
+
 async function acquireNativeSecretStoreLock(
   lockDirectory: string,
   service: string,
@@ -293,7 +301,7 @@ async function acquireNativeSecretStoreLock(
           { encoding: 'utf8', flag: 'wx', mode: 0o600 },
         );
       } catch (error) {
-        await rm(lockPath, { force: true, recursive: true });
+        await removeOwnedLockDirectory(lockPath);
         throw error;
       }
 
@@ -313,7 +321,7 @@ async function acquireNativeSecretStoreLock(
         }
 
         if (current?.token === token) {
-          await rm(lockPath, { force: true, recursive: true });
+          await removeOwnedLockDirectory(lockPath);
         }
       };
     } catch (error) {
