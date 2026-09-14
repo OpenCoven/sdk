@@ -329,15 +329,15 @@ The frozen Chat consumer is
 `636f7da96fa178c2c14648f84137091b15a1cb8a`, tree
 `8e20adb1d55f17fb5b5a833bad6c9535d41c98ce`, with all four committed vendor
 archives byte-identical to candidate 77d825d. This binding selects the true
-merged Chat #264 producer `68c49d8a1a1ebedc06bdc8793a64c972945a265c`,
-tree `2b8bf03673800e33f0f2c1de49ec7b0717c45ea2`. Its source-bound producer
-head is `0e511721769a2946bc6b637218ffce603be36014` with the same tree.
-The bounded source-authority path authenticates that head through prior merge
-`5be5775e43cfdb3424e1a8361e11d5d59cbaaabb` and source
-`a3c6ff98294320ba37e3f147d5db5b2a85121923`.
+merged Chat #265 producer `7ec15b20b5526ef809c8f237a4dab1f640cb8a4d`,
+tree `30bb409137aa108d12a5b4dfdef7d0940989771c`. Its source-bound producer
+head is `be3b31ea5078e6f7d76973af9c3e3f92269334a5` with the same tree.
+The bounded source-authority path authenticates that head through
+`c666f1488d6add9fad2c9936929201cf22dc38e9` and
+`5d7567de951390f42c24b8e92ef55eb73bbe6040`.
 Its committed Phase 1 lock separately authenticates executable harness source
-`ad8d5f3e5e937c398c5d6d8f7bbbb190b4ed499a`, tree
-`dd4ffa0af4c39aefee9fc675ba5c804d7fe0e678`, and reviewed native deltas.
+`110b98b3ade90a10372efd433acdd9b5662369b4`, tree
+`92c0d415993a7005bf68f145e9ccabecbabdc150`, and reviewed native deltas.
 The Coven pin is unchanged. The production Cave authority is
 `8a06421a705c2d7891c3f44cc580c569f6cbe2c1`, tree
 `aee0a949cfe058f6c50dc95135f1e6579e759a41`, release `0.4.3`.
@@ -386,11 +386,11 @@ candidate, Cave, and Coven comparisons remain fail closed. A fresh protected
 run after this validator merges and both validator scopes rotate is required
 to establish whether the repaired publisher produces the Windows record and
 allows validation, attestation, and aggregation to complete.
-Live evidence verification fetches the merged producer, source-head, and
-harness Git commit objects plus the merged producer's
-`phase1-conformance.lock.json`; it rejects commit-graph, tree, revision,
-release-manifest, tarball, consumer-lock, Cave, or Coven drift before examining
-the protected run.
+Live evidence verification fetches the merged producer, source head, every
+bounded source-authority-path commit, and harness Git commit objects plus the
+merged producer's `phase1-conformance.lock.json`; it rejects commit-graph,
+tree, revision, release-manifest, tarball, consumer-lock, Cave, or Coven drift
+before examining the protected run.
 
 Both harness clients give `cave_launch` a 40-second response budget around
 Rust's 30-second readiness deadline. Other RPCs retain their 10-second bound.
