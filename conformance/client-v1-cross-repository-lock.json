@@ -11,7 +11,7 @@
     "path": "conformance/client-v1-cross-repository-evidence.schema.json",
     "version": 2,
     "size": 23176,
-    "sha256": "bf80202c36dc21fb6360666102214942e1853caa9c6a4b3d59966221e239888e"
+    "sha256": "14e2ef83a5f8ff3b8729c00886eadb945a12c7768eacca773cbfd68d18663366"
   },
   "candidate": {
     "repository": "OpenCoven/sdk",
@@ -88,9 +88,9 @@
   "sources": {
     "cave": {
       "repository": "OpenCoven/coven-cave",
-      "commit": "8a06421a705c2d7891c3f44cc580c569f6cbe2c1",
-      "tree": "aee0a949cfe058f6c50dc95135f1e6579e759a41",
-      "releaseVersion": "0.4.3",
+      "commit": "d655b2c3b6ecabf3a5eaea9e314b180028321d81",
+      "tree": "974d43afc735dc9017460a5b95b4c86a13388c1f",
+      "releaseVersion": "0.4.4",
       "files": [
         {
           "path": "scripts/client-v1-conformance.mjs",
@@ -165,18 +165,18 @@
   "evidenceProducer": {
     "status": "compatible",
     "repository": "OpenCoven/chat",
-    "commit": "5381425916e6e063158d718f1c4edac5641b63e8",
-    "tree": "5cfd81ad5c2043a70508e5320a90686339b97de8",
+    "commit": "92c4c453b57b2f9365627f01ec883f98aa8b7ba3",
+    "tree": "b8cf55084d86735d2c427ae5c88a088eccc7b1a4",
     "source": {
       "repository": "OpenCoven/chat",
-      "commit": "00dc19bd13a3e7777f82ffc7ca70ff17ea9ee96a",
-      "tree": "5cfd81ad5c2043a70508e5320a90686339b97de8"
+      "commit": "bdb9760d1ad7df818479a6f75aba82c9f2da0e7a",
+      "tree": "b8cf55084d86735d2c427ae5c88a088eccc7b1a4"
     },
     "sourceAuthorityPath": [],
     "harnessAuthority": {
       "repository": "OpenCoven/chat",
-      "commit": "b8777827a83b50f122c0880415286e4ebca7026c",
-      "tree": "bd312db6e2f76b93adea704f5be57a002db0a815"
+      "commit": "d254d6c4a704df23ff90dcc822243d6a9df6c81c",
+      "tree": "2c3184a67d4ea7e45619ed46265cced237e16d40"
     },
     "packageManifest": {
       "path": "package.json",
@@ -194,8 +194,8 @@
     "workflow": {
       "name": "client-v1 conformance",
       "path": ".github/workflows/client-v1-conformance.yml",
-      "size": 167450,
-      "sha256": "c6ed819f99d7005a461992c864d25c70dd81cd3a524ff4c117229a9f8325763f",
+      "size": 168186,
+      "sha256": "fcfa80ce47da84d32075e9db480cb2dfd012869e7f0452b6b5dfe966a33e09ec",
       "job": "platform-conformance",
       "jobNameTemplate": "platform-conformance ({platform})",
       "aggregationJob": "aggregate-conformance",
@@ -230,11 +230,11 @@
       ],
       "downloadArtifactAction": "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
       "attestationAction": "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8",
-      "windowsBootstrapScriptSha256": "5a1631fe036ad52f6bd3c17e31968d8ab179e4c45a023d6832496b5e946fdbaf",
+      "windowsBootstrapScriptSha256": "f528c4dff1dbed8dea44fcdcb77a7e2e6b57d2f568a303d6423e889e93e82d79",
       "validatorRevisionScriptSha256": "9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9",
       "phase1RevisionsScriptSha256": "507ce777b643d97154472eb23135f7965fd55cf0fcedcec30e93b23e6472d225",
       "linuxKeyringSetupScriptSha256": "7b1ff87ab5d2230950632560230899cc450458a800a630c2788b53be8b13d200",
-      "unixSupervisorPreparationScriptSha256": "5c7299446dd5500ad82e1d6b9e88305ec9d9643e9459c9a6f4930f3be4d35485",
+      "unixSupervisorPreparationScriptSha256": "88cb568f4c3fa4101c05446e184f065bcfb98215072a0099b6b63a84997ece5a",
       "unixToolPathSource": {
         "path": "scripts/executable-resolution.mjs",
         "size": 9154,
@@ -260,8 +260,8 @@
         ]
       },
       "signerWorkflow": "OpenCoven/chat/.github/workflows/client-v1-conformance.yml",
-      "signerDigest": "5381425916e6e063158d718f1c4edac5641b63e8",
-      "sourceDigest": "5381425916e6e063158d718f1c4edac5641b63e8",
+      "signerDigest": "92c4c453b57b2f9365627f01ec883f98aa8b7ba3",
+      "sourceDigest": "92c4c453b57b2f9365627f01ec883f98aa8b7ba3",
       "predicateType": "https://slsa.dev/provenance/v1",
       "denySelfHostedRunners": true
     }
@@ -285,6 +285,6 @@
   "assertionRegistry": {
     "path": "conformance/client-v1-cross-repository-assertions.json",
     "size": 10715,
-    "sha256": "69e2b86b04013814c3341d5766366cc861dc769c2f5115353fa2764c68444fd2"
+    "sha256": "fee0c8bb2c38afa9116e0b26fdf0266c3e4e4e833937cfd38200a3c26914583b"
   }
 }

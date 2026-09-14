@@ -13,7 +13,7 @@
     "assertionRegistry": {
       "path": "conformance/client-v1-cross-repository-assertions.json",
       "size": 10715,
-      "sha256": "69e2b86b04013814c3341d5766366cc861dc769c2f5115353fa2764c68444fd2"
+      "sha256": "fee0c8bb2c38afa9116e0b26fdf0266c3e4e4e833937cfd38200a3c26914583b"
     }
   },
   "type": "object",

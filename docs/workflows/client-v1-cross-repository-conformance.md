@@ -31,22 +31,22 @@ is `77d825d17809cfec2fad4acb9b1526b3c4752f9d`, tree
 The frozen Chat consumer is `636f7da96fa178c2c14648f84137091b15a1cb8a`,
 tree `8e20adb1d55f17fb5b5a833bad6c9535d41c98ce`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the true merged Chat #266 producer
-`5381425916e6e063158d718f1c4edac5641b63e8`, tree
-`5cfd81ad5c2043a70508e5320a90686339b97de8`. Its source-bound producer head is
-`00dc19bd13a3e7777f82ffc7ca70ff17ea9ee96a` with the same tree.
+This binding selects the true merged OpenCoven/chat#267 producer
+`92c4c453b57b2f9365627f01ec883f98aa8b7ba3`, tree
+`b8cf55084d86735d2c427ae5c88a088eccc7b1a4`. Its source-bound producer head is
+`bdb9760d1ad7df818479a6f75aba82c9f2da0e7a` with the same tree.
 That head directly parents the executable source, so the bounded
 `sourceAuthorityPath` has no intermediate commits.
 The committed Phase 1 lock separately authenticates executable harness source
-`b8777827a83b50f122c0880415286e4ebca7026c`, tree
-`bd312db6e2f76b93adea704f5be57a002db0a815`, and reviewed native deltas.
+`d254d6c4a704df23ff90dcc822243d6a9df6c81c`, tree
+`2c3184a67d4ea7e45619ed46265cced237e16d40`, and reviewed native deltas.
 The Coven pin is unchanged. The production Cave authority is
-`8a06421a705c2d7891c3f44cc580c569f6cbe2c1`, tree
-`aee0a949cfe058f6c50dc95135f1e6579e759a41`, release `0.4.3`.
+`d655b2c3b6ecabf3a5eaea9e314b180028321d81`, tree
+`974d43afc735dc9017460a5b95b4c86a13388c1f`, release `0.4.4`.
 
 The SDK package fixture provenance remains
 `e806655a7100e9d589662a6f3817c3fd8cde48ad`, distinct from production Cave.
-The registry retains all 110 ordered Cave assertions and the Cave 8a06421 engine
+The registry retains all 110 ordered Cave assertions and the Cave d655b2c engine
 provenance. Registry bytes bind the schema, then both bind the lock.
 The old 0.1.0 candidate and its evidence remain historical records.
 `aggregateRecord` remains `null`, `publishingEnabled` remains `false`, and
@@ -99,10 +99,14 @@ file identity, and keeps `.coven`, `chat`, and the marker directory
 current-user-owned. Ambient `HOME` remains current-user-only. Handle pinning,
 reparse rejection, writer restrictions, write-through publication, single-use
 consumption, quotas, cleanup, and deadlines remain unchanged.
-Chat #266 adds bounded publisher-refusal and profile-survival diagnostics.
-A request-bound stderr checkpoint orders the native discovery failure against
-the observer without extending the existing RPC deadline. It does not repair
-native publication, profile deletion, or the separate quota-monitor failure.
+OpenCoven/chat#267 completes the bounded launch-boundary and Windows lifecycle repair.
+Every native launch response emits a request-bound stderr checkpoint before
+stdout; missing boundaries and input-transport failures poison attribution
+without exposing stderr. The Windows supervisor retains verified process
+handles for termination diagnostics, keeps profile-free launch semantics, and
+allows only one complete quota remeasurement after first-pass access denial
+followed by a missing-path observation. Persistent repeats remain terminal.
+Isolation, quotas, cleanup, deadlines, and fail-closed behavior remain unchanged.
 Independent merged-producer, source-head, executable-harness, production,
 candidate, Cave, and Coven comparisons remain fail closed. A fresh protected
 run after this validator merges and both validator scopes rotate is required
@@ -512,7 +516,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the merged Chat producer at
-`5381425916e6e063158d718f1c4edac5641b63e8` compatible with the reviewed
+`92c4c453b57b2f9365627f01ec883f98aa8b7ba3` compatible with the reviewed
 schema-v2 workflow bytes and separately freezes its source-bound head and
 executable harness authority. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
