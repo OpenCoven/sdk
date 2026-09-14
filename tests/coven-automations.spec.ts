@@ -29,7 +29,7 @@ function advertisement() {
       id: 'coven.automations', label: 'Coven-native routine automations',
       adapter: 'coven-daemon', status: 'available', policy: 'allow',
       actions: ['coven.automations.definition.get.v1', 'coven.automations.definition.list.v1', 'coven.automations.health', 'coven.automations.runs',
-        'coven.automations.occurrence.list.v1', 'coven.automations.occurrence.get.v1'],
+        'coven.automations.occurrence.list.v1', 'coven.automations.occurrence.get.v1', 'coven.automations.receipt.get.v1'],
       variantNegotiation: {
         version: 1, contractProfile: 'coven.automations.v1', description: 'Variant negotiation',
         supported: {
@@ -52,6 +52,7 @@ const healthAction = 'coven.automations.health';
 const runsAction = 'coven.automations.runs';
 const occurrencesAction = 'coven.automations.occurrence.list.v1';
 const occurrenceAction = 'coven.automations.occurrence.get.v1';
+const receiptAction = 'coven.automations.receipt.get.v1';
 
 function occurrenceSnapshot() {
   return {
@@ -742,11 +743,12 @@ class Socket extends EventEmitter implements CovenConnectedSocket {
   destroyed = false;
   paused = false;
   writes: string[] = [];
+  status = 200;
   response = Buffer.from(JSON.stringify(advertisement()));
   write(value: Uint8Array | string): boolean {
     this.writes.push(Buffer.from(value).toString());
     queueMicrotask(() => this.emit('data', Buffer.concat([
-      Buffer.from(`HTTP/1.1 200 OK\r\nContent-Length: ${this.response.length}\r\n\r\n`), this.response,
+      Buffer.from(`HTTP/1.1 ${this.status} Response\r\nContent-Length: ${this.response.length}\r\n\r\n`), this.response,
     ])));
     return true;
   }
@@ -808,6 +810,7 @@ test.skipIf(process.platform === 'win32').each([
   { action: runsAction, id: ' morning ', limit: 20 },
   { action: occurrencesAction, view: 'due', limit: 20 },
   { action: occurrenceAction, id: ' occurrence-1 ' },
+  { action: receiptAction, id: ' receipt-1 ' },
   { action: getAction, id: 'é\r\nInjected: true' },
 ])('Unix read transport authenticates and sends only allowlisted JSON actions %#', async (request) => {
   const { transport, socket, inspectConnected } = unixSetup();
@@ -826,7 +829,7 @@ test.skipIf(process.platform === 'win32').each([
   expect(socket.destroyed).toBe(true);
 });
 
-test.skipIf(process.platform === 'win32').each([getAction, healthAction, occurrenceAction] as const)('Unix read transport never sends %s to an untrusted peer', async (action) => {
+test.skipIf(process.platform === 'win32').each([getAction, healthAction, occurrenceAction, receiptAction] as const)('Unix read transport never sends %s to an untrusted peer', async (action) => {
   const { transport, socket } = unixSetup(502);
   await expect(transport.readDefinitions!({ action, id: 'morning' }, {
     signal: new AbortController().signal, deadline: undefined,
@@ -858,6 +861,10 @@ test.skipIf(process.platform === 'win32').each([
   { action: occurrencesAction, view: 'due', limit: 20, id: 'morning' },
   { action: occurrencesAction, get view() { throw new Error('accessor must not run'); }, limit: 20 },
   { action: occurrenceAction, id: 'occurrence-1', limit: 20 },
+  { action: receiptAction, id: 'receipt-1', limit: 20 },
+  { action: receiptAction, id: '/private/receipt' },
+  { action: receiptAction, id: 'a'.repeat(161) },
+  { action: receiptAction, get id() { throw new Error('accessor must not run'); } },
   { action: runsAction, id: 'morning', get limit() { throw new Error('accessor must not run'); } },
   { action: getAction, id: 'morning', definition: {} }, { action: getAction, id: '' },
   { action: listAction, includeTombstoned: 'true' },
@@ -917,6 +924,42 @@ test.skipIf(process.platform === 'win32').each(['get', 'health', 'runs', 'occurr
   expect(inspectConnected).toHaveBeenCalledTimes(2);
   expect(sockets[0]?.writes[0]).toMatch(/^GET \/api\/v1\/capabilities /);
   expect(sockets[1]?.writes[0]).toMatch(/^POST \/api\/v1\/actions /);
+  expect(sockets.every((socket) => socket.destroyed)).toBe(true);
+});
+
+test.skipIf(process.platform === 'win32').each([
+  ['NOT_FOUND', 404], ['AUTHORITY_REQUIRED', 403], ['INTERNAL', 500],
+] as const)('receipt client preserves %s through independently authenticated Unix connections', async (code, status) => {
+  const sockets: Socket[] = [];
+  const inspectConnected = vi.fn(() => Promise.resolve({ uid: 501 }));
+  const transport = createCovenAutomationsUnixTransport(endpoint, {
+    security: { platform: 'unix', peerIdentity: { inspectConnected } },
+    dependencies: {
+      getEffectiveUid: () => 501,
+      lstat: () => Promise.resolve({
+        device: 1, inode: 2, ownerUid: 501, mode: 0o140600, symbolicLink: false, socket: true,
+      }),
+      connect: () => {
+        const socket = new Socket();
+        if (sockets.length > 0) {
+          socket.status = status;
+          socket.response = Buffer.from(JSON.stringify({
+            ok: false, accepted: false, action: receiptAction, status: 'rejected', reason: '/private/receipt',
+            error: { code, httpStatus: status, message: '/private/receipt', retryable: false },
+          }));
+        }
+        sockets.push(socket);
+        queueMicrotask(() => socket.emit('connect'));
+        return socket;
+      },
+    },
+  });
+  await expect(createCovenAutomationsClient({ transport }).getReceipt(' receipt-1 '))
+    .rejects.toMatchObject({ code, statusCode: status, retryable: false });
+  expect(sockets).toHaveLength(2);
+  expect(inspectConnected).toHaveBeenCalledTimes(2);
+  expect(sockets[0]?.writes[0]).toMatch(/^GET \/api\/v1\/capabilities /);
+  expect(sockets[1]?.writes[0]).toContain(`{"action":"${receiptAction}","id":"receipt-1"}`);
   expect(sockets.every((socket) => socket.destroyed)).toBe(true);
 });
 

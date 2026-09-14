@@ -8,6 +8,7 @@ import {
 import { CovenClientError, normalizeCovenError } from './client.js';
 import { parsePolicyJson } from './policy-json.js';
 import { integer, object } from './automations-read-validation.js';
+import type { CovenAutomationReceiptResult } from './automations-receipts.js';
 import type { CovenAutomationRunsOptions, CovenAutomationRunsResult } from './automations-runs.js';
 import {
   occurrenceView,
@@ -189,15 +190,20 @@ export class CovenAutomationsClient {
     return await this.#read({ action: 'coven.automations.occurrence.get.v1', id }, options) as CovenAutomationOccurrenceResult;
   }
 
+  async getReceipt(id: string, options: OperationOptions = {}): Promise<CovenAutomationReceiptResult> {
+    return await this.#read({ action: 'coven.automations.receipt.get.v1', id }, options) as CovenAutomationReceiptResult;
+  }
+
   async #read(
     request: CovenAutomationDefinitionReadRequest,
     options: OperationOptions,
   ): Promise<CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult | CovenAutomationRunsResult |
-    CovenAutomationOccurrencesResult | CovenAutomationOccurrenceResult> {
+    CovenAutomationOccurrencesResult | CovenAutomationOccurrenceResult | CovenAutomationReceiptResult> {
     const operation = request.action === 'coven.automations.definition.list.v1' ? 'automations.list'
       : request.action === 'coven.automations.health' ? 'automations.health'
       : request.action === 'coven.automations.occurrence.list.v1' ? 'automations.occurrences'
       : request.action === 'coven.automations.occurrence.get.v1' ? 'automations.getOccurrence'
+      : request.action === 'coven.automations.receipt.get.v1' ? 'automations.getReceipt'
       : request.action === 'coven.automations.runs' ? 'automations.runs' : 'automations.get';
     const observer = options.observer ?? this.#options.operation?.observer;
     try {

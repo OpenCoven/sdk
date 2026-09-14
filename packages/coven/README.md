@@ -28,7 +28,7 @@ and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
   policy routes. Windows policy transport is explicitly unsupported.
 - `createCovenAutomationsClient(...)` reads the advertised Automations v1
   negotiation profile, compatibility definitions, routine health, run history
-  and global occurrence inspection.
+  global occurrence inspection, and receipt retrieval.
   `createCovenAutomationsUnixTransport(...)` supplies authenticated Unix
   capability GET and allowlisted read-action POST requests; neither extends the
   health client.
@@ -78,13 +78,14 @@ accepted authority.
 Each read refreshes the capability advertisement and requires its exact action:
 `coven.automations.definition.list.v1` or
 `coven.automations.definition.get.v1`, `coven.automations.health`, `coven.automations.runs`,
-`coven.automations.occurrence.list.v1`, or `coven.automations.occurrence.get.v1`.
+`coven.automations.occurrence.list.v1`, `coven.automations.occurrence.get.v1`,
+or `coven.automations.receipt.get.v1`.
 Missing/planned/unnegotiated profiles or
 missing action names fail with `capability_unsupported` without posting an action.
 Custom capability-only transports remain compatible; reads without the optional
 `readDefinitions` hook fail with `unsupported_operation`.
 
-The built-in Unix transport sends only these six allowlisted JSON actions to
+The built-in Unix transport sends only these seven allowlisted JSON actions to
 `POST /api/v1/actions`. It authenticates each connection, including the separate
 capability request, under one client deadline/cancellation scope. It cannot send
 mutations through this hook. IDs are trimmed as the producer does; the SDK
@@ -94,7 +95,8 @@ malformed-Unicode rejection). Larger catalogs fail closed, not partially; this
 producer list action has no pagination contract. Canonical action rejection
 becomes `action_rejected`, while malformed/crossed responses become
 `invalid_response`; daemon rejection reasons and payloads are not copied into
-errors. Capability advertisement and transport authentication do not establish
+errors. Receipt reads use the separate typed rejection contract described below.
+Capability advertisement and transport authentication do not establish
 receipt authenticity or runtime authority.
 
 Definition-read source authority is Coven
@@ -109,7 +111,7 @@ with `event.kind: "automations.changed"` even for reads, and defines
 owns the compatibility routine fields. No GET definition routes, normative
 command-envelope adaptation, pagination, changefeed emission, or certification
 are inferred from the schemas in `spec/coven-automations/v1`. Existing artifact
-pins are unchanged. Individual run reads, occurrences, receipt reads/verification,
+pins are unchanged. Individual run reads, per-automation occurrence history, receipt verification,
 subscriptions and authority-bearing phases remain separate #80 work.
 
 ### Routine health
@@ -128,7 +130,7 @@ Failure/exhaustion counters are nonnegative safe integers and `maxAttempts` is
 Missing routines produce sanitized `action_rejected`, not an invented null result.
 Health is store-derived diagnostic data, not execution or receipt authority.
 Custom transports use the existing optional `readDefinitions` hook, whose
-historical name now covers all six explicitly allowlisted read actions.
+historical name now covers all seven explicitly allowlisted read actions.
 
 Health source authority was independently read from Coven
 [`b3b2d043a4ee586ccbf25ef6aad21db8a1171a54`](https://github.com/OpenCoven/coven/tree/b3b2d043a4ee586ccbf25ef6aad21db8a1171a54):
@@ -187,8 +189,80 @@ defines the bounded run/attempt queries and attempt constraints;
 defines `cancellation_for_run` and requester/status fields;
 [`api.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/api.rs)
 dispatches actions and separately gates receipt access to owner-local IPC.
-Receipt actions remain a separate producer contract and are not enabled here.
+Receipt reads use the separate producer contract described below.
 No unrelated conformance artifact pins change.
+
+### Receipt retrieval
+
+Read a receipt through the same explicitly configured owner-local Unix transport:
+
+```ts
+const { receipt, verification } = await automations.getReceipt(
+  'receipt-1',
+  { timeoutMs: 5_000 },
+);
+console.log(receipt.receiptId, verification.status); // receipt-1 unverifiable
+```
+
+`getReceipt(id, operationOptions?)` requires the exact advertised
+`coven.automations.receipt.get.v1` action. Unlike the diagnostic event projections,
+this action returns `{ receipt, verification }` from the completed response's
+`result`, with no `event`. The producer permits only owner-local IPC and
+`public` or `operational` receipts. TCP access and `sensitive`/`restricted`
+receipts are refused because a principal-aware read policy is unavailable.
+The SDK doesn't fall back to another route or read the store itself.
+
+The returned `verification` is **producer-reported diagnostic data**, not an
+SDK verification result. Its only supported status is `unverifiable`.
+The producer reports `integrity: "valid"` and `correlation: "valid"` after
+checking stored receipt, event, and durable run correlations. Both
+`receiptAuthentication` and `runtimeAuthority` remain
+`{ status: "unverified", evidence: "unavailable" }`, with the explicit reasons
+`PRODUCER_AUTHENTICATION_UNVERIFIED` and `RUNTIME_AUTHORITY_UNVERIFIED`.
+The SDK validates this shape and the requested receipt ID. It does **not**
+recompute the receipt digest, authenticate signatures, verify external bindings,
+or authorize execution. An `integrity.authentication` label such as
+`producer-hmac` or `cosign` is metadata, not proof. Even a `succeeded` outcome
+does not establish authenticated success or certification.
+
+Receipt IDs are trimmed, then must match the producer's ASCII identifier grammar:
+1-160 characters, starting with an alphanumeric character and continuing with
+alphanumerics, `.`, `_`, or `-`. The receipt has string
+`schemaVersion: "coven.automations.v1"`, not numeric version `1`.
+The SDK checks nested fields, enums, string/count bounds, positive safe integers,
+digest syntax, unique capability lists, and the producer's lexical UTC timestamp
+grammar without normalizing dates. Optional fields are absent, never `null`.
+Unknown receipt/nested fields and unsupported versions or variants fail closed.
+Returned data may contain private operational details; don't log whole receipts.
+Errors never include producer messages, reasons, receipt content, or paths.
+
+The producer's typed rejections become `CovenClientError` with their exact
+`code` and `statusCode`: `VALIDATION_FAILED` (400), `NOT_FOUND` (404),
+`AUTHORITY_REQUIRED` (403), or `INTERNAL` (500), all non-retryable.
+Missing receipts are errors, not invented `null` results. Malformed or crossed
+envelopes, unsupported privacy classes, and upgraded verification labels produce
+`invalid_response`. The existing 16 KiB / 16-level response bound, fresh
+capability check, connected-peer authentication, and shared deadline/abort
+scope apply. Large receipts fail closed without partial results.
+
+This hand-authored read projection is pinned to Coven v0.4.4 source
+[`4e35dd4c99013159fcee4c1ab2f183accdf7a5f8`](https://github.com/OpenCoven/coven/tree/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8).
+[`control_plane.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/control_plane.rs)
+advertises/dispatches the action and defines `automation_receipt_result` and
+`typed_rejection`;
+[`api.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/api.rs)
+applies the receipt transport gate, and
+[`request_authority.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/request_authority.rs)
+allows only `OwnerLocalIpc`;
+[`automations/receipts.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/automations/receipts.rs)
+defines `read_receipt`, not the separate `read_authorized_receipt`;
+[`automations/contract/types.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/automations/contract/types.rs)
+and
+[`automations/contract/error.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/automations/contract/error.rs)
+define the serialized receipt and error constraints. These types are not
+generated or mechanically checked against released schemas. This slice does
+not change artifact canary pins or complete #80 verification, subscriptions,
+or authority-bearing commands.
 
 ### Global occurrence inspection
 
@@ -247,7 +321,7 @@ defines nullability, ordering, snapshot transactions and the 20-run truncation;
 [`api.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/api.rs)
 routes authenticated `POST /api/v1/actions`. There is no advertised individual
 run-read action at this pin; `coven.automations.run` is a mutation and is never
-used as a read fallback. Receipt retrieval/verification, subscriptions,
+used as a read fallback. Independent receipt verification, subscriptions,
 per-automation occurrence history and individual-run lookup remain unimplemented.
 
 `capabilities()` sends only `GET /api/v1/capabilities`. It reads the uniquely identified
@@ -286,7 +360,7 @@ The earlier immutable artifact canary pin remains unchanged.
 This is a focused part of [SDK #80](https://github.com/OpenCoven/sdk/issues/80),
 not its completion. A local authenticated channel and an advertised capability
 are **not receipt authentication, execution authorization, or certification**.
-No individual-run/receipt retrieval, receipt verification, subscription,
+No individual-run retrieval, independent receipt verification, subscription,
 mutation, or positive authority acceptance is implemented here. Producer rich
 execution (#1054), trust (#857), and certification (#858) remain separate.
 The unified `@opencoven/sdk` stays health-only.

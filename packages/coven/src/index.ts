@@ -9,6 +9,12 @@ export type {
 export { createCovenAutomationsUnixTransport } from './automations-unix.js';
 export type { CovenAutomationsUnixTransportOptions } from './automations-unix.js';
 export type {
+  CovenAutomationReceipt,
+  CovenAutomationReceiptDigest,
+  CovenAutomationReceiptReadVerification,
+  CovenAutomationReceiptResult,
+} from './automations-receipts.js';
+export type {
   CovenAutomationOccurrence,
   CovenAutomationOccurrenceDetail,
   CovenAutomationOccurrenceResult,
