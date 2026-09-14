@@ -457,7 +457,8 @@ console.log(
 ```
 
 The legacy `familiars()`, `familiarContract()`, `familiarAnalytics()`, and
-`CaveFamiliar` contracts remain separate and unchanged. The canonical
+`CaveFamiliar` contracts remain separate. Familiar contract and analytics results
+now also preserve the client-v1 fields described below. The canonical
 `listFamiliars()` method coexists with the legacy plural `familiars()` method.
 
 Public-contract and packed-package tests import the canonical methods,
@@ -494,3 +495,28 @@ expiry, and incompatible versions before running the operation again.
 ## License
 
 AGPL-3.0-only OR MIT. See [LICENSE](LICENSE).
+
+### Client-v1 familiar contract and analytics reads
+
+Managed native adapters can convert client-v1 envelopes with
+`canonicalFamiliarContractData` and `canonicalFamiliarAnalyticsData` from
+`@opencoven/cave-client/managed`. These helpers apply the shared envelope
+version, operation, capability, compatibility and error checks, then return
+immutable responses containing only validated fields. Native accessors are
+rejected without invocation.
+
+Contract results preserve per-file `present` flags and optional `identity` and
+`ward` data. The legacy transport form still permits boolean `present`;
+consumers that require per-file flags must narrow this union and reject the
+legacy form rather than infer flags. Canonical client-v1 envelopes require the
+per-file form.
+
+Analytics preserve optional daily completed, failed and cancelled counts.
+`familiarAnalytics(id, { window, recentLimit })` forwards `7d`, `14d`, `8w` or
+`all` and an integer recent limit from 0 through 100; invalid values fail before
+transport invocation. Operation options such as cancellation and timeout stay
+separate from transport query options.
+
+These source changes do not update a frozen publication or conformance candidate.
+Consumers need reviewed candidate artifacts and fresh protected validation
+before claiming cross-repository acceptance.

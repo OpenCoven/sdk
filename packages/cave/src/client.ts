@@ -27,6 +27,7 @@ import {
 import { CAVE_CONTRACT_ERROR_CODES } from './contract-constraints.js';
 import {
   CaveCanonicalSchemaError,
+  parseCanonicalReadData,
   parseConversationEnvelope,
   parseConversationMessagesEnvelope,
   parseConversationsEnvelope,
@@ -60,10 +61,13 @@ import {
   type CaveExecutionBackfill,
   type CaveExecutionCoverage,
   type CaveExecutionSlice,
+  CAVE_ANALYTICS_WINDOWS,
   type CaveExecutionWindow,
+  type CaveExecutionDay,
   type CaveFamiliar,
   type CaveFamiliarAnalytics,
   type CaveFamiliarContract,
+  type CaveFamiliarAnalyticsTransportOptions,
   type CaveFamiliarWire,
   type CaveHealth,
   type CavePairingCreated,
@@ -138,9 +142,7 @@ export type CaveClientOptions =
   | CaveClientOptionsWithCredentials
   | CaveClientOptionsWithManagedNativeCredentials;
 
-export interface CaveFamiliarAnalyticsOptions extends OperationOptions {
-  recentLimit?: number;
-}
+export interface CaveFamiliarAnalyticsOptions extends OperationOptions, CaveFamiliarAnalyticsTransportOptions {}
 
 interface ParsedHealthResponse {
   apiVersion: string;
@@ -1041,6 +1043,104 @@ function toFamiliar(wire: CaveFamiliarWire): CaveFamiliar {
   };
 }
 
+function contractProjection(value: Record<string, unknown>): {
+  present: CaveFamiliarContract['present'];
+  identity?: NonNullable<CaveFamiliarContract['identity']>;
+  ward?: NonNullable<CaveFamiliarContract['ward']>;
+} | undefined {
+  if (typeof value.present === 'boolean') {
+    return value.identity === undefined && value.ward === undefined
+      ? { present: value.present } : undefined;
+  }
+  const presence = value.present;
+  if (!isObject(presence) ||
+      ['soul', 'identity', 'ward', 'memory'].some((key) => typeof presence[key] !== 'boolean')) {
+    return undefined;
+  }
+  const result: {
+    present: CaveFamiliarContract['present'];
+    identity?: NonNullable<CaveFamiliarContract['identity']>;
+    ward?: NonNullable<CaveFamiliarContract['ward']>;
+  } = { present: {
+    soul: presence.soul as boolean, identity: presence.identity as boolean,
+    ward: presence.ward as boolean, memory: presence.memory as boolean,
+  } };
+  if (value.identity !== undefined) {
+    const identity = value.identity;
+    if (!isObject(identity) || Array.isArray(identity) || !presence.identity ||
+        !optionalString(identity.name) || !optionalString(identity.creature) || !optionalString(identity.person)) {
+      return undefined;
+    }
+    result.identity = {
+      ...(isString(identity.name) ? { name: identity.name } : {}),
+      ...(isString(identity.creature) ? { creature: identity.creature } : {}),
+      ...(isString(identity.person) ? { person: identity.person } : {}),
+    };
+  }
+  if (value.ward !== undefined) {
+    const ward = value.ward;
+    const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every(isString);
+    if (!isObject(ward) || !presence.ward || !optionalString(ward.version) ||
+        !optionalString(ward.familiar) || !optionalString(ward.person) ||
+        !strings(ward.protectedFiles) || !strings(ward.invariants) || !strings(ward.editablePaths) ||
+        !isObject(ward.approvalTiers) || !strings(ward.approvalTiers.auto) || !strings(ward.approvalTiers.humanReview)) {
+      return undefined;
+    }
+    result.ward = {
+      ...(isString(ward.version) ? { version: ward.version } : {}),
+      ...(isString(ward.familiar) ? { familiar: ward.familiar } : {}),
+      ...(isString(ward.person) ? { person: ward.person } : {}),
+      protectedFiles: [...ward.protectedFiles], invariants: [...ward.invariants], editablePaths: [...ward.editablePaths],
+      approvalTiers: { auto: [...ward.approvalTiers.auto], humanReview: [...ward.approvalTiers.humanReview] },
+    };
+  }
+  return result;
+}
+
+/** Converts a validated client-v1 contract envelope for a managed transport. */
+export function canonicalFamiliarContractData(value: unknown): { ok: true } & CaveFamiliarContract {
+  const snapshot = managedDataRecord(value);
+  if (snapshot === undefined) throw invalidResponse('familiarContract');
+  const data = parseCanonicalReadData(snapshot, {
+    operation: 'familiars.contract.read', capabilities: ['familiars'],
+  });
+  const contract = managedDataRecord(data.contract);
+  if (contract === undefined) throw invalidResponse('familiarContract');
+  let id: string;
+  try {
+    id = validateCanonicalId(contract.id, 'familiarId');
+  } catch {
+    throw invalidResponse('familiarContract');
+  }
+  const projection = contractProjection(contract);
+  const report = managedContractReport(contract.report);
+  if (projection === undefined || typeof projection.present === 'boolean' || report === undefined) {
+    throw invalidResponse('familiarContract');
+  }
+  return immutableManagedResult({ ok: true, id, ...projection, report });
+}
+
+/** Converts a canonical analytics envelope without retaining native extras. */
+export function canonicalFamiliarAnalyticsData(value: unknown): { ok: true; analytics: CaveFamiliarAnalytics } {
+  const snapshot = managedDataRecord(value);
+  if (snapshot === undefined) throw invalidResponse('familiarAnalytics');
+  const data = parseCanonicalReadData(snapshot, {
+    operation: 'familiars.analytics.read', capabilities: ['familiars'],
+  });
+  const record = managedDataRecord(data.analytics);
+  const windows = record === undefined ? undefined : managedDataRecord(record.windows);
+  if (record === undefined || windows === undefined || !Array.isArray(record.recentAttempts) ||
+      record.recentAttempts.some((attempt) => !isObject(attempt) ||
+        (attempt.provenance !== 'live' && attempt.provenance !== 'backfilled')) ||
+      Object.values(windows).some((window) => {
+        const entry = managedDataRecord(window);
+        return entry === undefined || managedDataRecord(entry.coverage) === undefined;
+      })) throw invalidResponse('familiarAnalytics');
+  const analytics = managedFamiliarAnalytics(record);
+  if (analytics === undefined) throw invalidResponse('familiarAnalytics');
+  return immutableManagedResult({ ok: true, analytics });
+}
+
 function isViolation(value: unknown): boolean {
   return (
     isObject(value) && isString(value.file) && isString(value.field) && isString(value.message)
@@ -1093,10 +1193,19 @@ function isSlice(value: unknown): value is CaveExecutionSlice {
 function isCoverage(value: unknown): value is CaveExecutionCoverage {
   return (
     isObject(value) &&
-    typeof value.known === 'number' &&
-    typeof value.total === 'number' &&
-    typeof value.ratio === 'number'
+    typeof value.known === 'number' && Number.isSafeInteger(value.known) && value.known >= 0 &&
+    typeof value.total === 'number' && Number.isSafeInteger(value.total) && value.total >= value.known &&
+    typeof value.ratio === 'number' && Number.isFinite(value.ratio) && value.ratio >= 0 && value.ratio <= 1
   );
+}
+
+function isExecutionDay(value: unknown): value is CaveExecutionDay {
+  if (!isObject(value) || typeof value.date !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/u.test(value.date)) return false;
+  const date = new Date(`${value.date}T00:00:00.000Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value.date) return false;
+  return ['completed', 'failed', 'cancelled'].every((key) =>
+    typeof value[key] === 'number' && Number.isSafeInteger(value[key]) && value[key] >= 0);
 }
 
 function isWindow(value: unknown): value is CaveExecutionWindow {
@@ -1124,6 +1233,9 @@ function isWindow(value: unknown): value is CaveExecutionWindow {
     return false;
   }
 
+  if (value.days !== undefined &&
+      (!Array.isArray(value.days) || !value.days.every(isExecutionDay))) return false;
+
   // Absent coverage is allowed; present-but-malformed is not.
   if (value.coverage !== undefined) {
     if (!isObject(value.coverage) || !Object.values(value.coverage).every(isCoverage)) {
@@ -1142,6 +1254,7 @@ function isAttempt(value: unknown): value is CaveExecutionAttempt {
   return (
     isString(value.id) &&
     isString(value.executionKind) &&
+    (value.provenance === undefined || value.provenance === 'live' || value.provenance === 'backfilled') &&
     isString(value.occurredAt) &&
     isString(value.harnessId) &&
     (value.status === 'completed' || value.status === 'failed' || value.status === 'cancelled') &&
@@ -1390,6 +1503,9 @@ function managedExecutionWindow(
     models,
     harnesses,
     coverage,
+    ...(value.days === undefined ? {} : { days: value.days.map((day) => ({
+      date: day.date, completed: day.completed, failed: day.failed, cancelled: day.cancelled,
+    })) }),
   };
 }
 
@@ -1422,6 +1538,7 @@ function managedExecutionAttempt(
     return undefined;
   }
   return {
+    ...(value.provenance === undefined ? {} : { provenance: value.provenance }),
     id: value.id,
     ...(sessionId === undefined ? {} : { sessionId }),
     ...(turnId === undefined ? {} : { turnId }),
@@ -2382,7 +2499,8 @@ export class CaveClient {
         throw invalidResponse('familiarContract');
       }
 
-      if (typeof response.present !== 'boolean' || !isContractReport(response.report)) {
+      const projection = contractProjection(response);
+      if (projection === undefined || !isContractReport(response.report)) {
         throw invalidResponse('familiarContract');
       }
 
@@ -2396,7 +2514,7 @@ export class CaveClient {
       const contract = {
         id: isString(response.id) ? response.id : familiarId,
         ...(isString(response.workspace) ? { workspace: response.workspace } : {}),
-        present: response.present,
+        ...projection,
         report,
       };
       return this.#managedCredentialTransport === undefined
@@ -2417,11 +2535,21 @@ export class CaveClient {
     familiarId: string,
     options: CaveFamiliarAnalyticsOptions = {},
   ): Promise<CaveFamiliarAnalytics> {
-    const transportOptions =
-      options.recentLimit === undefined ? undefined : { recentLimit: options.recentLimit };
+    const transportOptions = options.recentLimit === undefined && options.window === undefined
+      ? undefined : {
+        ...(options.recentLimit === undefined ? {} : { recentLimit: options.recentLimit }),
+        ...(options.window === undefined ? {} : { window: options.window }),
+      };
 
     return this.#execute('familiarAnalytics', options, async (context) => {
       this.#ensureActive(context, 'familiarAnalytics');
+      if ((transportOptions?.window !== undefined &&
+          !(CAVE_ANALYTICS_WINDOWS as readonly unknown[]).includes(transportOptions.window)) ||
+          (transportOptions?.recentLimit !== undefined &&
+           (!Number.isInteger(transportOptions.recentLimit) || transportOptions.recentLimit < 0 ||
+            transportOptions.recentLimit > 100))) {
+        throw invalidRequest('familiarAnalytics');
+      }
       const call = this.#transport.familiarAnalytics?.bind(this.#transport);
 
       if (call === undefined) {

@@ -550,6 +550,16 @@ function parseMessage(
   };
 }
 
+/** Shared envelope gate for singleton client-v1 reads. */
+export function parseCanonicalReadData(
+  value: unknown,
+  requirements: CaveCanonicalEnvelopeRequirements,
+): Record<string, unknown> {
+  const envelope = parseEnvelope(value, requirements);
+  if (envelope.cursor !== undefined) throw new CaveCanonicalSchemaError('cursor');
+  return canonicalObject(envelope.data, 'data');
+}
+
 export function parseFamiliarsEnvelope(
   value: unknown,
 ): Page<CaveCanonicalFamiliar> {

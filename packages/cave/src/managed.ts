@@ -164,3 +164,5 @@ export type {
   CavePairingStatus,
   CaveProject,
 } from './schemas.js';
+
+export { canonicalFamiliarContractData, canonicalFamiliarAnalyticsData } from './client.js';
