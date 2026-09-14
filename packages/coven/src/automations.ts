@@ -10,6 +10,10 @@ import { parsePolicyJson } from './policy-json.js';
 import { integer, object } from './automations-read-validation.js';
 import type { CovenAutomationRunsOptions, CovenAutomationRunsResult } from './automations-runs.js';
 import {
+  occurrenceView,
+  type CovenAutomationOccurrencesOptions, type CovenAutomationOccurrencesResult, type CovenAutomationOccurrenceResult,
+} from './automations-occurrences.js';
+import {
   decodeDefinitionRead,
   definitionReadBytes,
   definitionReadFailure,
@@ -170,12 +174,30 @@ export class CovenAutomationsClient {
     }, options) as CovenAutomationRunsResult;
   }
 
+  async occurrences(query: CovenAutomationOccurrencesOptions, options: OperationOptions = {}): Promise<CovenAutomationOccurrencesResult> {
+    if (!object(query) || !occurrenceView(query.view) ||
+      (query.limit !== undefined && !integer(query.limit, 1, 100)) ||
+      Reflect.ownKeys(query).some((key) => key !== 'view' && key !== 'limit')) {
+      return definitionReadFailure('invalid_options', 'automations.occurrences');
+    }
+    return await this.#read({
+      action: 'coven.automations.occurrence.list.v1', view: query.view, limit: query.limit ?? 20,
+    }, options) as CovenAutomationOccurrencesResult;
+  }
+
+  async getOccurrence(id: string, options: OperationOptions = {}): Promise<CovenAutomationOccurrenceResult> {
+    return await this.#read({ action: 'coven.automations.occurrence.get.v1', id }, options) as CovenAutomationOccurrenceResult;
+  }
+
   async #read(
     request: CovenAutomationDefinitionReadRequest,
     options: OperationOptions,
-  ): Promise<CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult | CovenAutomationRunsResult> {
+  ): Promise<CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult | CovenAutomationRunsResult |
+    CovenAutomationOccurrencesResult | CovenAutomationOccurrenceResult> {
     const operation = request.action === 'coven.automations.definition.list.v1' ? 'automations.list'
       : request.action === 'coven.automations.health' ? 'automations.health'
+      : request.action === 'coven.automations.occurrence.list.v1' ? 'automations.occurrences'
+      : request.action === 'coven.automations.occurrence.get.v1' ? 'automations.getOccurrence'
       : request.action === 'coven.automations.runs' ? 'automations.runs' : 'automations.get';
     const observer = options.observer ?? this.#options.operation?.observer;
     try {

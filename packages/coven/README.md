@@ -27,12 +27,13 @@ and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
   transport with mandatory connected-peer security and only the two fixed
   policy routes. Windows policy transport is explicitly unsupported.
 - `createCovenAutomationsClient(...)` reads the advertised Automations v1
-  negotiation profile, compatibility definitions, routine health and run history.
+  negotiation profile, compatibility definitions, routine health, run history
+  and global occurrence inspection.
   `createCovenAutomationsUnixTransport(...)` supplies authenticated Unix
   capability GET and allowlisted read-action POST requests; neither extends the
   health client.
 
-## Automations phase 1: capability discovery, definition, health and run-history reads
+## Automations phase 1: capability discovery and diagnostic reads
 
 Import `createCovenAutomationsClient` and `createCovenAutomationsUnixTransport`
 directly from `@opencoven/coven-client`. Explicitly discover an endpoint, then
@@ -76,13 +77,14 @@ accepted authority.
 
 Each read refreshes the capability advertisement and requires its exact action:
 `coven.automations.definition.list.v1` or
-`coven.automations.definition.get.v1`, `coven.automations.health`, or `coven.automations.runs`.
+`coven.automations.definition.get.v1`, `coven.automations.health`, `coven.automations.runs`,
+`coven.automations.occurrence.list.v1`, or `coven.automations.occurrence.get.v1`.
 Missing/planned/unnegotiated profiles or
 missing action names fail with `capability_unsupported` without posting an action.
 Custom capability-only transports remain compatible; reads without the optional
 `readDefinitions` hook fail with `unsupported_operation`.
 
-The built-in Unix transport sends only these four allowlisted JSON actions to
+The built-in Unix transport sends only these six allowlisted JSON actions to
 `POST /api/v1/actions`. It authenticates each connection, including the separate
 capability request, under one client deadline/cancellation scope. It cannot send
 mutations through this hook. IDs are trimmed as the producer does; the SDK
@@ -126,7 +128,7 @@ Failure/exhaustion counters are nonnegative safe integers and `maxAttempts` is
 Missing routines produce sanitized `action_rejected`, not an invented null result.
 Health is store-derived diagnostic data, not execution or receipt authority.
 Custom transports use the existing optional `readDefinitions` hook, whose
-historical name now covers all four explicitly allowlisted read actions.
+historical name now covers all six explicitly allowlisted read actions.
 
 Health source authority was independently read from Coven
 [`b3b2d043a4ee586ccbf25ef6aad21db8a1171a54`](https://github.com/OpenCoven/coven/tree/b3b2d043a4ee586ccbf25ef6aad21db8a1171a54):
@@ -185,8 +187,68 @@ defines the bounded run/attempt queries and attempt constraints;
 defines `cancellation_for_run` and requester/status fields;
 [`api.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/api.rs)
 dispatches actions and separately gates receipt access to owner-local IPC.
-Occurrence and receipt actions are separate producer contracts and are **not**
-enabled by this milestone. No unrelated conformance artifact pins change.
+Receipt actions remain a separate producer contract and are not enabled here.
+No unrelated conformance artifact pins change.
+
+### Global occurrence inspection
+
+```ts
+const { occurrences } = await automations.occurrences(
+  { view: 'eligible', limit: 10 },
+  { timeoutMs: 5_000 },
+);
+for (const occurrence of occurrences) {
+  const detail = await automations.getOccurrence(occurrence.id);
+  console.log(detail.occurrence?.runsTruncated);
+}
+```
+
+`occurrences({ view, limit? }, operationOptions?)` calls the exact advertised
+`coven.automations.occurrence.list.v1` action. This is **global scheduler
+inspection**, not the roadmap's per-automation occurrence history:
+there is no automation-ID filter or cursor in this executable producer contract.
+The required view is `due`, `eligible`, `claimed`, `running`, or
+`recovery_required`; limits are integers 1–100 (default 20). Unsupported query
+fields are rejected rather than silently suggesting filtering or pagination.
+Due means planned and scheduled by the producer's current time; eligible is
+the producer's scheduling decision, not a client authorization decision.
+The producer returns bounded oldest-scheduled-first records (ID tie-breaker).
+
+`getOccurrence(id, operationOptions?)` calls
+`coven.automations.occurrence.get.v1` and returns `{ occurrence: null } for
+absence, or a diagnostic detail record. The detail contains up to **20 oldest
+runs** (started-at/ID order), ascending-number attempts and `runsTruncated`.
+Truncation does not supply a continuation cursor. Unlike the standalone
+compatibility `runs()` projection, these nested runs include
+`automationRevision`, nullable `definitionDigest`, `authorityProfile` and
+`timeoutAt`, and no cancellation projection. The SDK validates required field
+types, safe integers, bounds, unique IDs, attempt metadata, and
+occurrence/run/automation/revision/digest correlation. Nullable stored values
+are preserved; opaque occurrence kind/state and run status strings are not
+coerced into normative contract enums.
+
+Both operations recheck exact capability support and share one deadline/abort
+scope across capability and action reads, with independently authenticated Unix
+connections. Missing capabilities never fall back to another action. The
+existing **16 KiB response cap fails closed**, including when nested logs
+exceed it. The producer reads each occurrence list/detail in a database
+transaction, but no snapshot continuity is promised between SDK calls.
+Leases, fences, states, authority-profile labels and digest strings remain
+diagnostics. Receipt IDs are references only: this is not authenticated receipt
+evidence, execution authorization, positive authority acceptance or certification.
+
+**Occurrence source provenance:** freshly inspected Coven main at
+[`4e35dd4c99013159fcee4c1ab2f183accdf7a5f8`](https://github.com/OpenCoven/coven/tree/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8).
+[`control_plane.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/control_plane.rs)
+advertises and dispatches both exact actions, validates view/limit, and defines
+`automation_occurrence_value` and the list/detail event payloads;
+[`automations/inspection.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/automations/inspection.rs)
+defines nullability, ordering, snapshot transactions and the 20-run truncation;
+[`api.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/api.rs)
+routes authenticated `POST /api/v1/actions`. There is no advertised individual
+run-read action at this pin; `coven.automations.run` is a mutation and is never
+used as a read fallback. Receipt retrieval/verification, subscriptions,
+per-automation occurrence history and individual-run lookup remain unimplemented.
 
 `capabilities()` sends only `GET /api/v1/capabilities`. It reads the uniquely identified
 `coven.automations` catalog entry, preserves supported, experimental and refused

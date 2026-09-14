@@ -13,6 +13,10 @@ import {
   type CovenAutomationListOptions,
   type CovenAutomationRunsOptions,
   type CovenAutomationRunsResult,
+  type CovenAutomationOccurrencesOptions,
+  type CovenAutomationOccurrencesResult,
+  type CovenAutomationOccurrenceResult,
+  type CovenAutomationOccurrenceRun,
   type CovenConnectedSocket,
   type CovenDiscoveredEndpoint,
 } from '@opencoven/coven-client';
@@ -24,7 +28,8 @@ function advertisement() {
     capabilities: [{
       id: 'coven.automations', label: 'Coven-native routine automations',
       adapter: 'coven-daemon', status: 'available', policy: 'allow',
-      actions: ['coven.automations.definition.get.v1', 'coven.automations.definition.list.v1', 'coven.automations.health', 'coven.automations.runs'],
+      actions: ['coven.automations.definition.get.v1', 'coven.automations.definition.list.v1', 'coven.automations.health', 'coven.automations.runs',
+        'coven.automations.occurrence.list.v1', 'coven.automations.occurrence.get.v1'],
       variantNegotiation: {
         version: 1, contractProfile: 'coven.automations.v1', description: 'Variant negotiation',
         supported: {
@@ -45,6 +50,144 @@ const listAction = 'coven.automations.definition.list.v1';
 const getAction = 'coven.automations.definition.get.v1';
 const healthAction = 'coven.automations.health';
 const runsAction = 'coven.automations.runs';
+const occurrencesAction = 'coven.automations.occurrence.list.v1';
+const occurrenceAction = 'coven.automations.occurrence.get.v1';
+
+function occurrenceSnapshot() {
+  return {
+    id: 'occurrence-1', automationId: 'morning', automationRevision: 1, definitionDigest: null,
+    scheduledFor: '2026-09-14T00:00:00Z', kind: 'schedule', state: 'planned',
+    leaseOwner: null, leaseExpiresAt: null, schedulerGeneration: null, fenceGeneration: 0,
+    failureReason: null, createdAt: 'created', updatedAt: 'updated',
+  };
+}
+
+function occurrenceDetail() {
+  return {
+    ...occurrenceSnapshot(), runsTruncated: false,
+    runs: [{ ...runSnapshot(), automationRevision: 1, definitionDigest: null, authorityProfile: null, timeoutAt: null }],
+  };
+}
+
+test.each(['due', 'eligible', 'claimed', 'running', 'recovery_required'] as const)(
+  'reads exact global occurrence view %s under one operation scope', async (view) => {
+    const payload = { occurrences: [occurrenceSnapshot()] };
+    const { client, transport } = readSetup(payload, occurrencesAction);
+    const result = await client.occurrences({ view });
+    expectTypeOf(result).toEqualTypeOf<CovenAutomationOccurrencesResult>();
+    expect(result).toEqual(payload);
+    const [request, context] = transport.readDefinitions.mock.calls[0]!;
+    expect(request).toEqual({ action: occurrencesAction, view, limit: 20 });
+    expect(Object.isFrozen(request)).toBe(true);
+    expect(transport.capabilities.mock.calls[0]?.[0]).toBe(context);
+    expect(await readSetup({ occurrences: [] }, occurrencesAction).client.occurrences({ view, limit: 100 }))
+      .toEqual({ occurrences: [] });
+  },
+);
+
+test('reads correlated occurrence detail and preserves explicit missing/truncation diagnostics', async () => {
+  const payload = { occurrence: occurrenceDetail() };
+  const { client, transport } = readSetup(payload, occurrenceAction);
+  const result = await client.getOccurrence(' occurrence-1 ');
+  expectTypeOf(result).toEqualTypeOf<CovenAutomationOccurrenceResult>();
+  expectTypeOf<CovenAutomationOccurrenceRun['occurrenceId']>().toEqualTypeOf<string>();
+  expect(result).toEqual(payload);
+  expect(transport.readDefinitions.mock.calls[0]?.[0]).toEqual({ action: occurrenceAction, id: ' occurrence-1 ' });
+  expect(transport.readDefinitions.mock.calls[0]?.[1]).toBe(transport.capabilities.mock.calls[0]?.[0]);
+  expect(await readSetup({ occurrence: null }, occurrenceAction).client.getOccurrence('missing')).toEqual({ occurrence: null });
+  const detail = occurrenceDetail();
+  const runs = Array.from({ length: 20 }, (_, index) => ({ ...detail.runs[0], id: `run-${index}`, attempts: [] }));
+  const truncated = { occurrence: { ...detail, runs, runsTruncated: true } };
+  expect(await readSetup(truncated, occurrenceAction).client.getOccurrence('occurrence-1')).toEqual(truncated);
+});
+
+test('preserves populated occurrence fields and opaque producer diagnostics', async () => {
+  const occurrence = {
+    ...occurrenceDetail(), kind: 'producer-kind', state: 'producer-state',
+    definitionDigest: 'digest', leaseOwner: 'owner', leaseExpiresAt: 'expires', failureReason: 'reason',
+    schedulerGeneration: Number.MAX_SAFE_INTEGER, fenceGeneration: Number.MAX_SAFE_INTEGER,
+    runs: occurrenceDetail().runs.map((run) => ({
+      ...run, definitionDigest: 'digest', authorityProfile: 'profile', timeoutAt: 'timeout', receiptId: 'reference',
+    })),
+  };
+  expect(await readSetup({ occurrence }, occurrenceAction).client.getOccurrence('occurrence-1')).toEqual({ occurrence });
+});
+
+test.each([
+  undefined, null, [], {}, 'morning', { view: 'all' }, { view: 'due', id: 'morning' },
+  { view: 'due', after: 'cursor' },
+  ...[0, 101, -1, 1.5, '20', null, Number.NaN, Infinity].map((limit) => ({ view: 'due', limit })),
+])('rejects unsupported occurrence query before transport %#', async (query) => {
+  const { client, transport } = readSetup();
+  await expect(client.occurrences(query as CovenAutomationOccurrencesOptions)).rejects.toMatchObject({ code: 'invalid_options' });
+  expect(transport.capabilities).not.toHaveBeenCalled();
+  expect(transport.readDefinitions).not.toHaveBeenCalled();
+});
+
+test.each([
+  ...Object.keys(occurrenceSnapshot()).map((key) => ({ [key]: undefined })),
+  { id: '' }, { automationId: '' }, { automationRevision: 0 }, { automationRevision: 1.5 },
+  { automationRevision: Number.MAX_SAFE_INTEGER + 1 }, { definitionDigest: 5 },
+  { schedulerGeneration: -1 }, { schedulerGeneration: 0.5 }, { fenceGeneration: -1 },
+  { fenceGeneration: Number.MAX_SAFE_INTEGER + 1 }, { leaseOwner: false },
+])('rejects malformed occurrence records in both reads %#', async (change) => {
+  await expect(readSetup({ occurrences: [{ ...occurrenceSnapshot(), ...change }] }, occurrencesAction)
+    .client.occurrences({ view: 'due' })).rejects.toMatchObject({ code: 'invalid_response' });
+  await expect(readSetup({ occurrence: { ...occurrenceDetail(), ...change } }, occurrenceAction)
+    .client.getOccurrence('occurrence-1')).rejects.toMatchObject({ code: 'invalid_response' });
+});
+
+test.each([
+  { id: 'other' }, { runsTruncated: undefined }, { runsTruncated: 'false' }, { runsTruncated: true },
+  { runs: null }, { runs: [] , runsTruncated: true },
+  ...[
+    { automationId: 'other' }, { occurrenceId: 'other' }, { automationRevision: 2 },
+    { definitionDigest: 'other' }, { authorityProfile: undefined }, { timeoutAt: false },
+    { cancellation: {} }, { attempts: [{ ...runSnapshot().attempts[0], runId: 'other' }] },
+  ].map((change) => ({ runs: [{ ...occurrenceDetail().runs[0], ...change }] })),
+])('rejects uncorrelated or malformed occurrence detail %#', async (change) => {
+  await expect(readSetup({ occurrence: { ...occurrenceDetail(), ...change } }, occurrenceAction)
+    .client.getOccurrence('occurrence-1')).rejects.toMatchObject({ code: 'invalid_response' });
+});
+
+test('rejects duplicate and over-limit occurrences and detail runs', async () => {
+  const occurrence = occurrenceSnapshot();
+  for (const occurrences of [[occurrence, occurrence], [occurrence, { ...occurrence, id: 'other' }]]) {
+    await expect(readSetup({ occurrences }, occurrencesAction).client.occurrences({ view: 'due', limit: 1 }))
+      .rejects.toMatchObject({ code: 'invalid_response' });
+  }
+  await expect(readSetup({ occurrences: [occurrence, occurrence] }, occurrencesAction).client.occurrences({ view: 'due' }))
+    .rejects.toMatchObject({ code: 'invalid_response' });
+  for (const runs of [Array(21).fill(occurrenceDetail().runs[0]), Array(2).fill(occurrenceDetail().runs[0])]) {
+    await expect(readSetup({ occurrence: { ...occurrenceDetail(), runs } }, occurrenceAction)
+      .client.getOccurrence('occurrence-1')).rejects.toMatchObject({ code: 'invalid_response' });
+  }
+});
+
+test.each([occurrencesAction, occurrenceAction])('occurrence read %s enforces capability, errors, limits and cancellation', async (action) => {
+  const payload = action === occurrencesAction ? { occurrences: [] } : { occurrence: null };
+  const { client, transport } = readSetup(payload, action);
+  const read = (options = {}) => action === occurrencesAction
+    ? client.occurrences({ view: 'due' }, options) : client.getOccurrence('occurrence-1', options);
+  await read();
+  const missing = advertisement();
+  missing.capabilities[0]!.actions = [`${action}.unsupported`];
+  transport.capabilities.mockResolvedValueOnce({ status: 200, body: Buffer.from(JSON.stringify(missing)) });
+  await expect(read()).rejects.toMatchObject({ code: 'capability_unsupported' });
+  expect(transport.readDefinitions).toHaveBeenCalledOnce();
+  await expect(read({ signal: AbortSignal.abort() })).rejects.toMatchObject({ code: 'aborted' });
+  for (const body of [Buffer.alloc(16_385, 32), Buffer.from('{"ok":true,"ok":true}'), Buffer.from([0xff]),
+    Buffer.from(JSON.stringify(readEnvelope('wrong', payload)))]) {
+    transport.readDefinitions.mockResolvedValueOnce({ status: 200, body });
+    await expect(read()).rejects.toMatchObject({ code: 'invalid_response' });
+  }
+  transport.readDefinitions.mockResolvedValueOnce({ status: 400, body: Buffer.from(JSON.stringify({
+    ok: false, accepted: false, action, status: 'rejected', reason: '/private/store',
+  })) });
+  await expect(read()).rejects.toMatchObject({ code: 'action_rejected' });
+  transport.readDefinitions.mockImplementationOnce(() => new Promise(() => {}));
+  await expect(read({ timeoutMs: 10 })).rejects.toMatchObject({ code: 'timeout' });
+});
 
 function runSnapshot() {
   return {
@@ -663,6 +806,8 @@ test.skipIf(process.platform === 'win32').each([
   { action: getAction, id: ' morning ' },
   { action: healthAction, id: ' morning ' },
   { action: runsAction, id: ' morning ', limit: 20 },
+  { action: occurrencesAction, view: 'due', limit: 20 },
+  { action: occurrenceAction, id: ' occurrence-1 ' },
   { action: getAction, id: 'é\r\nInjected: true' },
 ])('Unix read transport authenticates and sends only allowlisted JSON actions %#', async (request) => {
   const { transport, socket, inspectConnected } = unixSetup();
@@ -681,7 +826,7 @@ test.skipIf(process.platform === 'win32').each([
   expect(socket.destroyed).toBe(true);
 });
 
-test.skipIf(process.platform === 'win32').each([getAction, healthAction] as const)('Unix read transport never sends %s to an untrusted peer', async (action) => {
+test.skipIf(process.platform === 'win32').each([getAction, healthAction, occurrenceAction] as const)('Unix read transport never sends %s to an untrusted peer', async (action) => {
   const { transport, socket } = unixSetup(502);
   await expect(transport.readDefinitions!({ action, id: 'morning' }, {
     signal: new AbortController().signal, deadline: undefined,
@@ -707,6 +852,12 @@ test.skipIf(process.platform === 'win32').each([
   { action: runsAction, id: 'morning', limit: 101 },
   { action: runsAction, id: 'morning', limit: '20' },
   { action: runsAction, id: 'morning', limit: 20, receiptId: 'secret' },
+  { action: occurrencesAction, view: 'all', limit: 20 },
+  { action: occurrencesAction, view: 'due', limit: 0 },
+  { action: occurrencesAction, view: 'due', limit: 101 },
+  { action: occurrencesAction, view: 'due', limit: 20, id: 'morning' },
+  { action: occurrencesAction, get view() { throw new Error('accessor must not run'); }, limit: 20 },
+  { action: occurrenceAction, id: 'occurrence-1', limit: 20 },
   { action: runsAction, id: 'morning', get limit() { throw new Error('accessor must not run'); } },
   { action: getAction, id: 'morning', definition: {} }, { action: getAction, id: '' },
   { action: listAction, includeTombstoned: 'true' },
@@ -731,9 +882,11 @@ test.skipIf(process.platform === 'win32')('read transport rejects oversized resp
   expect(socket.destroyed).toBe(true);
 });
 
-test.skipIf(process.platform === 'win32').each(['get', 'health', 'runs'] as const)('client %s reads through two independently authenticated Unix connections', async (method) => {
-  const action = method === 'get' ? getAction : method === 'health' ? healthAction : runsAction;
-  const payload = method === 'get' ? definitionGet() : method === 'health' ? { health: healthSnapshot() } : { runs: [runSnapshot()] };
+test.skipIf(process.platform === 'win32').each(['get', 'health', 'runs', 'occurrences', 'getOccurrence'] as const)('client %s reads through two independently authenticated Unix connections', async (method) => {
+  const action = method === 'get' ? getAction : method === 'health' ? healthAction : method === 'runs' ? runsAction
+    : method === 'occurrences' ? occurrencesAction : occurrenceAction;
+  const payload = method === 'get' ? definitionGet() : method === 'health' ? { health: healthSnapshot() } : method === 'runs' ? { runs: [runSnapshot()] }
+    : method === 'occurrences' ? { occurrences: [occurrenceSnapshot()] } : { occurrence: occurrenceDetail() };
   const sockets: Socket[] = [];
   const inspectConnected = vi.fn((socket: CovenConnectedSocket) => {
     expect(socket).toBe(sockets.at(-1));
@@ -757,7 +910,9 @@ test.skipIf(process.platform === 'win32').each(['get', 'health', 'runs'] as cons
       },
     },
   });
-  expect(await createCovenAutomationsClient({ transport })[method]('morning')).toEqual(payload);
+  const client = createCovenAutomationsClient({ transport });
+  expect(await (method === 'occurrences' ? client.occurrences({ view: 'due' })
+    : client[method](method === 'getOccurrence' ? 'occurrence-1' : 'morning'))).toEqual(payload);
   expect(sockets).toHaveLength(2);
   expect(inspectConnected).toHaveBeenCalledTimes(2);
   expect(sockets[0]?.writes[0]).toMatch(/^GET \/api\/v1\/capabilities /);
