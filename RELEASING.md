@@ -42,15 +42,15 @@ create a `0.0.2` or `0.1.0` release for this preparation. The unrelated
 session-policy feature, private CLI patch, and empty maintenance Changesets
 remain unchanged.
 
-No fresh candidate has been captured by this source-preparation change.
-After its reviewed merge, build and pack that exact committed source twice
-using the existing local-verification artifact mode, then record its actual
-commit, tree, canonical source manifest, and package bytes. If public runtime
-changes land meanwhile, stop and coordinate rather than silently including
-them. Candidate77's lock, manifests, tarballs, and partial evidence remain
-unchanged and identify only candidate77 until an authentic replacement
-candidate and reviewed consumer/producer binding are available.
-All #38/#40 acceptance and publication gates remain closed.
+The captured private candidate is now
+`96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
+`aa9eb8e924735419a9afdbcc80a5b087504ccc9d`. Its canonical runtime manifest
+and exact package bytes are frozen by the current release configuration and
+conformance lock. Chat #270 adopted its private archives; Chat #272 corrected
+the Cave release binding. Fresh protected validation remains pending. Later runtime
+changes are not implicitly included in this immutable candidate. Candidate77's
+manifests, tarballs, and partial records remain historical evidence for
+candidate77. All #38/#40 acceptance and publication gates remain closed.
 
 ### Compatibility prerequisite
 
@@ -76,8 +76,8 @@ Any changed source or fixture requires fresh candidate identity and conformance
 evidence under the existing release rules. Do not use the old source freeze to
 claim verification of this preparation.
 `conformance/client-v1-cross-repository-lock.json` now binds the new 0.0.1
-candidate `77d825d17809cfec2fad4acb9b1526b3c4752f9d`, tree
-`697764ae382ca56d6fde39b9929405d86e739d67`, including its 18,280-byte Cave
+candidate `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
+`aa9eb8e924735419a9afdbcc80a5b087504ccc9d`, including its 18,280-byte Cave
 fixture. Package fixture provenance remains the reviewed
 `e806655a7100e9d589662a6f3817c3fd8cde48ad`; production Cave authority is
 separately pinned to `d655b2c3b6ecabf3a5eaea9e314b180028321d81`.
@@ -380,10 +380,10 @@ trailing newline. Its shape is:
     "commit": "<release-commit>",
     "repository": "OpenCoven/sdk",
     "runtimeManifest": {
-      "candidateCommit": "77d825d17809cfec2fad4acb9b1526b3c4752f9d",
-      "candidateTree": "697764ae382ca56d6fde39b9929405d86e739d67",
+      "candidateCommit": "96804bc483a063e41e9a9738a4ace61970f6c0a4",
+      "candidateTree": "aa9eb8e924735419a9afdbcc80a5b087504ccc9d",
       "file": "publication-source-manifest.json",
-      "runtimeSha256": "75373cee44e210b6f95491d1e1276506f217a275094835baba6170d919f68801",
+      "runtimeSha256": "8c46276b5698d32d570ad4a89998b412cb0efde5641313b0c71ae41519e64ae7",
       "sha256": "<raw-source-manifest-sha256>",
       "size": "<raw-source-manifest-size>"
     },
@@ -422,22 +422,37 @@ support and does not by itself authorize release; #38 still requires one
 passing evidence record for each target.
 
 The frozen Chat consumer is
-`636f7da96fa178c2c14648f84137091b15a1cb8a`, tree
-`8e20adb1d55f17fb5b5a833bad6c9535d41c98ce`, with all four committed vendor
-archives byte-identical to candidate 77d825d. This binding selects the true
-merged OpenCoven/chat#267 producer `92c4c453b57b2f9365627f01ec883f98aa8b7ba3`,
-tree `b8cf55084d86735d2c427ae5c88a088eccc7b1a4`. Its source-bound producer
-head is `bdb9760d1ad7df818479a6f75aba82c9f2da0e7a` with the same tree.
-That head directly parents the executable source, so the bounded
-`sourceAuthorityPath` has no intermediate commits.
+`ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`, tree
+`ffd1963ef9539c7a679909200175fb11a9305c95`, with all four committed vendor
+archives byte-identical to candidate 96804bc. This binding selects the true
+merged OpenCoven/chat#272 producer `535d48196d96a4fde39cd62c47ccec2307a5b3d6`,
+tree `244f46e6abf616c717d75268cb366c9ed6077f9e`. Its source-bound producer
+head is `843c13652c76c48d9a9d7042d8ae3df751315c6b` with the same tree.
+The bounded `sourceAuthorityPath` includes source-binding commit
+`e3584d236ccdcdbfda3880c056b2a75b20e60609`, whose tree matches the producer.
+That commit has the executable harness source as its direct parent.
 Its committed Phase 1 lock separately authenticates executable harness source
-`d254d6c4a704df23ff90dcc822243d6a9df6c81c`, tree
-`2c3184a67d4ea7e45619ed46265cced237e16d40`, and reviewed native deltas.
+`a9c44b643523f4a4adeb6a03bebf71a449cfa7b5`, tree
+`d850bf84e299840c565e19449d0601b7a225b824`, and reviewed native deltas.
 The Coven pin is unchanged. The production Cave authority is
 `d655b2c3b6ecabf3a5eaea9e314b180028321d81`, tree
 `974d43afc735dc9017460a5b95b4c86a13388c1f`, release `0.4.4`.
 
 This is a source-only candidate binding, not accepted platform evidence.
+The latest completed protected run, `34833377609`, used Chat producer
+`92c4c453b57b2f9365627f01ec883f98aa8b7ba3` and SDK validator
+`051795eb66ac9ff97f1274de9eaba3d5d37e788e` with the previous candidate
+`77d825d`. Linux and Darwin each passed 197 assertions. Windows exited before
+Cave readiness at `phase1.cave-authority.startup.exit` and produced no record;
+validation, attestation, and aggregation were skipped. The later profile
+cleanup failure is a separate observation. This does not classify the startup
+cause as a record identity, timing, or assertion mismatch. These records are
+historical evidence for that binding, not acceptance of candidate `96804bc`.
+Chat #270 adopts the new candidate; Chat #271 binds the integrated executable
+source after the CI image update. Chat #272 corrects its Cave release binding
+to the pinned authority's actual `0.4.4`, preserving rejection of `0.4.3`.
+Fresh protected validation remains required.
+
 The historical diagnostic checkpoint from protected run `34763766701` used
 the pre-adoption Chat producer
 `311dda625b20aaa91c7bf2b19718387ec56acab0` with SDK validator
@@ -638,9 +653,9 @@ as documented in
 
 Before advancing this candidate after that blocker is resolved, copy the
 canonical aggregate to
-`docs/client-v1-cross-repository-results/77d825d17809cfec2fad4acb9b1526b3c4752f9d.json`,
+`docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json`,
 and add the sibling reviewed evidence index
-`docs/client-v1-cross-repository-results/77d825d17809cfec2fad4acb9b1526b3c4752f9d.index.json`.
+`docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.index.json`.
 The index is a reviewed locator and expected-value record, not an
 authentication oracle. Release readiness uses the standard GitHub workflow
 token to fetch the exact Chat workflow bytes, run, job, and artifact records

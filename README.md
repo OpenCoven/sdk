@@ -30,12 +30,12 @@ The four release manifests and initial changelogs are prepared at **0.0.1**,
 with the merged Cave authority contract advertising a `0.0.1` client minimum.
 Strict version checks remain unchanged. The source lock now freezes the
 private **0.0.1** candidate at
-`77d825d17809cfec2fad4acb9b1526b3c4752f9d` and its exact tarball bytes.
+`96804bc483a063e41e9a9738a4ace61970f6c0a4` and its exact tarball bytes.
 Earlier 0.1.0 artifacts and evidence remain historical, not relabeled.
-The release owner has selected a fresh private 0.0.1 candidate that includes
-the merged Coven Automations APIs. Its source metadata is being prepared;
-candidate77 remains the bound candidate until actual replacement artifacts
-and their reviewed cross-repository binding exist.
+This candidate includes the merged Coven Automations APIs. Candidate77
+records remain historical evidence. The lock binds the corrected Chat #272
+producer; fresh protected validation remains pending and no passing aggregate
+is accepted.
 Complete protected #38 evidence and #40 authorization are still required; see the
 [v0.0.1 preparation checklist](RELEASING.md#v001-preparation-decision-2026-09-12)
 for the remaining gates and required release sequence.
