@@ -31,16 +31,16 @@ is `77d825d17809cfec2fad4acb9b1526b3c4752f9d`, tree
 The frozen Chat consumer is `636f7da96fa178c2c14648f84137091b15a1cb8a`,
 tree `8e20adb1d55f17fb5b5a833bad6c9535d41c98ce`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the true merged Chat #264 producer
-`68c49d8a1a1ebedc06bdc8793a64c972945a265c`, tree
-`2b8bf03673800e33f0f2c1de49ec7b0717c45ea2`. Its source-bound producer head is
-`0e511721769a2946bc6b637218ffce603be36014` with the same tree.
-The bounded source-authority path authenticates that head through prior merge
-`5be5775e43cfdb3424e1a8361e11d5d59cbaaabb` and source
-`a3c6ff98294320ba37e3f147d5db5b2a85121923`.
+This binding selects the true merged Chat #265 producer
+`7ec15b20b5526ef809c8f237a4dab1f640cb8a4d`, tree
+`30bb409137aa108d12a5b4dfdef7d0940989771c`. Its source-bound producer head is
+`be3b31ea5078e6f7d76973af9c3e3f92269334a5` with the same tree.
+The bounded source-authority path authenticates that head through
+`c666f1488d6add9fad2c9936929201cf22dc38e9` and
+`5d7567de951390f42c24b8e92ef55eb73bbe6040`.
 The committed Phase 1 lock separately authenticates executable harness source
-`ad8d5f3e5e937c398c5d6d8f7bbbb190b4ed499a`, tree
-`dd4ffa0af4c39aefee9fc675ba5c804d7fe0e678`, and reviewed native deltas.
+`110b98b3ade90a10372efd433acdd9b5662369b4`, tree
+`92c0d415993a7005bf68f145e9ccabecbabdc150`, and reviewed native deltas.
 The Coven pin is unchanged. The production Cave authority is
 `8a06421a705c2d7891c3f44cc580c569f6cbe2c1`, tree
 `aee0a949cfe058f6c50dc95135f1e6579e759a41`, release `0.4.3`.
@@ -92,16 +92,26 @@ The adopted Cave authority retains bounded, source-attributed discovery
 read/publication diagnostics and adds the narrow read-only `OWNER RIGHTS`
 compatibility without forwarding raw errors or changing authority gates. The
 frozen Chat production decoder and signed harness decoder are unchanged.
+Protected run `34789638633` proved that repair and then failed closed at
+`phase1.native-scenarios.cleanup-grant.marker-identity-unavailable`. Chat #265
+routes the explicit Windows cleanup-marker home to the restricted token's real
+profile, binds the trusted-root exception to that exact profile's volume and
+file identity, and keeps `.coven`, `chat`, and the marker directory
+current-user-owned. Ambient `HOME` remains current-user-only. Handle pinning,
+reparse rejection, writer restrictions, write-through publication, single-use
+consumption, quotas, cleanup, and deadlines remain unchanged.
 Independent merged-producer, source-head, executable-harness, production,
 candidate, Cave, and Coven comparisons remain fail closed. A fresh protected
 run after this validator merges and both validator scopes rotate is required
 to establish whether the repaired publisher produces the Windows record and
 allows validation, attestation, and aggregation to complete.
-The verifier authenticates those independent identities by fetching the three
-Git commit objects and the merged producer's exact
+The verifier authenticates those independent identities by fetching the merged
+producer, source head, every bounded source-authority-path commit, and harness
+Git commit objects plus the merged producer's exact
 `phase1-conformance.lock.json`. It requires the source head to be the merged
-producer's second parent, verifies all three trees, and matches the Chat lock's
-revisions and release metadata before accepting any protected-run evidence.
+producer's second parent, verifies every frozen tree and parent edge, and
+matches the Chat lock's revisions and release metadata before accepting any
+protected-run evidence.
 
 Both harness clients give `cave_launch` a 40-second response budget around
 Rust's 30-second readiness deadline. Other RPCs retain their 10-second bound.
@@ -499,7 +509,7 @@ aggregation job has no permissions and can only confirm successful completion
 of the protected matrix; it cannot generate, upload, attest, or replace a
 platform record. This structural template is exercised synthetically in tests
 only. The committed lock marks the merged Chat producer at
-`68c49d8a1a1ebedc06bdc8793a64c972945a265c` compatible with the reviewed
+`7ec15b20b5526ef809c8f237a4dab1f640cb8a4d` compatible with the reviewed
 schema-v2 workflow bytes and separately freezes its source-bound head and
 executable harness authority. Release readiness remains blocked until this SDK
 validator merges, `CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the
