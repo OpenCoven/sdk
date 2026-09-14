@@ -1138,6 +1138,10 @@ function requestCovenOverSocket<T>(
             );
             return;
           }
+          if (socket.destroyed) {
+            onClose();
+            return;
+          }
           try {
             requestSent = true;
             socket.write(requestBytes);

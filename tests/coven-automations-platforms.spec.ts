@@ -364,7 +364,7 @@ test('Windows closes disconnected sockets and never retries over another transpo
   expect(sockets[0]?.destroyed).toBe(true);
 });
 
-test.each(['already_closed', 'connecting', 'revalidating'] as const)(
+test.each(['already_closed', 'connecting', 'revalidating', 'destroyed_before_close'] as const)(
   'Windows refuses a closed socket before request bytes: %s', async (stage) => {
     const { transport, configure, sockets, ownership } = setup();
     let finishInspection: (() => void) | undefined;
@@ -378,11 +378,19 @@ test.each(['already_closed', 'connecting', 'revalidating'] as const)(
         queueMicrotask(() => sockets[0]?.emit('close'));
       }));
     }
+    if (stage === 'destroyed_before_close') {
+      ownership.inspectConnected.mockImplementation(() => new Promise((resolve) => {
+        queueMicrotask(() => {
+          sockets[0]!.destroyed = true;
+          resolve(identity());
+        });
+      }));
+    }
     await expect(transport.readDefinitions!(reads[0]!.request, {
       signal: new AbortController().signal, deadline: performance.now() + 100,
     })).rejects.toMatchObject({
       code: 'connect_failure',
-      diagnostics: { phase: stage === 'revalidating' ? 'revalidate_endpoint' : 'connect' },
+      diagnostics: { phase: stage === 'revalidating' || stage === 'destroyed_before_close' ? 'revalidate_endpoint' : 'connect' },
     });
     finishInspection?.();
     await Promise.resolve();
