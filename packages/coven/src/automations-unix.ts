@@ -20,6 +20,9 @@ export function createCovenAutomationsUnixTransport(
   discovered: CovenDiscoveredEndpoint,
   options: CovenAutomationsUnixTransportOptions,
 ): CovenAutomationsTransport {
+  if (process.platform === 'win32') {
+    throw new CovenClientError(normalizeCovenError({ code: 'unsupported_platform' }, 'automations.capabilities'));
+  }
   const access = createCovenUnixSocketAccess(discovered, options);
   return {
     async capabilities(context) {

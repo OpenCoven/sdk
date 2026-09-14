@@ -6,6 +6,7 @@ import {
 } from '@opencoven/sdk-core';
 
 import { CovenClientError, normalizeCovenError } from './client.js';
+import { parsePolicyJson } from './policy-json.js';
 
 export interface CovenAutomationVariant {
   readonly variant: string;
@@ -91,7 +92,7 @@ function decode(status: number, body: Uint8Array): CovenAutomationCapabilities {
   }
   let value: unknown;
   try {
-    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body));
+    value = parsePolicyJson(body, 16_384);
   } catch {
     return invalidResponse();
   }
@@ -103,7 +104,8 @@ function decode(status: number, body: Uint8Array): CovenAutomationCapabilities {
   if (entries.length === 0) return { status: 'unavailable', reason: 'not_advertised' };
   if (entries.length !== 1) return invalidResponse();
   const entry: unknown = entries[0];
-  if (!object(entry) || !strings(entry.actions) ||
+  if (!object(entry) || typeof entry.label !== 'string' || typeof entry.adapter !== 'string' ||
+    !strings(entry.actions) ||
     (entry.policy !== 'allow' && entry.policy !== 'requiresApproval') ||
     (entry.status !== 'available' && entry.status !== 'planned')) return invalidResponse();
   if (entry.status === 'planned') return { status: 'unavailable', reason: 'planned' };

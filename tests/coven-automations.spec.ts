@@ -63,9 +63,12 @@ test.each([
 test.each([
   null, {}, { capabilities: {} }, { capabilities: [null] },
   { capabilities: [...advertisement().capabilities, ...advertisement().capabilities] },
-  ...['actions', 'policy', 'status'].map((key) => ({
+  ...['actions', 'policy', 'status', 'label', 'adapter'].map((key) => ({
     capabilities: [{ ...advertisement().capabilities[0], [key]: null }],
   })),
+  ...['label', 'adapter'].flatMap((key) => [undefined, 42].map((value) => ({
+    capabilities: [{ ...advertisement().capabilities[0], [key]: value }],
+  }))),
   ...[
     { version: 2 }, { contractProfile: 'unknown' }, { description: null },
     { supported: {} }, { supported: { ...advertisement().capabilities[0]?.variantNegotiation.supported, actions: [null] } },
@@ -86,7 +89,13 @@ test.each([404, 403, 500])('does not confuse HTTP %i with a missing advertisemen
   await expect(setup(advertisement(), status).client.capabilities()).rejects.toMatchObject({ code: 'invalid_response' });
 });
 
-test.each([Buffer.from('{'), Buffer.from([0xff]), Buffer.alloc(16_385)])('rejects invalid or oversized bytes %#', async (body) => {
+test.each([
+  Buffer.from('{'), Buffer.from([0xff]), Buffer.alloc(16_385),
+  Buffer.from('{"capabilities":[],"capabilities":[]}'),
+  Buffer.from('{"capabilities":[],"capabilit\\u0069es":[]}'),
+  Buffer.from(JSON.stringify(advertisement()).replace('"policy":"allow"', '"policy":"requiresApproval","policy":"allow"')),
+  Buffer.from(JSON.stringify(advertisement()).replace('"version":1', '"version":2,"version":1')),
+])('rejects invalid or oversized bytes %#', async (body) => {
   const client = createCovenAutomationsClient({
     transport: { capabilities: () => Promise.resolve({ status: 200, body }) },
   });
@@ -209,4 +218,23 @@ test('Unix factory rejects Windows endpoints without I/O', () => {
   }, {
     security: { platform: 'unix', peerIdentity: { inspectConnected: () => Promise.resolve({ uid: 501 }) } },
   })).toThrow();
+});
+
+test('Unix factory rejects Unix endpoints on Windows before I/O', () => {
+  const connect = vi.fn();
+  const lstat = vi.fn();
+  const inspectConnected = vi.fn();
+  const platform = process.platform;
+  Object.defineProperty(process, 'platform', { value: 'win32' });
+  try {
+    expect(() => createCovenAutomationsUnixTransport(endpoint, {
+      security: { platform: 'unix', peerIdentity: { inspectConnected } },
+      dependencies: { connect, lstat },
+    })).toThrow(expect.objectContaining({ code: 'unsupported_platform' }));
+    expect(connect).not.toHaveBeenCalled();
+    expect(lstat).not.toHaveBeenCalled();
+    expect(inspectConnected).not.toHaveBeenCalled();
+  } finally {
+    Object.defineProperty(process, 'platform', { value: platform });
+  }
 });
