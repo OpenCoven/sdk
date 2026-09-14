@@ -80,7 +80,7 @@ candidate `77d825d17809cfec2fad4acb9b1526b3c4752f9d`, tree
 `697764ae382ca56d6fde39b9929405d86e739d67`, including its 18,280-byte Cave
 fixture. Package fixture provenance remains the reviewed
 `e806655a7100e9d589662a6f3817c3fd8cde48ad`; production Cave authority is
-separately pinned to `8a06421a705c2d7891c3f44cc580c569f6cbe2c1`.
+separately pinned to `d655b2c3b6ecabf3a5eaea9e314b180028321d81`.
 The historical 0.1.0 candidate
 `1597835325cf3762b51408ff0a565037eeb25f64`, its 12,308-byte fixture, tarballs,
 and prior evidence remain historical inputs, not relabeled 0.0.1 evidence.
@@ -425,17 +425,17 @@ The frozen Chat consumer is
 `636f7da96fa178c2c14648f84137091b15a1cb8a`, tree
 `8e20adb1d55f17fb5b5a833bad6c9535d41c98ce`, with all four committed vendor
 archives byte-identical to candidate 77d825d. This binding selects the true
-merged Chat #266 producer `5381425916e6e063158d718f1c4edac5641b63e8`,
-tree `5cfd81ad5c2043a70508e5320a90686339b97de8`. Its source-bound producer
-head is `00dc19bd13a3e7777f82ffc7ca70ff17ea9ee96a` with the same tree.
+merged OpenCoven/chat#267 producer `92c4c453b57b2f9365627f01ec883f98aa8b7ba3`,
+tree `b8cf55084d86735d2c427ae5c88a088eccc7b1a4`. Its source-bound producer
+head is `bdb9760d1ad7df818479a6f75aba82c9f2da0e7a` with the same tree.
 That head directly parents the executable source, so the bounded
 `sourceAuthorityPath` has no intermediate commits.
 Its committed Phase 1 lock separately authenticates executable harness source
-`b8777827a83b50f122c0880415286e4ebca7026c`, tree
-`bd312db6e2f76b93adea704f5be57a002db0a815`, and reviewed native deltas.
+`d254d6c4a704df23ff90dcc822243d6a9df6c81c`, tree
+`2c3184a67d4ea7e45619ed46265cced237e16d40`, and reviewed native deltas.
 The Coven pin is unchanged. The production Cave authority is
-`8a06421a705c2d7891c3f44cc580c569f6cbe2c1`, tree
-`aee0a949cfe058f6c50dc95135f1e6579e759a41`, release `0.4.3`.
+`d655b2c3b6ecabf3a5eaea9e314b180028321d81`, tree
+`974d43afc735dc9017460a5b95b4c86a13388c1f`, release `0.4.4`.
 
 This is a source-only candidate binding, not accepted platform evidence.
 The historical diagnostic checkpoint from protected run `34763766701` used
