@@ -10,7 +10,13 @@ The active first-release program is:
 - [`../specs/2026-08-22-sdk-0.1-read-only-release-design.md`](../specs/2026-08-22-sdk-0.1-read-only-release-design.md) — release boundary and trust model
 - [OpenCoven/sdk#31](https://github.com/OpenCoven/sdk/issues/31) — program checklist
 
-These files are introduced by the planning PR tracked in [#32](https://github.com/OpenCoven/sdk/issues/32). Until that PR merges, the GitHub issue graph is the authoritative active tracker.
+The planning work tracked in [#32](https://github.com/OpenCoven/sdk/issues/32)
+has landed. The [0.0.1 release decision](../../../RELEASING.md#v001-preparation-decision-2026-09-12)
+now sets the version target; the dated 0.1 filenames preserve the original
+scope and plan history. Consult the [current roadmap](../../ROADMAP.md) and
+[release-gate checkpoint](../../../RELEASING.md#release-gate-checkpoint-2026-09-14)
+alongside the issue graph. Issue closure without the required artifact
+evidence does not satisfy a release gate.
 
 ## Historical plan reconciliation
 
