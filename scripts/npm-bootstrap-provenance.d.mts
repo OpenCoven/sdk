@@ -66,11 +66,11 @@ export type NpmProvenanceExecute = (
   options?: import('node:child_process').ExecFileSyncOptions,
 ) => string | Buffer;
 
-/** Supplemental verification; does not replace the required full SHIP review. */
+/** Supplemental verification; retain and recheck the byte snapshots after the final full SHIP review. */
 export function verifyNpmProvenanceBundles(options: {
   authorization: NpmProvenanceAuthorization;
   artifactRoot: string;
   npmProvenanceRoot: string;
   execute?: NpmProvenanceExecute;
   env?: NodeJS.ProcessEnv;
-}): NpmProvenanceEntry[];
+}): { entries: NpmProvenanceEntry[]; assertUnchanged: () => void };

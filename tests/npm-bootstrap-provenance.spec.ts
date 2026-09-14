@@ -1,3 +1,4 @@
+import type { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,6 +17,7 @@ import { PUBLIC_PACKAGES } from '../scripts/repository-metadata.mjs';
 import * as authorizationModule from '../scripts/github-release-authorization.mjs';
 import * as readinessModule from '../scripts/release-readiness.mjs';
 import { main as bootstrapMain, verifyBootstrapProvenance } from '../scripts/verify-bootstrap-provenance.mjs';
+import publicGoodTrustRoot from './fixtures/sigstore-public-good-trusted-root.json' with { type: 'json' };
 
 const commit = 'a'.repeat(40);
 const version = '0.0.1';
@@ -109,19 +111,10 @@ const parse = (value: unknown) => parseNpmProvenanceBundle(
   facts,
 );
 
-// Public Fulcio root certificate, not a signed SDK bundle or an acceptance fixture.
-const publicCertificate = 'MIIB+DCCAX6gAwIBAgITNVkDZoCiofPDsy7dfm6geLbuhzAKBggqhkjOPQQDAzAqMRUwEwYDVQQKEwxzaWdzdG9yZS5kZXYxETAPBgNVBAMTCHNpZ3N0b3JlMB4XDTIxMDMwNzAzMjAyOVoXDTMxMDIyMzAzMjAyOVowKjEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MREwDwYDVQQDEwhzaWdzdG9yZTB2MBAGByqGSM49AgEGBSuBBAAiA2IABLSyA7Ii5k+pNO8ZEWY0ylemWDowOkNa3kL+GZE5Z5GWehL9/A9bRNA3RbrsZ5i0JcastaRL7Sp5fp/jD5dxqc/UdTVnlvS16an+2Yfswe/QuLolRUCrcOE2+2iA5+tzd6NmMGQwDgYDVR0PAQH/BAQDAgEGMBIGA1UdEwEB/wQIMAYBAf8CAQEwHQYDVR0OBBYEFMjFHQBBmiQpMlEk6w2uSu1KBtPsMB8GA1UdIwQYMBaAFMjFHQBBmiQpMlEk6w2uSu1KBtPsMAoGCCqGSM49BAMDA2gAMGUCMH8liWJfMui6vXXBhjDgY4MwslmN/TJxVe/83WrFomwmNf056y1X48F9c4m3a3ozXAIxAKjRay5/aj/jsKKGIkmQatjI8uupHr/+CxFvaJWmpYqNkLDGRU+9orzh5hI2RrcuaQ==';
+// Public trust data, not signed SDK evidence or a production trust source:
+// sigstore/root-signing@7f8e64b070e6d81503fa132666cd4a0162766015 targets/trusted_root.json.
 function publicRoot() {
-  return {
-    mediaType: 'application/vnd.dev.sigstore.trustedroot+json;version=0.1',
-    certificateAuthorities: [{
-      subject: { organization: 'sigstore.dev' },
-      uri: 'https://fulcio.sigstore.dev',
-      certChain: { certificates: [{ rawBytes: publicCertificate }] },
-    }],
-    tlogs: [{ baseUrl: 'https://rekor.sigstore.dev' }],
-    ctlogs: [{ baseUrl: 'https://ctfe.sigstore.dev' }],
-  };
+  return structuredClone(publicGoodTrustRoot);
 }
 
 function zip(payload: Buffer, name = 'attestation.json') {
@@ -319,6 +312,92 @@ function verificationFixture() {
   return { artifactRoot, npmProvenanceRoot, authorization, execute, calls, run, repository, archives };
 }
 
+function bootstrapFixture() {
+  const fixture = verificationFixture();
+  vi.spyOn(readinessModule, 'assertFrozenNodeRuntime').mockReturnValue('v24.18.1');
+  const runtime = vi.spyOn(readinessModule, 'validateValidatorRuntimeFiles').mockReturnValue();
+  // The SHIP gate is stubbed; only its consumed fields belong to this unit fixture.
+  const review = { authorization: fixture.authorization } as ReturnType<
+    typeof authorizationModule.verifyPublicationSecurityReview
+  >;
+  const gate = vi.spyOn(authorizationModule, 'verifyPublicationSecurityReview').mockReturnValue(review);
+  const verify = () => verifyBootstrapProvenance({
+    ...fixture,
+    root: fixture.artifactRoot,
+    attestationRoot: fixture.artifactRoot,
+    commentId: '4001',
+    execute: fixture.execute as typeof execFileSync,
+    env: { GH_TOKEN: 'unit-fixture' },
+  });
+  return { ...fixture, review, gate, runtime, verify };
+}
+
+describe('bootstrap final SHIP revalidation (stubbed authorization and crypto)', () => {
+  test('preserves the result and requires both SHIP/runtime passes', () => {
+    const fixture = bootstrapFixture();
+    expect(fixture.verify()).toMatchObject({
+      kind: 'opencoven-sdk-bootstrap-provenance-verification',
+      npmProvenance: fixture.authorization.npmProvenance,
+      bootstrapApproval: 'separate-human-gate-required',
+    });
+    expect(fixture.gate).toHaveBeenCalledTimes(2);
+    expect(fixture.runtime).toHaveBeenCalledTimes(2);
+    expect(fixture.calls.filter(args => args[0] === 'attestation' && args[1] === 'verify')).toHaveLength(4);
+  });
+  test.each(['SHIP', 'runtime'])('rejects bundle mutation during the final %s pass', phase => {
+    const fixture = bootstrapFixture();
+    const mutate = () => {
+      writeFileSync(resolve(fixture.npmProvenanceRoot, '0/attestation.json'), '{}');
+    };
+    if (phase === 'SHIP') {
+      fixture.gate.mockReturnValueOnce(fixture.review).mockImplementationOnce(() => {
+        mutate();
+        return fixture.review;
+      });
+    } else {
+      fixture.runtime.mockReturnValueOnce().mockImplementationOnce(mutate);
+    }
+    expect(fixture.verify).toThrow(/npm provenance inputs changed/u);
+  });
+  test.each([
+    'tarball', 'extra bundle', 'extra directory', 'bundle symlink',
+    'package directory symlink', 'candidate root symlink', 'provenance root symlink',
+  ])('rejects %s replacement during the final SHIP pass', kind => {
+    const fixture = bootstrapFixture();
+    fixture.gate.mockReturnValueOnce(fixture.review).mockImplementationOnce(() => {
+      if (kind === 'tarball') writeFileSync(resolve(fixture.artifactRoot, packages[0]!.file), 'swapped');
+      if (kind === 'extra bundle') writeFileSync(resolve(fixture.npmProvenanceRoot, '0/extra.json'), '{}');
+      if (kind === 'extra directory') mkdirSync(resolve(fixture.npmProvenanceRoot, '4'));
+      const path = new Map([
+        ['bundle symlink', resolve(fixture.npmProvenanceRoot, '0/attestation.json')],
+        ['package directory symlink', resolve(fixture.artifactRoot, packages[0]!.file, '..')],
+        ['candidate root symlink', fixture.artifactRoot],
+        ['provenance root symlink', fixture.npmProvenanceRoot],
+      ]).get(kind);
+      if (path !== undefined) {
+        const moved = `${path}-moved`;
+        renameSync(path, moved);
+        symlinkSync(moved, path);
+      }
+      return fixture.review;
+    });
+    expect(fixture.verify).toThrow();
+    expect(fixture.gate).toHaveBeenCalledTimes(2);
+  });
+  test('does not hide final SHIP failures or changed authorization', () => {
+    const fixture = bootstrapFixture();
+    fixture.gate.mockReturnValueOnce(fixture.review).mockImplementationOnce(() => {
+      throw new Error('unit fixture: final SHIP rejection');
+    });
+    expect(fixture.verify).toThrow('unit fixture: final SHIP rejection');
+    fixture.gate.mockReturnValueOnce(fixture.review).mockReturnValueOnce({
+      ...fixture.review,
+      authorization: { ...fixture.review.authorization, version: '0.0.2' },
+    });
+    expect(fixture.verify).toThrow('Publication authorization changed');
+  });
+});
+
 describe('npm bootstrap provenance unit policy (not cryptographic acceptance)', () => {
   test('binds four canonical singleton PURL/SHA512 bundle identities', () => {
     expect(normalizeNpmProvenance(entries(), context)).toEqual(entries());
@@ -347,6 +426,14 @@ describe('npm bootstrap provenance unit policy (not cryptographic acceptance)', 
   });
   test('parses the exact npm profile without claiming signature verification', () => {
     expect(parse(bundle()).statement).toEqual(statement());
+  });
+  test.each(['repository_id', 'repository_owner_id'])('requires documented string context %s', field => {
+    // GitHub's github context documents strings; npm 11.5.1 also uses string env IDs.
+    const value = statement();
+    const github = value.predicate.buildDefinition.internalParameters.github;
+    const id = field === 'repository_id' ? facts.repositoryId : facts.repositoryOwnerId;
+    Object.assign(github, { [field]: Number(id) });
+    expect(() => parse(bundle(value))).toThrow(/exactly match/u);
   });
   test.each([
     ['count', (v: ReturnType<typeof statement>) => v.subject.push(v.subject[0]!)],
@@ -398,6 +485,59 @@ describe('npm bootstrap provenance unit policy (not cryptographic acceptance)', 
     mixed.certificateAuthorities.push({ ...mixed.certificateAuthorities[0]!, uri: 'fulcio.githubapp.com' });
     expect(() => selectPublicGoodTrustRoot(JSON.stringify(mixed))).toThrow();
   });
+  test.each([
+    ['tlogs', 'https://rekor.githubapp.com'],
+    ['tlogs', 'https://rekor.sigstore.dev.attacker.test'],
+    ['tlogs', 'https://attacker.test/rekor.sigstore.dev'],
+    ['tlogs', 'https://rekor.sigstore.dev@attacker.test'],
+    ['tlogs', 'https://user@rekor.sigstore.dev'],
+    ['tlogs', 'https://rekor.sigstore.dev:444'],
+    ['tlogs', 'http://rekor.sigstore.dev'],
+    ['tlogs', 'https://rekor.sigstore.dev/private'],
+    ['tlogs', 'https://rekor.sigstore.dev?private=1'],
+    ['tlogs', 'https://rekor.sigstore.dev#private'],
+    ['tlogs', 'https://rekor.sigstage.dev'],
+    ['tlogs', 'https://private.rekor.sigstore.dev'],
+    ['tlogs', 'https://ctfe.sigstore.dev/2022'],
+    ['ctlogs', 'https://ctfe.githubapp.com'],
+    ['ctlogs', 'https://ctfe.sigstore.dev.attacker.test/2022'],
+    ['ctlogs', 'https://user@ctfe.sigstore.dev/2022'],
+    ['ctlogs', 'https://ctfe.sigstore.dev/private'],
+    ['ctlogs', 'https://ctfe.sigstage.dev/2022'],
+    ['ctlogs', 'https://rekor.sigstore.dev'],
+  ] as const)('rejects mixed %s with unapproved endpoint %s', (kind, baseUrl) => {
+    const mixed = publicRoot();
+    mixed[kind].push({ ...mixed[kind][0]!, baseUrl });
+    expect(() => selectPublicGoodTrustRoot(JSON.stringify(mixed))).toThrow(/public-good/u);
+  });
+  test.each(['tlogs', 'ctlogs'] as const)('rejects malformed %s identities', kind => {
+    for (const change of [
+      { publicKey: {} },
+      { logId: {} },
+      { publicKey: { rawBytes: 'not base64' } },
+      { logId: { keyId: 'not base64' } },
+      { logId: { keyId: '' } },
+      { hashAlgorithm: 'SHA2_512' },
+    ]) {
+      const mixed = publicRoot();
+      Object.assign(mixed[kind][0]!, change);
+      expect(() => selectPublicGoodTrustRoot(JSON.stringify(mixed))).toThrow();
+    }
+  });
+  test('retains actual historical and current public-good logs without pinning rotation keys', () => {
+    const trusted = publicRoot();
+    expect(trusted.tlogs.map(log => log.baseUrl)).toEqual([
+      'https://rekor.sigstore.dev', 'https://log2025-1.rekor.sigstore.dev',
+    ]);
+    expect(trusted.ctlogs.map(log => log.baseUrl)).toEqual([
+      'https://ctfe.sigstore.dev/test', 'https://ctfe.sigstore.dev/2022',
+    ]);
+    expect(JSON.parse(selectPublicGoodTrustRoot(JSON.stringify(trusted)))).toEqual(trusted);
+    // A future authenticated TUF rotation within the public-good naming scheme.
+    trusted.tlogs.push({ ...trusted.tlogs[1]!, baseUrl: 'https://log2027-2.rekor.sigstore.dev' });
+    trusted.ctlogs.push({ ...trusted.ctlogs[1]!, baseUrl: 'https://ctfe.sigstore.dev/2027' });
+    expect(JSON.parse(selectPublicGoodTrustRoot(JSON.stringify(trusted)))).toEqual(trusted);
+  });
   test('rejects archive bytes that do not match the reviewed immutable artifact digest', () => {
     expect(() => verifyNpmProvenanceArchive(Buffer.from('not zip'), bytes, entries()[0]!.bundle))
       .toThrow(/artifact.*digest/i);
@@ -416,7 +556,8 @@ describe('npm bootstrap provenance unit policy (not cryptographic acceptance)', 
   test('requires four crypto subprocess results under exclusively public-good trust (stubbed unit results)', () => {
     const fixture = verificationFixture();
     const result = verifyNpmProvenanceBundles({ ...fixture, env: { GH_TOKEN: 'unit-fixture' } });
-    expect(result).toHaveLength(4);
+    expect(result.entries).toEqual(fixture.authorization.npmProvenance);
+    expect(result.assertUnchanged).not.toThrow();
     expect(fixture.calls.filter(args => args[0] === 'attestation' && args[1] === 'verify')).toHaveLength(4);
   });
   test.each(['run_attempt', 'head_sha', 'event', 'head_branch'])('rejects authenticated run drift in %s', field => {

@@ -34,7 +34,7 @@ export function verifyBootstrapProvenance({
   };
   const { authorization } = verifyPublicationSecurityReview(options);
   validateValidatorRuntimeFiles(root, authorization.source.commit, authorization.source.commit);
-  const npmProvenance = verifyNpmProvenanceBundles({
+  const verified = verifyNpmProvenanceBundles({
     authorization, artifactRoot, npmProvenanceRoot, execute, env,
   });
   // Recheck live SHIP/source/tag/policy and all six original subjects before
@@ -44,7 +44,7 @@ export function verifyBootstrapProvenance({
   if (serializeCanonicalJson(current.authorization) !== serializeCanonicalJson(authorization)) {
     throw new Error('Publication authorization changed during manual bootstrap verification');
   }
-  return {
+  const result = {
     kind: 'opencoven-sdk-bootstrap-provenance-verification',
     commentId,
     version: authorization.version,
@@ -53,9 +53,11 @@ export function verifyBootstrapProvenance({
     runId: authorization.provenance.runId,
     runAttempt: authorization.provenance.runAttempt,
     trust: 'sigstore-public-good-only',
-    npmProvenance,
+    npmProvenance: verified.entries,
     bootstrapApproval: 'separate-human-gate-required',
   };
+  verified.assertUnchanged();
+  return result;
 }
 
 export function main(arguments_ = process.argv.slice(2)) {

@@ -19,6 +19,10 @@ const ID = /^[1-9]\d*$/u;
 const STRICT_SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/u;
 const REPOSITORY = 'https://github.com/OpenCoven/sdk';
+// TUF authenticates rotating keys; constrain the public-good service namespaces,
+// not today's shard URLs or key IDs. Historical CT /test remains trusted.
+const PUBLIC_GOOD_REKOR = /^https:\/\/(?:rekor\.sigstore\.dev|log\d{4}-[1-9]\d*\.rekor\.sigstore\.dev)\/?$/u;
+const PUBLIC_GOOD_CT = /^https:\/\/ctfe\.sigstore\.dev\/(?:test|\d{4})\/?$/u;
 
 function record(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -159,6 +163,17 @@ export function parseNpmProvenanceBundle(bytes, entry, identity, facts) {
   return { bundle, statement };
 }
 
+function publicGoodLog(log, endpoint) {
+  // Rekor v2 uses a checkpoint identity, not the Rekor v1/CT SPKI hash.
+  // TUF authenticates these IDs and keys; gh checks their cryptographic use.
+  return record(log)
+    && typeof log.baseUrl === 'string' && endpoint.test(log.baseUrl)
+    && log.hashAlgorithm === 'SHA2_256'
+    && record(log.publicKey) && record(log.logId)
+    && base64(log.publicKey.rawBytes, 'Public-good log key').length > 0
+    && base64(log.logId.keyId, 'Public-good log identity').length > 0;
+}
+
 // gh trusted-root obtains these targets through its authenticated TUF clients.
 // Select only public-good material; --custom-trusted-root disables gh's default
 // dual (GitHub/private + public-good) verifiers. Never accept a caller's root.
@@ -179,6 +194,8 @@ export function selectPublicGoodTrustRoot(text) {
     root.mediaType !== 'application/vnd.dev.sigstore.trustedroot+json;version=0.1'
     || !Array.isArray(root.tlogs) || root.tlogs.length === 0
     || !Array.isArray(root.ctlogs) || root.ctlogs.length === 0
+    || root.tlogs.some(log => !publicGoodLog(log, PUBLIC_GOOD_REKOR))
+    || root.ctlogs.some(log => !publicGoodLog(log, PUBLIC_GOOD_CT))
     || root.certificateAuthorities.some(ca => (
       ca.uri !== 'https://fulcio.sigstore.dev'
       || ca.subject?.organization !== 'sigstore.dev'
@@ -367,6 +384,23 @@ export function verifyNpmProvenanceBundles({
   const facts = authenticatedFacts(authorization, api);
   const owned = createOwnedTempDirectory({ prefix: 'opencoven-npm-provenance' });
   const snapshots = [];
+  const assertUnchanged = () => {
+    if (regularRoot(artifactRoot) !== candidateRoot || regularRoot(npmProvenanceRoot) !== provenanceRoot) {
+      throw new Error('npm provenance artifact roots changed identity during verification');
+    }
+    for (const snapshot of snapshots) {
+      if (
+        !boundedFile(snapshot.bundleRoot, 'attestation.json', MAX_NPM_PROVENANCE_BYTES).equals(snapshot.raw)
+          || !boundedFile(candidateRoot, snapshot.file, 64 * 1024 * 1024).equals(snapshot.tarball)
+          || readdirSync(snapshot.bundleRoot).join(',') !== 'attestation.json'
+      ) {
+        throw new Error('npm provenance inputs changed during verification');
+      }
+    }
+    if (readdirSync(provenanceRoot).sort().join(',') !== '0,1,2,3') {
+      throw new Error('npm provenance artifact roots changed during verification');
+    }
+  };
   try {
     const trust = selectPublicGoodTrustRoot(call(['attestation', 'trusted-root', '--hostname', 'github.com']));
     const trustPath = resolve(owned.path, 'public-good-trusted-root.jsonl');
@@ -438,19 +472,8 @@ export function verifyNpmProvenanceBundles({
       }
       snapshots.push({ bundleRoot, raw, tarball, file: packageEntry.file });
     }
-    for (const snapshot of snapshots) {
-      if (
-        !boundedFile(snapshot.bundleRoot, 'attestation.json', MAX_NPM_PROVENANCE_BYTES).equals(snapshot.raw)
-          || !boundedFile(candidateRoot, snapshot.file, 64 * 1024 * 1024).equals(snapshot.tarball)
-          || readdirSync(snapshot.bundleRoot).join(',') !== 'attestation.json'
-      ) {
-        throw new Error('npm provenance inputs changed during verification');
-      }
-    }
-    if (readdirSync(provenanceRoot).sort().join(',') !== '0,1,2,3') {
-      throw new Error('npm provenance artifact roots changed during verification');
-    }
-    return entries;
+    assertUnchanged();
+    return { entries, assertUnchanged };
   } finally {
     cleanupOwnedTempRoot(owned);
   }
