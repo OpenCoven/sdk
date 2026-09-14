@@ -12,6 +12,8 @@ import { devNull } from 'node:os';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { isReleaseRef } from './release-ref-policy.mjs';
+
 import {
   serializeCanonicalJson,
 } from './conformance-contract.mjs';
@@ -165,7 +167,7 @@ function verifyCandidateAttestation(
       '--source-digest',
       authorization.source.commit,
       '--source-ref',
-      'refs/heads/main',
+      authorization.provenance.sourceRef,
       '--predicate-type',
       'https://slsa.dev/provenance/v1',
       '--deny-self-hosted-runners',
@@ -215,7 +217,7 @@ function verifyCandidateAttestation(
         && certificate.sourceRepositoryURI
           === 'https://github.com/OpenCoven/sdk'
         && certificate.sourceRepositoryDigest === authorization.source.commit
-        && certificate.sourceRepositoryRef === 'refs/heads/main'
+        && certificate.sourceRepositoryRef === authorization.provenance.sourceRef
         && certificate.buildSignerDigest === authorization.source.commit
         && statement.predicateType === 'https://slsa.dev/provenance/v1'
         && subjects.some(
@@ -696,7 +698,7 @@ function parseAuthorizationBody(text) {
     || value.provenance.repository !== 'OpenCoven/sdk'
     || value.provenance.workflow !== '.github/workflows/release.yml'
     || value.provenance.workflowCommit !== value.source.commit
-    || value.provenance.sourceRef !== 'refs/heads/main'
+    || !isReleaseRef(value.provenance.sourceRef)
     || typeof value.provenance.runId !== 'string'
     || !POSITIVE_ID_PATTERN.test(value.provenance.runId)
     || !Number.isSafeInteger(value.provenance.runAttempt)
@@ -765,7 +767,8 @@ function expectAuthorizedRun(value, authorization) {
     || value.event !== 'workflow_dispatch'
     || value.run_attempt !== authorization.provenance.runAttempt
     || value.head_sha !== authorization.source.commit
-    || value.head_branch !== 'main'
+    || value.head_branch
+      !== authorization.provenance.sourceRef.slice('refs/heads/'.length)
     || value.path !== authorization.provenance.workflow
     || value.status !== 'completed'
     || value.conclusion !== 'success'
@@ -832,7 +835,8 @@ function expectAuthorizedDeployment(value, authorization) {
     !isRecord(value)
     || value.id !== deploymentId
     || value.sha !== authorization.source.commit
-    || value.ref !== 'main'
+    || value.ref
+      !== authorization.provenance.sourceRef.slice('refs/heads/'.length)
     || value.task !== 'deploy'
     || value.environment !== authorization.provenance.environment
     || value.transient_environment !== false

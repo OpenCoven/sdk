@@ -65,11 +65,15 @@ jobs:
             echo "Release verification requires exact Node v24.18.1." >&2
             exit 1
           fi
-      - name: Require main
-        if: github.ref != 'refs/heads/main'
+      - name: Require approved release ref
         run: |
-          echo "Releases must run from main." >&2
-          exit 1
+          case "$GITHUB_REF" in
+            refs/heads/main|refs/heads/release/sdk-v0.0.1) ;;
+            *)
+              echo "Releases require main or the exact release/sdk-v0.0.1 ref." >&2
+              exit 1
+              ;;
+          esac
       - name: Pin reviewed release runtime
         run: |
           node_path="$RUNNER_TOOL_CACHE/node/24.18.1/x64/bin/node"
@@ -117,6 +121,7 @@ jobs:
             scripts/publication-source-identity.mjs
             scripts/publish-release-artifacts.mjs
             scripts/release-readiness.mjs
+            scripts/release-ref-policy.mjs
             scripts/release-runtime-integrity.mjs
             scripts/repository-metadata.mjs
             scripts/verify-committed-conformance-evidence.mjs

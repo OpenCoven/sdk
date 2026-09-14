@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 
+import { isReleaseRef } from './release-ref-policy.mjs';
+
 const PENDING_SCHEMA_VERSION = 1;
 const PROTECTED_SCHEMA_VERSION = 2;
 const SOURCE_REPOSITORY = 'OpenCoven/sdk';
 const WORKFLOW_PATH = '.github/workflows/release.yml';
-const WORKFLOW_REF = 'refs/heads/main';
 const PENDING_APPROVAL_KIND = 'opencoven-sdk-pending-environment-approval';
 const PROTECTED_APPROVAL_KIND = 'opencoven-sdk-protected-environment-approval';
 const MAX_CANONICAL_JSON_BYTES = 1_048_576;
@@ -337,7 +338,7 @@ function normalizeWorkflow(workflow, source, label = 'workflow') {
   const commit = normalizeGitObjectId(record.commit, `${label}.commit`);
   if (
     record.path !== WORKFLOW_PATH
-    || record.ref !== WORKFLOW_REF
+    || !isReleaseRef(record.ref)
     || commit !== source.commit
   ) {
     throw new Error(
@@ -347,7 +348,7 @@ function normalizeWorkflow(workflow, source, label = 'workflow') {
   return {
     path: WORKFLOW_PATH,
     commit,
-    ref: WORKFLOW_REF,
+    ref: record.ref,
     runId: normalizePositiveIdString(record.runId, `${label}.runId`),
     runAttempt: normalizeRunAttempt(record.runAttempt, `${label}.runAttempt`),
   };

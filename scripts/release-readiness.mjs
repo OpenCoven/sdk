@@ -60,7 +60,7 @@ const PUBLICATION_ATTESTATION_ARTIFACT_NAME =
 const UPLOAD_ARTIFACT_ACTION =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';
 const PREFLIGHT_JOB_SHA256 =
-  'f1569fb56dd04c98a0088b7f5c89481e781fc7619d5f66d2b0e764c0a3d12c48';
+  '049cdfcc1216d7f2025f625968e50d571244b73a33890d1c32e21de853dc661e';
 const REPOSITORY_VERIFICATION_JOB_SHA256 =
   '59c8739ee6c763a3a34e27b1e85f806535a78b09ffbe7b89eb57df385544543b';
 const PUBLICATION_CANDIDATE_JOB_SHA256 =
@@ -145,6 +145,7 @@ const VALIDATOR_RUNTIME_PATHS = Object.freeze([
   'scripts/publication-source-identity.mjs',
   'scripts/publish-release-artifacts.mjs',
   'scripts/release-readiness.mjs',
+  'scripts/release-ref-policy.mjs',
   'scripts/release-runtime-integrity.mjs',
   'scripts/repository-metadata.mjs',
   CONFORMANCE_VERIFIER_PATH,

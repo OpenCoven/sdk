@@ -13,6 +13,8 @@ import { devNull } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { isReleaseRef } from './release-ref-policy.mjs';
+
 import {
   createPendingApprovalEvidence,
   createProtectedApprovalReceipt,
@@ -131,8 +133,8 @@ function workflowContext(root, env) {
     || env.GITHUB_SHA !== checkout.commit
     || env.GITHUB_WORKFLOW_SHA !== checkout.commit
     || env.GITHUB_WORKFLOW_REF
-      !== 'OpenCoven/sdk/.github/workflows/release.yml@refs/heads/main'
-    || env.GITHUB_REF !== 'refs/heads/main'
+      !== `OpenCoven/sdk/.github/workflows/release.yml@${env.GITHUB_REF}`
+    || !isReleaseRef(env.GITHUB_REF)
     || typeof env.GITHUB_RUN_ID !== 'string'
     || !/^[1-9]\d*$/u.test(env.GITHUB_RUN_ID)
     || !Number.isSafeInteger(runAttempt)
@@ -151,7 +153,7 @@ function workflowContext(root, env) {
     workflow: {
       path: '.github/workflows/release.yml',
       commit: checkout.commit,
-      ref: 'refs/heads/main',
+      ref: env.GITHUB_REF,
       runId: env.GITHUB_RUN_ID,
       runAttempt,
     },
@@ -170,7 +172,7 @@ function getRun(execute, context, env) {
     || run.run_attempt !== context.workflow.runAttempt
     || run.event !== 'workflow_dispatch'
     || run.head_sha !== context.source.commit
-    || run.head_branch !== 'main'
+    || run.head_branch !== context.workflow.ref.slice('refs/heads/'.length)
     || run.path !== context.workflow.path
     || !isRecord(run.repository)
     || run.repository.full_name !== 'OpenCoven/sdk'
@@ -360,7 +362,7 @@ function verifyAttestation(execute, path, expectedSha256, context, env) {
       '--source-digest',
       context.source.commit,
       '--source-ref',
-      'refs/heads/main',
+      context.workflow.ref,
       '--predicate-type',
       'https://slsa.dev/provenance/v1',
       '--deny-self-hosted-runners',
@@ -407,7 +409,7 @@ function verifyAttestation(execute, path, expectedSha256, context, env) {
         && certificate.sourceRepositoryURI
           === 'https://github.com/OpenCoven/sdk'
         && certificate.sourceRepositoryDigest === context.source.commit
-        && certificate.sourceRepositoryRef === 'refs/heads/main'
+        && certificate.sourceRepositoryRef === context.workflow.ref
         && certificate.buildSignerDigest === context.source.commit
         && statement.predicateType === 'https://slsa.dev/provenance/v1'
         && subjects.some(
