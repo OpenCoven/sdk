@@ -165,12 +165,23 @@ describe('cave familiars', () => {
 
     await client.familiarAnalytics('cody', {
       recentLimit: 5,
+      window: '7d',
       timeoutMs: 100,
     });
 
-    expect(receivedOptions).toEqual({ recentLimit: 5 });
+    expect(receivedOptions).toEqual({ recentLimit: 5, window: '7d' });
     expect(context?.deadline).toBe(performance.now() + 100);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test.each([
+    { window: '30d' }, { recentLimit: -1 }, { recentLimit: 101 },
+    { recentLimit: 1.5 }, { recentLimit: Number.NaN },
+  ])('rejects invalid analytics options before transport %#', async (options) => {
+    const call = vi.fn(() => Promise.resolve({ ok: true, analytics: ANALYTICS }));
+    const client = clientWith({ familiarAnalytics: call });
+    expect(await codeOf(() => client.familiarAnalytics('cody', options as never))).toBe('invalid_request');
+    expect(call).not.toHaveBeenCalled();
   });
 
   test('omits absent optional fields rather than defining them as undefined', async () => {
@@ -226,6 +237,61 @@ describe('cave familiars', () => {
     // A warning does not fail a contract, and must survive to the caller.
     expect(contract.report.warnings).toHaveLength(1);
     expect(contract.report.properties).toHaveLength(2);
+  });
+
+  test('preserves client-v1 contract presence, identity and ward fields', async () => {
+    // Projection shape from Cave d655b2c, client-v1/familiar-reads.ts.
+    const projected = {
+      id: 'cody',
+      present: { soul: true, identity: true, ward: true, memory: false },
+      identity: { name: 'Cody', creature: 'familiar', person: 'Val' },
+      ward: {
+        version: '0.1.0',
+        protectedFiles: ['SOUL.md'],
+        invariants: ['Preserve user work'],
+        editablePaths: ['src/'],
+        approvalTiers: { auto: ['read'], humanReview: ['publish'] },
+      },
+      report: CONTRACT_REPORT,
+    };
+    const client = clientWith({
+      familiarContract: () => Promise.resolve({ ok: true, ...projected }),
+    });
+
+    await expect(client.familiarContract('cody')).resolves.toEqual(projected);
+  });
+
+  test.each([
+    { present: { soul: true, identity: true, ward: true } },
+    { present: { soul: true, identity: 'yes', ward: true, memory: false } },
+    { present: { soul: true, identity: false, ward: true, memory: false }, identity: { name: 'Cody' } },
+    { present: { soul: true, identity: true, ward: true, memory: false }, identity: { name: 12 } },
+    { present: { soul: true, identity: true, ward: true, memory: false }, ward: {
+      protectedFiles: ['SOUL.md'], invariants: [], editablePaths: [],
+      approvalTiers: { auto: [], humanReview: [12] },
+    } },
+    { present: true, identity: { name: 'Cody' } },
+  ])('rejects malformed or contradictory contract projection %#', async (fields) => {
+    const client = clientWith({
+      familiarContract: () => Promise.resolve({ ok: true, id: 'cody', report: CONTRACT_REPORT, ...fields }),
+    });
+    expect(await codeOf(() => client.familiarContract('cody'))).toBe('invalid_response');
+  });
+
+  test.each([
+    { date: '2026-02-30', completed: 1, failed: 0, cancelled: 0 },
+    { date: '2026-02-28', completed: -1, failed: 0, cancelled: 0 },
+    { date: '2026-02-28', completed: 1.5, failed: 0, cancelled: 0 },
+    { date: '2026-02-28', completed: 1, failed: Number.POSITIVE_INFINITY, cancelled: 0 },
+    { date: '2026-02-28', completed: 1, failed: 0 },
+  ])('rejects malformed execution day %#', async (day) => {
+    const client = clientWith({
+      familiarAnalytics: () => Promise.resolve({ ok: true, analytics: {
+        ...ANALYTICS,
+        windows: { '7d': { ...ANALYTICS.windows['7d'], days: [day] } },
+      } }),
+    });
+    expect(await codeOf(() => client.familiarAnalytics('cody'))).toBe('invalid_response');
   });
 
   test('rejects a contract report missing its spec version', async () => {

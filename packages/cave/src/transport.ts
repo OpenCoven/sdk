@@ -6,6 +6,7 @@ import type {
   CaveCredentialMetadata,
   CaveFamiliarsResponse,
   CaveFamiliarAnalyticsResponse,
+  CaveFamiliarAnalyticsTransportOptions,
   CaveFamiliarContractResponse,
   CaveHealthResponse,
   CavePairingCreated,
@@ -67,7 +68,7 @@ export interface CaveTransport {
   ): Promise<CaveFamiliarContractResponse>;
   familiarAnalytics?(
     familiarId: string,
-    options?: { recentLimit?: number },
+    options?: CaveFamiliarAnalyticsTransportOptions,
     context?: OperationContext,
   ): Promise<CaveFamiliarAnalyticsResponse>;
 }

@@ -17,7 +17,7 @@
   "entrypoints": {
     ".": {
       "declarationFiles": [
-        "dist/client-BbxpTVKf.d.ts",
+        "dist/client-D7W5v5ON.d.ts",
         "dist/index.d.ts"
       ],
       "runtimeExports": {
@@ -47,7 +47,7 @@
     },
     "./managed": {
       "declarationFiles": [
-        "dist/client-BbxpTVKf.d.ts",
+        "dist/client-D7W5v5ON.d.ts",
         "dist/managed.d.ts"
       ],
       "runtimeExports": {
@@ -59,6 +59,8 @@
           "CaveClient",
           "CaveClientError",
           "CavePairingSession",
+          "canonicalFamiliarAnalyticsData",
+          "canonicalFamiliarContractData",
           "createManagedCaveClient",
           "discoverManagedCaveEndpoint",
           "isCaveClientError",

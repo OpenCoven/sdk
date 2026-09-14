@@ -930,6 +930,7 @@ describe('managed native Cave credential custody', () => {
                 toolCalls: 1,
                 toolFailures: 0,
                 bearer: nestedBearer,
+                days: [{ date: '2026-08-24', completed: 1, failed: 0, cancelled: 0, bearer: nestedBearer }],
                 models: [{
                   key: 'model',
                   attempts: 1,
@@ -1002,6 +1003,9 @@ describe('managed native Cave credential custody', () => {
     expectRedacted({ contract, analytics, familiars });
     expect(Object.isFrozen(contract.report)).toBe(true);
     expect(Object.isFrozen(analytics.windows['7d'])).toBe(true);
+    expect(analytics.windows['7d']).toMatchObject({
+      days: [{ date: '2026-08-24', completed: 1, failed: 0, cancelled: 0 }],
+    });
     expect(Object.isFrozen(familiars.data[0])).toBe(true);
   });
 

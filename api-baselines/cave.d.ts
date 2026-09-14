@@ -1,5 +1,5 @@
 // Entrypoint: .
-// Declaration: dist/client-BbxpTVKf.d.ts
+// Declaration: dist/client-D7W5v5ON.d.ts
 import { OperationContext, PageOptions, OperationDefaults, SecretStore, SecretStoreReference, OperationOptions, Page, BoundedPageOptions, NormalizedError, CompatibilityAssessment } from '@opencoven/sdk-core/browser';
 
 interface CaveCanonicalFamiliar {
@@ -259,10 +259,35 @@ interface CaveContractReport {
     violations: CaveContractViolation[];
     warnings: CaveContractViolation[];
 }
+interface CaveFamiliarPresence {
+    soul: boolean;
+    identity: boolean;
+    ward: boolean;
+    memory: boolean;
+}
+interface CaveFamiliarIdentity {
+    name?: string;
+    creature?: string;
+    person?: string;
+}
+interface CaveFamiliarWard {
+    version?: string;
+    familiar?: string;
+    person?: string;
+    protectedFiles: string[];
+    invariants: string[];
+    editablePaths: string[];
+    approvalTiers: {
+        auto: string[];
+        humanReview: string[];
+    };
+}
 interface CaveFamiliarContract {
     id: string;
     workspace?: string;
-    present: boolean;
+    present: boolean | CaveFamiliarPresence;
+    identity?: CaveFamiliarIdentity;
+    ward?: CaveFamiliarWard;
     report: CaveContractReport;
 }
 interface CaveFamiliarContractResponse {
@@ -271,13 +296,19 @@ interface CaveFamiliarContractResponse {
     reason?: string;
     id?: string;
     workspace?: string;
-    present?: boolean;
+    present?: boolean | CaveFamiliarPresence;
+    identity?: CaveFamiliarIdentity;
+    ward?: CaveFamiliarWard;
     report?: CaveContractReport;
     error?: string;
 }
 /** The windows Cave aggregates over. */
 declare const CAVE_ANALYTICS_WINDOWS: readonly ["7d", "14d", "8w", "all"];
 type CaveAnalyticsWindowKey = (typeof CAVE_ANALYTICS_WINDOWS)[number];
+interface CaveFamiliarAnalyticsTransportOptions {
+    window?: CaveAnalyticsWindowKey;
+    recentLimit?: number;
+}
 interface CaveExecutionSlice {
     key: string;
     label?: string;
@@ -297,6 +328,12 @@ interface CaveExecutionCoverage {
     total: number;
     ratio: number;
 }
+interface CaveExecutionDay {
+    date: string;
+    completed: number;
+    failed: number;
+    cancelled: number;
+}
 interface CaveExecutionWindow {
     attempts: number;
     completed: number;
@@ -313,8 +350,11 @@ interface CaveExecutionWindow {
     models: CaveExecutionSlice[];
     harnesses: CaveExecutionSlice[];
     coverage: Record<string, CaveExecutionCoverage>;
+    days?: CaveExecutionDay[];
 }
 interface CaveExecutionAttempt {
+    /** Required by client-v1; absent only in legacy transport results. */
+    provenance?: 'live' | 'backfilled';
     id: string;
     sessionId?: string;
     turnId?: string;
@@ -379,9 +419,7 @@ interface CaveTransport {
      */
     familiars?(context?: OperationContext): Promise<CaveFamiliarsResponse>;
     familiarContract?(familiarId: string, context?: OperationContext): Promise<CaveFamiliarContractResponse>;
-    familiarAnalytics?(familiarId: string, options?: {
-        recentLimit?: number;
-    }, context?: OperationContext): Promise<CaveFamiliarAnalyticsResponse>;
+    familiarAnalytics?(familiarId: string, options?: CaveFamiliarAnalyticsTransportOptions, context?: OperationContext): Promise<CaveFamiliarAnalyticsResponse>;
 }
 interface CaveCredentialPersistingTransport extends CaveTransport {
     pairingExchange?(requestId: string, pairingSecret: string, context?: OperationContext): Promise<CaveAuthorityBoundPairingExchange>;
@@ -434,8 +472,7 @@ interface CaveClientOptionsWithManagedNativeCredentials extends CaveClientOption
     credentialCustody: CaveManagedNativeCredentialCustody;
 }
 type CaveClientOptions = CaveClientOptionsWithoutCredentials | CaveClientOptionsWithCredentials | CaveClientOptionsWithManagedNativeCredentials;
-interface CaveFamiliarAnalyticsOptions extends OperationOptions {
-    recentLimit?: number;
+interface CaveFamiliarAnalyticsOptions extends OperationOptions, CaveFamiliarAnalyticsTransportOptions {
 }
 interface CavePairingSessionOptions {
     requestId: string;
@@ -455,6 +492,15 @@ declare class CaveClientError extends Error {
     constructor(normalized: NormalizedError, compatibility?: CompatibilityAssessment, options?: ErrorOptions);
 }
 declare function isCaveClientError(error: unknown): error is CaveClientError;
+/** Converts a validated client-v1 contract envelope for a managed transport. */
+declare function canonicalFamiliarContractData(value: unknown): {
+    ok: true;
+} & CaveFamiliarContract;
+/** Converts a canonical analytics envelope without retaining native extras. */
+declare function canonicalFamiliarAnalyticsData(value: unknown): {
+    ok: true;
+    analytics: CaveFamiliarAnalytics;
+};
 declare class CavePairingSession {
     #private;
     readonly requestId: string;
@@ -493,11 +539,11 @@ declare class CaveClient {
 }
 declare function createCaveClient(options: CaveClientOptions): CaveClient;
 
-export { type CavePropertyCoverage as $, type CaveExecutionWindow as A, type CaveFamiliar as B, type CavePairingRequest as C, type CaveFamiliarAnalytics as D, type CaveFamiliarAnalyticsOptions as E, type CaveFamiliarAnalyticsResponse as F, type CaveFamiliarContract as G, type CaveFamiliarContractResponse as H, type CaveFamiliarProperty as I, type CaveFamiliarWire as J, type CaveFamiliarsResponse as K, type CaveHealth as L, type CaveHealthData as M, type CaveHealthResponse as N, type CaveManagedCredentialStatusResult as O, type CaveManagedCredentialTransport as P, type CaveManagedForgetCredentialResult as Q, type CaveManagedNativeCredentialCustody as R, type CaveManagedPairingCreated as S, type CaveManagedPairingExchange as T, type CavePairingCreated as U, type CavePairingExchange as V, type CavePairingScope as W, CavePairingSession as X, type CavePairingState as Y, type CavePairingStatus as Z, type CaveProject as _, CaveClient as a, type CaveTransport as a0, createCaveClient as a1, isCaveClientError as a2, normalizeCaveError as a3, CAVE_ANALYTICS_WINDOWS as b, CAVE_FAMILIAR_PROPERTIES as c, CAVE_PAIRING_SCOPES as d, CAVE_PAIRING_STATUSES as e, type CaveAnalyticsWindowKey as f, type CaveAuthorityBinding as g, type CaveAuthorityBoundPairingExchange as h, type CaveCanonicalFamiliar as i, CaveClientError as j, type CaveClientOptions as k, type CaveContractFile as l, type CaveContractReport as m, type CaveContractViolation as n, type CaveConversation as o, type CaveConversationMessage as p, type CaveCredentialAccess as q, type CaveCredentialBinding as r, type CaveCredentialDisconnectedReason as s, type CaveCredentialMetadata as t, type CaveCredentialPersistingTransport as u, type CaveCredentialStatus as v, type CaveExecutionAttempt as w, type CaveExecutionBackfill as x, type CaveExecutionCoverage as y, type CaveExecutionSlice as z };
+export { type CavePairingScope as $, type CaveExecutionSlice as A, type CaveExecutionWindow as B, type CavePairingRequest as C, type CaveFamiliar as D, type CaveFamiliarAnalytics as E, type CaveFamiliarAnalyticsOptions as F, type CaveFamiliarAnalyticsResponse as G, type CaveFamiliarAnalyticsTransportOptions as H, type CaveFamiliarContract as I, type CaveFamiliarContractResponse as J, type CaveFamiliarIdentity as K, type CaveFamiliarPresence as L, type CaveFamiliarProperty as M, type CaveFamiliarWard as N, type CaveFamiliarWire as O, type CaveFamiliarsResponse as P, type CaveHealth as Q, type CaveHealthData as R, type CaveHealthResponse as S, type CaveManagedCredentialStatusResult as T, type CaveManagedCredentialTransport as U, type CaveManagedForgetCredentialResult as V, type CaveManagedNativeCredentialCustody as W, type CaveManagedPairingCreated as X, type CaveManagedPairingExchange as Y, type CavePairingCreated as Z, type CavePairingExchange as _, CaveClient as a, CavePairingSession as a0, type CavePairingState as a1, type CavePairingStatus as a2, type CaveProject as a3, type CavePropertyCoverage as a4, type CaveTransport as a5, createCaveClient as a6, isCaveClientError as a7, normalizeCaveError as a8, canonicalFamiliarAnalyticsData as a9, canonicalFamiliarContractData as aa, CAVE_ANALYTICS_WINDOWS as b, CAVE_FAMILIAR_PROPERTIES as c, CAVE_PAIRING_SCOPES as d, CAVE_PAIRING_STATUSES as e, type CaveAnalyticsWindowKey as f, type CaveAuthorityBinding as g, type CaveAuthorityBoundPairingExchange as h, type CaveCanonicalFamiliar as i, CaveClientError as j, type CaveClientOptions as k, type CaveContractFile as l, type CaveContractReport as m, type CaveContractViolation as n, type CaveConversation as o, type CaveConversationMessage as p, type CaveCredentialAccess as q, type CaveCredentialBinding as r, type CaveCredentialDisconnectedReason as s, type CaveCredentialMetadata as t, type CaveCredentialPersistingTransport as u, type CaveCredentialStatus as v, type CaveExecutionAttempt as w, type CaveExecutionBackfill as x, type CaveExecutionCoverage as y, type CaveExecutionDay as z };
 // Entrypoint: .
 // Declaration: dist/index.d.ts
-import { C as CavePairingRequest, a as CaveClient } from './client-BbxpTVKf.js';
-export { b as CAVE_ANALYTICS_WINDOWS, c as CAVE_FAMILIAR_PROPERTIES, d as CAVE_PAIRING_SCOPES, e as CAVE_PAIRING_STATUSES, f as CaveAnalyticsWindowKey, g as CaveAuthorityBinding, h as CaveAuthorityBoundPairingExchange, i as CaveCanonicalFamiliar, j as CaveClientError, k as CaveClientOptions, l as CaveContractFile, m as CaveContractReport, n as CaveContractViolation, o as CaveConversation, p as CaveConversationMessage, q as CaveCredentialAccess, r as CaveCredentialBinding, s as CaveCredentialDisconnectedReason, t as CaveCredentialMetadata, u as CaveCredentialPersistingTransport, v as CaveCredentialStatus, w as CaveExecutionAttempt, x as CaveExecutionBackfill, y as CaveExecutionCoverage, z as CaveExecutionSlice, A as CaveExecutionWindow, B as CaveFamiliar, D as CaveFamiliarAnalytics, E as CaveFamiliarAnalyticsOptions, F as CaveFamiliarAnalyticsResponse, G as CaveFamiliarContract, H as CaveFamiliarContractResponse, I as CaveFamiliarProperty, J as CaveFamiliarWire, K as CaveFamiliarsResponse, L as CaveHealth, M as CaveHealthData, N as CaveHealthResponse, O as CaveManagedCredentialStatusResult, P as CaveManagedCredentialTransport, Q as CaveManagedForgetCredentialResult, R as CaveManagedNativeCredentialCustody, S as CaveManagedPairingCreated, T as CaveManagedPairingExchange, U as CavePairingCreated, V as CavePairingExchange, W as CavePairingScope, X as CavePairingSession, Y as CavePairingState, Z as CavePairingStatus, _ as CaveProject, $ as CavePropertyCoverage, a0 as CaveTransport, a1 as createCaveClient, a2 as isCaveClientError, a3 as normalizeCaveError } from './client-BbxpTVKf.js';
+import { C as CavePairingRequest, a as CaveClient } from './client-D7W5v5ON.js';
+export { b as CAVE_ANALYTICS_WINDOWS, c as CAVE_FAMILIAR_PROPERTIES, d as CAVE_PAIRING_SCOPES, e as CAVE_PAIRING_STATUSES, f as CaveAnalyticsWindowKey, g as CaveAuthorityBinding, h as CaveAuthorityBoundPairingExchange, i as CaveCanonicalFamiliar, j as CaveClientError, k as CaveClientOptions, l as CaveContractFile, m as CaveContractReport, n as CaveContractViolation, o as CaveConversation, p as CaveConversationMessage, q as CaveCredentialAccess, r as CaveCredentialBinding, s as CaveCredentialDisconnectedReason, t as CaveCredentialMetadata, u as CaveCredentialPersistingTransport, v as CaveCredentialStatus, w as CaveExecutionAttempt, x as CaveExecutionBackfill, y as CaveExecutionCoverage, z as CaveExecutionDay, A as CaveExecutionSlice, B as CaveExecutionWindow, D as CaveFamiliar, E as CaveFamiliarAnalytics, F as CaveFamiliarAnalyticsOptions, G as CaveFamiliarAnalyticsResponse, H as CaveFamiliarAnalyticsTransportOptions, I as CaveFamiliarContract, J as CaveFamiliarContractResponse, K as CaveFamiliarIdentity, L as CaveFamiliarPresence, M as CaveFamiliarProperty, N as CaveFamiliarWard, O as CaveFamiliarWire, P as CaveFamiliarsResponse, Q as CaveHealth, R as CaveHealthData, S as CaveHealthResponse, T as CaveManagedCredentialStatusResult, U as CaveManagedCredentialTransport, V as CaveManagedForgetCredentialResult, W as CaveManagedNativeCredentialCustody, X as CaveManagedPairingCreated, Y as CaveManagedPairingExchange, Z as CavePairingCreated, _ as CavePairingExchange, $ as CavePairingScope, a0 as CavePairingSession, a1 as CavePairingState, a2 as CavePairingStatus, a3 as CaveProject, a4 as CavePropertyCoverage, a5 as CaveTransport, a6 as createCaveClient, a7 as isCaveClientError, a8 as normalizeCaveError } from './client-D7W5v5ON.js';
 import { OperationOptions, OperationContext, PageOptions, OperationDefaults, SecretStore, SecretStoreReference } from '@opencoven/sdk-core';
 import '@opencoven/sdk-core/browser';
 
@@ -794,7 +840,7 @@ declare const CAVE_CLIENT_VERSION: string;
 
 export { CAVE_CLIENT_VERSION, CaveClient, type CaveContractCursor, type CaveContractEnvelopeMetadata, type CaveContractFixture, type CaveContractHealthData, type CaveContractIdentity, type CaveContractOperation, type CaveContractPairingCreatedData, type CaveContractPairingExchangeData, type CaveContractPairingStatusData, type CaveContractPublicRoute, type CaveContractRevision, type CaveDiscoveredClientOptions, type CaveDiscoveredEndpoint, type CaveDiscoveryDependencies, CaveDiscoveryError, type CaveDiscoveryErrorCode, type CaveDiscoveryFileHandle, type CaveDiscoveryPathIdentity, type CaveDiscoveryRecordIdentity, type CaveEndpointFreshness, type CaveManagedClientOptions, type CaveManagedNativeDiscardResult, type CaveManagedNativePairingCreated, type CaveManagedNativePairingExchange, type CaveManagedNativeResponse, type CaveManagedNativeTransport, CavePairingRequest, type CaveWindowsPathTrustResult, type CaveWindowsPathTrustValidator, type DiscoverCaveEndpointOptions, createDiscoveredCaveClient, createManagedCaveClient, digestCaveContractFixture, discoverCaveEndpoint, isCaveDiscoveryError, parseCaveContractFixture, parseVerifiedCaveContractFixture, verifyCaveContractFixtureDigest };
 // Entrypoint: ./managed
-// Declaration: dist/client-BbxpTVKf.d.ts
+// Declaration: dist/client-D7W5v5ON.d.ts
 import { OperationContext, PageOptions, OperationDefaults, SecretStore, SecretStoreReference, OperationOptions, Page, BoundedPageOptions, NormalizedError, CompatibilityAssessment } from '@opencoven/sdk-core/browser';
 
 interface CaveCanonicalFamiliar {
@@ -1054,10 +1100,35 @@ interface CaveContractReport {
     violations: CaveContractViolation[];
     warnings: CaveContractViolation[];
 }
+interface CaveFamiliarPresence {
+    soul: boolean;
+    identity: boolean;
+    ward: boolean;
+    memory: boolean;
+}
+interface CaveFamiliarIdentity {
+    name?: string;
+    creature?: string;
+    person?: string;
+}
+interface CaveFamiliarWard {
+    version?: string;
+    familiar?: string;
+    person?: string;
+    protectedFiles: string[];
+    invariants: string[];
+    editablePaths: string[];
+    approvalTiers: {
+        auto: string[];
+        humanReview: string[];
+    };
+}
 interface CaveFamiliarContract {
     id: string;
     workspace?: string;
-    present: boolean;
+    present: boolean | CaveFamiliarPresence;
+    identity?: CaveFamiliarIdentity;
+    ward?: CaveFamiliarWard;
     report: CaveContractReport;
 }
 interface CaveFamiliarContractResponse {
@@ -1066,13 +1137,19 @@ interface CaveFamiliarContractResponse {
     reason?: string;
     id?: string;
     workspace?: string;
-    present?: boolean;
+    present?: boolean | CaveFamiliarPresence;
+    identity?: CaveFamiliarIdentity;
+    ward?: CaveFamiliarWard;
     report?: CaveContractReport;
     error?: string;
 }
 /** The windows Cave aggregates over. */
 declare const CAVE_ANALYTICS_WINDOWS: readonly ["7d", "14d", "8w", "all"];
 type CaveAnalyticsWindowKey = (typeof CAVE_ANALYTICS_WINDOWS)[number];
+interface CaveFamiliarAnalyticsTransportOptions {
+    window?: CaveAnalyticsWindowKey;
+    recentLimit?: number;
+}
 interface CaveExecutionSlice {
     key: string;
     label?: string;
@@ -1092,6 +1169,12 @@ interface CaveExecutionCoverage {
     total: number;
     ratio: number;
 }
+interface CaveExecutionDay {
+    date: string;
+    completed: number;
+    failed: number;
+    cancelled: number;
+}
 interface CaveExecutionWindow {
     attempts: number;
     completed: number;
@@ -1108,8 +1191,11 @@ interface CaveExecutionWindow {
     models: CaveExecutionSlice[];
     harnesses: CaveExecutionSlice[];
     coverage: Record<string, CaveExecutionCoverage>;
+    days?: CaveExecutionDay[];
 }
 interface CaveExecutionAttempt {
+    /** Required by client-v1; absent only in legacy transport results. */
+    provenance?: 'live' | 'backfilled';
     id: string;
     sessionId?: string;
     turnId?: string;
@@ -1174,9 +1260,7 @@ interface CaveTransport {
      */
     familiars?(context?: OperationContext): Promise<CaveFamiliarsResponse>;
     familiarContract?(familiarId: string, context?: OperationContext): Promise<CaveFamiliarContractResponse>;
-    familiarAnalytics?(familiarId: string, options?: {
-        recentLimit?: number;
-    }, context?: OperationContext): Promise<CaveFamiliarAnalyticsResponse>;
+    familiarAnalytics?(familiarId: string, options?: CaveFamiliarAnalyticsTransportOptions, context?: OperationContext): Promise<CaveFamiliarAnalyticsResponse>;
 }
 interface CaveCredentialPersistingTransport extends CaveTransport {
     pairingExchange?(requestId: string, pairingSecret: string, context?: OperationContext): Promise<CaveAuthorityBoundPairingExchange>;
@@ -1229,8 +1313,7 @@ interface CaveClientOptionsWithManagedNativeCredentials extends CaveClientOption
     credentialCustody: CaveManagedNativeCredentialCustody;
 }
 type CaveClientOptions = CaveClientOptionsWithoutCredentials | CaveClientOptionsWithCredentials | CaveClientOptionsWithManagedNativeCredentials;
-interface CaveFamiliarAnalyticsOptions extends OperationOptions {
-    recentLimit?: number;
+interface CaveFamiliarAnalyticsOptions extends OperationOptions, CaveFamiliarAnalyticsTransportOptions {
 }
 interface CavePairingSessionOptions {
     requestId: string;
@@ -1250,6 +1333,15 @@ declare class CaveClientError extends Error {
     constructor(normalized: NormalizedError, compatibility?: CompatibilityAssessment, options?: ErrorOptions);
 }
 declare function isCaveClientError(error: unknown): error is CaveClientError;
+/** Converts a validated client-v1 contract envelope for a managed transport. */
+declare function canonicalFamiliarContractData(value: unknown): {
+    ok: true;
+} & CaveFamiliarContract;
+/** Converts a canonical analytics envelope without retaining native extras. */
+declare function canonicalFamiliarAnalyticsData(value: unknown): {
+    ok: true;
+    analytics: CaveFamiliarAnalytics;
+};
 declare class CavePairingSession {
     #private;
     readonly requestId: string;
@@ -1288,11 +1380,11 @@ declare class CaveClient {
 }
 declare function createCaveClient(options: CaveClientOptions): CaveClient;
 
-export { type CavePropertyCoverage as $, type CaveExecutionWindow as A, type CaveFamiliar as B, type CavePairingRequest as C, type CaveFamiliarAnalytics as D, type CaveFamiliarAnalyticsOptions as E, type CaveFamiliarAnalyticsResponse as F, type CaveFamiliarContract as G, type CaveFamiliarContractResponse as H, type CaveFamiliarProperty as I, type CaveFamiliarWire as J, type CaveFamiliarsResponse as K, type CaveHealth as L, type CaveHealthData as M, type CaveHealthResponse as N, type CaveManagedCredentialStatusResult as O, type CaveManagedCredentialTransport as P, type CaveManagedForgetCredentialResult as Q, type CaveManagedNativeCredentialCustody as R, type CaveManagedPairingCreated as S, type CaveManagedPairingExchange as T, type CavePairingCreated as U, type CavePairingExchange as V, type CavePairingScope as W, CavePairingSession as X, type CavePairingState as Y, type CavePairingStatus as Z, type CaveProject as _, CaveClient as a, type CaveTransport as a0, createCaveClient as a1, isCaveClientError as a2, normalizeCaveError as a3, CAVE_ANALYTICS_WINDOWS as b, CAVE_FAMILIAR_PROPERTIES as c, CAVE_PAIRING_SCOPES as d, CAVE_PAIRING_STATUSES as e, type CaveAnalyticsWindowKey as f, type CaveAuthorityBinding as g, type CaveAuthorityBoundPairingExchange as h, type CaveCanonicalFamiliar as i, CaveClientError as j, type CaveClientOptions as k, type CaveContractFile as l, type CaveContractReport as m, type CaveContractViolation as n, type CaveConversation as o, type CaveConversationMessage as p, type CaveCredentialAccess as q, type CaveCredentialBinding as r, type CaveCredentialDisconnectedReason as s, type CaveCredentialMetadata as t, type CaveCredentialPersistingTransport as u, type CaveCredentialStatus as v, type CaveExecutionAttempt as w, type CaveExecutionBackfill as x, type CaveExecutionCoverage as y, type CaveExecutionSlice as z };
+export { type CavePairingScope as $, type CaveExecutionSlice as A, type CaveExecutionWindow as B, type CavePairingRequest as C, type CaveFamiliar as D, type CaveFamiliarAnalytics as E, type CaveFamiliarAnalyticsOptions as F, type CaveFamiliarAnalyticsResponse as G, type CaveFamiliarAnalyticsTransportOptions as H, type CaveFamiliarContract as I, type CaveFamiliarContractResponse as J, type CaveFamiliarIdentity as K, type CaveFamiliarPresence as L, type CaveFamiliarProperty as M, type CaveFamiliarWard as N, type CaveFamiliarWire as O, type CaveFamiliarsResponse as P, type CaveHealth as Q, type CaveHealthData as R, type CaveHealthResponse as S, type CaveManagedCredentialStatusResult as T, type CaveManagedCredentialTransport as U, type CaveManagedForgetCredentialResult as V, type CaveManagedNativeCredentialCustody as W, type CaveManagedPairingCreated as X, type CaveManagedPairingExchange as Y, type CavePairingCreated as Z, type CavePairingExchange as _, CaveClient as a, CavePairingSession as a0, type CavePairingState as a1, type CavePairingStatus as a2, type CaveProject as a3, type CavePropertyCoverage as a4, type CaveTransport as a5, createCaveClient as a6, isCaveClientError as a7, normalizeCaveError as a8, canonicalFamiliarAnalyticsData as a9, canonicalFamiliarContractData as aa, CAVE_ANALYTICS_WINDOWS as b, CAVE_FAMILIAR_PROPERTIES as c, CAVE_PAIRING_SCOPES as d, CAVE_PAIRING_STATUSES as e, type CaveAnalyticsWindowKey as f, type CaveAuthorityBinding as g, type CaveAuthorityBoundPairingExchange as h, type CaveCanonicalFamiliar as i, CaveClientError as j, type CaveClientOptions as k, type CaveContractFile as l, type CaveContractReport as m, type CaveContractViolation as n, type CaveConversation as o, type CaveConversationMessage as p, type CaveCredentialAccess as q, type CaveCredentialBinding as r, type CaveCredentialDisconnectedReason as s, type CaveCredentialMetadata as t, type CaveCredentialPersistingTransport as u, type CaveCredentialStatus as v, type CaveExecutionAttempt as w, type CaveExecutionBackfill as x, type CaveExecutionCoverage as y, type CaveExecutionDay as z };
 // Entrypoint: ./managed
 // Declaration: dist/managed.d.ts
-import { P as CaveManagedCredentialTransport, a as CaveClient } from './client-BbxpTVKf.js';
-export { b as CAVE_ANALYTICS_WINDOWS, c as CAVE_FAMILIAR_PROPERTIES, d as CAVE_PAIRING_SCOPES, e as CAVE_PAIRING_STATUSES, i as CaveCanonicalFamiliar, j as CaveClientError, k as CaveClientOptions, o as CaveConversation, p as CaveConversationMessage, q as CaveCredentialAccess, r as CaveCredentialBinding, t as CaveCredentialMetadata, v as CaveCredentialStatus, E as CaveFamiliarAnalyticsOptions, L as CaveHealth, O as CaveManagedCredentialStatusResult, Q as CaveManagedForgetCredentialResult, R as CaveManagedNativeCredentialCustody, S as CaveManagedPairingCreated, T as CaveManagedPairingExchange, C as CavePairingRequest, W as CavePairingScope, X as CavePairingSession, Y as CavePairingState, Z as CavePairingStatus, _ as CaveProject, a0 as CaveTransport, a2 as isCaveClientError, a3 as normalizeCaveError } from './client-BbxpTVKf.js';
+import { U as CaveManagedCredentialTransport, a as CaveClient } from './client-D7W5v5ON.js';
+export { b as CAVE_ANALYTICS_WINDOWS, c as CAVE_FAMILIAR_PROPERTIES, d as CAVE_PAIRING_SCOPES, e as CAVE_PAIRING_STATUSES, i as CaveCanonicalFamiliar, j as CaveClientError, k as CaveClientOptions, o as CaveConversation, p as CaveConversationMessage, q as CaveCredentialAccess, r as CaveCredentialBinding, t as CaveCredentialMetadata, v as CaveCredentialStatus, F as CaveFamiliarAnalyticsOptions, Q as CaveHealth, T as CaveManagedCredentialStatusResult, V as CaveManagedForgetCredentialResult, W as CaveManagedNativeCredentialCustody, X as CaveManagedPairingCreated, Y as CaveManagedPairingExchange, C as CavePairingRequest, $ as CavePairingScope, a0 as CavePairingSession, a1 as CavePairingState, a2 as CavePairingStatus, a3 as CaveProject, a5 as CaveTransport, a9 as canonicalFamiliarAnalyticsData, aa as canonicalFamiliarContractData, a7 as isCaveClientError, a8 as normalizeCaveError } from './client-D7W5v5ON.js';
 import { OperationOptions, OperationDefaults, OperationContext } from '@opencoven/sdk-core/browser';
 
 interface CaveManagedDiscoverySource {

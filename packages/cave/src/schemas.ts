@@ -295,10 +295,35 @@ export interface CaveContractReport {
   warnings: CaveContractViolation[];
 }
 
+export interface CaveFamiliarPresence {
+  soul: boolean;
+  identity: boolean;
+  ward: boolean;
+  memory: boolean;
+}
+
+export interface CaveFamiliarIdentity {
+  name?: string;
+  creature?: string;
+  person?: string;
+}
+
+export interface CaveFamiliarWard {
+  version?: string;
+  familiar?: string;
+  person?: string;
+  protectedFiles: string[];
+  invariants: string[];
+  editablePaths: string[];
+  approvalTiers: { auto: string[]; humanReview: string[] };
+}
+
 export interface CaveFamiliarContract {
   id: string;
   workspace?: string;
-  present: boolean;
+  present: boolean | CaveFamiliarPresence;
+  identity?: CaveFamiliarIdentity;
+  ward?: CaveFamiliarWard;
   report: CaveContractReport;
 }
 
@@ -308,7 +333,9 @@ export interface CaveFamiliarContractResponse {
   reason?: string;
   id?: string;
   workspace?: string;
-  present?: boolean;
+  present?: boolean | CaveFamiliarPresence;
+  identity?: CaveFamiliarIdentity;
+  ward?: CaveFamiliarWard;
   report?: CaveContractReport;
   error?: string;
 }
@@ -317,6 +344,11 @@ export interface CaveFamiliarContractResponse {
 export const CAVE_ANALYTICS_WINDOWS = ['7d', '14d', '8w', 'all'] as const;
 
 export type CaveAnalyticsWindowKey = (typeof CAVE_ANALYTICS_WINDOWS)[number];
+
+export interface CaveFamiliarAnalyticsTransportOptions {
+  window?: CaveAnalyticsWindowKey;
+  recentLimit?: number;
+}
 
 export interface CaveExecutionSlice {
   key: string;
@@ -339,6 +371,13 @@ export interface CaveExecutionCoverage {
   ratio: number;
 }
 
+export interface CaveExecutionDay {
+  date: string;
+  completed: number;
+  failed: number;
+  cancelled: number;
+}
+
 export interface CaveExecutionWindow {
   attempts: number;
   completed: number;
@@ -355,9 +394,12 @@ export interface CaveExecutionWindow {
   models: CaveExecutionSlice[];
   harnesses: CaveExecutionSlice[];
   coverage: Record<string, CaveExecutionCoverage>;
+  days?: CaveExecutionDay[];
 }
 
 export interface CaveExecutionAttempt {
+  /** Required by client-v1; absent only in legacy transport results. */
+  provenance?: 'live' | 'backfilled';
   id: string;
   sessionId?: string;
   turnId?: string;
