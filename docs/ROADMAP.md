@@ -69,7 +69,8 @@ the first named packed real-authority record for `darwin-arm64`. That historical
 record does not qualify the new 0.0.1 candidate.
 
 The private 0.0.1 candidate is frozen at
-`77d825d17809cfec2fad4acb9b1526b3c4752f9d`. Protected
+`96804bc483a063e41e9a9738a4ace61970f6c0a4`. Its lock binds the corrected Chat
+#272 producer; fresh protected validation remains pending. Historical candidate77 protected
 [run `34796638173`, attempt 1](https://github.com/OpenCoven/chat/actions/runs/34796638173/attempts/1)
 produced [authenticated partial Unix records](https://github.com/OpenCoven/sdk/issues/38#issuecomment-5659174495),
 but Windows failed and downstream validation, attestation, and aggregation

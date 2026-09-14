@@ -1618,14 +1618,14 @@ describe('unresolved SDK #38 conformance gaps', () => {
     };
 
     expect(lock.candidate).toMatchObject({
-      commit: '77d825d17809cfec2fad4acb9b1526b3c4752f9d',
-      tree: '697764ae382ca56d6fde39b9929405d86e739d67',
+      commit: '96804bc483a063e41e9a9738a4ace61970f6c0a4',
+      tree: 'aa9eb8e924735419a9afdbcc80a5b087504ccc9d',
       releaseManifest: {
         file: 'release-manifest.json',
         version: '0.0.1',
         size: 1_031,
         sha256:
-          'd641097ebafd36b41292c70e1db332a270ffb1dc151f495b12218941fe1488ca',
+          '2001d754823ef9183e49c35db6f3a890913c8301460b34a0df236b8dccc6cb6a',
       },
     });
     expect(lock.candidate.sdkPackages).toEqual([
@@ -1652,9 +1652,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
         version: '0.0.1',
         releaseFile: 'tarballs/coven/opencoven-coven-client-0.0.1.tgz',
         vendorPath: 'vendor/opencoven-sdk/coven-client-0.0.1.tgz',
-        size: 42_960,
+        size: 45_724,
         sha256:
-          'e2d4d27c05b51eb1eb5d34d15134b73d4e2c416d72c32de18ace9a908d51c14a',
+          'bc24d3c1542ba7c970b8e5eb1e54d3d9e7acc3e07028466906947773a4b5ef65',
       },
       {
         packageName: '@opencoven/sdk',
@@ -1709,13 +1709,13 @@ describe('unresolved SDK #38 conformance gaps', () => {
         tree: '163ea5b3fb89c741679dce0e121a2c1d9391472f',
       },
       chat: {
-        commit: '636f7da96fa178c2c14648f84137091b15a1cb8a',
-        tree: '8e20adb1d55f17fb5b5a833bad6c9535d41c98ce',
+        commit: 'ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49',
+        tree: 'ffd1963ef9539c7a679909200175fb11a9305c95',
         consumerLock: {
           path: 'pnpm-lock.yaml',
           size: 56_222,
           sha256:
-            '5c9d0bd1d9438006970d9d7dc86186beb578c0eaff597f59a8277b94187d191d',
+            '62d871edd67d26cd4883814fc6146232ee0a5361675137cea257804344d0f555',
         },
       },
     });
@@ -1727,7 +1727,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           '-C',
           workspaceRoot,
           'rev-parse',
-          '77d825d17809cfec2fad4acb9b1526b3c4752f9d^{tree}',
+          '96804bc483a063e41e9a9738a4ace61970f6c0a4^{tree}',
         ],
         { encoding: 'utf8' },
       ).trim(),
@@ -1739,7 +1739,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           '-C',
           workspaceRoot,
           'show',
-          `77d825d17809cfec2fad4acb9b1526b3c4752f9d:${expected.path}`,
+          `96804bc483a063e41e9a9738a4ace61970f6c0a4:${expected.path}`,
         ],
         { encoding: 'buffer' },
       );
@@ -1832,18 +1832,24 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '92c4c453b57b2f9365627f01ec883f98aa8b7ba3',
-      tree: 'b8cf55084d86735d2c427ae5c88a088eccc7b1a4',
+      commit: '535d48196d96a4fde39cd62c47ccec2307a5b3d6',
+      tree: '244f46e6abf616c717d75268cb366c9ed6077f9e',
       source: {
         repository: 'OpenCoven/chat',
-        commit: 'bdb9760d1ad7df818479a6f75aba82c9f2da0e7a',
-        tree: 'b8cf55084d86735d2c427ae5c88a088eccc7b1a4',
+        commit: '843c13652c76c48d9a9d7042d8ae3df751315c6b',
+        tree: '244f46e6abf616c717d75268cb366c9ed6077f9e',
       },
-      sourceAuthorityPath: [],
+      sourceAuthorityPath: [
+        {
+          repository: 'OpenCoven/chat',
+          commit: 'e3584d236ccdcdbfda3880c056b2a75b20e60609',
+          tree: '244f46e6abf616c717d75268cb366c9ed6077f9e',
+        },
+      ],
       harnessAuthority: {
         repository: 'OpenCoven/chat',
-        commit: 'd254d6c4a704df23ff90dcc822243d6a9df6c81c',
-        tree: '2c3184a67d4ea7e45619ed46265cced237e16d40',
+        commit: 'a9c44b643523f4a4adeb6a03bebf71a449cfa7b5',
+        tree: 'd850bf84e299840c565e19449d0601b7a225b824',
       },
       packageManifest: {
         path: 'package.json',
@@ -1865,7 +1871,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         path: '.github/workflows/client-v1-conformance.yml',
         size: 168_186,
         sha256:
-          'fcfa80ce47da84d32075e9db480cb2dfd012869e7f0452b6b5dfe966a33e09ec',
+          '91eea46f41ff704c7f4ccd552fc63e0291760c4b55712275d6056756773e9b7d',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1884,7 +1890,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          'f528c4dff1dbed8dea44fcdcb77a7e2e6b57d2f568a303d6423e889e93e82d79',
+          'b66f2fc4a687a7103e618f017cd25ad5380c28836c035ec668bb301e439acd3c',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1892,7 +1898,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         linuxKeyringSetupScriptSha256:
           '7b1ff87ab5d2230950632560230899cc450458a800a630c2788b53be8b13d200',
         unixSupervisorPreparationScriptSha256:
-          '88cb568f4c3fa4101c05446e184f065bcfb98215072a0099b6b63a84997ece5a',
+          '27cc87a8da052288a39ef0c01d41d6010e9cb6bc4727ca870a377c43a5703a7f',
         unixToolPathSource: {
           path: 'scripts/executable-resolution.mjs',
           size: 9_154,
@@ -1921,8 +1927,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '92c4c453b57b2f9365627f01ec883f98aa8b7ba3',
-        sourceDigest: '92c4c453b57b2f9365627f01ec883f98aa8b7ba3',
+        signerDigest: '535d48196d96a4fde39cd62c47ccec2307a5b3d6',
+        sourceDigest: '535d48196d96a4fde39cd62c47ccec2307a5b3d6',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1968,7 +1974,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       producer.workflow.windowsBootstrapScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_CHILD_BOOTSTRAP)).toBe(
-      'f29da93893ca40888bf45e0b3ab41009be811781e9806f25243f620eb99b6bcc',
+      '0f6d7f11ad240c079ffa692064b634777c02beb689c63aad0d3756946368bcae',
     );
     expect(() =>
       verifyProtectedWorkflow(
@@ -2269,7 +2275,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
     const harness = evidence.harness as { commit: string; tree: string };
 
     expect(provenance.candidate.commit).toBe(
-      '77d825d17809cfec2fad4acb9b1526b3c4752f9d',
+      '96804bc483a063e41e9a9738a4ace61970f6c0a4',
     );
     expect(provenance.validator.commit).not.toBe(
       provenance.candidate.commit,
@@ -2462,7 +2468,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
             candidate: {
               provenance: {
                 repository: 'OpenCoven/sdk',
-                commit: '77d825d17809cfec2fad4acb9b1526b3c4752f9d',
+                commit: '96804bc483a063e41e9a9738a4ace61970f6c0a4',
               },
             },
             summary: { status: 'passed' },
@@ -2521,7 +2527,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
     };
     const aggregateText = contract.serializeCanonicalJson(aggregateRecord);
     const aggregatePath =
-      'docs/client-v1-cross-repository-results/77d825d17809cfec2fad4acb9b1526b3c4752f9d.json';
+      'docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json';
     const compatibleLock = createCompatibleLock(lock);
     const index = {
       schemaVersion: 1,
@@ -2761,7 +2767,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
     };
     const aggregateText = contract.serializeCanonicalJson(aggregateRecord);
     const aggregatePath =
-      'docs/client-v1-cross-repository-results/77d825d17809cfec2fad4acb9b1526b3c4752f9d.json';
+      'docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json';
     const producer = TEST_COMPATIBLE_PRODUCER;
     const typedLock = lock as unknown as FrozenConformanceLock;
     const phase1AuthorityLock = {
