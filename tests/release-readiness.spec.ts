@@ -171,6 +171,7 @@ const VALIDATOR_RUNTIME_PATHS = [
   'scripts/github-environment-approval-evidence.mjs',
   'scripts/github-environment-approval.mjs',
   'scripts/github-release-authorization.mjs',
+  'scripts/npm-bootstrap-provenance.mjs',
   'scripts/owned-temp-directory.mjs',
   'scripts/package-artifacts.mjs',
   'scripts/publication-source-identity.mjs',
@@ -180,6 +181,7 @@ const VALIDATOR_RUNTIME_PATHS = [
   'scripts/release-runtime-integrity.mjs',
   'scripts/repository-metadata.mjs',
   'scripts/verify-committed-conformance-evidence.mjs',
+  'scripts/verify-bootstrap-provenance.mjs',
   'scripts/verify-development-release-configuration.mjs',
   'scripts/verify-github-environment-policies.mjs',
   'scripts/verify-release-readiness.mjs',
@@ -1452,6 +1454,8 @@ describe('release readiness contract', () => {
         '    outputs:',
         '      artifact-id: ${{ steps.upload.outputs.artifact-id }}',
         '      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}',
+        ...[0, 1, 2, 3].map(index =>
+          `      npm-sha512-${index}: \${{ steps.create.outputs.npm-sha512-${index} }}`),
         '    permissions:',
         '      actions: read',
         '      attestations: read',
@@ -1466,6 +1470,8 @@ describe('release readiness contract', () => {
         '    outputs:',
         '      artifact-id: ${{ steps.upload.outputs.artifact-id }}',
         '      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}',
+        ...[0, 1, 2, 3].map(index =>
+          `      npm-sha512-${index}: \${{ steps.create.outputs.npm-sha512-${index} }}`),
         '    permissions:',
         '      actions: read',
         '      attestations: read',

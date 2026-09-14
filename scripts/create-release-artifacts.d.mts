@@ -15,8 +15,12 @@ export interface ConformanceArtifactManifest {
   packages: ReleaseArtifactEntry[];
 }
 
+export interface PublicationArtifactEntry extends ReleaseArtifactEntry {
+  sha512: string;
+}
+
 export interface PublicationArtifactManifest {
-  schemaVersion: 6;
+  schemaVersion: 7;
   artifactSet: 'publication-candidate';
   version: string;
   source: {
@@ -68,7 +72,7 @@ export interface PublicationArtifactManifest {
     environment: 'publication-candidate';
     artifactName: string;
   };
-  packages: ReleaseArtifactEntry[];
+  packages: PublicationArtifactEntry[];
 }
 
 export type ReleaseArtifactManifest =
@@ -150,6 +154,7 @@ export function parseReleaseArtifactArguments(arguments_: string[]): {
   build: boolean;
   outputRoot?: string;
   version?: string;
+  githubOutput?: string;
 };
 
 export function main(arguments_?: string[]): void;

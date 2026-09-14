@@ -82,6 +82,8 @@ describe('exact SDK publication refs', () => {
     }
     const earlyPaths = inventory.trim().split(/\s+/u);
     expect(governedPaths).toContain('scripts/release-ref-policy.mjs');
+    expect(governedPaths).toContain('scripts/npm-bootstrap-provenance.mjs');
+    expect(governedPaths).toContain('scripts/verify-bootstrap-provenance.mjs');
     expect([...earlyPaths].sort()).toEqual([...governedPaths].sort());
     expect(pin.run).toContain('/usr/bin/git diff --quiet "$validator_commit" HEAD -- "${runtime_paths[@]}"');
     expect(pin.run).toContain('/usr/bin/git diff --quiet HEAD -- "${runtime_paths[@]}"');

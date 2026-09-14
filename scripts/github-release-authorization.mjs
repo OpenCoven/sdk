@@ -13,6 +13,7 @@ import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { isReleaseRef } from './release-ref-policy.mjs';
+import { normalizeNpmProvenance } from './npm-bootstrap-provenance.mjs';
 
 import {
   serializeCanonicalJson,
@@ -242,7 +243,7 @@ function canonicalPackageEntries(packages) {
   return packages.map((entry, index) => {
     assertExactFields(
       entry,
-      ['name', 'version', 'file', 'size', 'sha256'],
+      ['name', 'version', 'file', 'size', 'sha256', 'sha512'],
       `Publication authorization package ${index}`,
     );
     if (
@@ -253,6 +254,8 @@ function canonicalPackageEntries(packages) {
       || entry.size <= 0
       || typeof entry.sha256 !== 'string'
       || !SHA256_PATTERN.test(entry.sha256)
+      || typeof entry.sha512 !== 'string'
+      || !/^[0-9a-f]{128}$/u.test(entry.sha512)
     ) {
       throw new Error(
         `Publication authorization package ${index} is invalid`,
@@ -264,6 +267,7 @@ function canonicalPackageEntries(packages) {
       file: entry.file,
       size: entry.size,
       sha256: entry.sha256,
+      sha512: entry.sha512,
     };
   });
 }
@@ -307,6 +311,7 @@ export function createPublicationAuthorizationRecord({
   jobId,
   manifest,
   manifestText,
+  npmProvenance,
   tag,
 }) {
   if (
@@ -334,7 +339,7 @@ export function createPublicationAuthorizationRecord({
     || typeof jobId !== 'string'
     || !POSITIVE_ID_PATTERN.test(jobId)
     || !isRecord(manifest)
-    || manifest.schemaVersion !== 6
+    || manifest.schemaVersion !== 7
     || manifest.artifactSet !== 'publication-candidate'
     || typeof manifestText !== 'string'
   ) {
@@ -414,7 +419,7 @@ export function createPublicationAuthorizationRecord({
     `opencoven-sdk-publication-attestation-${manifest.source.commit}`
     + `-${manifest.version}`;
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     kind: 'opencoven-sdk-publication-security-review',
     issue: 'OpenCoven/sdk#40',
     disposition: 'ship',
@@ -436,6 +441,12 @@ export function createPublicationAuthorizationRecord({
       sha256: sha256(manifestText),
     },
     packages: canonicalPackageEntries(manifest.packages),
+    npmProvenance: normalizeNpmProvenance(npmProvenance, {
+      packages: manifest.packages,
+      version: manifest.version,
+      commit: manifest.source.commit,
+      artifactIds: [artifactId, attestationBundle.artifactId],
+    }),
     toolchain: {
       nodeVersion: manifest.toolchain.nodeVersion,
       nodePath: manifest.toolchain.nodePath,
@@ -522,6 +533,7 @@ function parseAuthorizationBody(text) {
       'provenance',
       'artifact',
       'attestation',
+      'npmProvenance',
     ],
     'Publication authorization',
   );
@@ -634,8 +646,14 @@ function parseAuthorizationBody(text) {
     'Publication authorization attestation bundle',
   );
   const packages = canonicalPackageEntries(value.packages);
+  const npmProvenance = normalizeNpmProvenance(value.npmProvenance, {
+    packages,
+    version: value.version,
+    commit: value.source.commit,
+    artifactIds: [value.artifact.id, value.attestation.bundle.artifactId],
+  });
   if (
-    value.schemaVersion !== 8
+    value.schemaVersion !== 9
     || value.kind !== 'opencoven-sdk-publication-security-review'
     || value.issue !== 'OpenCoven/sdk#40'
     || value.disposition !== 'ship'
@@ -755,6 +773,7 @@ function parseAuthorizationBody(text) {
     ...value,
     environmentPolicy,
     packages,
+    npmProvenance,
     tag,
   };
 }
@@ -1330,6 +1349,31 @@ export function resolvePublicationSecurityReview({
     },
     'candidate attestation bundle',
   );
+  for (const { bundle } of authorization.npmProvenance) {
+    const expected = {
+      id: bundle.artifactId,
+      name: bundle.artifactName,
+      digest: bundle.artifactDigest,
+    };
+    const artifact = runGitHubApi(
+      execute,
+      `repos/OpenCoven/sdk/actions/artifacts/${expected.id}`,
+      env,
+    );
+    expectAuthorizedArtifact(artifact, authorization, expected, 'npm provenance bundle');
+    const named = runGitHubApi(
+      execute,
+      `repos/OpenCoven/sdk/actions/runs/${authorization.provenance.runId}/artifacts?name=${encodeURIComponent(expected.name)}&per_page=100`,
+      env,
+    );
+    if (
+      !isRecord(named) || named.total_count !== 1
+      || !Array.isArray(named.artifacts) || named.artifacts.length !== 1
+    ) {
+      throw new Error('GitHub security review npm provenance bundle name is not unique in the candidate run');
+    }
+    expectAuthorizedArtifact(named.artifacts[0], authorization, expected, 'npm provenance bundle');
+  }
   return {
     ...authorization,
     commentId,
@@ -1435,6 +1479,7 @@ export function verifyPublicationSecurityReview({
     jobId: authorization.provenance.jobId,
     manifest,
     manifestText,
+    npmProvenance: authorization.npmProvenance,
     tag: authorization.tag,
   });
   const actualBody = {
@@ -1459,6 +1504,7 @@ export function verifyPublicationSecurityReview({
     provenance: authorization.provenance,
     artifact: authorization.artifact,
     attestation: authorization.attestation,
+    npmProvenance: authorization.npmProvenance,
   };
   if (serializeCanonicalJson(actualBody) !== serializeCanonicalJson(expected)) {
     throw new Error(

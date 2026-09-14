@@ -286,7 +286,7 @@ A normal publication requires every independent lock to be open:
   evidence chain. No commit or #40 comment is written into a descendant
   configuration commit.
 
-Publication artifacts use schema version 6 from
+Publication artifacts use schema version 7 from
 [`conformance/release-artifact-manifest.schema.json`](conformance/release-artifact-manifest.schema.json).
 The exact release commit produces these bytes before SHIP authorization. The
 manifest carries its commit/tree, the reviewed repository `.npmrc` digest, the
@@ -294,7 +294,11 @@ conformance candidate commit/tree and canonical publication-source manifest,
 the Node/pnpm/npm pack toolchain, the sterile publisher's exact runtime path,
 size, and SHA-256, the exact workflow commit/ref/run attempt/job/environment,
 the unique commit-derived artifact name, and every tarball filename, size,
-and SHA-256. It contains no security-review claim.
+and both SHA-256 and SHA-512. SHA-512 is computed from the same actual
+publication tarball bytes, not from the private conformance archives. The
+manifest contains no security-review claim. Earlier publication schema 6 and
+authorization schema 8 are not accepted or relabeled as new evidence;
+conformance schema 1 and candidate968 remain unchanged.
 
 `conformanceEvidence.runtimeManifestSha256` freezes a canonical manifest over
 all public-package sources and fixtures, package build configuration, API
@@ -323,6 +327,13 @@ workflow/run attempt/job ID, environment ID, deployment ID, and GitHub
 artifact ID/name/archive digest. It separately binds the successful
 `publication-candidate-attestation` job and the exact attestation-bundle
 artifact ID/name/archive digest plus raw `attestation.json` size/SHA-256.
+Authorization schema 9 additionally requires four ordered `npmProvenance`
+entries. Each binds the exact package, npm PURL, tarball SHA-512, a separate
+immutable artifact ID/name/archive digest, and raw bundle size/SHA-256. These
+IDs must be distinct from one another and from the candidate and original
+six-subject bundle artifacts. All four uploads belong to the same frozen
+attester job and exact candidate run attempt; each name must be unique in that
+run.
 It also embeds the complete canonical environment policy receipt, including
 the immutable repository and owner IDs, all three environment IDs, policy
 timestamps, reviewer IDs, self-review settings, administrator-bypass settings,
@@ -383,8 +394,26 @@ trailing newline. Its shape is:
     "sha256": "<raw-manifest-sha256>",
     "size": "<raw-manifest-size>"
   },
+  "npmProvenance": [
+    {
+      "bundle": {
+        "artifactDigest": "sha256:<actual artifact archive digest>",
+        "artifactId": "<actual npm provenance artifact id>",
+        "artifactName": "opencoven-sdk-npm-provenance-0-<release-commit>-<version>",
+        "file": "attestation.json",
+        "sha256": "<actual raw bundle sha256>",
+        "size": "<actual raw bundle size>"
+      },
+      "packageName": "@opencoven/sdk-core",
+      "sha512": "<actual publication tarball sha512>",
+      "subjectName": "pkg:npm/%40opencoven/sdk-core@<version>"
+    },
+    "<corresponding index 1 cave-client entry>",
+    "<corresponding index 2 coven-client entry>",
+    "<corresponding index 3 sdk entry>"
+  ],
   "packages": [
-    "<the four exact ordered filename/size/SHA-256 entries>"
+    "<the four exact ordered filename/size/SHA-256/SHA-512 entries>"
   ],
   "reviewer": {
     "authorAssociation": "MEMBER",
@@ -410,7 +439,7 @@ trailing newline. Its shape is:
     "workflow": ".github/workflows/release.yml",
     "workflowCommit": "<release-commit>"
   },
-  "schemaVersion": 8,
+  "schemaVersion": 9,
   "source": {
     "commit": "<release-commit>",
     "repository": "OpenCoven/sdk",
@@ -947,14 +976,96 @@ tag fails closed without invoking npm.
 
 ## 6. First-publish bootstrap
 
-npm trusted publishing cannot be configured before each package exists.
-Therefore the **First-publish bootstrap** is a separate, explicitly approved
-one-time operation:
+The documented npm trusted-publisher setup starts in an existing package's
+settings. No supported credential-free first-package path has been established
+for this release. Staged publishing is not a workaround: it requires an
+existing package and npm >=11.15.0, whereas this release pins npm 11.5.1.
+Unauthenticated registry 404 responses do not prove that names are available
+or that packages do not exist privately.
 
-1. use a least-privilege npm automation credential protected by account 2FA;
-2. publish the four reviewed tarballs in canonical order, without rebuilding;
-3. verify package ownership, contents, versions, and provenance expectations;
+The **First-publish bootstrap** is therefore a separate, explicitly approved
+one-time manual operation, not a workflow mode. It requires actual #38
+acceptance, the reviewed publication source/tag, immutable #40 SHIP
+authorization, and separate bootstrap approval establishing the operator,
+credential custody, package authority, audit controls and qualification gates.
+The implementation below is preparation, not evidence that those gates have
+been satisfied.
+
+The original six-subject GitHub build bundle remains unchanged in purpose.
+It cannot serve as npm's `--provenance-file`: npm 11.5.1 requires a single
+subject named exactly `pkg:npm/%40opencoven/<package>@<version>` with the
+actual tarball's SHA-512. Never split or rewrite a signed bundle. The isolated
+`publication-candidate-attestation` job additionally signs four such subjects
+and uploads four separate bare `attestation.json` files. It remains
+checkout-free, shell-free and free of npm credentials, and OCI registry push
+is explicitly disabled.
+
+Those four statements use the npm 11.5.1 GitHub workflow/v1 SLSA profile:
+the generic GitHub workflow build type, actual hosted Actions runner builder,
+and source/ref/repository/run/attempt facts from trusted workflow contexts.
+Only each tarball's verified SHA-512 comes from the unprivileged producer.
+The profile does not claim that npm CLI performed the build or signing.
+In-toto Statement/v1, SLSA provenance/v1 and the pinned attester's Sigstore
+v0.3 format are required. This is source-supported compatibility, not a claim
+that the future SDK bundles have been accepted by npm.
+
+After actual SHIP and separate bootstrap approval, download the reviewed
+candidate, original six-subject bundle and four additional artifacts by their
+exact immutable IDs. Keep the candidate and original bundle in separate
+directories. The npm provenance directory must contain exactly
+`0/attestation.json`, `1/attestation.json`, `2/attestation.json` and
+`3/attestation.json`, ordered core, cave, coven, sdk. Do not merge the four
+same-named files into one directory.
+
+From the exact clean reviewed release checkout with the pinned Node runtime
+and the existing trusted Git/GitHub CLI paths, run the read-only verifier:
+
+```bash
+corepack pnpm@10.34.0 verify:bootstrap-provenance \
+  --comment-id <actual-immutable-SHIP-comment-id> \
+  --artifact-root <downloaded-publication-candidate> \
+  --attestation-root <downloaded-six-subject-bundle> \
+  --npm-provenance-root <downloaded-four-bundle-directory>
+```
+
+This command requires the full existing SHIP/source/tag/environment and
+six-subject verification path; there is no offline acceptance, dry-run,
+caller-supplied trust root or skip-approval switch. It additionally verifies
+both tarball digests, the exact raw bundles and their downloaded artifact ZIP
+digests, singleton statements and npm predicate, authenticated producer and
+attester jobs, certificate source/workflow/ref/run/attempt/owner identities,
+and public visibility/hosted-runner claims. It obtains trust through
+`gh attestation trusted-root`'s authenticated TUF clients and supplies only
+public-good Sigstore trust to `gh attestation verify --digest-alg sha512`.
+GitHub-instance trust is not an alternative. It repeats the authoritative
+SHIP/source/tag/policy checks before reporting success. The report does not
+grant bootstrap approval and does not publish.
+
+Require genuine final SDK bundle qualification with the pinned npm verifier
+before the first publish; stubbed unit fixtures, public-reference provenance,
+and `npm publish --dry-run` are not that qualification. Actual npm registry
+acceptance remains a separate operational limit, and must not be claimed from
+local source/format or signature checks alone. If qualification is incomplete
+or authoritative registry policy is unresolved, stop before publishing any
+immutable 0.0.1 version. Never publish a placeholder package/version as a probe.
+
+Only after all approved pre-publication gates succeed may the authorized human:
+
+1. use the separately approved least-privilege npm credential protected by
+   account 2FA, outside the checkout and outside CI;
+2. publish the four exact reviewed publication tarballs in canonical order,
+   without rebuilding or repacking, supplying the corresponding unmodified
+   bare bundle through `--provenance-file`, with `--access public`,
+   `--ignore-scripts`, and the official registry explicitly selected;
+3. verify each registry version, contents, integrity and actual npm provenance
+   plus its GitHub build attestation, preserving the receipts;
 4. immediately revoke the bootstrap credential and preserve the audit record.
+
+`--provenance` and `--provenance-file` are mutually exclusive; do not enable
+automatic provenance generation for this supplied-file procedure. No
+credential-handling or bootstrap-publication code is provided. Private
+candidate968 archives are not publication tarballs and cannot be unlocked,
+repacked or relabeled by this procedure.
 
 Do not add that credential to repository secrets, workflow files, shell
 history, or normal release automation.

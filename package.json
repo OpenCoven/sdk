@@ -37,6 +37,7 @@
     "sync:contracts": "node ./scripts/import-contract-fixtures.mjs",
     "pack:public": "node ./scripts/pack-public-packages.mjs",
     "verify:automations-v1-evidence": "node ./scripts/verify-automations-v1-artifact-evidence.mjs",
+    "verify:bootstrap-provenance": "node ./scripts/verify-bootstrap-provenance.mjs",
     "verify-contracts": "node ./scripts/verify-contracts.mjs",
     "verify-package": "node ./scripts/verify-package.mjs",
     "verify:contracts": "node ./scripts/verify-contracts.mjs",
