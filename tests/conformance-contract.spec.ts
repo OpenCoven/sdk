@@ -38,7 +38,7 @@ interface SourceSnapshot {
   files: SourceFile[];
 }
 type SourceRole = 'producer' | 'reviewed' | 'harness' | 'consumer' | 'cave'
-  | 'previousProducer' | 'previousReviewed' | 'previousHarness';
+  | 'binding' | 'previousProducer' | 'previousReviewed' | 'previousHarness';
 const sourceFixture = JSON.parse(sourceFixtureBytes.toString('utf8')) as {
   sources: Record<SourceRole, SourceSnapshot>;
   objects: Record<string, string>;
@@ -67,7 +67,7 @@ function sourceAuthority(previous = false) {
   return {
     producerCommit: commit(previous ? 'previousProducer' : 'producer'),
     sourceCommit: commit(previous ? 'previousReviewed' : 'reviewed'),
-    sourceAuthorityCommits: [],
+    sourceAuthorityCommits: previous ? [] : [commit('binding')],
     harnessCommit: commit(previous ? 'previousHarness' : 'harness'),
     phase1LockText: sourceBytes(
       previous ? 'previousProducer' : 'producer', 'phase1-conformance.lock.json',
@@ -78,11 +78,11 @@ const currentLock = () => readFrozenConformanceLock(resolve(
   workspaceRoot, 'conformance/client-v1-cross-repository-lock.json',
 ));
 
-describe('reviewed Chat280 and Cave5ee source adoption', () => {
-  test('retains complete Git source bytes, governance files, and pre-UI native deltas', () => {
-    expect(sourceFixtureBytes.length).toBe(3_870_043);
+describe('reviewed Chat278 integration and Cave5ee source adoption', () => {
+  test('retains complete Git source bytes, governance files, and combined native deltas', () => {
+    expect(sourceFixtureBytes.length).toBe(4_667_377);
     expect(digest(sourceFixtureBytes)).toBe(
-      '196d789e76fb12498226755f8184a67f9d487cc7aa611a7d340d310b4fdd601a',
+      'aafc6d712055cd0a31e9a4354b44962d0ac9cd8e10e1cff27d807b4499f3d82a',
     );
     for (const source of Object.values(sourceFixture.sources)) {
       const rawCommit = objectBytes(source.commit);
@@ -108,28 +108,27 @@ describe('reviewed Chat280 and Cave5ee source adoption', () => {
     }
     expect(sourceFixture.sources.reviewed.files).toEqual(sourceFixture.sources.producer.files);
     expect(sourceBytes('producer', 'package.json')).not.toEqual(sourceBytes('consumer', 'package.json'));
-    expect(sourceBytes('harness', 'pnpm-lock.yaml').equals(sourceBytes('producer', 'pnpm-lock.yaml'))).toBe(false);
+    expect(sourceBytes('harness', 'pnpm-lock.yaml')).toEqual(sourceBytes('producer', 'pnpm-lock.yaml'));
     const consumerLock = sourceBytes('consumer', 'pnpm-lock.yaml');
     expect(currentLock().sources.chat.consumerLock).toMatchObject({
       size: consumerLock.length, sha256: digest(consumerLock),
     });
-    expect(sourceBytes('producer', 'src-tauri/Cargo.toml')).not.toEqual(sourceBytes('harness', 'src-tauri/Cargo.toml'));
+    expect(sourceBytes('producer', 'src-tauri/Cargo.toml')).toEqual(sourceBytes('harness', 'src-tauri/Cargo.toml'));
   });
 
-  test('accepts the exact delivered merge and its separate two-parent reviewed source', () => {
+  test('accepts the exact delivered merge and its reviewed source and binding ancestry', () => {
     const lock = currentLock();
-    expect(lock.evidenceProducer.commit).toBe('53bc5dadf6590ba05ca01572496db6afae9b8b27');
+    expect(lock.evidenceProducer.commit).toBe('39ca57341647d7b00c210103dfc844a9d170d2cd');
     expect(lock.sources.cave).toMatchObject({
       commit: '5ee8545f5c2fe4c6121dfdfe842395a354bb3d7d',
       tree: '23cd75ef310e1f293a40e3eee183ea8df6180544',
       releaseVersion: '0.4.2',
     });
     expect(sourceAuthority().sourceCommit.parents).toEqual([
-      { sha: '5dd09592c4ab8e98eab5e37cc1cdde1a82198085' },
-      { sha: '1cf8693e86a8c323708a3d9050d5cff86a158ae6' },
+      { sha: '07a3b3a56ae20a7828d540e63b9ae7644768a690' },
     ]);
     expect(() => validateChatProducerAuthorityBinding(lock, sourceAuthority())).not.toThrow();
-    expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([]);
+    expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([{ repository: 'OpenCoven/chat', commit: '07a3b3a56ae20a7828d540e63b9ae7644768a690', tree: '0fb2b53af38107d0e7e59beeeea1f62954b0ff4c' }]);
     expect(lock.candidate).toEqual(sourceFixture.previousLock.candidate);
     expect(lock.sources.chat).toEqual(sourceFixture.previousLock.sources.chat);
     expect(lock.sources.coven).toEqual(sourceFixture.previousLock.sources.coven);
@@ -137,8 +136,8 @@ describe('reviewed Chat280 and Cave5ee source adoption', () => {
 
   test('rejects old and new producer authorities against the opposite binding', () => {
     expect(() => validateChatProducerAuthorityBinding(sourceFixture.previousLock, sourceAuthority(true))).not.toThrow();
-    expect(() => validateChatProducerAuthorityBinding(currentLock(), sourceAuthority(true))).toThrow(/Git identities/);
-    expect(() => validateChatProducerAuthorityBinding(sourceFixture.previousLock, sourceAuthority())).toThrow(/Git identities/);
+    expect(() => validateChatProducerAuthorityBinding(currentLock(), sourceAuthority(true))).toThrow(/sourceAuthorityCommits/);
+    expect(() => validateChatProducerAuthorityBinding(sourceFixture.previousLock, sourceAuthority())).toThrow(/sourceAuthorityCommits/);
     const authority = sourceAuthority();
     authority.sourceCommit.parents = [{ sha: '5dd09592c4ab8e98eab5e37cc1cdde1a82198085' }];
     expect(() => validateChatProducerAuthorityBinding(currentLock(), authority)).toThrow(/Git identities/);
@@ -448,7 +447,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      '53bc5dadf6590ba05ca01572496db6afae9b8b27',
+      '39ca57341647d7b00c210103dfc844a9d170d2cd',
     );
     expect(workflowDocument).not.toContain(
       'f6eba8af1f71d4251583cf39d4e5fb5b4797d209',
@@ -463,10 +462,10 @@ describe('cross-repository conformance contract entrypoints', () => {
       '9f073f05241c2d3241b23ed9d73b26c6cd55ce7e',
     );
     expect(workflowDocument).toContain(
-      '2caf91629bc4fb66dcc462ea9d01bfc32ca1df28',
+      '30a266807bbe2c253f5962a8ba2c8698f7ea3c43',
     );
     expect(workflowDocument).toContain(
-      '1cf8693e86a8c323708a3d9050d5cff86a158ae6',
+      '3fb86bdac464b1b6e20a929db327808d49a2ab95',
     );
     expect(workflowDocument).toContain('validator_revision');
     expect(workflowDocument).toContain('20863036831');
