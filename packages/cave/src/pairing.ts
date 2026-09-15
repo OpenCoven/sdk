@@ -946,13 +946,19 @@ async function requestJson(
     });
   } catch (error) {
     if (isOperationTimeoutError(error) || isOperationAbortedError(error)) {
-      throw error;
+      if (hpkeRequest === undefined) throw error;
+      ensureActive(options.context);
+      const timeout = isOperationTimeoutError(error);
+      throw transportError(timeout ? 'timeout' : 'aborted',
+        timeout ? 'Cave request timed out.' : 'Cave request was aborted.', {
+          retryable: timeout,
+        });
     }
 
     ensureActive(options.context);
     throw transportError('service_unavailable', 'Cave request could not reach the authority.', {
       retryable: options.pairingSecretDispatch !== 'single_use',
-      cause: error,
+      ...(hpkeRequest === undefined ? { cause: error } : {}),
     });
   }
 

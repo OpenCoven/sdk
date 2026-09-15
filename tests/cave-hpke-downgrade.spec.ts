@@ -1,7 +1,8 @@
 import { createTestHpkeAuthority } from './helpers/cave-hpke-authority.js';
 import { readFile } from 'node:fs/promises';
+import { inspect } from 'node:util';
 import { createDiscoveredCaveClient, type CaveDiscoveredEndpoint } from '@opencoven/cave-client';
-import { createMemorySecretStore, createSecretStoreReference } from '@opencoven/sdk-core';
+import { createMemorySecretStore, createSecretStoreReference, OperationAbortedError, OperationTimeoutError } from '@opencoven/sdk-core';
 import { describe, expect, test, vi } from 'vitest';
 
 import { caveAuthorityBindingFromDiscoveredEndpoint } from '../packages/cave/src/authority-binding.js';
@@ -249,4 +250,104 @@ test.each(['authenticated', 'tampered'] as const)('preserves stored credentials 
   expect(openedRequests).toBe(1);
   expect(await store.get(reference.key)).toBe(serialized);
   expect(JSON.stringify(onEvent.mock.calls)).not.toContain(bearer);
+});
+
+
+test.each(['error', 'aborted', 'timeout'] as const)('redacts a hostile protected-fetch %s from the complete public error', async (kind) => {
+  const authority = await createTestHpkeAuthority();
+  const store = createMemorySecretStore();
+  const reference = createSecretStoreReference('hpke-hostile-fetch-cause');
+  const bearer = 'B'.repeat(43);
+  const serialized = JSON.stringify({ version: 1, bearer,
+    authorityBinding: caveAuthorityBindingFromDiscoveredEndpoint(authority.discovered, authority.instanceId) });
+  await store.set(reference.key, serialized);
+  const onEvent = vi.fn();
+  let protectedRequests = 0;
+  let requestNonce = '';
+  const client = createDiscoveredCaveClient({
+    credentials: { store, reference }, discoverEndpoint: () => Promise.resolve(authority.discovered),
+    operation: { observer: { onEvent, onObserverError: vi.fn() } },
+    fetch: async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname.endsWith('/health')) {
+        return Response.json(envelope({ instanceId: authority.instanceId, pairingRequired: true, releaseVersion: '0.3.9' }));
+      }
+      const opened = await authority.open(request);
+      expect(opened.authorization).toEqual({ kind: 'bearer', value: bearer });
+      protectedRequests++;
+      requestNonce = request.headers.get('x-coven-client-v1-authority-request-nonce')!;
+      expect(requestNonce).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+      const detail = `hostile transport detail ${bearer} ${requestNonce}`;
+      if (kind === 'aborted') throw new OperationAbortedError({ system: 'cave', operation: detail }, { cause: new Error(detail) });
+      if (kind === 'timeout') throw new OperationTimeoutError({ system: 'cave', operation: detail }, 123);
+      throw new Error(detail);
+    },
+  });
+  const result = client.listFamiliars();
+  await expect(result).rejects.toMatchObject({ code: kind === 'error' ? 'service_unavailable' : kind, retryable: kind !== 'aborted' });
+  expect(protectedRequests).toBe(1);
+  await result.catch((error: unknown) => {
+    for (const output of [String(error), JSON.stringify(error), inspect(error, { depth: null })]) {
+      expect(output).not.toContain(bearer);
+      expect(output).not.toContain(requestNonce);
+      expect(output).not.toContain('hostile transport detail');
+    }
+  });
+  expect(await store.get(reference.key)).toBe(serialized);
+  for (const output of [JSON.stringify(onEvent.mock.calls), inspect(onEvent.mock.calls, { depth: null })]) {
+    expect(output).not.toContain(bearer);
+    expect(output).not.toContain(requestNonce);
+  }
+});
+
+
+test.each(['aborted', 'timeout'] as const)('preserves genuine HPKE context %s over a hostile fetch rejection', async (kind) => {
+  const authority = await createTestHpkeAuthority();
+  const store = createMemorySecretStore();
+  const reference = createSecretStoreReference('hpke-context-termination');
+  const bearer = 'B'.repeat(43);
+  const serialized = JSON.stringify({ version: 1, bearer,
+    authorityBinding: caveAuthorityBindingFromDiscoveredEndpoint(authority.discovered, authority.instanceId) });
+  await store.set(reference.key, serialized);
+  const controller = new AbortController();
+  let protectedRequests = 0;
+  let started!: () => void;
+  const dispatched = new Promise<void>((resolve) => { started = resolve; });
+  const client = createDiscoveredCaveClient({
+    credentials: { store, reference }, discoverEndpoint: () => Promise.resolve(authority.discovered),
+    fetch: async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname.endsWith('/health')) {
+        return Response.json(envelope({ instanceId: authority.instanceId, pairingRequired: true, releaseVersion: '0.3.9' }));
+      }
+      const opened = await authority.open(request);
+      expect(opened.authorization).toEqual({ kind: 'bearer', value: bearer });
+      protectedRequests++;
+      return await new Promise<Response>((_resolve, reject) => {
+        request.signal.addEventListener('abort', () => {
+          reject(kind === 'timeout'
+            ? new OperationAbortedError({ system: 'cave', operation: bearer }, { cause: new Error(bearer) })
+            : new OperationTimeoutError({ system: 'cave', operation: bearer }, 123));
+        }, { once: true });
+        started();
+      });
+    },
+  });
+  vi.useFakeTimers();
+  try {
+    const result = client.listFamiliars({ signal: controller.signal, timeoutMs: 1000 });
+    const rejected = expect(result).rejects.toMatchObject({ code: kind, retryable: kind === 'timeout' });
+    await dispatched;
+    expect(protectedRequests).toBe(1);
+    if (kind === 'timeout') await vi.advanceTimersByTimeAsync(1000);
+    else controller.abort();
+    await rejected;
+    await result.catch((error: unknown) => {
+      expect(inspect(error, { depth: null })).not.toContain(bearer);
+    });
+    expect(await store.get(reference.key)).toBe(serialized);
+  } finally {
+    controller.abort();
+    vi.useRealTimers();
+  }
 });
