@@ -31,21 +31,20 @@ is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
 tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the actual merged OpenCoven/chat#282 producer
-`6e86ad047aefa64c1b38ce14d4e28128924fa826`, tree
-`3f26d1246ed35470eb1f8fb07014bcc55f488020`. Its reviewed source head is
-`94c7237b1fed8443f3b6d15b7fa79d826b06ce84` with the same tree.
-The `sourceAuthorityPath` contains binding commit
-`d457cbaf20bd36a758f21fa165652f5bb417e9d5`, which directly retains executable
-harness source `a443b625e94bf059a50c3f47f16fa44171334ea1`, tree
-`6375117ef56a85e09c21941ecd257c88c92c2398`. The reviewed head has the binding
-and Chat main `960fb8dc29a80f69cc2a3b4c084303de0b11c02a` as direct parents.
-The delivery merge retains Chat main as its first parent and the reviewed head
-as its second parent. The validator authenticates the exact delivery commit/tree
-and reviewed-source-to-harness parent chain without adding a first-parent rule.
+This binding selects the actual merged OpenCoven/chat#283 producer
+`6e0512962ae2e34cf9559680e9e2031160d2bdfb`, tree
+`357ae7e75a7d71536c7f2bcfd93a7f39e9ba8c8e`. Its reviewed source head is
+`3a81fdef1e0c5b1ddb62e795b5e9e846cd095fd9` with the same tree.
+The reviewed head directly retains executable harness source
+`02066f37274dfb7a43a8ec080681a0d29d673a6c`, tree
+`2d4012c9f5b482946b002e2103af4476c5a61db3`; `sourceAuthorityPath` is empty.
+The delivery merge retains prior Chat main as its first parent and the reviewed
+head as its second parent. The validator authenticates the exact delivery
+commit/tree and reviewed-source-to-harness parent chain.
 The Phase 1 lock authenticates all 25 governed source files and ten production
-deltas. The governed CI workflow hash incorporates Chat #281; the protected
-workflow, harness executable bytes, and ten production deltas remain unchanged.
+deltas. Chat #283 adds bounded schema-v2 preflight and unexpected-error
+classifications without exposing raw messages or weakening protected checks.
+The workflow fixtures and three bootstrap script digests bind those exact bytes.
 The original Chat consumer and Coven pin remain frozen. Production Cave is
 `ecdcdcf8a75b62bb912ec48215ae20ab0809a181`, tree
 `1634a8eb0a391419bf28af4be0020cfd8c4df472`, release `0.4.2`.
@@ -60,7 +59,7 @@ The old 0.1.0 candidate and its evidence remain historical records.
 `aggregateRecord` remains `null`, `publishingEnabled` remains `false`, and
 all packages remain private. This binding accepts no #38 evidence or #40 SHIP.
 
-The latest completed protected run at this checkpoint, `34916510997`, used
+The preceding protected run `34916510997` used
 Chat #278 producer `39ca57341647d7b00c210103dfc844a9d170d2cd` and SDK #268
 validator `7ed60f0cc6210e8c89d489d1bb5ddf42e1b13baa` with candidate `96804bc`.
 Linux and Darwin records independently passed identity, timing, and all 197
@@ -84,14 +83,22 @@ files, native deltas, original consumer files, Cave engine and fixture bytes,
 and the previous binding for rejection tests. The existing compressed workflow
 fixtures contain complete current source bytes, not substituted tokens.
 
-Chat #282 landed after PR run `34918854850` attempt 2 and recovered push run
-`34918831658` attempt 2 passed. Both protected validator scopes still select the
-preceding SDK #268 merge `7ed60f0cc6210e8c89d489d1bb5ddf42e1b13baa`.
-This new binding requires SDK review, full verification, protected landing, both
-scope rotations, and fresh protected validation. Run `34916510997` remains failed. The candidate runtime digest in
-`release.config.json` is unchanged, and later SDK APIs on main are not adopted
-into candidate `96804bc`. Final artifacts, protected evidence, registry
-compatibility, and SHIP remain separate gates.
+Chat #283 landed after PR run `34925158331` and recovered push run
+`34925125894` attempt 2 passed. Both protected validator scopes still select
+SDK #269 merge `d95f96ffe56d08421227b4d949716340a1468003`.
+Its protected run `34922030401` passed independently inspected Linux and Darwin
+records, including identity, timing, and all 197 assertions. Windows failed at
+`phase1.stage.schema-v2-production.failed` before publishing a record; cleanup
+separately failed a child relative-open with `ntstatus=c0000022`. No Windows
+record identity, timing, or assertion mismatch is established. Downstream
+validation, attestation, and aggregation were skipped.
+This new diagnostic binding requires SDK review, full verification, protected
+landing, both scope rotations, and fresh protected validation. It does not
+establish a Windows repair. Candidate `96804bc` and its runtime digest remain
+unchanged; later SDK APIs on main are not recaptured. `publishingEnabled` stays
+`false`, `aggregateRecord` stays `null`, and the packages stay private.
+Final artifacts, protected evidence, registry compatibility, and #40 SHIP remain
+separate gates.
 
 The historical diagnostic checkpoint from protected run `34763766701` used
 the pre-adoption Chat producer

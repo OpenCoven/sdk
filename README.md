@@ -33,12 +33,12 @@ private **0.0.1** candidate at
 `96804bc483a063e41e9a9738a4ace61970f6c0a4` and its exact tarball bytes.
 Earlier 0.1.0 artifacts and evidence remain historical, not relabeled.
 This candidate includes the merged Coven Automations APIs. Candidate77
-records remain historical evidence. The lock binds the actual Chat #282 merge
-`6e86ad047aefa64c1b38ce14d4e28128924fa826` and tested Cave rc7 source
+records remain historical evidence. The lock binds the actual Chat #283 merge
+`6e0512962ae2e34cf9559680e9e2031160d2bdfb` and tested Cave rc7 source
 `ecdcdcf8a75b62bb912ec48215ae20ab0809a181` (`0.4.2`). The original Chat consumer
 and executable harness remain distinct. This SDK binding requires review,
 verification, landing, and fresh protected validation. Preceding protected run
-`34916510997` passed independently inspected Linux/macOS records but failed
+`34922030401` passed independently inspected Linux/macOS records but failed
 Windows before a record; no passing aggregate is accepted.
 Complete protected #38 evidence and #40 authorization are still required; see the
 [v0.0.1 preparation checklist](RELEASING.md#v001-preparation-decision-2026-09-12)
