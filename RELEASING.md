@@ -47,7 +47,9 @@ The captured private candidate is now
 `aa9eb8e924735419a9afdbcc80a5b087504ccc9d`. Its canonical runtime manifest
 and exact package bytes are frozen by the current release configuration and
 conformance lock. Chat #270 adopted its private archives; Chat #272 corrected
-the Cave release binding. Fresh protected validation remains pending. Later runtime
+the Cave release binding. Protected release acceptance remains incomplete; see
+the [#293 binding checkpoint](#final-chat-293-binding-checkpoint) for delivery
+and partial-record evidence. Later runtime
 changes are not implicitly included in this immutable candidate. Candidate77's
 manifests, tarballs, and partial records remain historical evidence for
 candidate77. All #38/#40 acceptance and publication gates remain closed.
@@ -611,10 +613,11 @@ read/publication diagnostics and adds the narrow read-only `OWNER RIGHTS`
 compatibility without forwarding raw errors or changing authority gates. The
 frozen Chat production decoder and signed harness decoder are unchanged.
 Independent merged-producer, source-head, executable-harness, production,
-candidate, Cave, and Coven comparisons remain fail closed. A fresh protected
-run after this validator merges and both validator scopes rotate is required
-to establish whether the repaired publisher produces the Windows record and
-allows validation, attestation, and aggregation to complete.
+candidate, Cave, and Coven comparisons remain fail closed. These repairs
+required a newly bound protected run to determine whether the publisher could
+produce a Windows record and allow validation, attestation, and aggregation.
+Their ordinary CI did not establish those outcomes; later evidence is recorded
+in the final binding checkpoint below.
 Live evidence verification fetches the merged producer, source head, every
 bounded source-authority-path commit, and harness Git commit objects plus the
 merged producer's `phase1-conformance.lock.json`; it rejects commit-graph,
@@ -713,8 +716,9 @@ fixture through the existing conformance temp helper, setting and restoring
 assertions, cleanup, quotas, bounded diagnostics, and fail-closed behavior.
 Chat #235 binds the merged Cave repair without changing the frozen workflow,
 bootstrap, Unix preparation, native-test, package, toolchain, runner, or
-artifact bytes. This SDK validator and both protected scopes must rotate before
-fresh protected acceptance.
+artifact bytes. That repair required a newly bound SDK validator and rotation
+of both protected scopes before fresh protected acceptance could be evaluated.
+Later run outcomes are recorded separately below.
 
 Chat #219 and the final protected acceptance gate remain open.
 
@@ -764,10 +768,9 @@ protected branches only. Its `required_reviewers` rule therefore has
 `prevent_self_review: false`; this is the authorized exception for the
 dispatcher and sole reviewer account.
 Aggregation and release readiness remain fail closed until all three protected
-records and their reviewed GitHub attestations exist. That protected evidence
-remains pending until this SDK validator merges and
-`CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION` is rotated to the merged revision,
-as documented in
+records and their reviewed GitHub attestations exist. SDK #276 has landed and
+both validator scopes were rotated. The remaining gates are the complete
+platform-record set, reviewed attestations, and canonical aggregate, as documented in
 [`docs/workflows/client-v1-cross-repository-conformance.md`](docs/workflows/client-v1-cross-repository-conformance.md).
 
 Before advancing this candidate after that blocker is resolved, copy the
@@ -1276,13 +1279,31 @@ Windows repair. No aggregate, publication, or release acceptance is claimed.
 
 ## Final Chat #293 binding checkpoint
 
-SDK #275 landed as `2b41077bad567757137575f68a11f32ea3a30ea7` and both validator scopes were read back at that revision.
-Protected [run 34945048615](https://github.com/OpenCoven/chat/actions/runs/34945048615)
-uses Chat #292 (`b7578a65`) and SDK #275; its current workflow status is `failure`.
-Its supervisor artifact and frozen workflow were independently authenticated.
-Workflow status alone does not establish accepted records or attestations.
-The [#38 checkpoint](https://github.com/OpenCoven/sdk/issues/38) tracks independent
-record inspection, identity, timing, assertion, and aggregate acceptance.
-The final Chat #293 binding still requires SDK landing, both scope rotations,
-and fresh protected validation. Candidate and counterpart authorities remain
-frozen; no publication approval is granted by this binding.
+On 2026-09-15, SDK [#276](https://github.com/OpenCoven/sdk/pull/276)
+landed as `6b4e0d04e168c7ccd99df492a0494e223150e2ab` with the verified
+Chat #293 binding. Both validator scopes were rotated and read back at that
+actual merge. Protected [run 34951851914](https://github.com/OpenCoven/chat/actions/runs/34951851914),
+attempt 1, was dispatched with Chat `6fa5dab5` and SDK #276. Its frozen workflow
+and supervisor artifact passed independent authentication before environment
+approval. Linux and macOS passed independent record identity, Cave timing,
+scan, and all 197 ordered assertion checks each. Windows failed at
+`phase1.native-scenarios.native-preflight-installation-rpc`, during
+`app_installation_id` and before the installation-ID assertion. It published
+no record; validation, attestation, and aggregation were skipped. This is
+terminal partial evidence, not aggregate acceptance or publication approval.
+The RPC's underlying failure remains unclassified; the stage does not prove
+a recurrence of the earlier quota-monitor cause.
+
+The prior SDK #275 run `34945048615` is terminal failure: Linux and macOS
+records passed independent inspection, while Windows published no record and
+failed its bounded checkout directory quota monitor. Downstream attestation
+and aggregation were skipped. The [#38 checkpoint](https://github.com/OpenCoven/sdk/issues/38)
+tracks subsequent platform records and exact aggregate acceptance.
+
+SDK [#277](https://github.com/OpenCoven/sdk/pull/277) separately delivered
+per-client discovery v2 retention, concurrent current-credential preservation,
+and snapshots used to pin pairing authority. That development-source change is
+not included in frozen candidate `96804bc4` or validated by the SDK #276 run.
+The retained HPKE branch still requires managed/retry reconciliation under
+[#45](https://github.com/OpenCoven/sdk/issues/45). Candidate and counterpart
+authorities remain frozen; a later candidate needs its own review and evidence.
