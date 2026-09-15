@@ -36,10 +36,13 @@ This candidate includes the merged Coven Automations APIs. Candidate77
 records remain historical evidence. The lock binds the actual Chat #283 merge
 `6e0512962ae2e34cf9559680e9e2031160d2bdfb` and tested Cave rc7 source
 `ecdcdcf8a75b62bb912ec48215ae20ab0809a181` (`0.4.2`). The original Chat consumer
-and executable harness remain distinct. This SDK binding requires review,
-verification, landing, and fresh protected validation. Preceding protected run
-`34922030401` passed independently inspected Linux/macOS records but failed
-Windows before a record; no passing aggregate is accepted.
+and executable harness remain distinct. SDK #272 landed as `129d4fde5`,
+and both protected validator scopes select that verified merge. Fresh protected
+run `34928011200` was approved after supervisor authentication. Linux and macOS records
+passed independent identity, timing, and all 197 assertion checks. Windows
+failed with `phase1.stage.schema-v2-production.unclassified.error` before
+publishing a record; downstream acceptance jobs were skipped. No passing
+aggregate is accepted.
 Complete protected #38 evidence and #40 authorization are still required; see the
 [v0.0.1 preparation checklist](RELEASING.md#v001-preparation-decision-2026-09-12)
 for the remaining gates and required release sequence.
