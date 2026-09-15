@@ -31,20 +31,19 @@ is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
 tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the actual merged OpenCoven/chat#280 producer
-`53bc5dadf6590ba05ca01572496db6afae9b8b27`, tree
-`91f9e4ab6cef78deeba16d6c5de998c79998e872`. Its reviewed source head is
-`2caf91629bc4fb66dcc462ea9d01bfc32ca1df28` with the same tree.
-The `sourceAuthorityPath` is empty: the reviewed source has UI main
-`5dd09592c4ab8e98eab5e37cc1cdde1a82198085` as its first parent and the
-executable harness as its second parent. The delivery merge has the same first
-parent and the reviewed source as its second parent. Existing canonical
-authority-path rules accept this ancestry without exceptions.
-The committed Phase 1 lock separately authenticates executable harness source
-`1cf8693e86a8c323708a3d9050d5cff86a158ae6`, tree
-`c70819a63dbd6ecc268f6195083e3ed1224aed52`, with parent
-`9c4aa1f2de8f38fd776e76f7882ffc871f9b426e` and the same ten reviewed native
-deltas. The UI main package is not the production consumer.
+This binding selects the actual merged OpenCoven/chat#278 producer
+`39ca57341647d7b00c210103dfc844a9d170d2cd`, tree
+`fe10995328808baa0ee403c1e630986d5bf6ed60`. Its reviewed source head is
+`30a266807bbe2c253f5962a8ba2c8698f7ea3c43` with the same tree.
+The `sourceAuthorityPath` contains binding commit
+`07a3b3a56ae20a7828d540e63b9ae7644768a690`. The reviewed head descends from
+that binding, which directly retains executable harness source
+`3fb86bdac464b1b6e20a929db327808d49a2ab95`, tree
+`6fc0690bf253fd817fc2938830eef2da7c223777`. The delivery merge retains the
+reviewed head as its second parent and qualified Cave main as its first parent.
+Existing canonical authority-path rules validate every edge without exceptions.
+The committed Phase 1 lock authenticates all 25 source files and ten native
+deltas from the combined harness. The production consumer remains distinct.
 The Coven pin is unchanged. The production Cave authority is
 `5ee8545f5c2fe4c6121dfdfe842395a354bb3d7d`, tree
 `23cd75ef310e1f293a40e3eee183ea8df6180544`, release `0.4.2`.
@@ -77,8 +76,8 @@ files, native deltas, original consumer files, Cave engine and fixture bytes,
 and the previous binding for rejection tests. The existing compressed workflow
 fixtures contain complete current source bytes, not substituted tokens.
 
-Chat #278/#279 cleanup integration is separately owned and still outstanding.
-This intermediate source checkpoint is not a final validator freeze. Both
+Chat #278 landed with all eleven CI jobs passing; #279 was closed as superseded.
+This binding still requires SDK review and validation before scope rotation. Both
 protected validator scopes remain at `5d166480`; no scope rotation or protected
 dispatch is part of this binding. The candidate runtime digest in
 `release.config.json` is unchanged, and later SDK APIs on main are not adopted
