@@ -497,8 +497,11 @@ The `sourceAuthorityPath` contains binding commit
 that binding, which directly retains executable harness source
 `3fb86bdac464b1b6e20a929db327808d49a2ab95`, tree
 `6fc0690bf253fd817fc2938830eef2da7c223777`. The delivery merge retains the
-reviewed head as its second parent and qualified Cave main as its first parent.
-Existing canonical authority-path rules validate every edge without exceptions.
+reviewed head as its second parent. Its first parent is Chat main
+`53bc5dadf6590ba05ca01572496db6afae9b8b27`, which adopted the qualified Cave
+authority; it is not a commit in the Cave repository. The validator binds the
+exact delivery commit/tree and checks the reviewed-source-to-harness parent
+chain. It does not impose a separate first-parent identity rule.
 The committed Phase 1 lock authenticates all 25 source files and ten native
 deltas from the combined harness. The production consumer remains distinct.
 The Coven pin is unchanged. The production Cave authority is
