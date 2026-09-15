@@ -33,11 +33,23 @@ private **0.0.1** candidate at
 `96804bc483a063e41e9a9738a4ace61970f6c0a4` and its exact tarball bytes.
 Earlier 0.1.0 artifacts and evidence remain historical, not relabeled.
 This candidate includes the merged Coven Automations APIs. Candidate77
-records remain historical evidence. The lock binds the actual Chat #293 merge
-`6fa5dab536bf2b9470a78f90da8efc3b265bab16` and tested Cave rc7 source
-`ecdcdcf8a75b62bb912ec48215ae20ab0809a181` (`0.4.2`). The reviewed head and
-complete delivery tree match, with five explicit parent intermediates to the
-existing harness.
+records remain historical evidence. The lock binds the actual [Chat #296](https://github.com/OpenCoven/chat/pull/296)
+merge `047e8ad7f4a2ca5a9009217de3c3f5f32fd98ba6` to executable harness
+`e28b2ccb80ab74dd9cd8ba40aa1c5ada3539212b` through its reviewed direct-parent source.
+Frozen candidate and counterpart identities are unchanged.
+
+Protected [run 34970370434](https://github.com/OpenCoven/chat/actions/runs/34970370434)
+used Chat `e28b2ccb80ab74dd9cd8ba40aa1c5ada3539212b` and SDK #282
+`faaaba42c7ab1b7fc6e595ed31ca52f8fa0131b0`. Linux and macOS passed;
+their records independently passed exact identity, canonical schema, private scans,
+Cave timing and all 197 ordered assertions each (110 Cave, 46 SDK, 41 Chat).
+Windows failed at `phase1.native-scenarios.native-preflight-installation-rpc`
+and produced no record. Validation, attestation and aggregation were skipped.
+The stale executable pin explains the generic diagnostic, not the native RPC cause.
+This new binding requires verified SDK landing, both validator-scope rotations,
+and a fresh authenticated protected run before any acceptance claim.
+
+The following SDK #276 checkpoint is historical.
 On 2026-09-15, SDK [#276](https://github.com/OpenCoven/sdk/pull/276)
 landed as `6b4e0d04e168c7ccd99df492a0494e223150e2ab` with the verified
 Chat #293 binding. Both validator scopes were rotated and read back at that
