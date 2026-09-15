@@ -1,6 +1,7 @@
 import { createTestHpkeAuthority } from './helpers/cave-hpke-authority.js';
 import { readFile } from 'node:fs/promises';
 import { inspect } from 'node:util';
+import { createServer, type IncomingHttpHeaders } from 'node:http';
 import { createDiscoveredCaveClient, type CaveDiscoveredEndpoint } from '@opencoven/cave-client';
 import { createMemorySecretStore, createSecretStoreReference, OperationAbortedError, OperationTimeoutError } from '@opencoven/sdk-core';
 import { describe, expect, test, vi } from 'vitest';
@@ -349,5 +350,58 @@ test.each(['aborted', 'timeout'] as const)('preserves genuine HPKE context %s ov
   } finally {
     controller.abort();
     vi.useRealTimers();
+  }
+});
+
+
+test('rejects a real replacement listener after health without exposing credentials', async () => {
+  const authority = await createTestHpkeAuthority();
+  const observed: { path: string; headers: IncomingHttpHeaders }[] = [];
+  const server = createServer((request, response) => {
+    const path = request.url ?? '';
+    observed.push({ path, headers: { ...request.headers } });
+    response.setHeader('content-type', 'application/json');
+    if (path.endsWith('/health')) {
+      response.end(JSON.stringify(envelope({ instanceId: authority.instanceId, pairingRequired: true, releaseVersion: '0.3.9' })));
+      return;
+    }
+    response.statusCode = 401;
+    response.end(JSON.stringify({ error: { code: 'unauthorized', message: 'replacement listener', retryable: false } }));
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  try {
+    const address = server.address();
+    if (address === null || typeof address === 'string') throw new Error('Missing loopback listener address.');
+    const discovered = { ...authority.discovered,
+      endpoint: { kind: 'http' as const, url: `http://127.0.0.1:${address.port}` } };
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('hpke-real-replacement-listener');
+    const bearer = 'B'.repeat(43);
+    const serialized = JSON.stringify({ version: 1, bearer,
+      authorityBinding: caveAuthorityBindingFromDiscoveredEndpoint(discovered, authority.instanceId) });
+    await store.set(reference.key, serialized);
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference }, discoverEndpoint: () => Promise.resolve(discovered),
+    });
+    await expect(client.listFamiliars()).rejects.toMatchObject({
+      code: 'reconcile_required', retryable: false, details: { reason: 'authority_proof_failed' },
+    });
+    expect(observed.map(({ path }) => path)).toEqual(['/api/client/v1/health', '/api/client/v1/familiars?limit=50']);
+    const headers = observed[1]!.headers;
+    expect(headers['x-coven-client-v1-authority']).toBe('hpke-bound-v1');
+    expect(headers['x-coven-client-v1-authority-key-id']).toBe(authority.discovered.authority.keyId);
+    expect(headers['x-coven-client-v1-authority-ciphertext']).toEqual(expect.any(String));
+    expect(headers.authorization).toBeUndefined();
+    expect(headers['x-coven-pairing-secret']).toBeUndefined();
+    expect(JSON.stringify(observed)).not.toContain(bearer);
+    expect(await store.get(reference.key)).toBe(serialized);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => { if (error) reject(error); else resolve(); });
+      server.closeAllConnections();
+    });
   }
 });
