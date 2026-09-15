@@ -31,11 +31,13 @@ is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
 tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the actual merged OpenCoven/chat#293 producer
-`6fa5dab536bf2b9470a78f90da8efc3b265bab16`, tree `e102c924ec367e71276387d0559c699fac9bb763`. Its reviewed source head is
-`365072f2ee75973aa02e40e2194673dd33dd44ba` with the same complete tree.
-The explicit `sourceAuthorityPath` retains these direct-parent intermediates:
+This binding selects the actual merged OpenCoven/chat#294 producer
+`d84195c61b86598e691ccd47163e46a15b154417`, tree `690f1381391cd91e4800fb80785f2993332b5a15`. Its reviewed source head is
+`f688cc867c02f6f058ceb7afa005b597aa451250` with the same complete tree.
+The explicit `sourceAuthorityPath` retains seven direct-parent intermediates:
 
+- `e0930551cb31e777a74c41a6e212fabbcbb6b311`, tree `0b032d3f38c0caffb03789dcf57fa7044a3cde1a`.
+- `6fa5dab536bf2b9470a78f90da8efc3b265bab16`, tree `e102c924ec367e71276387d0559c699fac9bb763`.
 - `490908c46bf6f3b00c00aef0a5edb27af426e7ee`, tree `892f69a5cf53f0f8fe4b6620b6fecb50ebe4fe33`.
 - `b7578a653512095a84cd2cd87f33b2f2036221d5`, tree `dc9318a122ff119d348ecfca5f88dfc33229ec48`.
 - `92151f0600bc2db860a73f90d0d5abd8b354cb06`, tree `dc9318a122ff119d348ecfca5f88dfc33229ec48`.
@@ -45,14 +47,13 @@ The explicit `sourceAuthorityPath` retains these direct-parent intermediates:
 The path ends at executable harness source `683e99918eb38978680e46aed7c496f6801c3306`,
 tree `216f6c2fdb698229973a49d448fd7953e66c24a6`. The normal delivery merge retains prior
 Chat main as its first parent and the reviewed head as its second parent.
-The validator authenticates every parent edge and complete reviewed/delivery
-tree equality, with rejection tests for each intermediate parent and tree.
-Chat #291 added three bounded operation-queue test waits to Chat #292.
-Chat #293 records that delivered tree and its authenticated ancestry in documentation.
-The runtime, all 25 governed files, ten production deltas, workflow fixtures,
-and reviewed bootstrap digests remain unchanged from that integrated checkpoint.
-Chat #290's four bounded native-preflight operation diagnostics remain present;
-private causes, frozen authority inputs, and protected checks remain unchanged.
+The validator authenticates all eight edges from reviewed source to harness and
+complete reviewed/delivery tree equality, with rejection tests for each
+intermediate parent and tree. Chat #294 adds fixed installation-RPC failure
+categories without exposing private causes, and restricts ordinary push CI to
+main to avoid duplicate feature-branch checks. The binding refreshes exact
+source and workflow fixtures and reviewed bootstrap digests. Frozen authority
+inputs and protected checks remain unchanged.
 The original Chat consumer and Coven pin remain frozen. Production Cave is
 `ecdcdcf8a75b62bb912ec48215ae20ab0809a181`, tree
 `1634a8eb0a391419bf28af4be0020cfd8c4df472`, release `0.4.2`.
@@ -719,7 +720,7 @@ protected validation and authenticate the supervisor before environment approval
 The four new preflight boundaries identify an operation; they do not prove a
 Windows repair. No aggregate, publication, or release acceptance is claimed.
 
-## Final Chat #293 binding checkpoint
+## Protected Chat #293 binding checkpoint
 
 On 2026-09-15, SDK [#276](https://github.com/OpenCoven/sdk/pull/276)
 landed as `6b4e0d04e168c7ccd99df492a0494e223150e2ab` with the verified
@@ -749,3 +750,14 @@ not included in frozen candidate `96804bc4` or validated by the SDK #276 run.
 The retained HPKE branch still requires managed/retry reconciliation under
 [#45](https://github.com/OpenCoven/sdk/issues/45). Candidate and counterpart
 authorities remain frozen; a later candidate needs its own review and evidence.
+
+## Chat #294 binding awaiting protected validation
+
+Chat [#294](https://github.com/OpenCoven/chat/pull/294) landed after all required
+checks passed, with complete reviewed/delivery tree equality verified. This SDK
+binding selects that actual merge and its bounded installation-RPC diagnostics.
+Both validator scopes still select SDK #276; fresh protected validation requires
+this binding to land, both scopes to rotate to its actual delivery, and a newly
+authenticated supervisor artifact before environment approval. The preceding
+run's Linux/macOS records do not establish acceptance for this new producer.
+No new Windows record or canonical aggregate is claimed.
