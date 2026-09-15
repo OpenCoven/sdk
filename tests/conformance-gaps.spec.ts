@@ -1832,18 +1832,18 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '6e86ad047aefa64c1b38ce14d4e28128924fa826',
-      tree: '3f26d1246ed35470eb1f8fb07014bcc55f488020',
+      commit: '6e0512962ae2e34cf9559680e9e2031160d2bdfb',
+      tree: '357ae7e75a7d71536c7f2bcfd93a7f39e9ba8c8e',
       source: {
         repository: 'OpenCoven/chat',
-        commit: '94c7237b1fed8443f3b6d15b7fa79d826b06ce84',
-        tree: '3f26d1246ed35470eb1f8fb07014bcc55f488020',
+        commit: '3a81fdef1e0c5b1ddb62e795b5e9e846cd095fd9',
+        tree: '357ae7e75a7d71536c7f2bcfd93a7f39e9ba8c8e',
       },
-      sourceAuthorityPath: [{ repository: 'OpenCoven/chat', commit: 'd457cbaf20bd36a758f21fa165652f5bb417e9d5', tree: '3f26d1246ed35470eb1f8fb07014bcc55f488020' }],
+      sourceAuthorityPath: [],
       harnessAuthority: {
         repository: 'OpenCoven/chat',
-        commit: 'a443b625e94bf059a50c3f47f16fa44171334ea1',
-        tree: '6375117ef56a85e09c21941ecd257c88c92c2398',
+        commit: '02066f37274dfb7a43a8ec080681a0d29d673a6c',
+        tree: '2d4012c9f5b482946b002e2103af4476c5a61db3',
       },
       packageManifest: {
         path: 'package.json',
@@ -1854,9 +1854,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       harness: {
         path: 'scripts/phase1-conformance.mjs',
         version: '2.0.0',
-        size: 218132,
+        size: 219131,
         sha256:
-          '4fec116b52831427acb6b84d68d7916c33d30e00e72e0eb0c04a1432f4ac49ce',
+          '588a99a97a58692d831807d8ac90771f605cc2ac8ae0d814113b4cddd6c64d02',
       },
       command: 'test:phase1-conformance',
       recordSchemaVersion: 2,
@@ -1865,7 +1865,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         path: '.github/workflows/client-v1-conformance.yml',
         size: 175_278,
         sha256:
-          '8da55cf4657733792e38dcc499b0faca422614f1ff4b9d28bd1ff7b09946cee6',
+          '449d609f0471695fcfb1f28834dfda3d0109a95c4f152b973d3780f975b100ef',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1884,7 +1884,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          '40426f9f88bdaec9c4ad81b1896760533ba87b542f56d2025449f9dca4f3c6fe',
+          '608bc4866106083f98bcf1e5f01eeeed4fc80ab582d20546cd7ae9a6d053d375',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1892,7 +1892,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         linuxKeyringSetupScriptSha256:
           '7b1ff87ab5d2230950632560230899cc450458a800a630c2788b53be8b13d200',
         unixSupervisorPreparationScriptSha256:
-          '6599736805d9444262fe4cb2acabdfdc46c1e7e2f150706c55c9c781ea496911',
+          '9ced214c06c74978dbd881ef4b4eff89e6ffdb75f757ea40e9368d958b626008',
         unixToolPathSource: {
           path: 'scripts/executable-resolution.mjs',
           size: 9_154,
@@ -1921,8 +1921,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '6e86ad047aefa64c1b38ce14d4e28128924fa826',
-        sourceDigest: '6e86ad047aefa64c1b38ce14d4e28128924fa826',
+        signerDigest: '6e0512962ae2e34cf9559680e9e2031160d2bdfb',
+        sourceDigest: '6e0512962ae2e34cf9559680e9e2031160d2bdfb',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -1968,7 +1968,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       producer.workflow.windowsBootstrapScriptSha256,
     );
     expect(sha256(TEST_WINDOWS_CHILD_BOOTSTRAP)).toBe(
-      '7e8c5c13df4a79789cc55198941e9e2a41cd79e382833b48db50cf69192deb7b',
+      '8d4d44f26278994533a1b00928f98775bd8bba6e56b800e26ab8b5ec2e8b7ebb',
     );
     expect(() =>
       verifyProtectedWorkflow(
