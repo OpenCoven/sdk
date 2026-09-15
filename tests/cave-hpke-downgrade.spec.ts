@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { createDiscoveredCaveClient, type CaveDiscoveredEndpoint } from '@opencoven/cave-client';
 import { createMemorySecretStore, createSecretStoreReference } from '@opencoven/sdk-core';
 import { describe, expect, test, vi } from 'vitest';
@@ -149,4 +150,58 @@ describe('discovered client HPKE downgrade protection', () => {
     await expect(session.poll()).resolves.toMatchObject({ status: 'pending' });
     expect(legacy.fetchImplementation).toHaveBeenCalledTimes(3);
   });
+});
+
+
+describe('discovered HPKE response credential boundary', () => {
+  test.each(['plaintext unauthorized', 'plaintext success', 'forged envelope', 'ciphertext from another request'] as const)(
+    'preserves the exact stored credential after %s', async (responseKind) => {
+      const vector = JSON.parse(await readFile(
+        new URL('../packages/cave/fixtures/hpke-bound-v1-vectors.json', import.meta.url), 'utf8',
+      )) as { authority: { keyId: string; publicKey: string }; inputs: { instanceId: string; runtimeNonce: string }; response: { enc: string; ciphertext: string } };
+      const discovered: CaveDiscoveredEndpoint = {
+        ...v2,
+        freshness: { ...v2.freshness, nonce: vector.inputs.runtimeNonce },
+        authority: { ...v2.authority, keyId: vector.authority.keyId, publicKey: vector.authority.publicKey },
+      };
+      const store = createMemorySecretStore();
+      const reference = createSecretStoreReference('hpke-response-credential-boundary');
+      const bearer = 'B'.repeat(43);
+      const serialized = JSON.stringify({
+        version: 1, bearer,
+        authorityBinding: caveAuthorityBindingFromDiscoveredEndpoint(discovered, vector.inputs.instanceId),
+      });
+      await store.set(reference.key, serialized);
+      const onEvent = vi.fn();
+      const fetchImplementation = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        const path = new URL(input instanceof Request ? input.url : input).pathname;
+        if (path.endsWith('/health')) {
+          return Promise.resolve(Response.json(envelope({ instanceId: vector.inputs.instanceId, pairingRequired: true, releaseVersion: '0.3.9' })));
+        }
+        const headers = new Headers(init?.headers);
+        expect(headers.has('authorization')).toBe(false);
+        expect(headers.has('x-coven-pairing-secret')).toBe(false);
+        expect(JSON.stringify([...headers])).not.toContain(bearer);
+        if (responseKind === 'plaintext unauthorized') {
+          return Promise.resolve(Response.json({ error: { code: 'unauthorized', message: 'revoked' } }, { status: 401 }));
+        }
+        if (responseKind === 'plaintext success') return Promise.resolve(Response.json(envelope({ items: [] })));
+        return Promise.resolve(Response.json({
+          version: 1, mechanism: 'hpke-bound-v1', keyId: vector.authority.keyId,
+          requestNonce: responseKind === 'ciphertext from another request' ? headers.get('x-coven-client-v1-authority-request-nonce') : 'C'.repeat(43),
+          enc: vector.response.enc, ciphertext: vector.response.ciphertext,
+        }, { headers: { 'content-type': 'application/vnd.opencoven.client-v1.hpke-bound-v1+json' } }));
+      });
+      const client = createDiscoveredCaveClient({
+        credentials: { store, reference }, discoverEndpoint: () => Promise.resolve(discovered),
+        fetch: fetchImplementation, operation: { observer: { onEvent, onObserverError: vi.fn() } },
+      });
+      await expect(client.listFamiliars()).rejects.toMatchObject({
+        code: 'reconcile_required', retryable: false, details: { reason: 'authority_proof_failed' },
+      });
+      expect(fetchImplementation.mock.calls.filter(([input]) => new URL(input instanceof Request ? input.url : input).pathname.endsWith('/familiars'))).toHaveLength(1);
+      expect(await store.get(reference.key)).toBe(serialized);
+      expect(JSON.stringify(onEvent.mock.calls)).not.toContain(bearer);
+    },
+  );
 });

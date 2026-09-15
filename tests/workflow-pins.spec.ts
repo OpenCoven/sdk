@@ -114,6 +114,7 @@ describe('workflow action pins', () => {
       'cave-discovery-pairing',
       'cave-canonical-reads',
       'cave-hpke-bound-v1',
+      'cave-hpke-downgrade',
       'cave-managed-native',
       'cave-managed-native-staged',
       'coven-discovery',
