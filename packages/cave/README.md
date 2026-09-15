@@ -294,7 +294,13 @@ failed post-exchange proof is non-retryable for that spent session and requires
 a new pairing. For legacy discovery v1 records, these separate loopback health
 requests remain defense in depth. Discovery v2 instead binds pairing-secret and
 bearer requests to the discovered process and authority key with
-`hpke-bound-v1`. The 0.1 release still requires real-authority conformance
+`hpke-bound-v1`. Once a discovered client observes v2, it rejects protected
+requests through v1 before accessing credentials or sending secrets. This state
+is local to the client; health and pairing creation remain public, and clients
+that have only observed v1 retain legacy pairing support. Discovery results are
+snapshotted so later provider mutation cannot change a pinned pairing authority.
+
+Release acceptance still requires real-authority conformance
 against the producer implementation merged in
 [OpenCoven/coven-cave#5044](https://github.com/OpenCoven/coven-cave/pull/5044),
 which closed

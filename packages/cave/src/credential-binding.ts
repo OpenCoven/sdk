@@ -83,6 +83,7 @@ export type StoredCaveCredentialMaterial =
   | { status: 'incomplete' };
 
 interface CredentialBindingMutationOptions {
+  assertAuthorityCurrent?: () => void;
   context?: OperationContext;
   invalidateInvalid?: boolean;
   mutationGraceMs?: number;
@@ -565,6 +566,7 @@ async function deleteCurrentValueIfExact(
   options: CredentialBindingMutationOptions = {},
 ): Promise<boolean> {
   return await serializeConcreteMutation(store, reference.key, async () => {
+    options.assertAuthorityCurrent?.();
     if (typeof expected === 'string' && store.compareAndDelete !== undefined) {
       const result = await awaitStoreCall(
         store.compareAndDelete(reference.key, expected),
@@ -578,6 +580,7 @@ async function deleteCurrentValueIfExact(
       return false;
     }
 
+    options.assertAuthorityCurrent?.();
     return await awaitStoreCall(store.delete(reference.key), options);
   });
 }
@@ -762,6 +765,7 @@ export async function loadBoundCredentialForAuthority(
   options: CredentialBindingMutationOptions = {},
 ): Promise<LoadedCaveCredential> {
   const raw = await readStoreValue(store, reference.key, options);
+  options.assertAuthorityCurrent?.();
   const invalidateObserved = async (): Promise<void> => {
     if (options.invalidateInvalid !== true) {
       return;
@@ -838,6 +842,7 @@ async function invalidateStoredCredentialIfExact(
       }
     }
 
+    options.assertAuthorityCurrent?.();
     await clearLegacyCredentialState(store, reference, options);
   });
 }
