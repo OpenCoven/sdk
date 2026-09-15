@@ -38,7 +38,7 @@ interface SourceSnapshot {
   files: SourceFile[];
 }
 type SourceRole = 'producer' | 'reviewed' | 'harness' | 'consumer' | 'cave'
-  | 'binding' | 'authority0' | 'authority1' | 'authority2' | 'authority3' | 'authority4' | 'previousProducer' | 'previousReviewed' | 'previousHarness';
+  | 'binding' | 'authority0' | 'authority1' | 'authority2' | 'authority3' | 'authority4' | 'authority5' | 'authority6' | 'previousProducer' | 'previousReviewed' | 'previousHarness';
 const sourceFixture = JSON.parse(sourceFixtureBytes.toString('utf8')) as {
   sources: Record<SourceRole, SourceSnapshot>;
   objects: Record<string, string>;
@@ -67,7 +67,7 @@ function sourceAuthority(previous = false) {
   return {
     producerCommit: commit(previous ? 'previousProducer' : 'producer'),
     sourceCommit: commit(previous ? 'previousReviewed' : 'reviewed'),
-    sourceAuthorityCommits: previous ? [] : [commit('authority0'), commit('authority1'), commit('authority2'), commit('authority3'), commit('authority4')],
+    sourceAuthorityCommits: previous ? [] : [commit('authority0'), commit('authority1'), commit('authority2'), commit('authority3'), commit('authority4'), commit('authority5'), commit('authority6')],
     harnessCommit: commit(previous ? 'previousHarness' : 'harness'),
     phase1LockText: sourceBytes(
       previous ? 'previousProducer' : 'producer', 'phase1-conformance.lock.json',
@@ -78,11 +78,11 @@ const currentLock = () => readFrozenConformanceLock(resolve(
   workspaceRoot, 'conformance/client-v1-cross-repository-lock.json',
 ));
 
-describe('reviewed Chat293 integrated native preflight diagnostics', () => {
+describe('reviewed Chat294 integrated native installation RPC diagnostics', () => {
   test('retains complete Git source bytes, governance files, and combined native deltas', () => {
-    expect(sourceFixtureBytes.length).toBe(7_327_778);
+    expect(sourceFixtureBytes.length).toBe(8_226_379);
     expect(digest(sourceFixtureBytes)).toBe(
-      '43391fba81b98c5521648be1e0466a8b193a903f9a2a0696d654973504788877',
+      '20a3c59e5d38c4d3ceecde4d5fe7d3c60e9883ee65d4f2023a3b406f243237f4',
     );
     for (const source of Object.values(sourceFixture.sources)) {
       const rawCommit = objectBytes(source.commit);
@@ -118,17 +118,17 @@ describe('reviewed Chat293 integrated native preflight diagnostics', () => {
 
   test('accepts the exact delivered merge and its reviewed source and binding ancestry', () => {
     const lock = currentLock();
-    expect(lock.evidenceProducer.commit).toBe('6fa5dab536bf2b9470a78f90da8efc3b265bab16');
+    expect(lock.evidenceProducer.commit).toBe('d84195c61b86598e691ccd47163e46a15b154417');
     expect(lock.sources.cave).toMatchObject({
       commit: 'ecdcdcf8a75b62bb912ec48215ae20ab0809a181',
       tree: '1634a8eb0a391419bf28af4be0020cfd8c4df472',
       releaseVersion: '0.4.2',
     });
     expect(sourceAuthority().sourceCommit.parents).toEqual([
-      { sha: '490908c46bf6f3b00c00aef0a5edb27af426e7ee' },
+      { sha: 'e0930551cb31e777a74c41a6e212fabbcbb6b311' },
     ]);
     expect(() => validateChatProducerAuthorityBinding(lock, sourceAuthority())).not.toThrow();
-    expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([{"repository": "OpenCoven/chat", "commit": "490908c46bf6f3b00c00aef0a5edb27af426e7ee", "tree": "892f69a5cf53f0f8fe4b6620b6fecb50ebe4fe33"}, {"repository": "OpenCoven/chat", "commit": "b7578a653512095a84cd2cd87f33b2f2036221d5", "tree": "dc9318a122ff119d348ecfca5f88dfc33229ec48"}, {"repository": "OpenCoven/chat", "commit": "92151f0600bc2db860a73f90d0d5abd8b354cb06", "tree": "dc9318a122ff119d348ecfca5f88dfc33229ec48"}, {"repository": "OpenCoven/chat", "commit": "3b1c7f7500370e75c839c9e87a797e4a652a58b4", "tree": "ef486a43b029384acdeed02e6367b21a29401bcd"}, {"repository": "OpenCoven/chat", "commit": "8cd0216a3fa122eb3916b5d9db9037ff3c7310b9", "tree": "e3c5435b56a0d6089c22a7296e6e93d64d1acc2d"}]);
+    expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([{"repository": "OpenCoven/chat", "commit": "e0930551cb31e777a74c41a6e212fabbcbb6b311", "tree": "0b032d3f38c0caffb03789dcf57fa7044a3cde1a"}, {"repository": "OpenCoven/chat", "commit": "6fa5dab536bf2b9470a78f90da8efc3b265bab16", "tree": "e102c924ec367e71276387d0559c699fac9bb763"}, {"repository": "OpenCoven/chat", "commit": "490908c46bf6f3b00c00aef0a5edb27af426e7ee", "tree": "892f69a5cf53f0f8fe4b6620b6fecb50ebe4fe33"}, {"repository": "OpenCoven/chat", "commit": "b7578a653512095a84cd2cd87f33b2f2036221d5", "tree": "dc9318a122ff119d348ecfca5f88dfc33229ec48"}, {"repository": "OpenCoven/chat", "commit": "92151f0600bc2db860a73f90d0d5abd8b354cb06", "tree": "dc9318a122ff119d348ecfca5f88dfc33229ec48"}, {"repository": "OpenCoven/chat", "commit": "3b1c7f7500370e75c839c9e87a797e4a652a58b4", "tree": "ef486a43b029384acdeed02e6367b21a29401bcd"}, {"repository": "OpenCoven/chat", "commit": "8cd0216a3fa122eb3916b5d9db9037ff3c7310b9", "tree": "e3c5435b56a0d6089c22a7296e6e93d64d1acc2d"}]);
     expect(lock.candidate).toEqual(sourceFixture.previousLock.candidate);
     expect(lock.sources.chat).toEqual(sourceFixture.previousLock.sources.chat);
     expect(lock.sources.coven).toEqual(sourceFixture.previousLock.sources.coven);
@@ -146,13 +146,13 @@ describe('reviewed Chat293 integrated native preflight diagnostics', () => {
     expect(() => validateChatProducerAuthorityBinding(currentLock(), substitutedHarness)).toThrow(/Git identities/);
   });
 
-  test.each([0, 1, 2, 3, 4])('rejects a severed intermediate authority edge %i', (index) => {
+  test.each([0, 1, 2, 3, 4, 5, 6])('rejects a severed intermediate authority edge %i', (index) => {
     const authority = sourceAuthority();
     authority.sourceAuthorityCommits[index]!.parents = [];
     expect(() => validateChatProducerAuthorityBinding(currentLock(), authority)).toThrow(/Git identities/);
   });
 
-  test.each([0, 1, 2, 3, 4])('rejects a substituted intermediate authority tree %i', (index) => {
+  test.each([0, 1, 2, 3, 4, 5, 6])('rejects a substituted intermediate authority tree %i', (index) => {
     const authority = sourceAuthority();
     authority.sourceAuthorityCommits[index]!.tree.sha = '0'.repeat(40);
     expect(() => validateChatProducerAuthorityBinding(currentLock(), authority)).toThrow(/Git identities/);
@@ -465,7 +465,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      '6fa5dab536bf2b9470a78f90da8efc3b265bab16',
+      'd84195c61b86598e691ccd47163e46a15b154417',
     );
     expect(workflowDocument).not.toContain(
       'f6eba8af1f71d4251583cf39d4e5fb5b4797d209',
@@ -480,7 +480,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       '9f073f05241c2d3241b23ed9d73b26c6cd55ce7e',
     );
     expect(workflowDocument).toContain(
-      '365072f2ee75973aa02e40e2194673dd33dd44ba',
+      'f688cc867c02f6f058ceb7afa005b597aa451250',
     );
     expect(workflowDocument).toContain(
       '683e99918eb38978680e46aed7c496f6801c3306',
