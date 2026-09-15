@@ -1700,8 +1700,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     ]);
     expect(lock.sources).toMatchObject({
       cave: {
-        commit: '5ee8545f5c2fe4c6121dfdfe842395a354bb3d7d',
-        tree: '23cd75ef310e1f293a40e3eee183ea8df6180544',
+        commit: 'ecdcdcf8a75b62bb912ec48215ae20ab0809a181',
+        tree: '1634a8eb0a391419bf28af4be0020cfd8c4df472',
         releaseVersion: '0.4.2',
       },
       coven: {
@@ -1832,18 +1832,18 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '39ca57341647d7b00c210103dfc844a9d170d2cd',
-      tree: 'fe10995328808baa0ee403c1e630986d5bf6ed60',
+      commit: '6e86ad047aefa64c1b38ce14d4e28128924fa826',
+      tree: '3f26d1246ed35470eb1f8fb07014bcc55f488020',
       source: {
         repository: 'OpenCoven/chat',
-        commit: '30a266807bbe2c253f5962a8ba2c8698f7ea3c43',
-        tree: 'fe10995328808baa0ee403c1e630986d5bf6ed60',
+        commit: '94c7237b1fed8443f3b6d15b7fa79d826b06ce84',
+        tree: '3f26d1246ed35470eb1f8fb07014bcc55f488020',
       },
-      sourceAuthorityPath: [{ repository: 'OpenCoven/chat', commit: '07a3b3a56ae20a7828d540e63b9ae7644768a690', tree: '0fb2b53af38107d0e7e59beeeea1f62954b0ff4c' }],
+      sourceAuthorityPath: [{ repository: 'OpenCoven/chat', commit: 'd457cbaf20bd36a758f21fa165652f5bb417e9d5', tree: '3f26d1246ed35470eb1f8fb07014bcc55f488020' }],
       harnessAuthority: {
         repository: 'OpenCoven/chat',
-        commit: '3fb86bdac464b1b6e20a929db327808d49a2ab95',
-        tree: '6fc0690bf253fd817fc2938830eef2da7c223777',
+        commit: 'a443b625e94bf059a50c3f47f16fa44171334ea1',
+        tree: '6375117ef56a85e09c21941ecd257c88c92c2398',
       },
       packageManifest: {
         path: 'package.json',
@@ -1921,8 +1921,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '39ca57341647d7b00c210103dfc844a9d170d2cd',
-        sourceDigest: '39ca57341647d7b00c210103dfc844a9d170d2cd',
+        signerDigest: '6e86ad047aefa64c1b38ce14d4e28128924fa826',
+        sourceDigest: '6e86ad047aefa64c1b38ce14d4e28128924fa826',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -2138,8 +2138,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(registry.schemaVersion).toBe(2);
     expect(registry.provenance).toEqual({
       repository: 'OpenCoven/coven-cave',
-      commit: '5ee8545f5c2fe4c6121dfdfe842395a354bb3d7d',
-      tree: '23cd75ef310e1f293a40e3eee183ea8df6180544',
+      commit: 'ecdcdcf8a75b62bb912ec48215ae20ab0809a181',
+      tree: '1634a8eb0a391419bf28af4be0020cfd8c4df472',
       engine: {
         path: 'scripts/client-v1-conformance.mjs',
         size: 153_390,
@@ -5414,7 +5414,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       'OPENCOVEN_CAVE_AUTHORITY_ROOT: ${{ github.workspace }}/.artifacts/cave-authority',
     );
     expect(workflow).toContain(
-      'ref: 5ee8545f5c2fe4c6121dfdfe842395a354bb3d7d',
+      'ref: ecdcdcf8a75b62bb912ec48215ae20ab0809a181',
     );
     expect(workflow).toContain('path: .artifacts/cave-authority');
   });

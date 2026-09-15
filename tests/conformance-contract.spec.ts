@@ -78,11 +78,11 @@ const currentLock = () => readFrozenConformanceLock(resolve(
   workspaceRoot, 'conformance/client-v1-cross-repository-lock.json',
 ));
 
-describe('reviewed Chat278 integration and Cave5ee source adoption', () => {
+describe('reviewed Chat282 integration and Cave rc7 source adoption', () => {
   test('retains complete Git source bytes, governance files, and combined native deltas', () => {
-    expect(sourceFixtureBytes.length).toBe(4_667_377);
+    expect(sourceFixtureBytes.length).toBe(4_762_053);
     expect(digest(sourceFixtureBytes)).toBe(
-      'aafc6d712055cd0a31e9a4354b44962d0ac9cd8e10e1cff27d807b4499f3d82a',
+      '789d5538f3198e46d1935ebb930eeb1b140d02d4e39b29d5b9762d07d4783022',
     );
     for (const source of Object.values(sourceFixture.sources)) {
       const rawCommit = objectBytes(source.commit);
@@ -118,17 +118,18 @@ describe('reviewed Chat278 integration and Cave5ee source adoption', () => {
 
   test('accepts the exact delivered merge and its reviewed source and binding ancestry', () => {
     const lock = currentLock();
-    expect(lock.evidenceProducer.commit).toBe('39ca57341647d7b00c210103dfc844a9d170d2cd');
+    expect(lock.evidenceProducer.commit).toBe('6e86ad047aefa64c1b38ce14d4e28128924fa826');
     expect(lock.sources.cave).toMatchObject({
-      commit: '5ee8545f5c2fe4c6121dfdfe842395a354bb3d7d',
-      tree: '23cd75ef310e1f293a40e3eee183ea8df6180544',
+      commit: 'ecdcdcf8a75b62bb912ec48215ae20ab0809a181',
+      tree: '1634a8eb0a391419bf28af4be0020cfd8c4df472',
       releaseVersion: '0.4.2',
     });
     expect(sourceAuthority().sourceCommit.parents).toEqual([
-      { sha: '07a3b3a56ae20a7828d540e63b9ae7644768a690' },
+      { sha: 'd457cbaf20bd36a758f21fa165652f5bb417e9d5' },
+      { sha: '960fb8dc29a80f69cc2a3b4c084303de0b11c02a' },
     ]);
     expect(() => validateChatProducerAuthorityBinding(lock, sourceAuthority())).not.toThrow();
-    expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([{ repository: 'OpenCoven/chat', commit: '07a3b3a56ae20a7828d540e63b9ae7644768a690', tree: '0fb2b53af38107d0e7e59beeeea1f62954b0ff4c' }]);
+    expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([{ repository: 'OpenCoven/chat', commit: 'd457cbaf20bd36a758f21fa165652f5bb417e9d5', tree: '3f26d1246ed35470eb1f8fb07014bcc55f488020' }]);
     expect(lock.candidate).toEqual(sourceFixture.previousLock.candidate);
     expect(lock.sources.chat).toEqual(sourceFixture.previousLock.sources.chat);
     expect(lock.sources.coven).toEqual(sourceFixture.previousLock.sources.coven);
@@ -447,7 +448,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      '39ca57341647d7b00c210103dfc844a9d170d2cd',
+      '6e86ad047aefa64c1b38ce14d4e28128924fa826',
     );
     expect(workflowDocument).not.toContain(
       'f6eba8af1f71d4251583cf39d4e5fb5b4797d209',
@@ -462,10 +463,10 @@ describe('cross-repository conformance contract entrypoints', () => {
       '9f073f05241c2d3241b23ed9d73b26c6cd55ce7e',
     );
     expect(workflowDocument).toContain(
-      '30a266807bbe2c253f5962a8ba2c8698f7ea3c43',
+      '94c7237b1fed8443f3b6d15b7fa79d826b06ce84',
     );
     expect(workflowDocument).toContain(
-      '3fb86bdac464b1b6e20a929db327808d49a2ab95',
+      'a443b625e94bf059a50c3f47f16fa44171334ea1',
     );
     expect(workflowDocument).toContain('validator_revision');
     expect(workflowDocument).toContain('20863036831');
