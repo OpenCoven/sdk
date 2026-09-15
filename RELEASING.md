@@ -514,16 +514,23 @@ Its engine is 153,390 bytes with SHA-256
 
 This is a source-only candidate binding, not accepted platform evidence.
 
-Protected [run 34970370434](https://github.com/OpenCoven/chat/actions/runs/34970370434)
-used Chat `e28b2ccb80ab74dd9cd8ba40aa1c5ada3539212b` and SDK #282
-`faaaba42c7ab1b7fc6e595ed31ca52f8fa0131b0`. Linux and macOS passed;
-their records independently passed exact identity, canonical schema, private scans,
-Cave timing and all 197 ordered assertions each (110 Cave, 46 SDK, 41 Chat).
-Windows failed at `phase1.native-scenarios.native-preflight-installation-rpc`
+Protected [run 34977202052](https://github.com/OpenCoven/chat/actions/runs/34977202052)
+used Chat producer `047e8ad7f4a2ca5a9009217de3c3f5f32fd98ba6` and SDK #284
+validator `e37b195c246d55a5929dc74f7e7d116b1fc6dfd0`. Both validator scopes
+were read back at that SDK merge; the frozen workflow and supervisor artifact
+were authenticated before environment approval. Linux and macOS passed;
+their records independently passed exact identities, canonical schema, private
+scans, Cave timing and all 197 ordered assertions each (110 Cave, 46 SDK, 41 Chat).
+Windows failed at
+`phase1.native-scenarios.native-preflight-installation-secure-store-unavailable`
 and produced no record. Validation, attestation and aggregation were skipped.
-The stale executable pin explains the generic diagnostic, not the native RPC cause.
-This new binding requires verified SDK landing, both validator-scope rotations,
-and a fresh authenticated protected run before any acceptance claim.
+
+The repaired executable binding exposed the native secure-store category, but
+it does not identify which installation operation failed. Chat #297 adds bounded
+operation diagnostics and a restricted native installation roundtrip. Its
+ordinary CI does not establish protected acceptance. The next producer requires
+verified landing, SDK rebinding, both validator-scope rotations and a fresh
+authenticated protected run. SDK #38 acceptance remains open.
 
 The historical protected run `34916510997` used
 Chat #278 producer `39ca57341647d7b00c210103dfc844a9d170d2cd` and SDK #268
@@ -668,8 +675,8 @@ The Windows reader retains the validated isolated token for synchronous quota
 scans, including terminal accounting after account disablement. Private ACLs
 and existing quota bounds remain enforced. The Coven daemon/observation source
 is merged #1015 at `8c3735f374d6bc95e5b6fd107f7e7308fa26a2f8`.
-SDK landing, both validator-scope rotations and fresh protected validation
-remain required release gates.
+At that historical checkpoint, SDK landing, both validator-scope rotations
+and fresh protected validation remained required release gates.
 
 Protected run `34667436672` used Chat `f77b249` and SDK `5730979`.
 Linux and Darwin records independently passed archive digests, scans, exact

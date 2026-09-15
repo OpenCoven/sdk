@@ -1,9 +1,11 @@
 # OpenCoven SDK Roadmap
 
-Current conformance checkpoint: Chat #296 repairs the stale executable harness
-selection; the SDK binding still requires landing, scope rotations and fresh
-protected validation. Run `34970370434` passed Linux/macOS records but failed
-Windows before a record, so SDK #38 acceptance remains open. See the
+Current conformance checkpoint: SDK #284 landed the Chat #296 executable
+binding, both validator scopes were rotated, and protected run `34977202052`
+completed with failure. Linux/macOS records passed; Windows failed during native
+installation-ID creation with `secure_store_unavailable` and published no record.
+Chat #297 adds bounded operation diagnostics; its next binding and protected
+validation remain outstanding. SDK #38 acceptance stays open. See the
 [exact binding and validation record](workflows/client-v1-cross-repository-conformance.md).
 
 The OpenCoven SDK is experimental and unpublished. The current objective is a secure read-only **0.0.1** release that proves discovery, consent, identity, credential custody, canonical reads, native trust, and packed-consumer behavior before adding mutation authority.
