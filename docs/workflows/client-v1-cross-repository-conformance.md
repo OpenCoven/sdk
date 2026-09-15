@@ -31,13 +31,16 @@ is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
 tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the actual merged OpenCoven/chat#285 producer
-`6089bab8fb71e692a4c62a722457dbbb5e81d117`, tree
-`40e68b2f8d4aec3f06d59c1317decd7e48cf6ca5`. Its reviewed source head is
-`00e6d300e7c00a72bf08fce10328f5c7b4b7bc3b` with the same tree.
-The reviewed head directly retains executable harness source
-`9035b969ce9752b3f74ed97ce8d8e5470e085de3`, tree
-`0a11aeec93918c8ab528871da4a64c2da4240d3d`; `sourceAuthorityPath` is empty.
+This binding selects the actual merged OpenCoven/chat#292 producer
+`b7578a653512095a84cd2cd87f33b2f2036221d5`, tree
+`dc9318a122ff119d348ecfca5f88dfc33229ec48`. Its reviewed source head is
+`92151f0600bc2db860a73f90d0d5abd8b354cb06` with the same tree.
+The reviewed head retains executable harness source
+`683e99918eb38978680e46aed7c496f6801c3306`, tree
+`216f6c2fdb698229973a49d448fd7953e66c24a6` through the explicit
+`sourceAuthorityPath`: `3b1c7f7500370e75c839c9e87a797e4a652a58b4`, then
+`8cd0216a3fa122eb3916b5d9db9037ff3c7310b9`. Each edge is verified against
+actual commit parents; delivery and reviewed trees must still be identical.
 The delivery merge retains prior Chat main as its first parent and the reviewed
 head as its second parent. The validator authenticates the exact delivery
 commit/tree and reviewed-source-to-harness parent chain.
@@ -45,7 +48,10 @@ The Phase 1 lock authenticates all 25 governed source files and ten production
 deltas. Chat #285 preserves three approved producer-native stage diagnostics
 through the outer launcher: native-preflight, pairing-recovery, and
 revocation-repair. Private causes and protected checks remain unchanged.
-The workflow fixtures and three bootstrap script digests bind those exact bytes.
+Chat #290 adds custody RPC, custody-proof validation, installation-ID RPC,
+and installation-ID validation diagnostics. Chat #292 supplies the reviewed
+integrated tree without changing those runtime bytes. The workflow fixtures
+and bootstrap script digests bind those exact bytes.
 The original Chat consumer and Coven pin remain frozen. Production Cave is
 `ecdcdcf8a75b62bb912ec48215ae20ab0809a181`, tree
 `1634a8eb0a391419bf28af4be0020cfd8c4df472`, release `0.4.2`.
@@ -686,3 +692,25 @@ the diagnostic correction, not the failing hosted stage or Windows repair.
 The new SDK binding still requires reviewed landing, both validator scope
 rotations, and fresh authenticated protected validation. Scopes remain at
 SDK #272 (`129d4fde5`) until that verified landing.
+
+## Integrated native-preflight binding, Chat #292
+
+Chat #292 landed as `b7578a653512095a84cd2cd87f33b2f2036221d5` after required
+checks passed. Its signature is valid and its complete tree equals reviewed
+head `92151f0600bc2db860a73f90d0d5abd8b354cb06`. The binding retains the explicit
+intermediate authority path to harness `683e9991`; the equal-tree and parent
+validation gates are unchanged. Compressed fixtures contain actual Git objects
+for the delivery, reviewed head, both intermediates, and harness.
+
+Both live validator scopes remain on SDK #274 (`1535e48e`) until this binding
+lands. Latest terminal protected run `34935323170` used Chat #285 and SDK #274:
+Linux/macOS records passed independent checks of identity, Cave timing, and all
+197 ordered assertions. Windows failed at `phase1.native-scenarios.native-preflight`
+and produced no record; cleanup separately reported child-open access denial
+`ntstatus=c0000022`. Validation, attestation, and aggregation were skipped.
+
+Next: verify and land this SDK binding, rotate both validator scopes with
+readback, verify Chat main still equals the bound producer, then dispatch fresh
+protected validation and authenticate the supervisor before environment approval.
+The four new preflight boundaries identify an operation; they do not prove a
+Windows repair. No aggregate, publication, or release acceptance is claimed.
