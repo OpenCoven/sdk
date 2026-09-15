@@ -78,11 +78,11 @@ const currentLock = () => readFrozenConformanceLock(resolve(
   workspaceRoot, 'conformance/client-v1-cross-repository-lock.json',
 ));
 
-describe('reviewed Chat283 bounded production diagnostics', () => {
+describe('reviewed Chat285 bounded native stage diagnostics', () => {
   test('retains complete Git source bytes, governance files, and combined native deltas', () => {
-    expect(sourceFixtureBytes.length).toBe(5_612_724);
+    expect(sourceFixtureBytes.length).toBe(6_161_316);
     expect(digest(sourceFixtureBytes)).toBe(
-      'f621a03c6e78476126fec867f368f865841180579c7241cff05c46fbd562cf17',
+      'c35e8cbb117287f2955144a3a1ee388a7bf3f38e7cb5280480027651515fd96d',
     );
     for (const source of Object.values(sourceFixture.sources)) {
       const rawCommit = objectBytes(source.commit);
@@ -118,14 +118,14 @@ describe('reviewed Chat283 bounded production diagnostics', () => {
 
   test('accepts the exact delivered merge and its reviewed source and binding ancestry', () => {
     const lock = currentLock();
-    expect(lock.evidenceProducer.commit).toBe('6e0512962ae2e34cf9559680e9e2031160d2bdfb');
+    expect(lock.evidenceProducer.commit).toBe('6089bab8fb71e692a4c62a722457dbbb5e81d117');
     expect(lock.sources.cave).toMatchObject({
       commit: 'ecdcdcf8a75b62bb912ec48215ae20ab0809a181',
       tree: '1634a8eb0a391419bf28af4be0020cfd8c4df472',
       releaseVersion: '0.4.2',
     });
     expect(sourceAuthority().sourceCommit.parents).toEqual([
-      { sha: '02066f37274dfb7a43a8ec080681a0d29d673a6c' },
+      { sha: '9035b969ce9752b3f74ed97ce8d8e5470e085de3' },
     ]);
     expect(() => validateChatProducerAuthorityBinding(lock, sourceAuthority())).not.toThrow();
     expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([]);
@@ -447,7 +447,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      '6e0512962ae2e34cf9559680e9e2031160d2bdfb',
+      '6089bab8fb71e692a4c62a722457dbbb5e81d117',
     );
     expect(workflowDocument).not.toContain(
       'f6eba8af1f71d4251583cf39d4e5fb5b4797d209',
@@ -462,10 +462,10 @@ describe('cross-repository conformance contract entrypoints', () => {
       '9f073f05241c2d3241b23ed9d73b26c6cd55ce7e',
     );
     expect(workflowDocument).toContain(
-      '3a81fdef1e0c5b1ddb62e795b5e9e846cd095fd9',
+      '00e6d300e7c00a72bf08fce10328f5c7b4b7bc3b',
     );
     expect(workflowDocument).toContain(
-      '02066f37274dfb7a43a8ec080681a0d29d673a6c',
+      '9035b969ce9752b3f74ed97ce8d8e5470e085de3',
     );
     expect(workflowDocument).toContain('validator_revision');
     expect(workflowDocument).toContain('20863036831');

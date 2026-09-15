@@ -33,12 +33,14 @@ private **0.0.1** candidate at
 `96804bc483a063e41e9a9738a4ace61970f6c0a4` and its exact tarball bytes.
 Earlier 0.1.0 artifacts and evidence remain historical, not relabeled.
 This candidate includes the merged Coven Automations APIs. Candidate77
-records remain historical evidence. The lock binds the actual Chat #283 merge
-`6e0512962ae2e34cf9559680e9e2031160d2bdfb` and tested Cave rc7 source
+records remain historical evidence. The lock binds the actual Chat #285 merge
+`6089bab8fb71e692a4c62a722457dbbb5e81d117` and tested Cave rc7 source
 `ecdcdcf8a75b62bb912ec48215ae20ab0809a181` (`0.4.2`). The original Chat consumer
 and executable harness remain distinct. SDK #272 landed as `129d4fde5`,
-and both protected validator scopes select that verified merge. Fresh protected
-run `34928011200` was approved after supervisor authentication. Linux and macOS records
+and both protected validator scopes still select that verified merge. Previous
+protected run `34928011200` used Chat #283 and SDK #272 and was approved after
+supervisor authentication. The Chat #285 binding still requires SDK landing,
+scope rotation, and fresh protected validation. Linux and macOS records
 passed independent identity, timing, and all 197 assertion checks. Windows
 failed with `phase1.stage.schema-v2-production.unclassified.error` before
 publishing a record; downstream acceptance jobs were skipped. No passing
