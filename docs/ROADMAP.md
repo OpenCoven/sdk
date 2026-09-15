@@ -69,8 +69,13 @@ the first named packed real-authority record for `darwin-arm64`. That historical
 record does not qualify the new 0.0.1 candidate.
 
 The private 0.0.1 candidate is frozen at
-`96804bc483a063e41e9a9738a4ace61970f6c0a4`. Its lock binds the corrected Chat
-#272 producer; fresh protected validation remains pending. Historical candidate77 protected
+`96804bc483a063e41e9a9738a4ace61970f6c0a4`. The source lock above is authoritative
+for the current producer and counterpart identities. Protected
+[run `34916510997`](https://github.com/OpenCoven/chat/actions/runs/34916510997)
+passed independently inspected Linux/macOS records but failed Windows before a
+record was produced; validation, attestation, and aggregation were skipped.
+The current [#38 checkpoint](https://github.com/OpenCoven/sdk/issues/38) tracks
+the next source adoption, SDK binding, and protected validation. Historical candidate77 protected
 [run `34796638173`, attempt 1](https://github.com/OpenCoven/chat/actions/runs/34796638173/attempts/1)
 produced [authenticated partial Unix records](https://github.com/OpenCoven/sdk/issues/38#issuecomment-5659174495),
 but Windows failed and downstream validation, attestation, and aggregation
@@ -165,19 +170,24 @@ independently recomputes golden definition/receipt integrity and checks the
 receipt's definition binding before exercising replay vectors. This is
 constrained contract conformance, not a public receipt-authentication API.
 
-The standalone Automations client now discovers capabilities and reads
-compatibility definitions with `list()` / `get()` through the source-pinned,
-authenticated Unix `POST /api/v1/actions` surface. Reads require their exact
-advertised action and retain revision/tombstone/missing-definition distinctions.
-They do not implement the normative rich definition envelope, pagination,
-subscriptions, receipt verification, mutations or authority acceptance.
+The standalone Automations client on SDK main discovers capabilities and exposes
+seven allowlisted reads: `list()`, `get()`, `health()`, `runs()`, `occurrences()`,
+`getOccurrence()`, and `getReceipt()`. Authenticated Unix socket and Windows
+named-pipe transports use the source-pinned `POST /api/v1/actions` surface.
+Reads require their exact advertised action; receipt retrieval does not
+independently authenticate receipt identity, authority, or outcome claims.
+The [package contract](../packages/coven/README.md#automations-phase-1-capability-discovery-and-diagnostic-reads) describes the
+read projections and native-adapter requirements. These APIs on main do not
+recapture the frozen `96804bc` release candidate. Normative rich definitions,
+pagination, subscriptions, independent receipt verification, mutations, and
+authority acceptance remain outside these reads.
 
 OpenCoven/coven#991 (`d277ade3`) and OpenCoven/coven#999 (`735e2f05`) publish packaged base capability
 negotiation, durable `CAPABILITY_UNSUPPORTED` outcomes, and exact wire request
 fingerprinting. The rich normative `AutomationDefinition` remains
 negotiation-only. Read/verify/subscribe implementation can progress against
 committed producer surfaces without treating certification as a blanket gate;
-remaining retrieval/subscription APIs, production lifecycle emission, rich
+remaining individual-run retrieval/subscription APIs, production lifecycle emission, rich
 executable persistence, command-catalog parity, and current packed
 cross-repository certification are not credited as complete.
 Authority-bearing commands remain additionally blocked by

@@ -31,58 +31,64 @@ is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
 tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the actual merged OpenCoven/chat#278 producer
-`39ca57341647d7b00c210103dfc844a9d170d2cd`, tree
-`fe10995328808baa0ee403c1e630986d5bf6ed60`. Its reviewed source head is
-`30a266807bbe2c253f5962a8ba2c8698f7ea3c43` with the same tree.
+This binding selects the actual merged OpenCoven/chat#282 producer
+`6e86ad047aefa64c1b38ce14d4e28128924fa826`, tree
+`3f26d1246ed35470eb1f8fb07014bcc55f488020`. Its reviewed source head is
+`94c7237b1fed8443f3b6d15b7fa79d826b06ce84` with the same tree.
 The `sourceAuthorityPath` contains binding commit
-`07a3b3a56ae20a7828d540e63b9ae7644768a690`. The reviewed head descends from
-that binding, which directly retains executable harness source
-`3fb86bdac464b1b6e20a929db327808d49a2ab95`, tree
-`6fc0690bf253fd817fc2938830eef2da7c223777`. The delivery merge retains the
-reviewed head as its second parent. Its first parent is Chat main
-`53bc5dadf6590ba05ca01572496db6afae9b8b27`, which adopted the qualified Cave
-authority; it is not a commit in the Cave repository. The validator binds the
-exact delivery commit/tree and checks the reviewed-source-to-harness parent
-chain. It does not impose a separate first-parent identity rule.
-The committed Phase 1 lock authenticates all 25 source files and ten native
-deltas from the combined harness. The production consumer remains distinct.
-The Coven pin is unchanged. The production Cave authority is
-`5ee8545f5c2fe4c6121dfdfe842395a354bb3d7d`, tree
-`23cd75ef310e1f293a40e3eee183ea8df6180544`, release `0.4.2`.
+`d457cbaf20bd36a758f21fa165652f5bb417e9d5`, which directly retains executable
+harness source `a443b625e94bf059a50c3f47f16fa44171334ea1`, tree
+`6375117ef56a85e09c21941ecd257c88c92c2398`. The reviewed head has the binding
+and Chat main `960fb8dc29a80f69cc2a3b4c084303de0b11c02a` as direct parents.
+The delivery merge retains Chat main as its first parent and the reviewed head
+as its second parent. The validator authenticates the exact delivery commit/tree
+and reviewed-source-to-harness parent chain without adding a first-parent rule.
+The Phase 1 lock authenticates all 25 governed source files and ten production
+deltas. The governed CI workflow hash incorporates Chat #281; the protected
+workflow, harness executable bytes, and ten production deltas remain unchanged.
+The original Chat consumer and Coven pin remain frozen. Production Cave is
+`ecdcdcf8a75b62bb912ec48215ae20ab0809a181`, tree
+`1634a8eb0a391419bf28af4be0020cfd8c4df472`, release `0.4.2`.
 
 The SDK package fixture provenance remains
 `e806655a7100e9d589662a6f3817c3fd8cde48ad`, distinct from production Cave.
 The registry retains all 110 ordered Cave assertions and binds the actual Cave
-`5ee8545` engine: 153,390 bytes, SHA-256
+`ecdcdcf` engine: 153,390 bytes, SHA-256
 `e2742e3041648082e1087313f005a6e9407e2b8d2180881c42e109257804ec7b`.
 Registry bytes bind the schema, then both bind the lock.
 The old 0.1.0 candidate and its evidence remain historical records.
 `aggregateRecord` remains `null`, `publishingEnabled` remains `false`, and
 all packages remain private. This binding accepts no #38 evidence or #40 SHIP.
 
-The latest completed protected run at this checkpoint, `34879698263`, used
-Chat #276 producer `9c4aa1f2de8f38fd776e76f7882ffc871f9b426e` and SDK #263
-validator `5d166480161102a0cc693ca636b66f122a5cb7b8` with candidate `96804bc`.
-Linux and Darwin each passed 197 ordered assertions. Windows exited before
-Cave readiness at `phase1.cave-authority.startup.exit` and produced no record;
-validation, attestation, and aggregation were skipped. The later profile
-cleanup failure is a separate observation. This does not classify the startup
-cause as a record identity, timing, or assertion mismatch.
+The latest completed protected run at this checkpoint, `34916510997`, used
+Chat #278 producer `39ca57341647d7b00c210103dfc844a9d170d2cd` and SDK #268
+validator `7ed60f0cc6210e8c89d489d1bb5ddf42e1b13baa` with candidate `96804bc`.
+Linux and Darwin records independently passed identity, timing, and all 197
+ordered assertions. Windows failed before publishing a record at
+`phase1.cave-authority.startup.discovery.missing.read.not-found.publication.root-owner-unverified`.
+The frozen Cave diagnostic includes probe execution, timeout, and report-parsing
+failures; it does not establish an incorrect owner. Profile cleanup separately
+failed a child relative-open with `ntstatus=c0000022`. Validation, attestation,
+and aggregation were skipped. No Windows record identity, timing, or assertion
+mismatch is established because no Windows record exists.
 
 The [Cave source-only qualification](https://github.com/OpenCoven/sdk/issues/40#issuecomment-5671819613)
-covers the full 77-file frozen-to-`5ee8545` upgrade. It allows explicit rebinding,
-not a startup-causality claim, protected acceptance, or npm provenance acceptance.
+covers the earlier 77-file frozen-to-`5ee8545` upgrade. Cave #5410 then removes
+cmdlet-dependent ACL probe construction; its `ecdcdcf` candidate passed all 17
+jobs in rc7 run `34896723149`. The five frozen Cave artifacts and engine bytes
+remain identical to `5ee8545`. Neither upstream CI nor source adoption proves
+protected startup success, aggregate acceptance, or npm provenance acceptance.
 The complete Git-derived fixture `tests/fixtures/chat280-cave5ee-source.json.br`
 retains source commit objects, full producer/harness governance and runtime
 files, native deltas, original consumer files, Cave engine and fixture bytes,
 and the previous binding for rejection tests. The existing compressed workflow
 fixtures contain complete current source bytes, not substituted tokens.
 
-Chat #278 landed with all eleven CI jobs passing; #279 was closed as superseded.
-This binding still requires SDK review and validation before scope rotation. Both
-protected validator scopes remain at `5d166480`; no scope rotation or protected
-dispatch is part of this binding. The candidate runtime digest in
+Chat #282 landed after PR run `34918854850` attempt 2 and recovered push run
+`34918831658` attempt 2 passed. Both protected validator scopes still select the
+preceding SDK #268 merge `7ed60f0cc6210e8c89d489d1bb5ddf42e1b13baa`.
+This new binding requires SDK review, full verification, protected landing, both
+scope rotations, and fresh protected validation. Run `34916510997` remains failed. The candidate runtime digest in
 `release.config.json` is unchanged, and later SDK APIs on main are not adopted
 into candidate `96804bc`. Final artifacts, protected evidence, registry
 compatibility, and SHIP remain separate gates.
