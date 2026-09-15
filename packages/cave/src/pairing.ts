@@ -79,7 +79,12 @@ export interface CaveDiscoveredClientOptions {
   operation?: OperationDefaults;
 }
 
+interface DiscoveredAuthorityState {
+  observedV2: boolean;
+}
+
 interface DiscoveredTransportOptions {
+  authorityState: DiscoveredAuthorityState;
   credentials: CaveCredentialBinding;
   discoverEndpoint: (
     options?: DiscoverCaveEndpointOptions,
@@ -762,6 +767,7 @@ async function requestJson(
   method: 'GET' | 'POST',
   route: string,
   options: {
+    authorityState: DiscoveredAuthorityState;
     authorityAuthorization?: CaveHpkeAuthorization;
     authorityInstanceId?: string;
     body?: string;
@@ -783,17 +789,33 @@ async function requestJson(
 ): Promise<RequestJsonResult> {
   ensureActive(options.context);
   let discovered: CaveDiscoveredEndpoint;
+  const assertProtectedAuthority = (): void => {
+    if (
+      discovered.version === 1 &&
+      options.authorityState.observedV2 &&
+      (options.authorityAuthorization !== undefined || options.requireBearer === true)
+    ) {
+      throw transportError(
+        'invalid_response',
+        'The Cave authority could not be verified for this protected request.',
+      );
+    }
+  };
 
   try {
-    discovered = await options.discoverEndpoint({
+    discovered = structuredClone(await options.discoverEndpoint({
       ...(options.discovery ?? {}),
       ...(options.context?.signal === undefined ? {} : { signal: options.context.signal }),
       ...(options.context?.deadline === undefined ? {} : { deadline: options.context.deadline }),
-    });
+    }));
     ensureActive(options.context);
+    if (discovered.version === 2) {
+      options.authorityState.observedV2 = true;
+    }
     if (options.pinnedAuthority !== undefined) {
       assertPinnedPairingAuthority(discovered, options.pinnedAuthority);
     }
+    assertProtectedAuthority();
   } catch (error) {
     if (options.onPreDispatchFailure !== undefined) {
       throw options.onPreDispatchFailure(error);
@@ -821,6 +843,7 @@ async function requestJson(
       {
         ...(options.context === undefined ? {} : { context: options.context }),
         invalidateInvalid: true,
+        assertAuthorityCurrent: assertProtectedAuthority,
         verifyAuthorityInstance: async (instanceId) => {
           const { payload } = await requestJson('GET', '/api/client/v1/health', {
             ...(options.context === undefined ? {} : { context: options.context }),
@@ -828,6 +851,7 @@ async function requestJson(
             discovery: options.discovery,
             fetchImplementation: options.fetchImplementation,
             maxResponseBytes: options.maxResponseBytes,
+            authorityState: options.authorityState,
             pinnedAuthority: discovered,
           });
           const verified = parseHealthResponse(payload).data.instanceId === instanceId;
@@ -868,6 +892,7 @@ async function requestJson(
 
   let hpkeRequest: CaveHpkeBoundRequest | undefined;
   try {
+    assertProtectedAuthority();
     if (authorityAuthorization !== undefined) {
       if (discovered.version === 2) {
         if (authorityInstanceId === undefined) {
@@ -877,6 +902,7 @@ async function requestJson(
             discovery: options.discovery,
             fetchImplementation: options.fetchImplementation,
             maxResponseBytes: options.maxResponseBytes,
+            authorityState: options.authorityState,
             pinnedAuthority: discovered,
           });
           authorityInstanceId = parseHealthResponse(payload).data.instanceId;
@@ -1002,6 +1028,7 @@ function createDiscoveredTransport(
       discovery: options.discovery,
       fetchImplementation: options.fetchImplementation,
       maxResponseBytes: options.maxResponseBytes,
+      authorityState: options.authorityState,
       requireBearer: true,
       canonicalRequirements: requirements,
     });
@@ -1025,6 +1052,7 @@ function createDiscoveredTransport(
         discovery: options.discovery,
         fetchImplementation: options.fetchImplementation,
         maxResponseBytes: options.maxResponseBytes,
+        authorityState: options.authorityState,
       });
       return parseHealthResponse(payload);
     },
@@ -1039,6 +1067,7 @@ function createDiscoveredTransport(
           'content-type': 'application/json',
         },
         maxResponseBytes: options.maxResponseBytes,
+        authorityState: options.authorityState,
       });
       const created = parsePairingCreated(payload);
       pairingAuthorities.set(created.requestId, discovered);
@@ -1058,6 +1087,7 @@ function createDiscoveredTransport(
             value: pairingSecret,
           },
           maxResponseBytes: options.maxResponseBytes,
+          authorityState: options.authorityState,
           pairingSecretDispatch: 'reusable',
           pinnedAuthority: requirePinnedAuthority(requestId),
         },
@@ -1077,6 +1107,7 @@ function createDiscoveredTransport(
           discovery: options.discovery,
           fetchImplementation: options.fetchImplementation,
           maxResponseBytes: options.maxResponseBytes,
+          authorityState: options.authorityState,
           pinnedAuthority: requirePinnedAuthority(requestId),
         });
         expectedInstanceId = parseHealthResponse(expectedHealth.payload).data.instanceId;
@@ -1099,6 +1130,7 @@ function createDiscoveredTransport(
           },
           authorityInstanceId: expectedInstanceId,
           maxResponseBytes: options.maxResponseBytes,
+          authorityState: options.authorityState,
           onPreDispatchFailure: (error) =>
             markPairingExchangeUnsentError(error, context),
           pairingSecretDispatch: 'single_use',
@@ -1116,6 +1148,7 @@ function createDiscoveredTransport(
           discovery: options.discovery,
           fetchImplementation: options.fetchImplementation,
           maxResponseBytes: options.maxResponseBytes,
+          authorityState: options.authorityState,
           pinnedAuthority: discovered,
         });
         verifiedInstanceId = parseHealthResponse(verifiedHealth.payload).data.instanceId;
@@ -1178,6 +1211,7 @@ function createDiscoveredTransport(
         discovery: options.discovery,
         fetchImplementation: options.fetchImplementation,
         maxResponseBytes: options.maxResponseBytes,
+        authorityState: options.authorityState,
         requireBearer: true,
       });
       return parseFamiliarsResponse(payload);
@@ -1203,6 +1237,7 @@ export function createDiscoveredCaveClient(
     credentials: options.credentials,
     ...(options.operation === undefined ? {} : { operation: options.operation }),
     transport: createDiscoveredTransport({
+      authorityState: { observedV2: false },
       credentials: options.credentials,
       discoverEndpoint: options.discoverEndpoint ?? discoverCaveEndpoint,
       discovery: options.discovery,
