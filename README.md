@@ -37,8 +37,9 @@ records remain historical evidence. The lock binds the actual Chat #278 merge
 `39ca57341647d7b00c210103dfc844a9d170d2cd` and qualified Cave
 `5ee8545f5c2fe4c6121dfdfe842395a354bb3d7d` (`0.4.2`). The original Chat consumer
 and combined executable harness remain distinct. Cleanup integration landed in
-Chat #278; SDK validation and fresh protected validation remain pending,
-and no passing aggregate is accepted.
+Chat #278 and its SDK #268 binding landed. Protected run `34916510997` passed
+independently inspected Linux/macOS records but failed Windows before a record;
+no passing aggregate is accepted.
 Complete protected #38 evidence and #40 authorization are still required; see the
 [v0.0.1 preparation checklist](RELEASING.md#v001-preparation-decision-2026-09-12)
 for the remaining gates and required release sequence.

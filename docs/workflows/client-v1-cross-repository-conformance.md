@@ -61,14 +61,17 @@ The old 0.1.0 candidate and its evidence remain historical records.
 `aggregateRecord` remains `null`, `publishingEnabled` remains `false`, and
 all packages remain private. This binding accepts no #38 evidence or #40 SHIP.
 
-The latest completed protected run at this checkpoint, `34879698263`, used
-Chat #276 producer `9c4aa1f2de8f38fd776e76f7882ffc871f9b426e` and SDK #263
-validator `5d166480161102a0cc693ca636b66f122a5cb7b8` with candidate `96804bc`.
-Linux and Darwin each passed 197 ordered assertions. Windows exited before
-Cave readiness at `phase1.cave-authority.startup.exit` and produced no record;
-validation, attestation, and aggregation were skipped. The later profile
-cleanup failure is a separate observation. This does not classify the startup
-cause as a record identity, timing, or assertion mismatch.
+The latest completed protected run at this checkpoint, `34916510997`, used
+Chat #278 producer `39ca57341647d7b00c210103dfc844a9d170d2cd` and SDK #268
+validator `7ed60f0cc6210e8c89d489d1bb5ddf42e1b13baa` with candidate `96804bc`.
+Linux and Darwin records independently passed identity, timing, and all 197
+ordered assertions. Windows failed before publishing a record at
+`phase1.cave-authority.startup.discovery.missing.read.not-found.publication.root-owner-unverified`.
+The frozen Cave diagnostic includes probe execution, timeout, and report-parsing
+failures; it does not establish an incorrect owner. Profile cleanup separately
+failed a child relative-open with `ntstatus=c0000022`. Validation, attestation,
+and aggregation were skipped. No Windows record identity, timing, or assertion
+mismatch is established because no Windows record exists.
 
 The [Cave source-only qualification](https://github.com/OpenCoven/sdk/issues/40#issuecomment-5671819613)
 covers the full 77-file frozen-to-`5ee8545` upgrade. It allows explicit rebinding,
@@ -80,9 +83,10 @@ and the previous binding for rejection tests. The existing compressed workflow
 fixtures contain complete current source bytes, not substituted tokens.
 
 Chat #278 landed with all eleven CI jobs passing; #279 was closed as superseded.
-This binding still requires SDK review and validation before scope rotation. Both
-protected validator scopes remain at `5d166480`; no scope rotation or protected
-dispatch is part of this binding. The candidate runtime digest in
+SDK #268 landed this binding and both protected validator scopes select
+`7ed60f0cc6210e8c89d489d1bb5ddf42e1b13baa`. Protected run `34916510997`
+remains failed; the next source adoption requires its own reviewed SDK binding
+and fresh protected validation. The candidate runtime digest in
 `release.config.json` is unchanged, and later SDK APIs on main are not adopted
 into candidate `96804bc`. Final artifacts, protected evidence, registry
 compatibility, and SHIP remain separate gates.
