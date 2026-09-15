@@ -490,28 +490,22 @@ passing evidence record for each target.
 The frozen Chat consumer is
 `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`, tree
 `ffd1963ef9539c7a679909200175fb11a9305c95`, with all four committed vendor
-archives byte-identical to candidate 96804bc. This binding selects the actual merged OpenCoven/chat#293 producer
-`6fa5dab536bf2b9470a78f90da8efc3b265bab16`, tree `e102c924ec367e71276387d0559c699fac9bb763`. Its reviewed source head is
-`365072f2ee75973aa02e40e2194673dd33dd44ba` with the same complete tree.
-The explicit `sourceAuthorityPath` retains these direct-parent intermediates:
+archives byte-identical to candidate 96804bc. This binding selects the actual merged [Chat #296](https://github.com/OpenCoven/chat/pull/296)
+producer `047e8ad7f4a2ca5a9009217de3c3f5f32fd98ba6`, tree `81e7ac41d7c64efc7875fb9e84721c3a6726226a`.
+Its reviewed source `fa3ab73be946ccb123a45d0d8934e1dfcfb646a4` has the same complete tree
+and has executable harness `e28b2ccb80ab74dd9cd8ba40aa1c5ada3539212b` as its direct parent,
+tree `64b1e1812e9bfc729f2d7d148b224afe6f17f775`. The `sourceAuthorityPath` is empty
+because no intermediate commit separates that reviewed source from its harness.
+The normal delivery merge retains prior main first and the reviewed head second.
+The validator checks these exact identities, tree equality and direct parent edge.
+Historical multi-edge fixtures retain all ten intermediate parent/tree rejection cases.
 
-- `490908c46bf6f3b00c00aef0a5edb27af426e7ee`, tree `892f69a5cf53f0f8fe4b6620b6fecb50ebe4fe33`.
-- `b7578a653512095a84cd2cd87f33b2f2036221d5`, tree `dc9318a122ff119d348ecfca5f88dfc33229ec48`.
-- `92151f0600bc2db860a73f90d0d5abd8b354cb06`, tree `dc9318a122ff119d348ecfca5f88dfc33229ec48`.
-- `3b1c7f7500370e75c839c9e87a797e4a652a58b4`, tree `ef486a43b029384acdeed02e6367b21a29401bcd`.
-- `8cd0216a3fa122eb3916b5d9db9037ff3c7310b9`, tree `e3c5435b56a0d6089c22a7296e6e93d64d1acc2d`.
-
-The path ends at executable harness source `683e99918eb38978680e46aed7c496f6801c3306`,
-tree `216f6c2fdb698229973a49d448fd7953e66c24a6`. The normal delivery merge retains prior
-Chat main as its first parent and the reviewed head as its second parent.
-The validator authenticates every parent edge and complete reviewed/delivery
-tree equality, with rejection tests for each intermediate parent and tree.
-Chat #291 added three bounded operation-queue test waits to Chat #292.
-Chat #293 records that delivered tree and its authenticated ancestry in documentation.
-The runtime, all 25 governed files, ten production deltas, workflow fixtures,
-and reviewed bootstrap digests remain unchanged from that integrated checkpoint.
-Chat #290's four bounded native-preflight operation diagnostics remain present;
-private causes, frozen authority inputs, and protected checks remain unchanged.
+Chat #296 corrects the executable harness selection. The earlier bootstrap cloned
+`683e99918eb38978680e46aed7c496f6801c3306`, which imported its own producer module
+without the newer installation diagnostics. The new harness includes those
+reviewed classifiers. All 25 governed file identities and ten production deltas
+are bound together. Workflow and bootstrap bytes remain unchanged from Chat #295.
+The original Chat consumer, candidate, Cave and Coven identities remain frozen.
 The original Chat consumer and Coven pin remain frozen. Production Cave is
 `ecdcdcf8a75b62bb912ec48215ae20ab0809a181`, tree
 `1634a8eb0a391419bf28af4be0020cfd8c4df472`, release `0.4.2`.
@@ -519,7 +513,19 @@ Its engine is 153,390 bytes with SHA-256
 `e2742e3041648082e1087313f005a6e9407e2b8d2180881c42e109257804ec7b`.
 
 This is a source-only candidate binding, not accepted platform evidence.
-The preceding protected run `34916510997` used
+
+Protected [run 34970370434](https://github.com/OpenCoven/chat/actions/runs/34970370434)
+used Chat `e28b2ccb80ab74dd9cd8ba40aa1c5ada3539212b` and SDK #282
+`faaaba42c7ab1b7fc6e595ed31ca52f8fa0131b0`. Linux and macOS passed;
+their records independently passed exact identity, canonical schema, private scans,
+Cave timing and all 197 ordered assertions each (110 Cave, 46 SDK, 41 Chat).
+Windows failed at `phase1.native-scenarios.native-preflight-installation-rpc`
+and produced no record. Validation, attestation and aggregation were skipped.
+The stale executable pin explains the generic diagnostic, not the native RPC cause.
+This new binding requires verified SDK landing, both validator-scope rotations,
+and a fresh authenticated protected run before any acceptance claim.
+
+The historical protected run `34916510997` used
 Chat #278 producer `39ca57341647d7b00c210103dfc844a9d170d2cd` and SDK #268
 validator `7ed60f0cc6210e8c89d489d1bb5ddf42e1b13baa` with candidate `96804bc`.
 Linux and Darwin records independently passed identity, timing, and all 197
@@ -1251,9 +1257,9 @@ loss before the fix. This SDK binding refreshes the exact producer, source,
 harness, complete Git fixtures and three bootstrap digests. Candidate, Cave,
 Coven and original Chat consumer authorities remain unchanged. This proves
 the diagnostic correction, not the failing hosted stage or Windows repair.
-The new SDK binding still requires reviewed landing, both validator scope
-rotations, and fresh authenticated protected validation. Scopes remain at
-SDK #272 (`129d4fde5`) until that verified landing.
+At this historical Chat #285 checkpoint, the SDK binding still required
+reviewed landing, both validator scope rotations and fresh authenticated
+protected validation. Scopes then selected SDK #272 (`129d4fde5`).
 
 ## Historical integrated native-preflight binding, Chat #292
 
