@@ -84,17 +84,33 @@ and the previous binding for rejection tests. The existing compressed workflow
 fixtures contain complete current source bytes, not substituted tokens.
 
 Chat #283 landed after PR run `34925158331` and recovered push run
-`34925125894` attempt 2 passed. Both protected validator scopes still select
-SDK #269 merge `d95f96ffe56d08421227b4d949716340a1468003`.
-Its protected run `34922030401` passed independently inspected Linux and Darwin
+`34925125894` attempt 2 passed. SDK #272 landed as
+`129d4fde5cc72929cb7b18cb6a9170a20fd2d8f2` after full repository verification,
+independent binding review, and all eight hosted checks passed. Its exact
+reviewed tree and GitHub signature verified. Both protected validator scopes
+were rotated to that actual merge and read back exactly.
+
+The preceding SDK #269 protected run `34922030401` passed independently inspected Linux and Darwin
 records, including identity, timing, and all 197 assertions. Windows failed at
 `phase1.stage.schema-v2-production.failed` before publishing a record; cleanup
 separately failed a child relative-open with `ntstatus=c0000022`. No Windows
 record identity, timing, or assertion mismatch is established. Downstream
 validation, attestation, and aggregation were skipped.
-This new diagnostic binding requires SDK review, full verification, protected
-landing, both scope rotations, and fresh protected validation. It does not
-establish a Windows repair. Candidate `96804bc` and its runtime digest remain
+
+Fresh protected run `34928011200`, attempt 1, uses Chat #283 and SDK #272.
+Supervisor job `104250094041` passed; artifact `10379899103` matched the run,
+source, uploaded ZIP digest and single executable. The exact frozen workflow
+was authenticated before platform approval. Linux job `104250523066` and macOS job `104250522950` passed. Each retained
+record independently passed archive/run binding, canonical schema, private
+scans, exact identities, Cave timing, and all 197 ordered assertions. Windows
+job `104250523120` failed with
+`phase1.stage.schema-v2-production.unclassified.error` and published no record.
+This identifies an Error-class failure escaping the existing stage diagnostics;
+it does not identify a failing operation or a record identity, timing, or
+assertion mismatch. Cleanup separately reported child relative-open
+`ntstatus=c0000022`. Validation, attestation, and aggregation were skipped;
+complete protected acceptance remains absent.
+No Windows repair is established. Candidate `96804bc` and its runtime digest remain
 unchanged; later SDK APIs on main are not recaptured. `publishingEnabled` stays
 `false`, `aggregateRecord` stays `null`, and the packages stay private.
 Final artifacts, protected evidence, registry compatibility, and #40 SHIP remain
