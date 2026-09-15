@@ -31,19 +31,20 @@ is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
 tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the actual merged OpenCoven/chat#283 producer
-`6e0512962ae2e34cf9559680e9e2031160d2bdfb`, tree
-`357ae7e75a7d71536c7f2bcfd93a7f39e9ba8c8e`. Its reviewed source head is
-`3a81fdef1e0c5b1ddb62e795b5e9e846cd095fd9` with the same tree.
+This binding selects the actual merged OpenCoven/chat#285 producer
+`6089bab8fb71e692a4c62a722457dbbb5e81d117`, tree
+`40e68b2f8d4aec3f06d59c1317decd7e48cf6ca5`. Its reviewed source head is
+`00e6d300e7c00a72bf08fce10328f5c7b4b7bc3b` with the same tree.
 The reviewed head directly retains executable harness source
-`02066f37274dfb7a43a8ec080681a0d29d673a6c`, tree
-`2d4012c9f5b482946b002e2103af4476c5a61db3`; `sourceAuthorityPath` is empty.
+`9035b969ce9752b3f74ed97ce8d8e5470e085de3`, tree
+`0a11aeec93918c8ab528871da4a64c2da4240d3d`; `sourceAuthorityPath` is empty.
 The delivery merge retains prior Chat main as its first parent and the reviewed
 head as its second parent. The validator authenticates the exact delivery
 commit/tree and reviewed-source-to-harness parent chain.
 The Phase 1 lock authenticates all 25 governed source files and ten production
-deltas. Chat #283 adds bounded schema-v2 preflight and unexpected-error
-classifications without exposing raw messages or weakening protected checks.
+deltas. Chat #285 preserves three approved producer-native stage diagnostics
+through the outer launcher: native-preflight, pairing-recovery, and
+revocation-repair. Private causes and protected checks remain unchanged.
 The workflow fixtures and three bootstrap script digests bind those exact bytes.
 The original Chat consumer and Coven pin remain frozen. Production Cave is
 `ecdcdcf8a75b62bb912ec48215ae20ab0809a181`, tree
@@ -97,7 +98,7 @@ separately failed a child relative-open with `ntstatus=c0000022`. No Windows
 record identity, timing, or assertion mismatch is established. Downstream
 validation, attestation, and aggregation were skipped.
 
-Fresh protected run `34928011200`, attempt 1, uses Chat #283 and SDK #272.
+Previous protected run `34928011200`, attempt 1, used Chat #283 and SDK #272.
 Supervisor job `104250094041` passed; artifact `10379899103` matched the run,
 source, uploaded ZIP digest and single executable. The exact frozen workflow
 was authenticated before platform approval. Linux job `104250523066` and macOS job `104250522950` passed. Each retained
@@ -105,9 +106,9 @@ record independently passed archive/run binding, canonical schema, private
 scans, exact identities, Cave timing, and all 197 ordered assertions. Windows
 job `104250523120` failed with
 `phase1.stage.schema-v2-production.unclassified.error` and published no record.
-This identifies an Error-class failure escaping the existing stage diagnostics;
-it does not identify a failing operation or a record identity, timing, or
-assertion mismatch. Cleanup separately reported child relative-open
+This identifies an Error-class fallback; an approved producer diagnostic missing
+from the outer allowlist can also produce it. It does not identify a failing
+operation or a record identity, timing, or assertion mismatch. Cleanup separately reported child relative-open
 `ntstatus=c0000022`. Validation, attestation, and aggregation were skipped;
 complete protected acceptance remains absent.
 No Windows repair is established. Candidate `96804bc` and its runtime digest remain
@@ -675,3 +676,13 @@ reporting a bounded category for each of the five selected Windows Coven
 observation commands. It distinguishes command failures, an exact test failure,
 and a successful command missing the expected test; raw output stays private.
 The new diagnostics require a complete protected attempt after final binding.
+
+Chat #285 landed as `6089bab8` after PR run `34932603467` and push run
+`34932601258` attempt 2 passed. Three regressions reproduced the diagnostic
+loss before the fix. This SDK binding refreshes the exact producer, source,
+harness, complete Git fixtures and three bootstrap digests. Candidate, Cave,
+Coven and original Chat consumer authorities remain unchanged. This proves
+the diagnostic correction, not the failing hosted stage or Windows repair.
+The new SDK binding still requires reviewed landing, both validator scope
+rotations, and fresh authenticated protected validation. Scopes remain at
+SDK #272 (`129d4fde5`) until that verified landing.
