@@ -1,4 +1,4 @@
-import { chmod, lstat, mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, open, rename, rm, symlink, writeFile, type FileHandle } from 'node:fs/promises';
 import { join, posix, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
@@ -9,6 +9,7 @@ import {
   discoverCaveEndpoint,
   type CaveCredentialPersistingTransport,
   type CaveDiscoveryDependencies,
+  type CaveDiscoveryFileHandle,
 } from '@opencoven/cave-client';
 import {
   createMemorySecretStore,
@@ -365,18 +366,37 @@ function abortingFetch(
 }
 
 function discoveryDependencies(): CaveDiscoveryDependencies {
+  const handles = new WeakMap<CaveDiscoveryFileHandle, FileHandle>();
   return {
+    openFile: async (path, flags) => {
+      const nativeHandle = await open(path, flags);
+      const handle: CaveDiscoveryFileHandle = {
+        close: () => nativeHandle.close(),
+        read: (buffer, offset, length, position) => nativeHandle.read(buffer, offset, length, position),
+        stat: async () => {
+          const stats = await nativeHandle.stat();
+          return {
+            device: stats.dev, inode: stats.ino, mode: stats.mode, ownerUid: stats.uid, size: stats.size,
+            symbolicLink: stats.isSymbolicLink(), regularFile: stats.isFile(), directory: stats.isDirectory(),
+          };
+        },
+      };
+      handles.set(handle, nativeHandle);
+      return handle;
+    },
     getEffectiveUid: () => DEFAULT_UID,
     isProcessAlive: (pid: number) => pid === DISCOVERY_PID,
     // These owned test fixtures stand in for the host's native Windows trust adapter.
     windowsPathTrust: {
       validate: async (path) => {
-        const stats = await lstat(path);
+        const stats = await lstat(path, { bigint: true });
         return { trusted: true, identity: `${stats.dev}:${stats.ino}` };
       },
       validateOpenedFile: async (handle) => {
-        const stats = await handle.stat();
-        return { trusted: true, identity: `${stats.device}:${stats.inode}` };
+        const nativeHandle = handles.get(handle);
+        if (nativeHandle === undefined) throw new Error('Unknown discovery fixture file handle.');
+        const stats = await nativeHandle.stat({ bigint: true });
+        return { trusted: true, identity: `${stats.dev}:${stats.ino}` };
       },
     },
   };
@@ -616,6 +636,35 @@ afterEach(async () => {
       await rm(root, { recursive: true, force: true });
     }),
   );
+});
+
+describe('Windows discovery fixture identity', () => {
+  test('keeps the exact opened identity when the record path is replaced', async () => {
+    const root = createScratchRoot('fixture-opened-identity');
+    const path = await writeDiscoveryRecord(root, discoveryRecord());
+    const dependencies = discoveryDependencies();
+    const { openFile, windowsPathTrust } = dependencies;
+    if (openFile === undefined || windowsPathTrust?.validateOpenedFile === undefined) {
+      throw new Error('Exact opened-file fixture validation is required.');
+    }
+    const handle = await openFile(path, 0);
+    try {
+      const original = await lstat(path, { bigint: true });
+      const expected = { trusted: true, identity: `${original.dev}:${original.ino}` };
+      await expect(windowsPathTrust.validate(path, 'record')).resolves.toEqual(expected);
+      await expect(windowsPathTrust.validateOpenedFile(handle, path, 'record')).resolves.toEqual(expected);
+      await rename(path, `${path}.original`);
+      await writeFile(path, `${JSON.stringify(discoveryRecord())}\n`, { mode: 0o600 });
+      const replacement = await lstat(path, { bigint: true });
+      expect(`${replacement.dev}:${replacement.ino}`).not.toBe(expected.identity);
+      await expect(windowsPathTrust.validate(path, 'record')).resolves.toEqual({
+        trusted: true, identity: `${replacement.dev}:${replacement.ino}`,
+      });
+      await expect(windowsPathTrust.validateOpenedFile(handle, path, 'record')).resolves.toEqual(expected);
+    } finally {
+      await handle.close();
+    }
+  });
 });
 
 describe('discoverCaveEndpoint', () => {
