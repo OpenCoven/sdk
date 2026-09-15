@@ -1832,14 +1832,14 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: 'b7578a653512095a84cd2cd87f33b2f2036221d5',
-      tree: 'dc9318a122ff119d348ecfca5f88dfc33229ec48',
+      commit: '6fa5dab536bf2b9470a78f90da8efc3b265bab16',
+      tree: 'e102c924ec367e71276387d0559c699fac9bb763',
       source: {
         repository: 'OpenCoven/chat',
-        commit: '92151f0600bc2db860a73f90d0d5abd8b354cb06',
-        tree: 'dc9318a122ff119d348ecfca5f88dfc33229ec48',
+        commit: '365072f2ee75973aa02e40e2194673dd33dd44ba',
+        tree: 'e102c924ec367e71276387d0559c699fac9bb763',
       },
-      sourceAuthorityPath: [{"repository":"OpenCoven/chat","commit":"3b1c7f7500370e75c839c9e87a797e4a652a58b4","tree":"ef486a43b029384acdeed02e6367b21a29401bcd"},{"repository":"OpenCoven/chat","commit":"8cd0216a3fa122eb3916b5d9db9037ff3c7310b9","tree":"e3c5435b56a0d6089c22a7296e6e93d64d1acc2d"}],
+      sourceAuthorityPath: [{"repository": "OpenCoven/chat", "commit": "490908c46bf6f3b00c00aef0a5edb27af426e7ee", "tree": "892f69a5cf53f0f8fe4b6620b6fecb50ebe4fe33"}, {"repository": "OpenCoven/chat", "commit": "b7578a653512095a84cd2cd87f33b2f2036221d5", "tree": "dc9318a122ff119d348ecfca5f88dfc33229ec48"}, {"repository": "OpenCoven/chat", "commit": "92151f0600bc2db860a73f90d0d5abd8b354cb06", "tree": "dc9318a122ff119d348ecfca5f88dfc33229ec48"}, {"repository": "OpenCoven/chat", "commit": "3b1c7f7500370e75c839c9e87a797e4a652a58b4", "tree": "ef486a43b029384acdeed02e6367b21a29401bcd"}, {"repository": "OpenCoven/chat", "commit": "8cd0216a3fa122eb3916b5d9db9037ff3c7310b9", "tree": "e3c5435b56a0d6089c22a7296e6e93d64d1acc2d"}],
       harnessAuthority: {
         repository: 'OpenCoven/chat',
         commit: '683e99918eb38978680e46aed7c496f6801c3306',
@@ -1921,8 +1921,8 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: 'b7578a653512095a84cd2cd87f33b2f2036221d5',
-        sourceDigest: 'b7578a653512095a84cd2cd87f33b2f2036221d5',
+        signerDigest: '6fa5dab536bf2b9470a78f90da8efc3b265bab16',
+        sourceDigest: '6fa5dab536bf2b9470a78f90da8efc3b265bab16',
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
