@@ -33,18 +33,21 @@ private **0.0.1** candidate at
 `96804bc483a063e41e9a9738a4ace61970f6c0a4` and its exact tarball bytes.
 Earlier 0.1.0 artifacts and evidence remain historical, not relabeled.
 This candidate includes the merged Coven Automations APIs. Candidate77
-records remain historical evidence. The lock binds the actual Chat #292 merge
-`b7578a653512095a84cd2cd87f33b2f2036221d5` and tested Cave rc7 source
-`ecdcdcf8a75b62bb912ec48215ae20ab0809a181` (`0.4.2`). The original Chat consumer
-and executable harness remain distinct. The reviewed integrated head retains
-both intermediate commits to harness `683e9991`; exact delivery-tree equality
-remains required. Both validator scopes currently select SDK #274 (`1535e48e`).
-The new binding requires SDK landing, scope rotation, and fresh protected
-validation. Latest terminal run `34935323170` passed independently inspected
-Linux/macOS records, including all 197 ordered assertions. Windows failed at
-`phase1.native-scenarios.native-preflight` before publishing a record; downstream
-acceptance jobs were skipped. Chat #290 adds four bounded preflight operation
-diagnostics. No passing aggregate is accepted.
+records remain historical evidence. The lock binds the actual Chat #293 merge
+`6fa5dab536bf2b9470a78f90da8efc3b265bab16` and tested Cave rc7 source
+`ecdcdcf8a75b62bb912ec48215ae20ab0809a181` (`0.4.2`). The reviewed head and
+complete delivery tree match, with five explicit parent intermediates to the
+existing harness. SDK #275 remains selected by both validator scopes.
+SDK #275 landed as `2b41077bad567757137575f68a11f32ea3a30ea7` and both validator scopes were read back at that revision.
+Protected [run 34945048615](https://github.com/OpenCoven/chat/actions/runs/34945048615)
+uses Chat #292 (`b7578a65`) and SDK #275; its current workflow status is `failure`.
+Its supervisor artifact and frozen workflow were independently authenticated.
+Workflow status alone does not establish accepted records or attestations.
+The [#38 checkpoint](https://github.com/OpenCoven/sdk/issues/38) tracks independent
+record inspection, identity, timing, assertion, and aggregate acceptance.
+The final Chat #293 binding still requires SDK landing, both scope rotations,
+and fresh protected validation. Candidate and counterpart authorities remain
+frozen; no publication approval is granted by this binding.
 Complete protected #38 evidence and #40 authorization are still required; see the
 [v0.0.1 preparation checklist](RELEASING.md#v001-preparation-decision-2026-09-12)
 for the remaining gates and required release sequence.

@@ -31,27 +31,28 @@ is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
 tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the actual merged OpenCoven/chat#292 producer
-`b7578a653512095a84cd2cd87f33b2f2036221d5`, tree
-`dc9318a122ff119d348ecfca5f88dfc33229ec48`. Its reviewed source head is
-`92151f0600bc2db860a73f90d0d5abd8b354cb06` with the same tree.
-The reviewed head retains executable harness source
-`683e99918eb38978680e46aed7c496f6801c3306`, tree
-`216f6c2fdb698229973a49d448fd7953e66c24a6` through the explicit
-`sourceAuthorityPath`: `3b1c7f7500370e75c839c9e87a797e4a652a58b4`, then
-`8cd0216a3fa122eb3916b5d9db9037ff3c7310b9`. Each edge is verified against
-actual commit parents; delivery and reviewed trees must still be identical.
-The delivery merge retains prior Chat main as its first parent and the reviewed
-head as its second parent. The validator authenticates the exact delivery
-commit/tree and reviewed-source-to-harness parent chain.
-The Phase 1 lock authenticates all 25 governed source files and ten production
-deltas. Chat #285 preserves three approved producer-native stage diagnostics
-through the outer launcher: native-preflight, pairing-recovery, and
-revocation-repair. Private causes and protected checks remain unchanged.
-Chat #290 adds custody RPC, custody-proof validation, installation-ID RPC,
-and installation-ID validation diagnostics. Chat #292 supplies the reviewed
-integrated tree without changing those runtime bytes. The workflow fixtures
-and bootstrap script digests bind those exact bytes.
+This binding selects the actual merged OpenCoven/chat#293 producer
+`6fa5dab536bf2b9470a78f90da8efc3b265bab16`, tree `e102c924ec367e71276387d0559c699fac9bb763`. Its reviewed source head is
+`365072f2ee75973aa02e40e2194673dd33dd44ba` with the same complete tree.
+The explicit `sourceAuthorityPath` retains these direct-parent intermediates:
+
+- `490908c46bf6f3b00c00aef0a5edb27af426e7ee`, tree `892f69a5cf53f0f8fe4b6620b6fecb50ebe4fe33`.
+- `b7578a653512095a84cd2cd87f33b2f2036221d5`, tree `dc9318a122ff119d348ecfca5f88dfc33229ec48`.
+- `92151f0600bc2db860a73f90d0d5abd8b354cb06`, tree `dc9318a122ff119d348ecfca5f88dfc33229ec48`.
+- `3b1c7f7500370e75c839c9e87a797e4a652a58b4`, tree `ef486a43b029384acdeed02e6367b21a29401bcd`.
+- `8cd0216a3fa122eb3916b5d9db9037ff3c7310b9`, tree `e3c5435b56a0d6089c22a7296e6e93d64d1acc2d`.
+
+The path ends at executable harness source `683e99918eb38978680e46aed7c496f6801c3306`,
+tree `216f6c2fdb698229973a49d448fd7953e66c24a6`. The normal delivery merge retains prior
+Chat main as its first parent and the reviewed head as its second parent.
+The validator authenticates every parent edge and complete reviewed/delivery
+tree equality, with rejection tests for each intermediate parent and tree.
+Chat #291 added three bounded operation-queue test waits to Chat #292.
+Chat #293 records that delivered tree and its authenticated ancestry in documentation.
+The runtime, all 25 governed files, ten production deltas, workflow fixtures,
+and reviewed bootstrap digests remain unchanged from that integrated checkpoint.
+Chat #290's four bounded native-preflight operation diagnostics remain present;
+private causes, frozen authority inputs, and protected checks remain unchanged.
 The original Chat consumer and Coven pin remain frozen. Production Cave is
 `ecdcdcf8a75b62bb912ec48215ae20ab0809a181`, tree
 `1634a8eb0a391419bf28af4be0020cfd8c4df472`, release `0.4.2`.
@@ -693,7 +694,7 @@ The new SDK binding still requires reviewed landing, both validator scope
 rotations, and fresh authenticated protected validation. Scopes remain at
 SDK #272 (`129d4fde5`) until that verified landing.
 
-## Integrated native-preflight binding, Chat #292
+## Historical integrated native-preflight binding, Chat #292
 
 Chat #292 landed as `b7578a653512095a84cd2cd87f33b2f2036221d5` after required
 checks passed. Its signature is valid and its complete tree equals reviewed
@@ -714,3 +715,16 @@ readback, verify Chat main still equals the bound producer, then dispatch fresh
 protected validation and authenticate the supervisor before environment approval.
 The four new preflight boundaries identify an operation; they do not prove a
 Windows repair. No aggregate, publication, or release acceptance is claimed.
+
+## Final Chat #293 binding checkpoint
+
+SDK #275 landed as `2b41077bad567757137575f68a11f32ea3a30ea7` and both validator scopes were read back at that revision.
+Protected [run 34945048615](https://github.com/OpenCoven/chat/actions/runs/34945048615)
+uses Chat #292 (`b7578a65`) and SDK #275; its current workflow status is `failure`.
+Its supervisor artifact and frozen workflow were independently authenticated.
+Workflow status alone does not establish accepted records or attestations.
+The [#38 checkpoint](https://github.com/OpenCoven/sdk/issues/38) tracks independent
+record inspection, identity, timing, assertion, and aggregate acceptance.
+The final Chat #293 binding still requires SDK landing, both scope rotations,
+and fresh protected validation. Candidate and counterpart authorities remain
+frozen; no publication approval is granted by this binding.

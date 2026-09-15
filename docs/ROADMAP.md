@@ -70,12 +70,18 @@ record does not qualify the new 0.0.1 candidate.
 
 The private 0.0.1 candidate is frozen at
 `96804bc483a063e41e9a9738a4ace61970f6c0a4`. The source lock above is authoritative
-for the current producer and counterpart identities. Protected
-[run `34916510997`](https://github.com/OpenCoven/chat/actions/runs/34916510997)
-passed independently inspected Linux/macOS records but failed Windows before a
-record was produced; validation, attestation, and aggregation were skipped.
-The current [#38 checkpoint](https://github.com/OpenCoven/sdk/issues/38) tracks
-the next source adoption, SDK binding, and protected validation. Historical candidate77 protected
+for the current producer and counterpart identities. SDK #275 landed as `2b41077bad567757137575f68a11f32ea3a30ea7` and both validator scopes were read back at that revision.
+Protected [run 34945048615](https://github.com/OpenCoven/chat/actions/runs/34945048615)
+uses Chat #292 (`b7578a65`) and SDK #275; its current workflow status is `failure`.
+Its supervisor artifact and frozen workflow were independently authenticated.
+Workflow status alone does not establish accepted records or attestations.
+The [#38 checkpoint](https://github.com/OpenCoven/sdk/issues/38) tracks independent
+record inspection, identity, timing, assertion, and aggregate acceptance.
+The final Chat #293 binding still requires SDK landing, both scope rotations,
+and fresh protected validation. Candidate and counterpart authorities remain
+frozen; no publication approval is granted by this binding.
+
+Historical candidate77 protected
 [run `34796638173`, attempt 1](https://github.com/OpenCoven/chat/actions/runs/34796638173/attempts/1)
 produced [authenticated partial Unix records](https://github.com/OpenCoven/sdk/issues/38#issuecomment-5659174495),
 but Windows failed and downstream validation, attestation, and aggregation
