@@ -33,18 +33,18 @@ private **0.0.1** candidate at
 `96804bc483a063e41e9a9738a4ace61970f6c0a4` and its exact tarball bytes.
 Earlier 0.1.0 artifacts and evidence remain historical, not relabeled.
 This candidate includes the merged Coven Automations APIs. Candidate77
-records remain historical evidence. The lock binds the actual Chat #285 merge
-`6089bab8fb71e692a4c62a722457dbbb5e81d117` and tested Cave rc7 source
+records remain historical evidence. The lock binds the actual Chat #292 merge
+`b7578a653512095a84cd2cd87f33b2f2036221d5` and tested Cave rc7 source
 `ecdcdcf8a75b62bb912ec48215ae20ab0809a181` (`0.4.2`). The original Chat consumer
-and executable harness remain distinct. SDK #272 landed as `129d4fde5`,
-and both protected validator scopes still select that verified merge. Previous
-protected run `34928011200` used Chat #283 and SDK #272 and was approved after
-supervisor authentication. The Chat #285 binding still requires SDK landing,
-scope rotation, and fresh protected validation. Linux and macOS records
-passed independent identity, timing, and all 197 assertion checks. Windows
-failed with `phase1.stage.schema-v2-production.unclassified.error` before
-publishing a record; downstream acceptance jobs were skipped. No passing
-aggregate is accepted.
+and executable harness remain distinct. The reviewed integrated head retains
+both intermediate commits to harness `683e9991`; exact delivery-tree equality
+remains required. Both validator scopes currently select SDK #274 (`1535e48e`).
+The new binding requires SDK landing, scope rotation, and fresh protected
+validation. Latest terminal run `34935323170` passed independently inspected
+Linux/macOS records, including all 197 ordered assertions. Windows failed at
+`phase1.native-scenarios.native-preflight` before publishing a record; downstream
+acceptance jobs were skipped. Chat #290 adds four bounded preflight operation
+diagnostics. No passing aggregate is accepted.
 Complete protected #38 evidence and #40 authorization are still required; see the
 [v0.0.1 preparation checklist](RELEASING.md#v001-preparation-decision-2026-09-12)
 for the remaining gates and required release sequence.
