@@ -161,6 +161,9 @@ export interface FrozenConformanceLock {
         source: CheckoutIdentity & {
           repository: 'OpenCoven/chat';
         };
+        sourceAuthorityPath: Array<CheckoutIdentity & {
+          repository: 'OpenCoven/chat';
+        }>;
         harnessAuthority: CheckoutIdentity & {
           repository: 'OpenCoven/chat';
         };
@@ -535,6 +538,7 @@ export function validateChatProducerAuthorityBinding(
   authority: {
     producerCommit: unknown;
     sourceCommit: unknown;
+    sourceAuthorityCommits: unknown[];
     harnessCommit: unknown;
     phase1LockText: string;
   },
@@ -542,6 +546,7 @@ export function validateChatProducerAuthorityBinding(
 ): {
   producerCommit: { sha: string; tree: string; parents: string[] };
   sourceCommit: { sha: string; tree: string; parents: string[] };
+  sourceAuthorityCommits: Array<{ sha: string; tree: string; parents: string[] }>;
   harnessCommit: { sha: string; tree: string; parents: string[] };
 };
 export function readAssertionRegistry(path?: string): AssertionRegistry;
