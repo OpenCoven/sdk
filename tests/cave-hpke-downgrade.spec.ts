@@ -1,3 +1,4 @@
+import { createTestHpkeAuthority } from './helpers/cave-hpke-authority.js';
 import { readFile } from 'node:fs/promises';
 import { createDiscoveredCaveClient, type CaveDiscoveredEndpoint } from '@opencoven/cave-client';
 import { createMemorySecretStore, createSecretStoreReference } from '@opencoven/sdk-core';
@@ -204,4 +205,48 @@ describe('discovered HPKE response credential boundary', () => {
       expect(JSON.stringify(onEvent.mock.calls)).not.toContain(bearer);
     },
   );
+});
+
+
+test.each(['authenticated', 'tampered'] as const)('preserves stored credentials after a %s inner unauthorized response', async (kind) => {
+  const authority = await createTestHpkeAuthority();
+  const store = createMemorySecretStore();
+  const reference = createSecretStoreReference('authenticated-inner-unauthorized');
+  const bearer = 'B'.repeat(43);
+  const serialized = JSON.stringify({ version: 1, bearer,
+    authorityBinding: caveAuthorityBindingFromDiscoveredEndpoint(authority.discovered, authority.instanceId) });
+  await store.set(reference.key, serialized);
+  const onEvent = vi.fn();
+  let openedRequests = 0;
+  const client = createDiscoveredCaveClient({
+    credentials: { store, reference }, discoverEndpoint: () => Promise.resolve(authority.discovered),
+    operation: { observer: { onEvent, onObserverError: vi.fn() } },
+    fetch: async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname.endsWith('/health')) {
+        return Response.json(envelope({ instanceId: authority.instanceId, pairingRequired: true, releaseVersion: '0.3.9' }));
+      }
+      const opened = await authority.open(request);
+      openedRequests++;
+      expect(opened.authorization).toEqual({ kind: 'bearer', value: bearer });
+      const response = await authority.respond(opened, 401, {
+        ...envelope(undefined), error: { code: 'unauthorized', message: 'credential revoked', retryable: false },
+      });
+      if (kind === 'authenticated') return response;
+      const body = await response.json() as { ciphertext: string };
+      body.ciphertext = (body.ciphertext[0] === 'A' ? 'B' : 'A') + body.ciphertext.slice(1);
+      return Response.json(body, { headers: response.headers });
+    },
+  });
+  const result = client.listFamiliars();
+  await expect(result).rejects.toMatchObject(kind === 'authenticated'
+    ? { code: 'unauthorized', statusCode: 401 }
+    : { code: 'reconcile_required', details: { reason: 'authority_proof_failed' } });
+  await result.catch((error: unknown) => {
+    expect(String(error)).not.toContain(bearer);
+    expect(JSON.stringify(error)).not.toContain(bearer);
+  });
+  expect(openedRequests).toBe(1);
+  expect(await store.get(reference.key)).toBe(serialized);
+  expect(JSON.stringify(onEvent.mock.calls)).not.toContain(bearer);
 });
