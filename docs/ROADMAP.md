@@ -1,14 +1,14 @@
 # OpenCoven SDK Roadmap
 
-Current conformance checkpoint: the lock binds Chat #309 at
-`2b4dd406df3e3609ecd85e4a69ebbc45f5874560` with bounded execution-root cleanup diagnostics.
+Current conformance checkpoint: the lock binds Chat #311 producer
+`157fb3206b9b90f24049aa2043bae534d2b9a709`, which pins Cave build state under execution HOME.
 SDK landing, both validator-scope rotations, and fresh protected validation
-remain required. Run `35125287541` tested Chat #305 and SDK #291: Linux/macOS
+remain required. Run `35138402347` tested Chat #309 and SDK #292: Linux/macOS
 records independently passed identities, schema, privacy, timing, and all 197
-ordered assertions each. Windows failed generic execution-root cleanup before
-isolation validation and uploaded no record. No aggregate is accepted.
-SDK #38 acceptance and SDK #45 consolidation remain open. See the
-[exact binding and validation record](workflows/client-v1-cross-repository-conformance.md).
+assertions each. Windows failed the operator Cave-home fingerprint comparison.
+The build routing gap is reproduced, but protected Windows repair is unproven.
+No aggregate is accepted. SDK #38 acceptance and SDK #45 consolidation remain
+open. See the [binding and validation record](workflows/client-v1-cross-repository-conformance.md).
 
 The OpenCoven SDK is experimental and unpublished. The current objective is a secure read-only **0.0.1** release that proves discovery, consent, identity, credential custody, canonical reads, native trust, and packed-consumer behavior before adding mutation authority.
 
