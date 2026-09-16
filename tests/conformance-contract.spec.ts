@@ -38,7 +38,7 @@ interface SourceSnapshot {
   files: SourceFile[];
 }
 type SourceRole = 'producer' | 'reviewed' | 'harness' | 'consumer' | 'cave'
-  | 'chainProducer' | 'chainReviewed' | 'chainHarness' | 'binding' | 'authority0' | 'authority1' | 'authority2' | 'authority3' | 'authority4' | 'authority5' | 'authority6' | 'authority7' | 'authority8' | 'authority9' | 'previousProducer' | 'previousReviewed' | 'previousHarness';
+  | 'currentAuthority0' | 'chainProducer' | 'chainReviewed' | 'chainHarness' | 'binding' | 'authority0' | 'authority1' | 'authority2' | 'authority3' | 'authority4' | 'authority5' | 'authority6' | 'authority7' | 'authority8' | 'authority9' | 'previousProducer' | 'previousReviewed' | 'previousHarness';
 const sourceFixture = JSON.parse(sourceFixtureBytes.toString('utf8')) as {
   sources: Record<SourceRole, SourceSnapshot>;
   objects: Record<string, string>;
@@ -68,7 +68,7 @@ function sourceAuthority(previous = false, chain = false) {
   return {
     producerCommit: commit(previous ? 'previousProducer' : chain ? 'chainProducer' : 'producer'),
     sourceCommit: commit(previous ? 'previousReviewed' : chain ? 'chainReviewed' : 'reviewed'),
-    sourceAuthorityCommits: !chain ? [] : [commit('authority0'), commit('authority1'), commit('authority2'), commit('authority3'), commit('authority4'), commit('authority5'), commit('authority6'), commit('authority7'), commit('authority8'), commit('authority9')],
+    sourceAuthorityCommits: previous ? [] : !chain ? [commit('currentAuthority0')] : [commit('authority0'), commit('authority1'), commit('authority2'), commit('authority3'), commit('authority4'), commit('authority5'), commit('authority6'), commit('authority7'), commit('authority8'), commit('authority9')],
     harnessCommit: commit(previous ? 'previousHarness' : chain ? 'chainHarness' : 'harness'),
     phase1LockText: sourceBytes(
       previous ? 'previousProducer' : chain ? 'chainProducer' : 'producer', 'phase1-conformance.lock.json',
@@ -79,11 +79,11 @@ const currentLock = () => readFrozenConformanceLock(resolve(
   workspaceRoot, 'conformance/client-v1-cross-repository-lock.json',
 ));
 
-describe('reviewed Chat296 executable diagnostic harness binding', () => {
+describe('reviewed Chat302 residual cleanup purpose binding', () => {
   test('retains complete Git source bytes, governance files, and combined native deltas', () => {
-    expect(sourceFixtureBytes.length).toBe(9_142_864);
+    expect(sourceFixtureBytes.length).toBe(10_592_802);
     expect(digest(sourceFixtureBytes)).toBe(
-      'bdf8821bb0d9742f3b368156030f45359a3030a5be90ba2481691a8a4d58adee',
+      '29dfe4e274862ea87cc4a8eac95a2858f73bdab6c201590eaa05cbb33d0ed311',
     );
     for (const source of Object.values(sourceFixture.sources)) {
       const rawCommit = objectBytes(source.commit);
@@ -119,17 +119,18 @@ describe('reviewed Chat296 executable diagnostic harness binding', () => {
 
   test('accepts the exact delivered merge and its reviewed source and binding ancestry', () => {
     const lock = currentLock();
-    expect(lock.evidenceProducer.commit).toBe('047e8ad7f4a2ca5a9009217de3c3f5f32fd98ba6');
+    expect(lock.evidenceProducer.commit).toBe('3c6f80412fc0e091e283902d9132de06a344d934');
     expect(lock.sources.cave).toMatchObject({
       commit: 'ecdcdcf8a75b62bb912ec48215ae20ab0809a181',
       tree: '1634a8eb0a391419bf28af4be0020cfd8c4df472',
       releaseVersion: '0.4.2',
     });
     expect(sourceAuthority().sourceCommit.parents).toEqual([
-      { sha: 'e28b2ccb80ab74dd9cd8ba40aa1c5ada3539212b' },
+      { sha: '64e55138c08578268f0af0e16d7b1b086334d9c3' },
+      { sha: 'e3a22b69cb13c9c64464f8d1370cdc9dd738b1aa' },
     ]);
     expect(() => validateChatProducerAuthorityBinding(lock, sourceAuthority())).not.toThrow();
-    expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([]);
+    expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([{"repository":"OpenCoven/chat","commit":"64e55138c08578268f0af0e16d7b1b086334d9c3","tree":"e352666d46ed35ff8e7b6b628826d2659733d0c9"}]);
     expect(lock.candidate).toEqual(sourceFixture.previousLock.candidate);
     expect(lock.sources.chat).toEqual(sourceFixture.previousLock.sources.chat);
     expect(lock.sources.coven).toEqual(sourceFixture.previousLock.sources.coven);
@@ -137,14 +138,23 @@ describe('reviewed Chat296 executable diagnostic harness binding', () => {
 
   test('rejects old and new producer authorities against the opposite binding', () => {
     expect(() => validateChatProducerAuthorityBinding(sourceFixture.previousLock, sourceAuthority(true))).not.toThrow();
-    expect(() => validateChatProducerAuthorityBinding(currentLock(), sourceAuthority(true))).toThrow(/Git identities/);
-    expect(() => validateChatProducerAuthorityBinding(sourceFixture.previousLock, sourceAuthority())).toThrow(/Git identities/);
+    expect(() => validateChatProducerAuthorityBinding(currentLock(), sourceAuthority(true))).toThrow(/sourceAuthorityCommits must match the frozen authority path/);
+    expect(() => validateChatProducerAuthorityBinding(sourceFixture.previousLock, sourceAuthority())).toThrow(/sourceAuthorityCommits must match the frozen authority path/);
     const authority = sourceAuthority();
     authority.sourceCommit.parents = [{ sha: '5dd09592c4ab8e98eab5e37cc1cdde1a82198085' }];
     expect(() => validateChatProducerAuthorityBinding(currentLock(), authority)).toThrow(/Git identities/);
     const substitutedHarness = sourceAuthority();
     substitutedHarness.harnessCommit = substitutedHarness.sourceCommit;
     expect(() => validateChatProducerAuthorityBinding(currentLock(), substitutedHarness)).toThrow(/Git identities/);
+  });
+
+  test('rejects a severed current binding edge or substituted binding tree', () => {
+    for (const field of ['parents', 'tree'] as const) {
+      const authority = sourceAuthority();
+      if (field === 'parents') authority.sourceAuthorityCommits[0]!.parents = [];
+      else authority.sourceAuthorityCommits[0]!.tree.sha = '0'.repeat(40);
+      expect(() => validateChatProducerAuthorityBinding(currentLock(), authority)).toThrow(/Git identities/);
+    }
   });
 
   test('retains the verified historical multi-edge binding', () => {
@@ -470,7 +480,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      '047e8ad7f4a2ca5a9009217de3c3f5f32fd98ba6',
+      '3c6f80412fc0e091e283902d9132de06a344d934',
     );
     expect(workflowDocument).not.toContain(
       'f6eba8af1f71d4251583cf39d4e5fb5b4797d209',
@@ -485,10 +495,10 @@ describe('cross-repository conformance contract entrypoints', () => {
       '9f073f05241c2d3241b23ed9d73b26c6cd55ce7e',
     );
     expect(workflowDocument).toContain(
-      'fa3ab73be946ccb123a45d0d8934e1dfcfb646a4',
+      'e281779102d6b00d448765a204aaab14c6030174',
     );
     expect(workflowDocument).toContain(
-      'e28b2ccb80ab74dd9cd8ba40aa1c5ada3539212b',
+      '4dc702d2538a3815a84e39cddec598ce058518f6',
     );
     expect(workflowDocument).toContain('validator_revision');
     expect(workflowDocument).toContain('20863036831');
