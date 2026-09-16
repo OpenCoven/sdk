@@ -33,19 +33,30 @@ private **0.0.1** candidate at
 `96804bc483a063e41e9a9738a4ace61970f6c0a4` and its exact tarball bytes.
 Earlier 0.1.0 artifacts and evidence remain historical, not relabeled.
 This candidate includes the merged Coven Automations APIs. Candidate77
-records remain historical evidence. The lock binds the actual [Chat #297](https://github.com/OpenCoven/chat/pull/297)
-merge `43504f646e7ffe01ee6019d468401f99be839420` to executable harness
-`6e74fb60e44549b91aa75fb956eb63a85dc668fc` through its direct child, the reviewed source. Exact identities and complete reviewed/delivery
+records remain historical evidence. The lock binds the actual [Chat #305](https://github.com/OpenCoven/chat/pull/305)
+merge `1f69306293f8caf873e0a2d6459a5c402e77600a` to executable harness
+`2dd79ec1505d9c12051552109244067b35813357` through its direct child, reviewed source
+`291698a369eb796397a567886dcd5d694fd62080`. Exact identities and complete reviewed/delivery
 tree equality are validated. Frozen candidate and counterpart identities are unchanged.
-This SDK binding still requires landing, scope rotation, and fresh protected validation.
+The new diagnostics preserve all isolation checks and emit only 13 fixed categories.
 
-The latest terminal protected [run 35100084575](https://github.com/OpenCoven/chat/actions/runs/35100084575)
-targeted Chat #302 and SDK #288 (`4de2edfcb1adaa35d81b80033950354fcb63dae3`).
-Linux and macOS records passed independent identity, timing, privacy, and all
-197 ordered assertion checks each. Windows failed installation secure-store
-preflight and deletion-purpose cleanup and uploaded no record. Validation,
-attestation, and aggregation were skipped. This run predates the Chat #297
-repair bound above; fresh protected validation of that delivery remains required.
+The latest terminal protected [run 35111662551](https://github.com/OpenCoven/chat/actions/runs/35111662551)
+used Chat #297 (`43504f646e7ffe01ee6019d468401f99be839420`) and SDK #290
+(`ca3f4ed1ab7f5732ff51e30c29ddbcab529eee0e`). Both scopes selected that
+validator, and its supervisor artifact and workflow were authenticated before
+protected approval. Linux and macOS records independently passed exact identities,
+privacy scans, Cave/outer timing, and all 197 ordered assertions each. Windows
+failed at `phase1.stage.evidence-authority.isolation.failed` and uploaded no
+record. The generic category does not identify which invariant failed; no Windows
+record identity, timing, or assertion mismatch is established. Validation,
+attestation, and aggregation were skipped. No accepted aggregate exists.
+
+Historical run `35100084575` used Chat #302 and SDK #288. Both Unix records
+passed independent checks; Windows failed installation secure-store preflight
+and deletion-purpose cleanup. That run predates Chat #297's repair.
+The current Chat #305 binding still requires verified SDK landing, both validator
+scope rotations, and fresh authenticated protected validation. The original
+Chat consumer, candidate, Cave and Coven identities remain frozen.
 
 Historical protected [run 34977202052](https://github.com/OpenCoven/chat/actions/runs/34977202052)
 used Chat producer `047e8ad7f4a2ca5a9009217de3c3f5f32fd98ba6` and SDK #284
@@ -61,9 +72,9 @@ and produced no record. Validation, attestation and aggregation were skipped.
 That historical run exposed the native secure-store category without identifying
 the failing installation operation. Chat #297 subsequently landed profile
 ownership and cleanup repairs, bounded operation diagnostics, and a restricted
-native installation roundtrip. Its ordinary CI passed, but protected acceptance
-still requires this SDK binding to land, both validator scopes to rotate, and a
-fresh authenticated protected run. SDK #38 acceptance remains open.
+native installation roundtrip. Its ordinary CI passed; SDK #290 landed and both scopes rotated for
+run `35111662551`, which failed Windows isolation. Chat #305 adds bounded
+diagnostics for that new failure. SDK #38 acceptance remains open.
 
 The following SDK #276 checkpoint is historical.
 On 2026-09-15, SDK [#276](https://github.com/OpenCoven/sdk/pull/276)
