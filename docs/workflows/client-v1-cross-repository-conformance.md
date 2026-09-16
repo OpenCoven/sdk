@@ -31,15 +31,24 @@ is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
 tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the actual merged [Chat #297](https://github.com/OpenCoven/chat/pull/297)
-producer `43504f646e7ffe01ee6019d468401f99be839420`, tree `dfa26fe742942d16d47ace317d5703cc50fc982f`.
-Its reviewed source `1e007af60a6224d8d4f80d06cd3c974064cabd48` has the same complete tree.
-The reviewed source has executable harness `6e74fb60e44549b91aa75fb956eb63a85dc668fc`,
-tree `a1002364401a1788f8210a35b87d202711e67042`, as its sole parent.
+This binding selects the actual merged [Chat #305](https://github.com/OpenCoven/chat/pull/305)
+producer `1f69306293f8caf873e0a2d6459a5c402e77600a`, tree `756f318f28a1dfb627060278d14096cea7134a54`.
+Its reviewed source `291698a369eb796397a567886dcd5d694fd62080` has the same complete tree.
+The reviewed source has executable harness `2dd79ec1505d9c12051552109244067b35813357`,
+tree `5187dc5f385bb07f2a5c2f637ffe58898741017b`, as its sole parent.
 `sourceAuthorityPath` is empty because this ancestry edge is direct.
-The delivery merge retains prior main first and the reviewed
-head second. The validator checks exact commit/tree identities and complete
-reviewed/delivery tree equality; historical binding fixtures remain available.
+The delivery merge retains prior main first and the reviewed head second.
+The validator checks exact commit/tree identities and complete reviewed/delivery
+tree equality; historical binding fixtures and rejection controls remain intact.
+
+Chat #305 distinguishes 13 fixed isolation failure categories: opaque ID shape
+or duplication, native credential state validity or changes, and each operator
+root's snapshot, path, or digest. Both public wrappers accept only these exact
+categories. No private paths, digests, or input values enter the diagnostics.
+The original acceptance predicates remain enforced. These diagnostics do not
+repair the Windows failure. Fresh protected evidence is needed to identify the
+failed invariant.
+All 25 governed files and ten production deltas are bound to reviewed Git bytes.
 
 Chat #297 classifies native installation lock, entry, read, write and persistence
 failures with fixed conformance-only codes. Ordinary-build error behavior and
@@ -66,15 +75,23 @@ cleanup. Residual-open diagnostics derive fixed purpose/access labels and retain
 scope; legacy role-only calls remain compatible. No native access masks, sharing,
 privileges or limits change.
 
-The latest terminal protected [run 35100084575](https://github.com/OpenCoven/chat/actions/runs/35100084575)
-targeted Chat #302 and SDK #288 (`4de2edfcb1adaa35d81b80033950354fcb63dae3`).
-That run passed independently checked Linux/macOS identities, timing, private
-scans and all 197 ordered assertions each. Windows failed installation secure-store
-preflight; cleanup separately reported a deletion-purpose child-open access denial.
-No Windows record was uploaded; validation, attestation and aggregation were skipped.
-It does not validate this Chat #297 delivery. Fresh authenticated protected
-validation is still required after the SDK binding lands and scopes rotate.
-The original Chat consumer, candidate, Cave and Coven identities remain frozen.
+The latest terminal protected [run 35111662551](https://github.com/OpenCoven/chat/actions/runs/35111662551)
+used Chat #297 (`43504f646e7ffe01ee6019d468401f99be839420`) and SDK #290
+(`ca3f4ed1ab7f5732ff51e30c29ddbcab529eee0e`). Both scopes selected that
+validator, and its supervisor artifact and workflow were authenticated before
+protected approval. Linux and macOS records independently passed exact identities,
+privacy scans, Cave/outer timing, and all 197 ordered assertions each. Windows
+failed at `phase1.stage.evidence-authority.isolation.failed` and uploaded no
+record. The generic category does not identify which invariant failed; no Windows
+record identity, timing, or assertion mismatch is established. Validation,
+attestation, and aggregation were skipped. No accepted aggregate exists.
+
+Historical run `35100084575` used Chat #302 and SDK #288. Both Unix records
+passed independent checks; Windows failed installation secure-store preflight
+and deletion-purpose cleanup. That run predates Chat #297's repair.
+The current Chat #305 binding still requires verified SDK landing, both validator
+scope rotations, and fresh authenticated protected validation. The original
+Chat consumer, candidate, Cave and Coven identities remain frozen.
 
 Production Cave remains `ecdcdcf8a75b62bb912ec48215ae20ab0809a181`,
 release `0.4.2`.
@@ -810,5 +827,7 @@ candidate and consumer authorities, and protected policy are unchanged.
 At that historical checkpoint, both validator scopes still selected SDK #284
 (`e37b195c`), and the latest terminal run was `34977202052`. SDK #288 subsequently
 landed and both scopes rotated to it for run `35100084575`, whose terminal result
-is recorded above. Fresh protected validation of the current Chat #297 binding
-remains required. No aggregate or release acceptance is claimed.
+is recorded above. SDK #290 then bound Chat #297 for run `35111662551`,
+which failed Windows isolation. The current Chat #305 binding needs a new SDK
+landing, both scope rotations, and fresh protected validation. No aggregate or
+release acceptance is claimed.
