@@ -33,28 +33,45 @@ private **0.0.1** candidate at
 `96804bc483a063e41e9a9738a4ace61970f6c0a4` and its exact tarball bytes.
 Earlier 0.1.0 artifacts and evidence remain historical, not relabeled.
 This candidate includes the merged Coven Automations APIs. Candidate77
-records remain historical evidence. The lock binds the actual [Chat #305](https://github.com/OpenCoven/chat/pull/305)
-merge `1f69306293f8caf873e0a2d6459a5c402e77600a` to executable harness
-`2dd79ec1505d9c12051552109244067b35813357` through its direct child, reviewed source
-`291698a369eb796397a567886dcd5d694fd62080`. Exact identities and complete reviewed/delivery
-tree equality are validated. Frozen candidate and counterpart identities are unchanged.
-The new diagnostics preserve all isolation checks and emit only 13 fixed categories.
+records remain historical evidence. This binding selects the actual merged [Chat #309](https://github.com/OpenCoven/chat/pull/309)
+producer `2b4dd406df3e3609ecd85e4a69ebbc45f5874560`, tree `4716e0a4454d1d492d1508cbd111a021c20cf692`.
+Its reviewed source `7e05e72f4ee1de2a2d49eed205a148f44a078908` has the same complete tree.
+Executable harness `7dda439daa59ee350ff12cd195ff169b52e1085c`, tree
+`347c0b5300498d612f5411c1aee3372731ffc4f1`, is the reviewed source's sole parent.
+`sourceAuthorityPath` is empty. The normal delivery merge retains prior main
+first and the reviewed head second; the validator checks each parent edge and
+complete reviewed/delivery tree equality.
 
-The latest terminal protected [run 35111662551](https://github.com/OpenCoven/chat/actions/runs/35111662551)
-used Chat #297 (`43504f646e7ffe01ee6019d468401f99be839420`) and SDK #290
-(`ca3f4ed1ab7f5732ff51e30c29ddbcab529eee0e`). Both scopes selected that
-validator, and its supervisor artifact and workflow were authenticated before
-protected approval. Linux and macOS records independently passed exact identities,
-privacy scans, Cave/outer timing, and all 197 ordered assertions each. Windows
-failed at `phase1.stage.evidence-authority.isolation.failed` and uploaded no
-record. The generic category does not identify which invariant failed; no Windows
-record identity, timing, or assertion mismatch is established. Validation,
-attestation, and aggregation were skipped. No accepted aggregate exists.
+Chat #309 adds 14 fixed cleanup failure categories: child-terminate,
+supervisor-wait, child-kill, child-reap, tracked-set-changed, root-precondition,
+root-rename, root-postrename, entry-stat, leaf-remove, directory-enumerate,
+directory-remove, multiple, and unknown. Categories come from the operation
+that failed, rather than private error text. Both public wrappers preserve the
+bounded category. Original errors, containment, cleanup order, primary failure
+precedence, and limits remain unchanged. All 25 governed files and ten production
+deltas are bound to reviewed Git bytes, with 12 explicit behavior-authority
+golden entries. These diagnostics do not themselves repair or prove the cause
+of the protected Windows failure.
 
-Historical run `35100084575` used Chat #302 and SDK #288. Both Unix records
-passed independent checks; Windows failed installation secure-store preflight
-and deletion-purpose cleanup. That run predates Chat #297's repair.
-The current Chat #305 binding still requires verified SDK landing, both validator
+
+The latest terminal protected [run 35125287541](https://github.com/OpenCoven/chat/actions/runs/35125287541)
+used Chat #305 (`1f69306293f8caf873e0a2d6459a5c402e77600a`) and SDK #291
+(`404c2bf898330cff10e0402646e83e6e65d17869`). Both validator scopes were
+read back at that SDK revision; the workflow and supervisor artifact were
+authenticated before protected approval. Linux and macOS records independently
+passed exact identities, schema, privacy scans, Cave/outer timing, and all 197
+ordered assertions each (110 Cave, 46 SDK, 41 Chat). Windows failed at
+`phase1.stage.execution-root-cleanup.failed` and uploaded no record. Cleanup
+precedes isolation validation, so this result does not prove the earlier
+isolation failure resolved. No Windows record identity, timing, or assertion
+mismatch is established. Validation, attestation, and aggregation were skipped;
+no accepted aggregate exists.
+
+Historical run `35111662551` tested Chat #297 and SDK #290 and failed Windows
+isolation. Historical run `35100084575` tested Chat #302 and SDK #288 and failed
+Windows secure-store preflight and deletion-purpose cleanup. Keep these distinct
+from the execution-root cleanup failure above.
+The current Chat #309 binding still requires verified SDK landing, both validator
 scope rotations, and fresh authenticated protected validation. The original
 Chat consumer, candidate, Cave and Coven identities remain frozen.
 
