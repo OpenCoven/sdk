@@ -31,23 +31,50 @@ is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
 tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the actual merged [Chat #302](https://github.com/OpenCoven/chat/pull/302)
-producer `3c6f80412fc0e091e283902d9132de06a344d934`, tree
-`a55fc70d575a816ac04ccccd1113bdb54a127c59`. Its reviewed source head is
-`e281779102d6b00d448765a204aaab14c6030174` with the same tree.
-The explicit source authority path contains binding commit
-`64e55138c08578268f0af0e16d7b1b086334d9c3`, tree
-`e352666d46ed35ff8e7b6b628826d2659733d0c9`, whose direct parent is the
-signed executable source `4dc702d2538a3815a84e39cddec598ce058518f6`, tree
-`f9ac551a29150e232c8e3ff8e8ddc0fa5cf8eefa`. Every parent edge and exact
-reviewed/delivery tree equality remain required. Historical multi-edge fixtures
-retain all ten intermediate parent/tree rejection cases.
+This binding selects the actual merged [Chat #297](https://github.com/OpenCoven/chat/pull/297)
+producer `43504f646e7ffe01ee6019d468401f99be839420`, tree `dfa26fe742942d16d47ace317d5703cc50fc982f`.
+Its reviewed source `1e007af60a6224d8d4f80d06cd3c974064cabd48` has the same complete tree.
+The reviewed source has executable harness `6e74fb60e44549b91aa75fb956eb63a85dc668fc`,
+tree `a1002364401a1788f8210a35b87d202711e67042`, as its sole parent.
+`sourceAuthorityPath` is empty because this ancestry edge is direct.
+The delivery merge retains prior main first and the reviewed
+head second. The validator checks exact commit/tree identities and complete
+reviewed/delivery tree equality; historical binding fixtures remain available.
 
-Chat #302 distinguishes residual cleanup deletion and enumeration opens. Its full
-native Windows CI passed both denial controls. The selected harness includes the
-landed schema-v2 finalization diagnostics and installation classifiers. All 25
-governed file identities and ten production deltas are bound together. The
-original Chat consumer, candidate, Cave and Coven identities remain frozen.
+Chat #297 classifies native installation lock, entry, read, write and persistence
+failures with fixed conformance-only codes. Ordinary-build error behavior and
+retryability remain unchanged. All 25 governed file identities and ten production
+deltas are bound together; the checkout regression executes the selected
+harness's labels. Workflow fixtures and bootstrap digests bind delivered bytes.
+The Windows supervisor explicitly owns the verified profile hive and unloads
+it after terminal quarantine, retaining token/profile ownership if unload fails.
+Fresh child logons load their session profile explicitly. Cleanup requires both
+hives absent within the existing bounded deadline, even when paths are absent.
+The cleanup-grant production delta consumes the validated marker by handle
+and prunes only its empty private directories under the owning identity.
+Parent handles and original file identities guard each removal; siblings,
+unrelated contents and replacements are preserved. Failed pruning cannot make
+committed consumption retryable. The native build uses the authenticated
+producer checkout; the original consumer pin does not supply this delta.
+The restricted Windows test preserves the primary bounded category through
+cleanup and reports a separate secondary category. Ordinary CI does not replace
+fresh authenticated protected validation.
+Each lifecycle probe gets a separate containment job and matching nonce/name
+binding while retaining the same isolated user and profile. All three credential
+and profile checks remain required, followed by terminal quarantine and verified
+cleanup. Residual-open diagnostics derive fixed purpose/access labels and retain
+scope; legacy role-only calls remain compatible. No native access masks, sharing,
+privileges or limits change.
+
+The separate protected [run 35100084575](https://github.com/OpenCoven/chat/actions/runs/35100084575)
+targeted Chat #302 and SDK #288 (`4de2edfcb1adaa35d81b80033950354fcb63dae3`).
+That run passed independently checked Linux/macOS identities, timing, private
+scans and all 197 ordered assertions each. Windows failed installation secure-store
+preflight; cleanup separately reported a deletion-purpose child-open access denial.
+No Windows record was uploaded; validation, attestation and aggregation were skipped.
+It does not validate this Chat #297 delivery. Fresh authenticated protected
+validation is still required after the SDK binding lands and scopes rotate.
+The original Chat consumer, candidate, Cave and Coven identities remain frozen.
 
 Production Cave remains `ecdcdcf8a75b62bb912ec48215ae20ab0809a181`,
 release `0.4.2`.
