@@ -490,22 +490,23 @@ passing evidence record for each target.
 The frozen Chat consumer is
 `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`, tree
 `ffd1963ef9539c7a679909200175fb11a9305c95`, with all four committed vendor
-archives byte-identical to candidate 96804bc. This binding selects the actual merged [Chat #296](https://github.com/OpenCoven/chat/pull/296)
-producer `047e8ad7f4a2ca5a9009217de3c3f5f32fd98ba6`, tree `81e7ac41d7c64efc7875fb9e84721c3a6726226a`.
-Its reviewed source `fa3ab73be946ccb123a45d0d8934e1dfcfb646a4` has the same complete tree
-and has executable harness `e28b2ccb80ab74dd9cd8ba40aa1c5ada3539212b` as its direct parent,
-tree `64b1e1812e9bfc729f2d7d148b224afe6f17f775`. The `sourceAuthorityPath` is empty
-because no intermediate commit separates that reviewed source from its harness.
-The normal delivery merge retains prior main first and the reviewed head second.
-The validator checks these exact identities, tree equality and direct parent edge.
-Historical multi-edge fixtures retain all ten intermediate parent/tree rejection cases.
+archives byte-identical to candidate 96804bc. This binding selects the actual merged [Chat #302](https://github.com/OpenCoven/chat/pull/302)
+producer `3c6f80412fc0e091e283902d9132de06a344d934`, tree
+`a55fc70d575a816ac04ccccd1113bdb54a127c59`. Its reviewed source head is
+`e281779102d6b00d448765a204aaab14c6030174` with the same tree.
+The explicit source authority path contains binding commit
+`64e55138c08578268f0af0e16d7b1b086334d9c3`, tree
+`e352666d46ed35ff8e7b6b628826d2659733d0c9`, whose direct parent is the
+signed executable source `4dc702d2538a3815a84e39cddec598ce058518f6`, tree
+`f9ac551a29150e232c8e3ff8e8ddc0fa5cf8eefa`. Every parent edge and exact
+reviewed/delivery tree equality remain required. Historical multi-edge fixtures
+retain all ten intermediate parent/tree rejection cases.
 
-Chat #296 corrects the executable harness selection. The earlier bootstrap cloned
-`683e99918eb38978680e46aed7c496f6801c3306`, which imported its own producer module
-without the newer installation diagnostics. The new harness includes those
-reviewed classifiers. All 25 governed file identities and ten production deltas
-are bound together. Workflow and bootstrap bytes remain unchanged from Chat #295.
-The original Chat consumer, candidate, Cave and Coven identities remain frozen.
+Chat #302 distinguishes residual cleanup deletion and enumeration opens. Its full
+native Windows CI passed both denial controls. The selected harness includes the
+landed schema-v2 finalization diagnostics and installation classifiers. All 25
+governed file identities and ten production deltas are bound together. The
+original Chat consumer, candidate, Cave and Coven identities remain frozen.
 The original Chat consumer and Coven pin remain frozen. Production Cave is
 `ecdcdcf8a75b62bb912ec48215ae20ab0809a181`, tree
 `1634a8eb0a391419bf28af4be0020cfd8c4df472`, release `0.4.2`.
@@ -1320,3 +1321,24 @@ not included in frozen candidate `96804bc4` or validated by the SDK #276 run.
 The retained HPKE branch still requires managed/retry reconciliation under
 [#45](https://github.com/OpenCoven/sdk/issues/45). Candidate and counterpart
 authorities remain frozen; a later candidate needs its own review and evidence.
+
+## Residual cleanup purpose binding, Chat #302
+
+Chat #302 adds bounded `purpose=deletion|enumeration` labels to residual-profile
+relative-open failures. Full CI [35095847759](https://github.com/OpenCoven/chat/actions/runs/35095847759)
+passed, including native Windows denied-deletion and denied-directory-listing
+controls. It also preserves the landed schema-v2 finalization diagnostics.
+Quota retry investigation confirms `repeat=persistent` can represent a different
+retry exception while preserving the initial denial; this does not establish
+the protected ACL cause or a Windows repair.
+
+This binding records the delivered producer, reviewed equal-tree source, binding
+intermediate, and executable harness from actual Git objects. Historical
+multi-edge fixtures and rejection controls remain intact. SDK validation gates,
+candidate and consumer authorities, and protected policy are unchanged.
+
+Both validator scopes remain at SDK #284 (`e37b195c`) until verified SDK landing
+and scope rotation. Latest terminal protected run remains `34977202052`: Linux
+and macOS passed, Windows produced no record, and downstream acceptance was
+skipped. Fresh authenticated protected validation is still required. No aggregate
+or release acceptance is claimed.

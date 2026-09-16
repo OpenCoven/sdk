@@ -33,10 +33,13 @@ private **0.0.1** candidate at
 `96804bc483a063e41e9a9738a4ace61970f6c0a4` and its exact tarball bytes.
 Earlier 0.1.0 artifacts and evidence remain historical, not relabeled.
 This candidate includes the merged Coven Automations APIs. Candidate77
-records remain historical evidence. The lock binds the actual [Chat #296](https://github.com/OpenCoven/chat/pull/296)
-merge `047e8ad7f4a2ca5a9009217de3c3f5f32fd98ba6` to executable harness
-`e28b2ccb80ab74dd9cd8ba40aa1c5ada3539212b` through its reviewed direct-parent source.
-Frozen candidate and counterpart identities are unchanged.
+records remain historical evidence. The lock binds [Chat #302](https://github.com/OpenCoven/chat/pull/302)
+producer `3c6f80412fc0e091e283902d9132de06a344d934` to reviewed equal-tree head
+`e281779102d6b00d448765a204aaab14c6030174`, through binding `64e55138` to
+executable source `4dc702d2538a3815a84e39cddec598ce058518f6`. Native Windows CI
+passed both cleanup-open purpose controls. The producer also retains the merged
+finalization diagnostics. Candidate and counterpart identities are unchanged.
+This SDK binding still requires landing, scope rotation, and fresh protected validation.
 
 Protected [run 34977202052](https://github.com/OpenCoven/chat/actions/runs/34977202052)
 used Chat producer `047e8ad7f4a2ca5a9009217de3c3f5f32fd98ba6` and SDK #284
