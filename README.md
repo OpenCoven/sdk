@@ -39,7 +39,15 @@ merge `43504f646e7ffe01ee6019d468401f99be839420` to executable harness
 tree equality are validated. Frozen candidate and counterpart identities are unchanged.
 This SDK binding still requires landing, scope rotation, and fresh protected validation.
 
-Protected [run 34977202052](https://github.com/OpenCoven/chat/actions/runs/34977202052)
+The latest terminal protected [run 35100084575](https://github.com/OpenCoven/chat/actions/runs/35100084575)
+targeted Chat #302 and SDK #288 (`4de2edfcb1adaa35d81b80033950354fcb63dae3`).
+Linux and macOS records passed independent identity, timing, privacy, and all
+197 ordered assertion checks each. Windows failed installation secure-store
+preflight and deletion-purpose cleanup and uploaded no record. Validation,
+attestation, and aggregation were skipped. This run predates the Chat #297
+repair bound above; fresh protected validation of that delivery remains required.
+
+Historical protected [run 34977202052](https://github.com/OpenCoven/chat/actions/runs/34977202052)
 used Chat producer `047e8ad7f4a2ca5a9009217de3c3f5f32fd98ba6` and SDK #284
 validator `e37b195c246d55a5929dc74f7e7d116b1fc6dfd0`. Both validator scopes
 were read back at that SDK merge; the frozen workflow and supervisor artifact
@@ -50,12 +58,12 @@ Windows failed at
 `phase1.native-scenarios.native-preflight-installation-secure-store-unavailable`
 and produced no record. Validation, attestation and aggregation were skipped.
 
-The repaired executable binding exposed the native secure-store category, but
-it does not identify which installation operation failed. Chat #297 adds bounded
-operation diagnostics and a restricted native installation roundtrip. Its
-ordinary CI does not establish protected acceptance. The next producer requires
-verified landing, SDK rebinding, both validator-scope rotations and a fresh
-authenticated protected run. SDK #38 acceptance remains open.
+That historical run exposed the native secure-store category without identifying
+the failing installation operation. Chat #297 subsequently landed profile
+ownership and cleanup repairs, bounded operation diagnostics, and a restricted
+native installation roundtrip. Its ordinary CI passed, but protected acceptance
+still requires this SDK binding to land, both validator scopes to rotate, and a
+fresh authenticated protected run. SDK #38 acceptance remains open.
 
 The following SDK #276 checkpoint is historical.
 On 2026-09-15, SDK [#276](https://github.com/OpenCoven/sdk/pull/276)
