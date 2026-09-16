@@ -68,7 +68,7 @@ function sourceAuthority(previous = false, chain = false) {
   return {
     producerCommit: commit(previous ? 'previousProducer' : chain ? 'chainProducer' : 'producer'),
     sourceCommit: commit(previous ? 'previousReviewed' : chain ? 'chainReviewed' : 'reviewed'),
-    sourceAuthorityCommits: previous ? [] : !chain ? [commit('currentAuthority0')] : [commit('authority0'), commit('authority1'), commit('authority2'), commit('authority3'), commit('authority4'), commit('authority5'), commit('authority6'), commit('authority7'), commit('authority8'), commit('authority9')],
+    sourceAuthorityCommits: previous || !chain ? [] : [commit('authority0'), commit('authority1'), commit('authority2'), commit('authority3'), commit('authority4'), commit('authority5'), commit('authority6'), commit('authority7'), commit('authority8'), commit('authority9')],
     harnessCommit: commit(previous ? 'previousHarness' : chain ? 'chainHarness' : 'harness'),
     phase1LockText: sourceBytes(
       previous ? 'previousProducer' : chain ? 'chainProducer' : 'producer', 'phase1-conformance.lock.json',
@@ -79,11 +79,11 @@ const currentLock = () => readFrozenConformanceLock(resolve(
   workspaceRoot, 'conformance/client-v1-cross-repository-lock.json',
 ));
 
-describe('reviewed Chat302 residual cleanup purpose binding', () => {
+describe('reviewed Chat297 owner cleanup and installation diagnostics', () => {
   test('retains complete Git source bytes, governance files, and combined native deltas', () => {
-    expect(sourceFixtureBytes.length).toBe(10_592_802);
+    expect(sourceFixtureBytes.length).toBe(11_945_759);
     expect(digest(sourceFixtureBytes)).toBe(
-      '29dfe4e274862ea87cc4a8eac95a2858f73bdab6c201590eaa05cbb33d0ed311',
+      '8c946e7a77f14a4e8f3a5ccc01786ca275fc0d22bf958ec9d8088c60e662f691',
     );
     for (const source of Object.values(sourceFixture.sources)) {
       const rawCommit = objectBytes(source.commit);
@@ -119,18 +119,17 @@ describe('reviewed Chat302 residual cleanup purpose binding', () => {
 
   test('accepts the exact delivered merge and its reviewed source and binding ancestry', () => {
     const lock = currentLock();
-    expect(lock.evidenceProducer.commit).toBe('3c6f80412fc0e091e283902d9132de06a344d934');
+    expect(lock.evidenceProducer.commit).toBe('43504f646e7ffe01ee6019d468401f99be839420');
     expect(lock.sources.cave).toMatchObject({
       commit: 'ecdcdcf8a75b62bb912ec48215ae20ab0809a181',
       tree: '1634a8eb0a391419bf28af4be0020cfd8c4df472',
       releaseVersion: '0.4.2',
     });
     expect(sourceAuthority().sourceCommit.parents).toEqual([
-      { sha: '64e55138c08578268f0af0e16d7b1b086334d9c3' },
-      { sha: 'e3a22b69cb13c9c64464f8d1370cdc9dd738b1aa' },
+      { sha: '6e74fb60e44549b91aa75fb956eb63a85dc668fc' },
     ]);
     expect(() => validateChatProducerAuthorityBinding(lock, sourceAuthority())).not.toThrow();
-    expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([{"repository":"OpenCoven/chat","commit":"64e55138c08578268f0af0e16d7b1b086334d9c3","tree":"e352666d46ed35ff8e7b6b628826d2659733d0c9"}]);
+    expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([]);
     expect(lock.candidate).toEqual(sourceFixture.previousLock.candidate);
     expect(lock.sources.chat).toEqual(sourceFixture.previousLock.sources.chat);
     expect(lock.sources.coven).toEqual(sourceFixture.previousLock.sources.coven);
@@ -138,8 +137,8 @@ describe('reviewed Chat302 residual cleanup purpose binding', () => {
 
   test('rejects old and new producer authorities against the opposite binding', () => {
     expect(() => validateChatProducerAuthorityBinding(sourceFixture.previousLock, sourceAuthority(true))).not.toThrow();
-    expect(() => validateChatProducerAuthorityBinding(currentLock(), sourceAuthority(true))).toThrow(/sourceAuthorityCommits must match the frozen authority path/);
-    expect(() => validateChatProducerAuthorityBinding(sourceFixture.previousLock, sourceAuthority())).toThrow(/sourceAuthorityCommits must match the frozen authority path/);
+    expect(() => validateChatProducerAuthorityBinding(currentLock(), sourceAuthority(true))).toThrow(/Git identities/);
+    expect(() => validateChatProducerAuthorityBinding(sourceFixture.previousLock, sourceAuthority())).toThrow(/Git identities/);
     const authority = sourceAuthority();
     authority.sourceCommit.parents = [{ sha: '5dd09592c4ab8e98eab5e37cc1cdde1a82198085' }];
     expect(() => validateChatProducerAuthorityBinding(currentLock(), authority)).toThrow(/Git identities/);
@@ -148,11 +147,11 @@ describe('reviewed Chat302 residual cleanup purpose binding', () => {
     expect(() => validateChatProducerAuthorityBinding(currentLock(), substitutedHarness)).toThrow(/Git identities/);
   });
 
-  test('rejects a severed current binding edge or substituted binding tree', () => {
+  test('rejects a severed direct source edge or substituted source tree', () => {
     for (const field of ['parents', 'tree'] as const) {
       const authority = sourceAuthority();
-      if (field === 'parents') authority.sourceAuthorityCommits[0]!.parents = [];
-      else authority.sourceAuthorityCommits[0]!.tree.sha = '0'.repeat(40);
+      if (field === 'parents') authority.sourceCommit.parents = [];
+      else authority.sourceCommit.tree.sha = '0'.repeat(40);
       expect(() => validateChatProducerAuthorityBinding(currentLock(), authority)).toThrow(/Git identities/);
     }
   });
@@ -480,7 +479,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      '3c6f80412fc0e091e283902d9132de06a344d934',
+      '43504f646e7ffe01ee6019d468401f99be839420',
     );
     expect(workflowDocument).not.toContain(
       'f6eba8af1f71d4251583cf39d4e5fb5b4797d209',
@@ -495,10 +494,10 @@ describe('cross-repository conformance contract entrypoints', () => {
       '9f073f05241c2d3241b23ed9d73b26c6cd55ce7e',
     );
     expect(workflowDocument).toContain(
-      'e281779102d6b00d448765a204aaab14c6030174',
+      '1e007af60a6224d8d4f80d06cd3c974064cabd48',
     );
     expect(workflowDocument).toContain(
-      '4dc702d2538a3815a84e39cddec598ce058518f6',
+      '6e74fb60e44549b91aa75fb956eb63a85dc668fc',
     );
     expect(workflowDocument).toContain('validator_revision');
     expect(workflowDocument).toContain('20863036831');
