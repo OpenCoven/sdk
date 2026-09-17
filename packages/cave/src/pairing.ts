@@ -951,7 +951,7 @@ async function requestJson(
       const timeout = isOperationTimeoutError(error);
       throw transportError(timeout ? 'timeout' : 'aborted',
         timeout ? 'Cave request timed out.' : 'Cave request was aborted.', {
-          retryable: timeout,
+          retryable: timeout && options.pairingSecretDispatch !== 'single_use',
         });
     }
 

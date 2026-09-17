@@ -405,3 +405,33 @@ test('rejects a real replacement listener after health without exposing credenti
     });
   }
 });
+
+test('does not advise retry after a timed-out single-use pairing exchange', async () => {
+  const authority = await createTestHpkeAuthority();
+  const store = createMemorySecretStore();
+  const reference = createSecretStoreReference('hpke-single-use-timeout');
+  let exchanges = 0;
+  const client = createDiscoveredCaveClient({
+    credentials: { store, reference },
+    discoverEndpoint: () => Promise.resolve(authority.discovered),
+    fetch: async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path.endsWith('/health')) {
+        return Response.json(envelope({
+          instanceId: authority.instanceId, pairingRequired: true, releaseVersion: '0.3.9',
+        }));
+      }
+      if (path.endsWith('/pairing/requests')) {
+        return Response.json(envelope({ requestId, secret, expiresAt: Date.now() + 60_000 }), { status: 201 });
+      }
+      const opened = await authority.open(request);
+      expect(opened.authorization).toEqual({ kind: 'pairing-secret', value: secret });
+      exchanges++;
+      throw new OperationTimeoutError({ system: 'cave', operation: 'pairingExchange' }, 123);
+    },
+  });
+  const session = await client.createPairing(pairingRequest);
+  await expect(session.exchange()).rejects.toMatchObject({ code: 'timeout', retryable: false });
+  expect(exchanges).toBe(1);
+});
