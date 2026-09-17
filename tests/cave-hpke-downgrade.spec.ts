@@ -405,3 +405,42 @@ test('rejects a real replacement listener after health without exposing credenti
     });
   }
 });
+
+test.each([1, 2] as const)('does not advise retry after a timed-out v%s single-use pairing exchange', async (version) => {
+  const authority = await createTestHpkeAuthority();
+  const store = createMemorySecretStore();
+  const reference = createSecretStoreReference('hpke-single-use-timeout');
+  let exchanges = 0;
+  const client = createDiscoveredCaveClient({
+    credentials: { store, reference },
+    discoverEndpoint: () => Promise.resolve(version === 2 ? authority.discovered : v1),
+    fetch: async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path.endsWith('/health')) {
+        return Response.json(envelope({
+          instanceId: authority.instanceId, pairingRequired: true, releaseVersion: '0.3.9',
+        }));
+      }
+      if (path.endsWith('/pairing/requests')) {
+        return Response.json(envelope({ requestId, secret, expiresAt: Date.now() + 60_000 }), { status: 201 });
+      }
+      expect(path).toBe(`/api/client/v1/pairing/requests/${requestId}/exchange`);
+      if (version === 2) {
+        const opened = await authority.open(request);
+        expect(opened.authorization).toEqual({ kind: 'pairing-secret', value: secret });
+      } else {
+        expect(request.headers.get('x-coven-pairing-secret')).toBe(secret);
+      }
+      exchanges++;
+      throw new OperationTimeoutError({ system: 'cave', operation: 'pairingExchange' }, 123);
+    },
+  });
+  const session = await client.createPairing(pairingRequest);
+  await expect(session.exchange()).rejects.toMatchObject({ code: 'timeout', retryable: false });
+  await expect(session.exchange()).rejects.toMatchObject({
+    code: 'conflict', retryable: false, details: { reason: 'pairing_replayed' },
+  });
+  expect(exchanges).toBe(1);
+  expect(await store.get(reference.key)).toBeUndefined();
+});
