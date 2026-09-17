@@ -946,9 +946,11 @@ async function requestJson(
     });
   } catch (error) {
     if (isOperationTimeoutError(error) || isOperationAbortedError(error)) {
-      if (hpkeRequest === undefined) throw error;
-      ensureActive(options.context);
       const timeout = isOperationTimeoutError(error);
+      if (hpkeRequest === undefined && !(timeout && options.pairingSecretDispatch === 'single_use')) {
+        throw error;
+      }
+      ensureActive(options.context);
       throw transportError(timeout ? 'timeout' : 'aborted',
         timeout ? 'Cave request timed out.' : 'Cave request was aborted.', {
           retryable: timeout && options.pairingSecretDispatch !== 'single_use',
