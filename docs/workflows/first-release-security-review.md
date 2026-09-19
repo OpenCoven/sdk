@@ -10,8 +10,8 @@ This document is the durable record required by #40. It does not authorize publi
 
 | Field | Value |
 |---|---|
-| Reviewed revision | `50e017578` (main) |
-| Prior checkpoint revision | `3459dcaad` |
+| Reviewed revision | `aec069089` (main) |
+| Prior checkpoint revisions | `3459dcaad`, `50e017578` |
 | Frozen conformance candidate | `96804bc483a063e41e9a9738a4ace61970f6c0a4` |
 | Runtime manifest SHA-256 | `8c46276b5698d32d570ad4a89998b412cb0efde5641313b0c71ae41519e64ae7` |
 | Version under review | 0.0.1 |
@@ -43,7 +43,7 @@ Out of scope: the Cave and Coven servers themselves, the Chat producer, and any 
 
 ## Automated results
 
-Re-run at `50e017578` on 2026-09-19.
+Re-run at the reviewed revision `aec069089` on 2026-09-19. These are not carried forward from the prior checkpoint.
 
 | Check | Result |
 |---|---|
@@ -69,13 +69,13 @@ Automation does not cover these, so each was read directly.
 
 ## Findings
 
-| ID | Severity | Area | Owner | Disposition |
-|---|---|---|---|---|
-| F1 | Low | `packages/cave/src/pairing.ts` | SDK | **Fixed and verified** |
-| F2 | Informational | `tests/windows-supervisor-source.spec.ts` | SDK | **Fixed and verified** |
-| F3 | Informational | `tests/conformance-checkouts-publication.spec.ts` | SDK | Open, observation only |
+| ID | Severity | Area | Owner | Disposition | Follow-up due |
+|---|---|---|---|---|---|
+| F1 | Low | `packages/cave/src/pairing.ts` | SDK maintainer (@BunsDev) | **Fixed and verified** | None |
+| F2 | Informational | `tests/windows-supervisor-source.spec.ts` | SDK maintainer (@BunsDev) | **Fixed and verified** | None |
+| F3 | Informational | `tests/conformance-checkouts-publication.spec.ts` | SDK maintainer (@BunsDev) | **Accepted** | 2026-10-17, or the next occurrence, whichever comes first |
 
-No critical or high findings. No unresolved finding of any severity blocks the release on its own merits.
+No critical or high findings. Both fixed findings are verified present in the reviewed source at `aec069089`. The one accepted finding carries an owner, a rationale, and a dated follow-up below; no finding is silently deferred.
 
 ### F1 — timed-out single-use pairing exchange advised retry
 
@@ -93,19 +93,23 @@ Repaired in [#294](https://github.com/OpenCoven/sdk/pull/294), merged at `50e017
 
 `renderWindowsSupervisorSource` gzips a 396 KiB source at level 9, and every `decodeWindowsSupervisorSource` call re-renders it to bind the decoder statements alongside the canonical gzip bytes. That re-render is the security property being tested. But the two tests together performed roughly seven full compressions inside vitest's default 5s per-test budget, measuring 1227ms locally and exceeding the budget on loaded parallel Windows runners.
 
-Repaired in [#297](https://github.com/OpenCoven/sdk/pull/297), merged at `aec069089`, by building the shared canonical block and the bootstrap fixture once at module scope and setting the explicit 30s budget this repository already uses for fixture-heavy suites. The first test now measures 896ms. No assertion was removed or weakened, and two mutants confirm the suite still fails closed: deleting the re-render comparison, and disabling the source identity digest check, each turn the decoder-change test red.
+Repaired in [#297](https://github.com/OpenCoven/sdk/pull/297), merged at `aec069089`, which is the reviewed revision, so the fix is present and verified in the reviewed source. It builds the shared canonical block and the bootstrap fixture once at module scope and setting the explicit 30s budget this repository already uses for fixture-heavy suites. The first test now measures 896ms. No assertion was removed or weakened, and two mutants confirm the suite still fails closed: deleting the re-render comparison, and disabling the source identity digest check, each turn the decoder-change test red.
 
 **Follow-up:** none required; #297 is merged.
 
 ### F3 — checkout-state suite failed once under full-suite load
 
-**Severity: Informational. Disposition: open, observation only.**
+**Severity: Informational. Disposition: accepted. Owner: SDK maintainer (@BunsDev). Follow-up due 2026-10-17, or the next occurrence, whichever comes first.**
 
-During this review, `tests/conformance-checkouts-publication.spec.ts > rejects staged, unstaged, hidden-index, and wrong-remote states` failed once in a full `npm test` run at 7168ms against its explicit 15s budget. It passed in isolation and passed in three subsequent full runs, including two at 2,678 passed with zero failures.
+During this review, `tests/conformance-checkouts-publication.spec.ts > rejects staged, unstaged, hidden-index, and wrong-remote states` failed once in a full `npm test` run at 7168ms against its explicit 15s budget. It passed in isolation and passed in four subsequent full runs, including three at 2,678 passed with zero failures.
 
-The test spawns real `git` subprocesses to build fixture repositories. Contention among concurrent subprocesses is the plausible cause, but this is **not diagnosed**: a single unreproduced observation does not establish one. Recorded so the next occurrence has a prior, and because it is the same class as F2.
+**Rationale for acceptance.** This is test infrastructure, not shipped source: the file is a `tests/` spec and appears in no package tarball, so it cannot affect a released artifact. The test asserts that `inspectRepositoryCheckout` *rejects* dirty and wrong-remote checkouts, so the guard it covers fails closed by construction; a flaky run produces a red build rather than a silently weakened check. The suite has a passing record of four full runs out of five at this revision, and the underlying verification it guards is additionally enforced in CI by the `verify` jobs on all three platforms.
 
-**Follow-up:** if it recurs, capture the assertion text rather than the duration, then decide between subprocess serialization and a budget change. Do not change the budget on this evidence alone.
+**Why it is not fixed now.** The test spawns real `git` subprocesses to build fixture repositories, and subprocess contention is the plausible cause, but a single unreproduced failure does not establish one. The one observation captured a duration, not an assertion message. Changing the budget or serializing subprocesses on that evidence would be a guess, and would likely mask the signal needed to diagnose a genuine defect if one exists.
+
+**Follow-up, owned and dated.** By 2026-10-17, or immediately on the next occurrence if sooner, the owner will either (a) capture the assertion text from a reproduction and land a targeted fix, or (b) record four further consecutive clean full runs and close the finding as non-reproducing. If the failure instead proves to be a real defect in `inspectRepositoryCheckout` rather than test timing, this finding is re-severitised and this document's disposition is recomputed before any ship decision.
+
+**This acceptance does not gate the current disposition**, which is BLOCK for an unrelated structural reason.
 
 ## Disposition
 
@@ -130,4 +134,5 @@ Sequence to SHIP, in order:
 | Date | Revision | Disposition | Note |
 |---|---|---|---|
 | 2026-09-17 | `3459dcaad` | BLOCK | Initial checkpoint. F1 open, F2 accepted with follow-up. |
-| 2026-09-19 | `50e017578` | BLOCK | F1 fixed and verified via #294. F2 fixed and verified via #297 (merged `aec069089`). F3 recorded. Blocking condition unchanged. |
+| 2026-09-19 | `50e017578` | BLOCK | F1 fixed and verified via #294. F2 fix open as #297. F3 first observed. |
+| 2026-09-19 | `aec069089` | BLOCK | #297 merged, so F2 is now fixed and verified in the reviewed source. F3 dispositioned as accepted with owner and dated follow-up after review feedback. Blocking condition unchanged. |
