@@ -72,7 +72,7 @@ Automation does not cover these, so each was read directly.
 | ID | Severity | Area | Owner | Disposition |
 |---|---|---|---|---|
 | F1 | Low | `packages/cave/src/pairing.ts` | SDK | **Fixed and verified** |
-| F2 | Informational | `tests/windows-supervisor-source.spec.ts` | SDK | **Fixed, pending merge** |
+| F2 | Informational | `tests/windows-supervisor-source.spec.ts` | SDK | **Fixed and verified** |
 | F3 | Informational | `tests/conformance-checkouts-publication.spec.ts` | SDK | Open, observation only |
 
 No critical or high findings. No unresolved finding of any severity blocks the release on its own merits.
@@ -89,13 +89,13 @@ Repaired in [#294](https://github.com/OpenCoven/sdk/pull/294), merged at `50e017
 
 ### F2 — supervisor source suite exceeded its per-test budget
 
-**Severity: Informational. Disposition: fixed, pending merge. No product defect.**
+**Severity: Informational. Disposition: fixed and verified. No product defect.**
 
 `renderWindowsSupervisorSource` gzips a 396 KiB source at level 9, and every `decodeWindowsSupervisorSource` call re-renders it to bind the decoder statements alongside the canonical gzip bytes. That re-render is the security property being tested. But the two tests together performed roughly seven full compressions inside vitest's default 5s per-test budget, measuring 1227ms locally and exceeding the budget on loaded parallel Windows runners.
 
-Repaired in [#297](https://github.com/OpenCoven/sdk/pull/297) by building the shared canonical block and the bootstrap fixture once at module scope and setting the explicit 30s budget this repository already uses for fixture-heavy suites. The first test now measures 896ms. No assertion was removed or weakened, and two mutants confirm the suite still fails closed: deleting the re-render comparison, and disabling the source identity digest check, each turn the decoder-change test red.
+Repaired in [#297](https://github.com/OpenCoven/sdk/pull/297), merged at `aec069089`, by building the shared canonical block and the bootstrap fixture once at module scope and setting the explicit 30s budget this repository already uses for fixture-heavy suites. The first test now measures 896ms. No assertion was removed or weakened, and two mutants confirm the suite still fails closed: deleting the re-render comparison, and disabling the source identity digest check, each turn the decoder-change test red.
 
-**Follow-up:** none required once #297 merges.
+**Follow-up:** none required; #297 is merged.
 
 ### F3 — checkout-state suite failed once under full-suite load
 
@@ -130,4 +130,4 @@ Sequence to SHIP, in order:
 | Date | Revision | Disposition | Note |
 |---|---|---|---|
 | 2026-09-17 | `3459dcaad` | BLOCK | Initial checkpoint. F1 open, F2 accepted with follow-up. |
-| 2026-09-19 | `50e017578` | BLOCK | F1 fixed and verified via #294. F2 fixed via #297. F3 recorded. Blocking condition unchanged. |
+| 2026-09-19 | `50e017578` | BLOCK | F1 fixed and verified via #294. F2 fixed and verified via #297 (merged `aec069089`). F3 recorded. Blocking condition unchanged. |
