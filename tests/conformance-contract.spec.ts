@@ -9,6 +9,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   assertEvidenceProducerCompatibility,
+  parseFrozenConformanceLock,
   parseAssertionRegistry,
   parseConformanceAggregationArgs,
   parsePlatformEvidence,
@@ -516,5 +517,82 @@ describe('cross-repository conformance contract entrypoints', () => {
     );
     expect(workflowDocument).toContain('validator_revision');
     expect(workflowDocument).toContain('20863036831');
+  });
+});
+
+describe('attested source descent', () => {
+  const lockPath = resolve(workspaceRoot, 'conformance/client-v1-cross-repository-lock.json');
+  const lockText = () => readFileSync(lockPath, 'utf8');
+  type MutableLock = {
+    evidenceProducer: { commit: string; workflow: Record<string, unknown> };
+  };
+  const withWorkflow = (patch: Record<string, unknown>) => {
+    const value = JSON.parse(lockText()) as MutableLock;
+    Object.assign(value.evidenceProducer.workflow, patch);
+    return () => parseFrozenConformanceLock(JSON.stringify(value), 'lock');
+  };
+  const producerCommit = () =>
+    (JSON.parse(lockText()) as MutableLock).evidenceProducer.commit;
+  const tip = 'a'.repeat(40);
+  const middle = 'b'.repeat(40);
+
+  test('accepts the attested source when it is the producer commit', () => {
+    expect(withWorkflow({})).not.toThrow();
+  });
+
+  test('refuses an attested source that is not the producer commit and claims no descent', () => {
+    // The guard this replaces: provenance naming some other commit, unproven.
+    expect(
+      withWorkflow({ signerDigest: tip, sourceDigest: tip, sourceDescent: [] }),
+    ).toThrow(/schema-v2 Chat producer/);
+  });
+
+  test('accepts an attested source whose descent reaches the producer commit', () => {
+    expect(
+      withWorkflow({
+        signerDigest: tip,
+        sourceDigest: tip,
+        sourceDescent: [tip, middle, producerCommit()],
+      }),
+    ).not.toThrow();
+  });
+
+  test('refuses a descent that does not start at the attested source', () => {
+    expect(
+      withWorkflow({
+        signerDigest: tip,
+        sourceDigest: tip,
+        sourceDescent: [middle, producerCommit()],
+      }),
+    ).toThrow(/schema-v2 Chat producer/);
+  });
+
+  test('refuses a descent that does not end at the producer commit', () => {
+    expect(
+      withWorkflow({
+        signerDigest: tip,
+        sourceDigest: tip,
+        sourceDescent: [tip, middle],
+      }),
+    ).toThrow(/schema-v2 Chat producer/);
+  });
+
+  test('refuses a signer that disagrees with the attested source', () => {
+    expect(
+      withWorkflow({
+        signerDigest: middle,
+        sourceDigest: tip,
+        sourceDescent: [tip, producerCommit()],
+      }),
+    ).toThrow(/schema-v2 Chat producer/);
+  });
+
+  test.each([
+    ['a single-entry descent', [tip]],
+    ['a repeated commit', [tip, tip, 'c'.repeat(40)]],
+  ])('refuses %s', (_label, sourceDescent) => {
+    expect(
+      withWorkflow({ signerDigest: tip, sourceDigest: tip, sourceDescent }),
+    ).toThrow();
   });
 });

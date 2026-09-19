@@ -309,6 +309,18 @@ export function parseJsonText(
   return parsed;
 }
 
+/**
+ * `sourceDescent` post-dates the locks already frozen in review fixtures, and
+ * an absent descent means the attested source is the producer commit. Default
+ * it so historical bindings keep validating unchanged.
+ */
+function withDefaultSourceDescent(workflow) {
+  if (!isPlainObject(workflow) || Object.hasOwn(workflow, 'sourceDescent')) {
+    return workflow;
+  }
+  return { ...workflow, sourceDescent: [] };
+}
+
 function expectExactObject(value, requiredKeys, label) {
   if (!isPlainObject(value)) {
     throw new Error(`${label} must be a JSON object`);
@@ -739,7 +751,7 @@ function expectEvidenceProducer(value, label) {
       label,
     );
     const workflow = expectExactObject(
-      object.workflow,
+      withDefaultSourceDescent(object.workflow),
       [
         'name',
         'path',
@@ -779,6 +791,7 @@ function expectEvidenceProducer(value, label) {
         'signerWorkflow',
         'signerDigest',
         'sourceDigest',
+        'sourceDescent',
         'predicateType',
         'denySelfHostedRunners',
       ],
@@ -1032,6 +1045,10 @@ function expectEvidenceProducer(value, label) {
           workflow.sourceDigest,
           `${label}.workflow.sourceDigest`,
         ),
+        sourceDescent: expectSourceDescent(
+          workflow.sourceDescent,
+          `${label}.workflow.sourceDescent`,
+        ),
         predicateType: expectString(
           workflow.predicateType,
           `${label}.workflow.predicateType`,
@@ -1083,8 +1100,8 @@ function expectEvidenceProducer(value, label) {
         !== JSON.stringify(PROTECTED_WORKFLOW_RUNNER_LABELS)
       || producer.workflow.signerWorkflow
         !== `${producer.repository}/${producer.workflow.path}`
-      || producer.workflow.signerDigest !== producer.commit
-      || producer.workflow.sourceDigest !== producer.commit
+      || producer.workflow.signerDigest !== producer.workflow.sourceDigest
+      || !attestedSourceIsBound(producer)
       || producer.source.repository !== producer.repository
       || producer.source.commit === producer.commit
       || producer.source.tree !== producer.tree
@@ -1489,6 +1506,49 @@ export function assertEvidenceProducerCompatibility(lockValue) {
   return lock.evidenceProducer;
 }
 
+/**
+ * The commits proving the attested build source descends from the frozen
+ * producer commit, ordered newest first: the attested source, then each
+ * commit down to the producer commit itself.
+ *
+ * GitHub's provenance names the commit the workflow run started from, which
+ * for a dispatch against a named merged revision is the ref tip rather than
+ * that revision. Absent for a tip-only producer, where the two are equal.
+ */
+function expectSourceDescent(value, label) {
+  if (!Array.isArray(value) || value.length === 1 || value.length > 16) {
+    throw new Error(`${label} must be empty or an array of 2 to 16 commits`);
+  }
+  if (value.length === 0) {
+    return [];
+  }
+  const descent = value.map((commit, index) =>
+    expectGitOid(commit, `${label}[${index}]`),
+  );
+  if (new Set(descent).size !== descent.length) {
+    throw new Error(`${label} must not repeat a commit`);
+  }
+  return descent;
+}
+
+/**
+ * Whether the attested build source is the frozen producer commit, or a
+ * descendant of it whose descent this lock spells out. Only the shape is
+ * decided here; `validateChatProducerAuthorityBinding` proves each link
+ * against real Git parents, exactly as it does for the authority path.
+ */
+function attestedSourceIsBound(producer) {
+  const { sourceDigest, sourceDescent } = producer.workflow;
+  if (sourceDescent.length === 0) {
+    return sourceDigest === producer.commit;
+  }
+  return (
+    sourceDigest !== producer.commit
+    && sourceDescent[0] === sourceDigest
+    && sourceDescent[sourceDescent.length - 1] === producer.commit
+  );
+}
+
 function expectGitCommitAuthority(value, label) {
   if (!isPlainObject(value) || !isPlainObject(value.tree)) {
     throw new Error(`${label} must be Git commit metadata`);
@@ -1601,6 +1661,57 @@ export function validateChatProducerAuthorityBinding(
       || !current.parents.includes(parent.sha)
     ) {
       throw new Error(`${source} Git identities do not match the frozen producer`);
+    }
+  }
+
+  // When the attestation names a descendant of the producer commit, the
+  // descent is claimed in the lock and proven here against real parents, so
+  // an unrelated commit carrying the same workflow bytes is still refused.
+  const descent = producer.workflow.sourceDescent;
+  if (descent.length === 0) {
+    if (authority.sourceDescentCommits !== undefined) {
+      throw new Error(
+        `${source}.sourceDescentCommits must be absent for a tip producer`,
+      );
+    }
+  } else {
+    if (
+      !Array.isArray(authority.sourceDescentCommits)
+      || authority.sourceDescentCommits.length !== descent.length
+    ) {
+      throw new Error(
+        `${source}.sourceDescentCommits must match the frozen source descent`,
+      );
+    }
+    const descentCommits = authority.sourceDescentCommits.map((commit, index) =>
+      expectGitCommitAuthority(
+        commit,
+        `${source}.sourceDescentCommits[${index}]`,
+      ),
+    );
+    for (const [index, expected] of descent.entries()) {
+      if (descentCommits[index].sha !== expected) {
+        throw new Error(
+          `${source} Git identities do not match the frozen producer`,
+        );
+      }
+    }
+    if (descentCommits[descentCommits.length - 1].tree !== producer.tree) {
+      throw new Error(
+        `${source} Git identities do not match the frozen producer`,
+      );
+    }
+    for (let index = 0; index < descentCommits.length - 1; index += 1) {
+      const current = descentCommits[index];
+      const parent = descentCommits[index + 1];
+      if (
+        current.parents.length === 0
+        || !current.parents.includes(parent.sha)
+      ) {
+        throw new Error(
+          `${source} Git identities do not match the frozen producer`,
+        );
+      }
     }
   }
 
@@ -3722,7 +3833,7 @@ export function parseReviewedEvidenceIndex(
     `${source}.producer.harness`,
   );
   const producerWorkflow = expectExactObject(
-    producerObject.workflow,
+    withDefaultSourceDescent(producerObject.workflow),
     [
       'name',
       'path',
@@ -3762,6 +3873,7 @@ export function parseReviewedEvidenceIndex(
       'signerWorkflow',
       'signerDigest',
       'sourceDigest',
+      'sourceDescent',
       'predicateType',
       'denySelfHostedRunners',
     ],
@@ -3981,6 +4093,10 @@ export function parseReviewedEvidenceIndex(
       sourceDigest: expectGitOid(
         producerWorkflow.sourceDigest,
         `${source}.producer.workflow.sourceDigest`,
+      ),
+      sourceDescent: expectSourceDescent(
+        producerWorkflow.sourceDescent,
+        `${source}.producer.workflow.sourceDescent`,
       ),
       predicateType: expectString(
         producerWorkflow.predicateType,

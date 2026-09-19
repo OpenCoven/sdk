@@ -2135,6 +2135,31 @@ export function verifyGitHubConformanceEvidence({
       githubOptions,
     );
     verifyProtectedWorkflow(workflowText, producer, lock.toolchain);
+    // The run that signs the attestation executes the workflow as it exists at
+    // the attested source, not at the producer commit. When those differ, the
+    // reviewed bytes must still be what ran, or a descendant commit could
+    // attest evidence produced by an unreviewed workflow.
+    if (producer.workflow.sourceDigest !== producer.commit) {
+      verifyProtectedWorkflow(
+        runGh(
+          execute,
+          [
+            'api',
+            '--hostname',
+            'github.com',
+            '--method',
+            'GET',
+            '--header',
+            'Accept: application/vnd.github.raw+json',
+            `repos/${producer.repository}/contents/${producer.workflow.path}`
+              + `?ref=${producer.workflow.sourceDigest}`,
+          ],
+          githubOptions,
+        ),
+        producer,
+        lock.toolchain,
+      );
+    }
     const environment = parseGitHubJson(
       runGh(
         execute,
