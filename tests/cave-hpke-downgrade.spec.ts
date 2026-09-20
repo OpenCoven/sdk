@@ -412,8 +412,12 @@ test.each(['authority_key_stale', 'authority_instance_stale', 'authority_request
     const store = createMemorySecretStore();
     const reference = createSecretStoreReference('single-use-plaintext-guidance');
     let dispatched = false;
+    let rediscoveries = 0;
     const discoverEndpoint = vi.fn(() => {
-      if (dispatched) throw new Error('Rediscovery must not follow an ambiguous dispatch');
+      if (dispatched) {
+        rediscoveries++;
+        throw new Error('Rediscovery must not follow an ambiguous dispatch');
+      }
       return Promise.resolve(authority.discovered);
     });
     let exchanges = 0;
@@ -439,11 +443,13 @@ test.each(['authority_key_stale', 'authority_instance_stale', 'authority_request
     await expect(session.exchange()).rejects.toMatchObject({
       code: 'reconcile_required', retryable: false, details: { reason: 'authority_proof_failed' },
     });
+    expect(rediscoveries).toBe(0);
     const discoveryCount = discoverEndpoint.mock.calls.length;
     await expect(session.exchange()).rejects.toMatchObject({
       code: 'conflict', retryable: false, details: { reason: 'pairing_replayed' },
     });
     expect(discoverEndpoint).toHaveBeenCalledTimes(discoveryCount);
+    expect(rediscoveries).toBe(0);
     expect(exchanges).toBe(1);
     expect(await store.get(reference.key)).toBeUndefined();
   },
