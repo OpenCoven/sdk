@@ -406,6 +406,55 @@ test('rejects a real replacement listener after health without exposing credenti
   }
 });
 
+test.each(['authority_key_stale', 'authority_instance_stale', 'authority_request_stale'])(
+  'never retries a spent pairing secret after plaintext %s guidance', async (code) => {
+    const authority = await createTestHpkeAuthority();
+    const store = createMemorySecretStore();
+    const reference = createSecretStoreReference('single-use-plaintext-guidance');
+    let dispatched = false;
+    let rediscoveries = 0;
+    const discoverEndpoint = vi.fn(() => {
+      if (dispatched) {
+        rediscoveries++;
+        throw new Error('Rediscovery must not follow an ambiguous dispatch');
+      }
+      return Promise.resolve(authority.discovered);
+    });
+    let exchanges = 0;
+    const client = createDiscoveredCaveClient({
+      credentials: { store, reference }, discoverEndpoint,
+      fetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path.endsWith('/health')) return Response.json(envelope({
+          instanceId: authority.instanceId, pairingRequired: true, releaseVersion: '0.3.9',
+        }));
+        if (path.endsWith('/pairing/requests')) return Response.json(envelope({
+          requestId, secret, expiresAt: Date.now() + 60_000,
+        }), { status: 201 });
+        expect(path).toBe(`/api/client/v1/pairing/requests/${requestId}/exchange`);
+        expect((await authority.open(request)).authorization).toEqual({ kind: 'pairing-secret', value: secret });
+        exchanges++;
+        dispatched = true;
+        return Response.json({ error: { code, retryable: true } }, { status: 409 });
+      },
+    });
+    const session = await client.createPairing(pairingRequest);
+    await expect(session.exchange()).rejects.toMatchObject({
+      code: 'reconcile_required', retryable: false, details: { reason: 'authority_proof_failed' },
+    });
+    expect(rediscoveries).toBe(0);
+    const discoveryCount = discoverEndpoint.mock.calls.length;
+    await expect(session.exchange()).rejects.toMatchObject({
+      code: 'conflict', retryable: false, details: { reason: 'pairing_replayed' },
+    });
+    expect(discoverEndpoint).toHaveBeenCalledTimes(discoveryCount);
+    expect(rediscoveries).toBe(0);
+    expect(exchanges).toBe(1);
+    expect(await store.get(reference.key)).toBeUndefined();
+  },
+);
+
 test.each([1, 2] as const)('does not advise retry after a timed-out v%s single-use pairing exchange', async (version) => {
   const authority = await createTestHpkeAuthority();
   const store = createMemorySecretStore();
