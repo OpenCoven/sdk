@@ -5,10 +5,10 @@ import { describe, expect, test } from 'vitest';
 import { decodeWindowsSupervisorSource, renderWindowsSupervisorSource } from '../scripts/windows-supervisor-source.mjs';
 
 const source = brotliDecompressSync(readFileSync(new URL('./fixtures/chat-debee-windows-supervisor.cs.br', import.meta.url)));
-const identity = { size: 396176, sha256: '6f7d0712e8f0b04d5c3fdff77a3cb975cc96a2f5c2bd5e565b43277b7085c030' };
+const identity = { size: 397084, sha256: 'ec56ad9daf9cfd2e92de4420cfc5ce328e09a76b627a8253ef35f2e9ef151669' };
 
 // Rendering and decoding are deliberately expensive: `renderWindowsSupervisorSource`
-// gzips the 396 KiB source at level 9, and every `decodeWindowsSupervisorSource` call
+// gzips the complete source at level 9, and every `decodeWindowsSupervisorSource` call
 // re-renders it to bind the decoder statements as well as the canonical gzip bytes.
 // The fixtures and the one shared canonical block are therefore built once at module
 // scope rather than per test, and the remaining in-test re-renders carry an explicit
