@@ -31,24 +31,22 @@ is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
 tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the actual merged [Chat #311](https://github.com/OpenCoven/chat/pull/311)
-producer `157fb3206b9b90f24049aa2043bae534d2b9a709`, tree `8a49a3116e53860a33cf6189e7892db8c382a4a6`.
-Its reviewed head `86d3054bb7cbbbee1fe5cacbb37b0c2ce01298bb` has the same complete tree.
-The verified parent path passes through binding commit
-`746794a4a5e03487138bfb08be4938e8580a98bc` to executable harness
-`b5e0fac1d56ee2188f839e7da8fbddd3a3c2b8c2`, tree `1642836d4bfaab3b54f93ef58aaabeb930af3d9e`.
-The final reviewed commit changes only a test fixture to supply execution HOME
-explicitly; it does not change production bytes. The validator checks every
-parent edge and complete reviewed/delivery tree equality.
+This binding selects the merged [Chat #328](https://github.com/OpenCoven/chat/pull/328)
+producer `ac1c4f4ca658fbb03bd2541bf265a57666e80c7c`, tree `26a65cedb02a09652c637dff77f2ed66d6ac96aa`.
+Its reviewed head `45326eb7c95c6d2abed7d29ab17972fbb5d0a72d` has the same complete tree
+and has executable harness authority
+`8c3d7354ca86cce864029d3586356eaaf07908f0`, tree `34689f03042dee69d71f999114f569d9784e04a4`,
+as its sole parent.
+The merge parents are that harness authority and the reviewed head. The validator
+checks the merge-to-reviewed-source edge, the source-to-harness edge, and complete
+reviewed/delivery tree equality. The intermediate source-authority path is empty.
 
-Chat #311 pins build-time `COVEN_HOME` and `COVEN_CAVE_HOME` beneath owned
-execution `HOME`. The pinned Cave resolver otherwise falls back to
-`os.homedir()`, which can select the retained staging `USERPROFILE` on Windows.
-A frozen-resolver reproduction proves that routing gap, but does not identify
-the exact operation responsible for the failed protected run. Token-profile
-authority, native cleanup, resource limits, and whole-tree operator fingerprints
-remain intact. All 25 governed files and ten production deltas are bound to
-reviewed Git bytes, with 12 explicit behavior-authority goldens.
+This producer retains Chat #311's build-time home isolation and adds the exact
+Chat #314 producer-revision resolver, bounded Windows quota diagnostics, and
+Chat #327's pinned-main freshness guard. All 25 governed files and ten production
+deltas are bound to reviewed Git bytes. Token/profile ownership, native cleanup,
+resource limits, and operator isolation remain required. The SDK candidate and
+Chat consumer, Cave, and Coven revisions remain frozen.
 
 Chat #297 classifies native installation lock, entry, read, write and persistence
 failures with fixed conformance-only codes. Ordinary-build error behavior and
@@ -75,23 +73,19 @@ cleanup. Residual-open diagnostics derive fixed purpose/access labels and retain
 scope; legacy role-only calls remain compatible. No native access masks, sharing,
 privileges or limits change.
 
-The latest terminal protected [run 35138402347](https://github.com/OpenCoven/chat/actions/runs/35138402347)
-used Chat #309 (`2b4dd406df3e3609ecd85e4a69ebbc45f5874560`) and SDK #292
-(`62981993a1fd8cbcde100a42b5058dd4d56e6c99`). Both validator scopes and the
-supervisor artifact were authenticated before protected approval. Linux and
-macOS records independently passed identities, schema, privacy, Cave/outer
-timing, and all 197 ordered assertions each (110 Cave, 46 SDK, 41 Chat).
-Windows failed at
-`phase1.stage.evidence-authority.isolation.operator.cave-home.changed`.
-That comparison found differing filesystem digests at the same path; it does
-not distinguish content from metadata changes. Execution cleanup did not block
-isolation construction in that run. No Windows record was accepted; artifact
-validation, attestation, and aggregation were skipped.
+The latest terminal protected [run 35146928092](https://github.com/OpenCoven/chat/actions/runs/35146928092)
+used Chat #311 and SDK #293. Linux and macOS independently passed all 197
+ordered assertions each. Windows failed with
+`access-denied; root=harness-execution-aggregate; scope=checkouts; operation=directory-enumeration-depth-3-plus; repeat=persistent`.
+No Windows record or aggregate was accepted; validation and attestation did not
+complete. This is separate from run `35138402347`'s operator Cave-home isolation
+failure. The current binding requires verified SDK landing, both validator-scope
+rotations with readback, and fresh authenticated protected validation.
 
 Historical run `35125287541` failed Windows execution-root cleanup before
 isolation validation. Run `35111662551` failed Windows isolation; run
 `35100084575` failed Windows secure-store preflight and deletion-purpose cleanup.
-Keep these failures distinct. The current Chat #311 binding requires verified
+Keep these failures distinct. The current Chat #328 binding requires verified
 SDK landing, both validator-scope rotations, and fresh authenticated protected
 validation. No aggregate is accepted. Chat consumer, candidate, Cave and Coven
 identities remain frozen.
@@ -483,10 +477,10 @@ and GitHub verification inspect every actual parent edge. Runs, jobs,
 deployments, artifacts, and certificates must identify the dispatch revision;
 platform records must still identify the selected producer.
 
-Both revisions must contain the same reviewed workflow bytes. Refresh the
-producer binding to a reviewed revision containing the new resolver before
-using this path; the current frozen producer predates that workflow. The
-existing empty descent remains correct for its tip-only binding. Historical
+Both revisions must contain the same reviewed workflow bytes. The current
+frozen producer includes the resolver, and its empty descent selects the
+producer tip itself. A later dispatch requires an explicitly reviewed descent
+binding before its evidence can be accepted. Historical
 locks and indexes that omit the field retain that same tip-only meaning.
 Supporting the resolver does not supply the missing three-platform evidence
 or change the release's BLOCK disposition.
@@ -857,6 +851,6 @@ landed and both scopes rotated to it for run `35100084575`, whose terminal resul
 is recorded above. SDK #290 then bound Chat #297 for run `35111662551`,
 which failed Windows isolation. SDK #291 then bound Chat #305 for run `35125287541`, which failed
 Windows execution-root cleanup. SDK #292 then bound Chat #309 for run `35138402347`, which failed
-Windows operator Cave-home isolation. The current Chat #311 binding needs a
+Windows operator Cave-home isolation. The current Chat #328 binding needs a
 new SDK landing, both scope rotations, and fresh protected validation. No aggregate or
 release acceptance is claimed.
