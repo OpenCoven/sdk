@@ -1,3 +1,5 @@
+import type { CaveManagedDiscoveredEndpoint } from './managed-discovery.js';
+import type { CaveManagedHpkeResult } from './managed-hpke.js';
 import type { OperationContext, PageOptions } from '@opencoven/sdk-core/browser';
 
 import type {
@@ -91,6 +93,14 @@ export interface CaveCredentialPersistingTransport extends CaveTransport {
  * non-secret value before exposing a public DTO.
  */
 export interface CaveManagedCredentialTransport extends CaveTransport {
+  /** Each HPKE read performs one bound request; it must not retry or expose credentials. */
+  managedHpkeFamiliars?(discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+  managedHpkeListFamiliars?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+  managedHpkeListProjects?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+  managedHpkeListConversations?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+  managedHpkeGetConversation?(conversationId: string, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+  managedHpkeListConversationMessages?(conversationId: string, options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+
   managedPairingCreate(
     request: CavePairingRequest,
     context?: OperationContext,

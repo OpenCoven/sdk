@@ -374,6 +374,75 @@ the exact HPKE suite, and the domain-separated SHA-256 key ID. The managed
 entry uses browser Web Crypto for that digest and does not bundle Node crypto
 or the direct-loopback HPKE implementation.
 
+### Managed HPKE reads and iterator authority
+
+Pass `discovery` to either managed factory to authenticate canonical reads
+against the current native discovery record:
+
+```ts
+import {
+  createManagedCaveClient,
+  type CaveManagedCredentialTransport,
+  type CaveManagedDiscoverySource,
+} from '@opencoven/cave-client/managed';
+
+export function createReadingClient(
+  transport: CaveManagedCredentialTransport,
+  source: CaveManagedDiscoverySource,
+) {
+  return createManagedCaveClient({ transport, discovery: { source } });
+}
+```
+
+For discovery v2, implement the optional `managedHpkeListFamiliars`,
+`managedHpkeListProjects`, `managedHpkeListConversations`,
+`managedHpkeGetConversation`, and `managedHpkeListConversationMessages`
+methods. Each receives the usual read arguments, the validated discovery
+snapshot, and the operation context. Return
+`{ authentication: { mechanism: 'hpke-bound-v1', keyId }, value }` only after
+native code opens the authenticated response. `value` has the same shape as
+the corresponding existing transport result. The legacy `familiars()` roster
+has a separate `managedHpkeFamiliars` method.
+
+The root factory uses the corresponding `listFamiliarsHpke`,
+`listProjectsHpke`, `listConversationsHpke`, `getConversationHpke`,
+`listConversationMessagesHpke`, and `familiarsHpke` methods. Its authenticated
+response is `{ authentication, statusCode, payload }`, with the same native
+authentication requirement.
+
+Your native adapter owns credentials and must match the supplied discovery
+snapshot to its native authority handle before sending one bound HPKE request.
+Its receipt must describe the response it actually authenticated; echoing a
+JavaScript-supplied key ID is insufficient. The SDK rejects missing methods,
+wrong mechanisms or keys, and malformed receipts. It does not retry a page
+request. Discovery v1 uses the existing read methods until that client has
+observed v2; subsequent v1 discovery fails closed.
+
+Each iterator pins its own complete discovery identity, including the
+endpoint, record identity, runtime freshness, and HPKE authority. A changed
+identity terminates it with nonretryable `reconcile_required` before its
+cursor reaches transport. Start a new iterator from canonical state after an
+authority change. Independent iterators can use different authorities.
+Standalone page reads do not share iterator continuity, even when they reuse
+a caller signal. `return()`, `throw()`, abort, and timeout prevent late
+discovery from starting another page request. Pages remain lazy, with no
+prefetch or duplicate yields. A configured `discovery.options.signal` governs
+discovery and its in-flight adapter through read completion. Aborting it
+rejects that read and future page requests; items already buffered from a
+completed page remain available. Pass `signal` to the iterator options to
+cancel the whole iterator, including buffered items.
+Authenticated results are captured through bounded, own-property snapshots;
+returned managed read DTOs are immutable.
+
+This opt-in covers the reads listed above. Pairing, credential custody,
+`familiarContract()`, and `familiarAnalytics()` retain their existing adapter
+contracts. Single-use pairing never retries unauthenticated stale guidance.
+
+Chat's existing native HPKE implementation returns DTOs through fixed authority
+handles. It does not yet implement these optional adapter methods or receipts.
+Production adoption requires that separate native bridge integration. SDK
+adapter tests do not establish Chat adoption or satisfy a release gate.
+
 Managed custody removes credential material from JavaScript, but custody alone
 does not solve authority endpoint takeover. For discovery v2, the
 operation-specific native transport must execute `hpke-bound-v1` inside the
