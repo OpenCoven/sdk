@@ -150,6 +150,117 @@ interface CovenAutomationRunsResult {
     readonly runs: readonly CovenAutomationRun[];
 }
 
+/** Domain streams only: the global feed has a separate, non-domain cursor. */
+interface CovenAutomationEventStream {
+    readonly kind: 'automation' | 'occurrence' | 'run';
+    readonly id: string;
+}
+type CovenAutomationEventsOptions = {
+    readonly stream: CovenAutomationEventStream;
+} & ({
+    readonly after?: number;
+    readonly checkpoint?: never;
+} | {
+    readonly checkpoint: string;
+    readonly after?: never;
+});
+type CovenAutomationEventsRequest = CovenAutomationEventsOptions & {
+    readonly action: 'coven.automations.events.subscribe.v1';
+};
+interface EventBase {
+    readonly schemaVersion: 'coven.automations.v1';
+    readonly eventId: string;
+    readonly stream: CovenAutomationEventStream;
+    readonly sequence: number;
+    readonly recordedAt: string;
+    readonly observedAt: string;
+    readonly producer: {
+        readonly component: string;
+        readonly instanceId: string;
+        readonly implementationVersion?: string;
+    };
+    readonly causation?: {
+        readonly adoptionKey?: string;
+        readonly causeEventId?: string;
+        readonly correlationId?: string;
+    };
+    readonly automationId?: string;
+    readonly occurrenceId?: string;
+    readonly runId?: string;
+    readonly attemptId?: string;
+    readonly summary: string;
+    readonly privacy: {
+        readonly classification: 'public' | 'operational' | 'sensitive' | 'restricted';
+        readonly retention: {
+            readonly classification: 'ephemeral' | 'standard' | 'extended';
+            readonly deleteAfter?: string;
+        };
+    };
+    readonly integrity?: CovenAutomationReceiptDigest;
+}
+interface TransitionPayload {
+    readonly from: string;
+    readonly to: string;
+    readonly reason: string;
+    readonly fenceGeneration?: number;
+    readonly attemptNumber?: number;
+    readonly commandAdoptionKey?: string;
+}
+/** Validated event data; integrity and producer fields are not authenticated claims. */
+type CovenAutomationEvent = EventBase & ({
+    readonly kind: 'definition.created' | 'definition.revised' | 'definition.activated' | 'definition.paused' | 'definition.disabled' | 'definition.invalidated' | 'definition.tombstoned' | 'definition.imported';
+    readonly payload: {
+        readonly revision: number;
+        readonly definitionDigest?: CovenAutomationReceiptDigest;
+        readonly lifecycleState?: 'draft' | 'paused' | 'active' | 'disabled' | 'invalid' | 'tombstoned';
+        readonly importedFrom?: string;
+    };
+} | {
+    readonly kind: 'occurrence.transitioned';
+    readonly payload: TransitionPayload & {
+        readonly entity: 'occurrence';
+    };
+} | {
+    readonly kind: 'run.transitioned';
+    readonly payload: TransitionPayload & {
+        readonly entity: 'run';
+    };
+} | {
+    readonly kind: 'attempt.transitioned';
+    readonly payload: TransitionPayload & {
+        readonly entity: 'attempt';
+    };
+} | {
+    readonly kind: 'occurrence.misfire_recorded';
+    readonly payload: {
+        readonly disposition: 'none' | 'collapsed_to_latest' | 'skipped_overlap' | 'skipped_paused' | 'skipped_invalid';
+        readonly collapsedSlots: readonly string[];
+    };
+} | {
+    readonly kind: 'receipt.recorded';
+    readonly payload: {
+        readonly receiptRef: string;
+        readonly outcome: 'succeeded' | 'failed' | 'cancelled' | 'timed_out' | 'ambiguous';
+        readonly sideEffectClass?: 'none' | 'local_read' | 'local_write' | 'external_read' | 'external_mutation' | 'irreversible_external_mutation';
+    };
+} | {
+    readonly kind: 'feed.snapshot';
+    readonly payload: {
+        readonly throughSequence: number;
+        readonly state: Readonly<Record<string, unknown>>;
+        readonly reason?: 'retention_compaction' | 'manual_snapshot';
+    };
+});
+interface CovenAutomationEventPage {
+    readonly stream: CovenAutomationEventStream;
+    /** Exclusive concrete cursor; null means the beginning. */
+    readonly after: number | null;
+    readonly events: readonly CovenAutomationEvent[];
+    readonly nextAfter: number | null;
+    readonly checkpoint: string;
+    readonly checkpointExpiresAt: string;
+}
+
 type CovenAutomationOccurrenceView = 'due' | 'eligible' | 'claimed' | 'running' | 'recovery_required';
 /** Global scheduler inspection, not per-automation history or cursor pagination. */
 interface CovenAutomationOccurrencesOptions {
@@ -278,7 +389,7 @@ type CovenAutomationDefinitionReadRequest = {
 } | {
     readonly action: 'coven.automations.receipt.get.v1';
     readonly id: string;
-};
+} | CovenAutomationEventsRequest;
 
 interface CovenAutomationVariant {
     readonly variant: string;
@@ -338,6 +449,8 @@ declare class CovenAutomationsClient {
     occurrences(query: CovenAutomationOccurrencesOptions, options?: OperationOptions): Promise<CovenAutomationOccurrencesResult>;
     getOccurrence(id: string, options?: OperationOptions): Promise<CovenAutomationOccurrenceResult>;
     getReceipt(id: string, options?: OperationOptions): Promise<CovenAutomationReceiptResult>;
+    events(query: CovenAutomationEventsOptions, options?: OperationOptions): Promise<CovenAutomationEventPage>;
+    subscribe(query: CovenAutomationEventsOptions, options?: OperationOptions): AsyncIterableIterator<CovenAutomationEventPage>;
     capabilities(options?: OperationOptions): Promise<CovenAutomationCapabilities>;
 }
 declare function createCovenAutomationsClient(options: CovenAutomationsClientOptions): CovenAutomationsClient;
@@ -703,4 +816,4 @@ interface CovenSessionPolicyUnixTransportOptions {
 /** Unix only. Native connected-peer validation is mandatory, never inferred from metadata. */
 declare function createCovenSessionPolicyUnixTransport(discovered: CovenDiscoveredEndpoint, options: CovenSessionPolicyUnixTransportOptions): CovenSessionPolicyTransport;
 
-export { COVEN_DAEMON_PROTOCOL, COVEN_SESSION_POLICY_CONTRACT, COVEN_SESSION_POLICY_PROFILE, type CovenAutomationAttempt, type CovenAutomationCapabilities, type CovenAutomationCapabilityProfile, type CovenAutomationDefinition, type CovenAutomationDefinitionList, type CovenAutomationDefinitionReadRequest, type CovenAutomationHealth, type CovenAutomationHealthResult, type CovenAutomationListOptions, type CovenAutomationOccurrence, type CovenAutomationOccurrenceDetail, type CovenAutomationOccurrenceResult, type CovenAutomationOccurrenceRun, type CovenAutomationOccurrenceView, type CovenAutomationOccurrencesOptions, type CovenAutomationOccurrencesResult, type CovenAutomationReceipt, type CovenAutomationReceiptDigest, type CovenAutomationReceiptReadVerification, type CovenAutomationReceiptResult, type CovenAutomationRoutine, type CovenAutomationRun, type CovenAutomationRunCancellation, type CovenAutomationRunsOptions, type CovenAutomationRunsResult, type CovenAutomationVariant, CovenAutomationsClient, type CovenAutomationsClientOptions, type CovenAutomationsTransport, type CovenAutomationsUnixTransportOptions, type CovenAutomationsWindowsTransportOptions, CovenClient, CovenClientError, type CovenClientOptions, type CovenConnectedSocket, type CovenDaemonFailure, CovenDaemonResponseError, type CovenDiscoveredClientOptions, type CovenDiscoveredEndpoint, type CovenDiscoveredUnixClientOptions, type CovenDiscoveredUnixTransportOptions, type CovenDiscoveredWindowsClientOptions, type CovenDiscoveredWindowsTransportOptions, type CovenDiscoveryDependencies, type CovenDiscoveryFileIdentity, type CovenDiscoverySource, type CovenEndpointFreshness, type CovenEndpointOwner, type CovenExecFile, type CovenExecFileError, type CovenExecFileOptions, type CovenExecutableResolver, type CovenHealth, type CovenHealthResponse, type CovenHealthTransportLimits, type CovenIpcDiagnostics, CovenIpcError, type CovenIpcErrorCode, type CovenMetadataFileHandle, type CovenRestrictedLaunchRequest, CovenSessionPolicyClient, type CovenSessionPolicyClientOptions, type CovenSessionPolicyDelivery, type CovenSessionPolicyDiscovery, CovenSessionPolicyError, type CovenSessionPolicyErrorCode, type CovenSessionPolicyRefusal, type CovenSessionPolicyTransport, type CovenSessionPolicyTransportRequest, type CovenSessionPolicyTransportResponse, type CovenSessionPolicyUnixTransportOptions, type CovenSocket, type CovenSocketConnector, type CovenTransport, type CovenTransportSecurityProvider, type CovenUnixFileIdentity, type CovenUnixPeerIdentity, type CovenUnixPeerIdentityAdapter, type CovenUnixTransportDependencies, type CovenUnixTransportOptions, type CovenUnixTransportSecurityProvider, type CovenWindowsFileTrustValidator, type CovenWindowsPipeIdentity, type CovenWindowsPipeOwnershipAdapter, type CovenWindowsTransportDependencies, type CovenWindowsTransportOptions, type CovenWindowsTransportSecurityProvider, type DiscoverCovenEndpointOptions, createCovenAutomationsClient, createCovenAutomationsUnixTransport, createCovenAutomationsWindowsTransport, createCovenClient, createCovenSessionPolicyClient, createCovenSessionPolicyUnixTransport, createCovenUnixTransport, createCovenWindowsTransport, createDiscoveredCovenClient, discoverCovenEndpoint, isCovenClientError, isCovenDaemonResponseError, isCovenIpcError, isCovenSessionPolicyError, normalizeCovenError };
+export { COVEN_DAEMON_PROTOCOL, COVEN_SESSION_POLICY_CONTRACT, COVEN_SESSION_POLICY_PROFILE, type CovenAutomationAttempt, type CovenAutomationCapabilities, type CovenAutomationCapabilityProfile, type CovenAutomationDefinition, type CovenAutomationDefinitionList, type CovenAutomationDefinitionReadRequest, type CovenAutomationEvent, type CovenAutomationEventPage, type CovenAutomationEventStream, type CovenAutomationEventsOptions, type CovenAutomationEventsRequest, type CovenAutomationHealth, type CovenAutomationHealthResult, type CovenAutomationListOptions, type CovenAutomationOccurrence, type CovenAutomationOccurrenceDetail, type CovenAutomationOccurrenceResult, type CovenAutomationOccurrenceRun, type CovenAutomationOccurrenceView, type CovenAutomationOccurrencesOptions, type CovenAutomationOccurrencesResult, type CovenAutomationReceipt, type CovenAutomationReceiptDigest, type CovenAutomationReceiptReadVerification, type CovenAutomationReceiptResult, type CovenAutomationRoutine, type CovenAutomationRun, type CovenAutomationRunCancellation, type CovenAutomationRunsOptions, type CovenAutomationRunsResult, type CovenAutomationVariant, CovenAutomationsClient, type CovenAutomationsClientOptions, type CovenAutomationsTransport, type CovenAutomationsUnixTransportOptions, type CovenAutomationsWindowsTransportOptions, CovenClient, CovenClientError, type CovenClientOptions, type CovenConnectedSocket, type CovenDaemonFailure, CovenDaemonResponseError, type CovenDiscoveredClientOptions, type CovenDiscoveredEndpoint, type CovenDiscoveredUnixClientOptions, type CovenDiscoveredUnixTransportOptions, type CovenDiscoveredWindowsClientOptions, type CovenDiscoveredWindowsTransportOptions, type CovenDiscoveryDependencies, type CovenDiscoveryFileIdentity, type CovenDiscoverySource, type CovenEndpointFreshness, type CovenEndpointOwner, type CovenExecFile, type CovenExecFileError, type CovenExecFileOptions, type CovenExecutableResolver, type CovenHealth, type CovenHealthResponse, type CovenHealthTransportLimits, type CovenIpcDiagnostics, CovenIpcError, type CovenIpcErrorCode, type CovenMetadataFileHandle, type CovenRestrictedLaunchRequest, CovenSessionPolicyClient, type CovenSessionPolicyClientOptions, type CovenSessionPolicyDelivery, type CovenSessionPolicyDiscovery, CovenSessionPolicyError, type CovenSessionPolicyErrorCode, type CovenSessionPolicyRefusal, type CovenSessionPolicyTransport, type CovenSessionPolicyTransportRequest, type CovenSessionPolicyTransportResponse, type CovenSessionPolicyUnixTransportOptions, type CovenSocket, type CovenSocketConnector, type CovenTransport, type CovenTransportSecurityProvider, type CovenUnixFileIdentity, type CovenUnixPeerIdentity, type CovenUnixPeerIdentityAdapter, type CovenUnixTransportDependencies, type CovenUnixTransportOptions, type CovenUnixTransportSecurityProvider, type CovenWindowsFileTrustValidator, type CovenWindowsPipeIdentity, type CovenWindowsPipeOwnershipAdapter, type CovenWindowsTransportDependencies, type CovenWindowsTransportOptions, type CovenWindowsTransportSecurityProvider, type DiscoverCovenEndpointOptions, createCovenAutomationsClient, createCovenAutomationsUnixTransport, createCovenAutomationsWindowsTransport, createCovenClient, createCovenSessionPolicyClient, createCovenSessionPolicyUnixTransport, createCovenUnixTransport, createCovenWindowsTransport, createDiscoveredCovenClient, discoverCovenEndpoint, isCovenClientError, isCovenDaemonResponseError, isCovenIpcError, isCovenSessionPolicyError, normalizeCovenError };

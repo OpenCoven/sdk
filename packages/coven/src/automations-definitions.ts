@@ -1,6 +1,9 @@
 import { CovenClientError, normalizeCovenError } from './client-errors.js';
 import { parsePolicyJson } from './policy-json.js';
 import { integer, object } from './automations-read-validation.js';
+import {
+  AUTOMATION_EVENTS_MAX_BYTES, decodeEvents, eventsRequestBytes, type CovenAutomationEventPage, type CovenAutomationEventsRequest,
+} from './automations-events.js';
 import { decodeReceiptRead, receiptId, type CovenAutomationReceiptResult } from './automations-receipts.js';
 import { runsPayload, type CovenAutomationRunsResult } from './automations-runs.js';
 import {
@@ -83,7 +86,8 @@ export type CovenAutomationDefinitionReadRequest =
   | { readonly action: 'coven.automations.runs'; readonly id: string; readonly limit: number }
   | { readonly action: 'coven.automations.occurrence.list.v1'; readonly view: CovenAutomationOccurrenceView; readonly limit: number }
   | { readonly action: 'coven.automations.occurrence.get.v1'; readonly id: string }
-  | { readonly action: 'coven.automations.receipt.get.v1'; readonly id: string };
+  | { readonly action: 'coven.automations.receipt.get.v1'; readonly id: string }
+  | CovenAutomationEventsRequest;
 
 export function definitionReadFailure(code: string, operation: string): never {
   throw new CovenClientError(normalizeCovenError({ code }, operation));
@@ -124,6 +128,7 @@ export function definitionReadBytes(request: CovenAutomationDefinitionReadReques
     return descriptor !== undefined && Object.hasOwn(descriptor, 'value') ? descriptor.value : undefined;
   };
   const action = own('action');
+  if (action === 'coven.automations.events.subscribe.v1') return eventsRequestBytes(request);
   const keys = Reflect.ownKeys(descriptors);
   if (keys.length !== (action === 'coven.automations.runs' || action === 'coven.automations.occurrence.list.v1' ? 3 : 2)) return invalid();
   if (action === 'coven.automations.occurrence.list.v1') {
@@ -155,15 +160,16 @@ export function decodeDefinitionRead(
   request: CovenAutomationDefinitionReadRequest,
   operation: string,
 ): CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult | CovenAutomationRunsResult |
-  CovenAutomationOccurrencesResult | CovenAutomationOccurrenceResult | CovenAutomationReceiptResult {
+  CovenAutomationOccurrencesResult | CovenAutomationOccurrenceResult | CovenAutomationReceiptResult | CovenAutomationEventPage {
   const invalid = (): never => definitionReadFailure('invalid_response', operation);
   let value: unknown;
   try {
-    value = parsePolicyJson(bytes, 16_384);
+    value = parsePolicyJson(bytes, request.action === 'coven.automations.events.subscribe.v1' ? AUTOMATION_EVENTS_MAX_BYTES : 16_384);
   } catch {
     return invalid();
   }
   if (!object(value) || value.action !== request.action) return invalid();
+  if (request.action === 'coven.automations.events.subscribe.v1') return decodeEvents(status, value, request);
   if (request.action === 'coven.automations.receipt.get.v1') {
     return decodeReceiptRead(status, value, request.id.trim(), operation);
   }

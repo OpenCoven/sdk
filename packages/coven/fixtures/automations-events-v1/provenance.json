@@ -1,0 +1,40 @@
+{
+  "repository": "OpenCoven/coven",
+  "commit": "aa28d994965a83c0dfba8eaca071e182d605fed1",
+  "files": {
+    "event-envelope.schema.json": {
+      "path": "spec/coven-automations/v1/event-envelope.schema.json",
+      "sha256": "9eb27e62d6133bb506bdf311a74208689e502397cc1d73a3cf8963f9d5610a30"
+    },
+    "common.schema.json": {
+      "path": "spec/coven-automations/v1/common.schema.json",
+      "sha256": "891933e8d88110eb19336ef7b268554be05352d5150ae0f45a6a41b814ef75e6"
+    },
+    "event-reducer-determinism.vectors.json": {
+      "path": "conformance/automations/runner/event-reducer-determinism.vectors.json",
+      "sha256": "416238d7b52f741630be9be80212f18c03b39d8cd237b1cc2d147cbcd4dd46f9"
+    },
+    "coven.automations.v1.d.ts": {
+      "path": "spec/coven-automations/v1/coven.automations.v1.d.ts",
+      "sha256": "dff07129d244d1b8aa2f04315696814aea64087410f96066fa1ebd47f6755ad7"
+    }
+  },
+  "sources": {
+    "control_plane.rs": {
+      "path": "crates/coven-cli/src/control_plane.rs",
+      "sha256": "57155ca118b4520c3abab4ea5b3968a89e0164f394e46e308a17e37749772e34"
+    },
+    "events.rs": {
+      "path": "crates/coven-cli/src/automations/contract/events.rs",
+      "sha256": "9ff8f9b7b7b6e3586ad29b207cc87cbde24167e6fb74220d31d3212cb4b035ee"
+    },
+    "types.rs": {
+      "path": "crates/coven-cli/src/automations/contract/types.rs",
+      "sha256": "e9eaca6922cec465544bcb69dc6e5e07458d6779af6b635d9916118f84455d72"
+    },
+    "error.rs": {
+      "path": "crates/coven-cli/src/automations/contract/error.rs",
+      "sha256": "f308757a3bca13d8c465477c0fb5b19bef5060a993ba67eecf5f8e743e50f507"
+    }
+  }
+}

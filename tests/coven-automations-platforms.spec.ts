@@ -17,6 +17,7 @@ import {
 import { createOpenCovenSdk } from '@opencoven/sdk';
 import type { OperationContext, OperationOptions } from '@opencoven/sdk-core';
 import { afterEach, describe, expect, expectTypeOf, test, vi } from 'vitest';
+import eventVectors from '../packages/coven/fixtures/automations-events-v1/event-reducer-determinism.vectors.json' with { type: 'json' };
 
 const receiptAction = 'coven.automations.receipt.get.v1';
 const receiptResult = {
@@ -181,6 +182,51 @@ function setup(platform: 'unix' | 'windows' = 'windows', discovered = endpoint) 
 afterEach(() => { vi.useRealTimers(); });
 
 describe.each(['unix', 'windows'] as const)('%s Automations parity', (platform) => {
+  test.skipIf(platform === 'unix' && process.platform === 'win32')('reads 100 events with an event-only 1 MiB bound', async () => {
+    const { client, configure, sockets } = setup(platform);
+    const action = 'coven.automations.events.subscribe.v1';
+    const event = eventVectors.cases[0]!.events[0]!;
+    const stream = { kind: 'occurrence' as const, id: event.stream.id };
+    const result = {
+      stream, after: null, nextAfter: 99,
+      events: Array.from({ length: 100 }, (_, sequence) => ({
+        ...event, sequence, eventId: `evt${String(sequence).padStart(32, '0')}`,
+      })),
+      checkpoint: 'ecp00000000000000000000000000000001', checkpointExpiresAt: '2026-09-21T00:00:00Z',
+    };
+    const body = Buffer.from(JSON.stringify({ ok: true, accepted: true, action, status: 'completed', result }));
+    expect(body.length).toBeGreaterThan(16_384);
+    configure.mockImplementation((socket, index) => {
+      socket.response = index === 0 ? Buffer.from(JSON.stringify(advertisement([action]))) : body;
+    });
+    expect(await client.events({ stream })).toEqual(result);
+    expect(sockets).toHaveLength(2);
+    expect(sockets[1]?.writes[0]?.split('\r\n\r\n')[1]).toBe(JSON.stringify({ action, stream }));
+    expect(sockets.every((socket) => socket.destroyed)).toBe(true);
+    configure.mockImplementation((socket, index) => {
+      if (index === 2) socket.response = Buffer.from(JSON.stringify(advertisement([action])));
+      else socket.rawResponse = Buffer.from('HTTP/1.1 200 OK\r\nContent-Length: 1048577\r\n\r\n');
+    });
+    await expect(client.events({ stream })).rejects.toMatchObject({ code: 'body_limit' });
+    expect(sockets.every((socket) => socket.destroyed)).toBe(true);
+  });
+
+  test.skipIf(platform === 'unix' && process.platform === 'win32')('return closes a pending subscription socket before any late response', async () => {
+    const { client, configure, sockets } = setup(platform);
+    configure.mockImplementation((socket, index) => {
+      socket.response = index === 0 ? Buffer.from(JSON.stringify(advertisement(['coven.automations.events.subscribe.v1']))) : undefined;
+    });
+    const iterator = client.subscribe({ stream: { kind: 'automation', id: 'morning' } });
+    const pending = iterator.next();
+    await vi.waitFor(() => expect(sockets[1]?.writes).toHaveLength(1), { interval: 1 });
+    await iterator.return?.();
+    expect(await pending).toEqual({ done: true, value: undefined });
+    expect(sockets.every((socket) => socket.destroyed)).toBe(true);
+    sockets[1]?.emit('data', Buffer.from('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}'));
+    expect(await iterator.next()).toEqual({ done: true, value: undefined });
+    expect(sockets).toHaveLength(2);
+  });
+
   test.skipIf(platform === 'unix' && process.platform === 'win32').each(reads)(
     'authenticates and strictly decodes $request.action', async ({ request, payload, call }) => {
       const { client, configure, sockets, ownership } = setup(platform);
@@ -426,6 +472,10 @@ test.each([
   { action: 'coven.automations.getRun', id: 'run-1' },
   { action: 'coven.automations.runs', id: 'morning', limit: 101 },
   { action: receiptAction, id: 'receipt-1', authority: true },
+  { action: 'coven.automations.events.read.v1', stream: { kind: 'automation', id: 'morning' } },
+  { action: 'coven.automations.events.subscribe.v1', stream: { kind: 'automation', id: 'morning' }, limit: 100 },
+  { action: 'coven.automations.events.subscribe.v1', stream: { kind: 'feed', id: 'all' } },
+  { action: 'coven.automations.events.subscribe.v1', stream: { kind: 'run', id: 'run-1' }, after: 1, checkpoint: 'checkpoint' },
 ])('Windows refuses unsupported action bytes before adapter I/O %#', async (request) => {
   const { transport, ownership, connect } = setup();
   await expect(transport.readDefinitions!(request as CovenAutomationDefinitionReadRequest, {

@@ -1,5 +1,12 @@
 export { CovenAutomationsClient, createCovenAutomationsClient } from './automations.js';
 export type {
+  CovenAutomationEvent,
+  CovenAutomationEventPage,
+  CovenAutomationEventStream,
+  CovenAutomationEventsOptions,
+  CovenAutomationEventsRequest,
+} from './automations-events.js';
+export type {
   CovenAutomationCapabilities,
   CovenAutomationCapabilityProfile,
   CovenAutomationVariant,

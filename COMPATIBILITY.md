@@ -28,6 +28,14 @@ unsupported protocol majors, and minimum-client requirements newer than the
 installed client. Unknown additive fields do not become SDK API unless they are
 documented, typed, and added to the reviewed baseline.
 
+The opt-in Coven Automations namespace also exposes bounded `events()` reads
+and demand-driven `subscribe()` page iteration for domain streams. This
+additive surface requires the producer's exact advertised subscription action;
+older daemons fail with `capability_unsupported`. It does not enable background
+polling, automatic retries, cursor resets, or global feed consumption. See the
+[event contract](packages/coven/README.md#bounded-event-subscriptions) for
+checkpoint, cancellation, and response-limit semantics.
+
 ## Deprecation
 
 An API planned for removal is documented as deprecated, receives a Changeset,

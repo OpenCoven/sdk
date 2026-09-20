@@ -11,6 +11,9 @@ import { integer, object } from './automations-read-validation.js';
 import type { CovenAutomationReceiptResult } from './automations-receipts.js';
 import type { CovenAutomationRunsOptions, CovenAutomationRunsResult } from './automations-runs.js';
 import {
+  eventsOptions, eventsRequest, subscribeEvents, type CovenAutomationEventPage, type CovenAutomationEventsOptions,
+} from './automations-events.js';
+import {
   occurrenceView,
   type CovenAutomationOccurrencesOptions, type CovenAutomationOccurrencesResult, type CovenAutomationOccurrenceResult,
 } from './automations-occurrences.js';
@@ -74,6 +77,13 @@ export interface CovenAutomationsClientOptions {
 }
 
 const operation = 'automations.capabilities';
+
+function checkReadContext(context: OperationContext, operation: string): void {
+  context.signal.throwIfAborted();
+  if (context.deadline !== undefined && context.deadline <= performance.now()) {
+    definitionReadFailure('timeout', operation);
+  }
+}
 
 function invalidResponse(): never {
   throw new CovenClientError(normalizeCovenError({ code: 'invalid_response' }, operation));
@@ -194,16 +204,25 @@ export class CovenAutomationsClient {
     return await this.#read({ action: 'coven.automations.receipt.get.v1', id }, options) as CovenAutomationReceiptResult;
   }
 
+  async events(query: CovenAutomationEventsOptions, options: OperationOptions = {}): Promise<CovenAutomationEventPage> {
+    return await this.#read(eventsRequest(query), eventsOptions(options)) as CovenAutomationEventPage;
+  }
+
+  subscribe(query: CovenAutomationEventsOptions, options: OperationOptions = {}): AsyncIterableIterator<CovenAutomationEventPage> {
+    return subscribeEvents((query, options) => this.events(query, options), query, options);
+  }
+
   async #read(
     request: CovenAutomationDefinitionReadRequest,
     options: OperationOptions,
   ): Promise<CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult | CovenAutomationRunsResult |
-    CovenAutomationOccurrencesResult | CovenAutomationOccurrenceResult | CovenAutomationReceiptResult> {
+    CovenAutomationOccurrencesResult | CovenAutomationOccurrenceResult | CovenAutomationReceiptResult | CovenAutomationEventPage> {
     const operation = request.action === 'coven.automations.definition.list.v1' ? 'automations.list'
       : request.action === 'coven.automations.health' ? 'automations.health'
       : request.action === 'coven.automations.occurrence.list.v1' ? 'automations.occurrences'
       : request.action === 'coven.automations.occurrence.get.v1' ? 'automations.getOccurrence'
       : request.action === 'coven.automations.receipt.get.v1' ? 'automations.getReceipt'
+      : request.action === 'coven.automations.events.subscribe.v1' ? 'automations.events'
       : request.action === 'coven.automations.runs' ? 'automations.runs' : 'automations.get';
     const observer = options.observer ?? this.#options.operation?.observer;
     try {
@@ -220,12 +239,17 @@ export class CovenAutomationsClient {
           const read = this.#options.transport.readDefinitions?.bind(this.#options.transport);
           if (read === undefined) return definitionReadFailure('unsupported_operation', operation);
           const response = await this.#options.transport.capabilities(context);
+          checkReadContext(context, operation);
           const advertised = decode(response.status, response.body);
           if (advertised.status !== 'available' || !advertised.actions.includes(request.action)) {
             return definitionReadFailure('capability_unsupported', operation);
           }
+          checkReadContext(context, operation);
           const result = await read(Object.freeze(request), context);
-          return decodeDefinitionRead(result.status, result.body, request, operation);
+          checkReadContext(context, operation);
+          const decoded = decodeDefinitionRead(result.status, result.body, request, operation);
+          checkReadContext(context, operation);
+          return decoded;
         },
       );
     } catch (error) {
