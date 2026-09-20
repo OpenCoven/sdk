@@ -9,6 +9,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   assertEvidenceProducerCompatibility,
+  parseFrozenConformanceLock,
   parseAssertionRegistry,
   parseConformanceAggregationArgs,
   parsePlatformEvidence,
@@ -17,6 +18,7 @@ import {
   validateChatProducerAuthorityBinding,
 } from '../scripts/conformance-contract.mjs';
 import type { FrozenConformanceLock } from '../scripts/conformance-contract.mjs';
+import { inspectChatProducerAuthority } from '../scripts/aggregate-client-v1-conformance.mjs';
 import { verifyProtectedWorkflow } from '../scripts/github-conformance-evidence.mjs';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -78,6 +80,111 @@ function sourceAuthority(previous = false, chain = false) {
 const currentLock = () => readFrozenConformanceLock(resolve(
   workspaceRoot, 'conformance/client-v1-cross-repository-lock.json',
 ));
+
+describe('attested source ancestry', () => {
+  function fixture() {
+    const lock = currentLock();
+    const producer = assertEvidenceProducerCompatibility(lock);
+    const authority = sourceAuthority();
+    const tip = 'b'.repeat(40);
+    const middle = 'c'.repeat(40);
+    producer.workflow.sourceDigest = tip;
+    producer.workflow.signerDigest = tip;
+    producer.workflow.sourceDescent = [tip, middle, producer.commit];
+    lock.evidenceProducer = producer;
+    return {
+      lock,
+      authority: {
+        ...authority,
+        sourceDescentCommits: [
+          { sha: tip, tree: { sha: 'd'.repeat(40) }, parents: [{ sha: middle }] },
+          { sha: middle, tree: { sha: 'e'.repeat(40) }, parents: [{ sha: producer.commit }] },
+          authority.producerCommit,
+        ],
+      },
+    };
+  }
+
+  test('accepts a complete parent walk to the exact producer', () => {
+    const { lock, authority } = fixture();
+    expect(() => validateChatProducerAuthorityBinding(lock, authority)).not.toThrow();
+  });
+
+  test.each(['missing', 'short', 'identity', 'tree', 'tip-parent', 'middle-parent', 'extra-key'])('refuses %s authority evidence', (mutation) => {
+    const { lock, authority } = fixture();
+    const commits = authority.sourceDescentCommits;
+    if (mutation === 'missing') Reflect.deleteProperty(authority, 'sourceDescentCommits');
+    if (mutation === 'short') commits.pop();
+    if (mutation === 'identity') commits[0]!.sha = '0'.repeat(40);
+    if (mutation === 'tree') commits[2]!.tree.sha = '0'.repeat(40);
+    if (mutation === 'tip-parent') commits[0]!.parents = [];
+    if (mutation === 'middle-parent') commits[1]!.parents = [{ sha: '0'.repeat(40) }];
+    if (mutation === 'extra-key') Object.assign(authority, { unreviewed: true });
+    expect(() => validateChatProducerAuthorityBinding(lock, authority)).toThrow();
+  });
+
+  test('refuses descent evidence for a tip-only lock', () => {
+    expect(() => validateChatProducerAuthorityBinding(currentLock(), {
+      ...sourceAuthority(), sourceDescentCommits: [],
+    })).toThrow(/must be absent/);
+  });
+});
+
+describe('local producer ancestry inspection', () => {
+  test('collects actual descendant Git objects and rejects missing or unrelated history', () => {
+    const artifacts = resolve(workspaceRoot, '.artifacts');
+    mkdirSync(artifacts, { recursive: true });
+    const root = mkdtempSync(resolve(artifacts, 'descent-git-'));
+    const git = (...args: string[]) => execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], {
+      cwd: root, encoding: 'utf8',
+      env: { ...process.env, GIT_AUTHOR_NAME: 'Conformance Test', GIT_COMMITTER_NAME: 'Conformance Test',
+        GIT_AUTHOR_EMAIL: 'conformance@example.invalid', GIT_COMMITTER_EMAIL: 'conformance@example.invalid' },
+    }).trim();
+    try {
+      git('init', '--quiet');
+      writeFileSync(resolve(root, 'harness.txt'), 'test harness');
+      git('add', '.');
+      const harnessTree = git('write-tree');
+      const harness = git('commit-tree', harnessTree, '-m', 'harness');
+      const phase1 = JSON.parse(sourceAuthority().phase1LockText) as {
+        harness: { revision: string }; harnessAuthority: { revision: string; tree: string };
+      };
+      phase1.harness.revision = harness;
+      phase1.harnessAuthority.revision = harness;
+      phase1.harnessAuthority.tree = harnessTree;
+      writeFileSync(resolve(root, 'phase1-conformance.lock.json'), JSON.stringify(phase1));
+      git('add', '.');
+      const tree = git('write-tree');
+      const source = git('commit-tree', tree, '-p', harness, '-m', 'reviewed source');
+      const merged = git('commit-tree', tree, '-p', harness, '-p', source, '-m', 'producer merge');
+      const middle = git('commit-tree', tree, '-p', merged, '-m', 'middle');
+      const tip = git('commit-tree', tree, '-p', middle, '-m', 'dispatch');
+      const unrelated = git('commit-tree', tree, '-p', harness, '-m', 'unrelated');
+      const lock = currentLock();
+      const producer = assertEvidenceProducerCompatibility(lock);
+      producer.commit = merged;
+      producer.tree = tree;
+      producer.source = { repository: producer.repository, commit: source, tree };
+      producer.sourceAuthorityPath = [];
+      producer.harnessAuthority = { repository: producer.repository, commit: harness, tree: harnessTree };
+      producer.workflow.sourceDigest = tip;
+      producer.workflow.signerDigest = tip;
+      producer.workflow.sourceDescent = [tip, middle, merged];
+      lock.evidenceProducer = producer;
+      expect(inspectChatProducerAuthority(root, lock).producerCommit.sha).toBe(merged);
+      producer.workflow.sourceDescent = [tip, '0'.repeat(40), merged];
+      expect(() => inspectChatProducerAuthority(root, lock)).toThrow(/readable Git checkout/);
+      producer.workflow.sourceDescent = [tip, unrelated, merged];
+      expect(() => inspectChatProducerAuthority(root, lock)).toThrow(/Git identities/);
+      producer.workflow.sourceDigest = merged;
+      producer.workflow.signerDigest = merged;
+      producer.workflow.sourceDescent = [];
+      expect(inspectChatProducerAuthority(root, lock).producerCommit.sha).toBe(merged);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('reviewed Chat Cave build home isolation', () => {
   test('retains complete Git source bytes, governance files, and combined native deltas', () => {
@@ -516,5 +623,82 @@ describe('cross-repository conformance contract entrypoints', () => {
     );
     expect(workflowDocument).toContain('validator_revision');
     expect(workflowDocument).toContain('20863036831');
+  });
+});
+
+describe('attested source descent', () => {
+  const lockPath = resolve(workspaceRoot, 'conformance/client-v1-cross-repository-lock.json');
+  const lockText = () => readFileSync(lockPath, 'utf8');
+  type MutableLock = {
+    evidenceProducer: { commit: string; workflow: Record<string, unknown> };
+  };
+  const withWorkflow = (patch: Record<string, unknown>) => {
+    const value = JSON.parse(lockText()) as MutableLock;
+    Object.assign(value.evidenceProducer.workflow, patch);
+    return () => parseFrozenConformanceLock(JSON.stringify(value), 'lock');
+  };
+  const producerCommit = () =>
+    (JSON.parse(lockText()) as MutableLock).evidenceProducer.commit;
+  const tip = 'a'.repeat(40);
+  const middle = 'b'.repeat(40);
+
+  test('accepts the attested source when it is the producer commit', () => {
+    expect(withWorkflow({})).not.toThrow();
+  });
+
+  test('refuses an attested source that is not the producer commit and claims no descent', () => {
+    // The guard this replaces: provenance naming some other commit, unproven.
+    expect(
+      withWorkflow({ signerDigest: tip, sourceDigest: tip, sourceDescent: [] }),
+    ).toThrow(/schema-v2 Chat producer/);
+  });
+
+  test('accepts an attested source whose descent reaches the producer commit', () => {
+    expect(
+      withWorkflow({
+        signerDigest: tip,
+        sourceDigest: tip,
+        sourceDescent: [tip, middle, producerCommit()],
+      }),
+    ).not.toThrow();
+  });
+
+  test('refuses a descent that does not start at the attested source', () => {
+    expect(
+      withWorkflow({
+        signerDigest: tip,
+        sourceDigest: tip,
+        sourceDescent: [middle, producerCommit()],
+      }),
+    ).toThrow(/schema-v2 Chat producer/);
+  });
+
+  test('refuses a descent that does not end at the producer commit', () => {
+    expect(
+      withWorkflow({
+        signerDigest: tip,
+        sourceDigest: tip,
+        sourceDescent: [tip, middle],
+      }),
+    ).toThrow(/schema-v2 Chat producer/);
+  });
+
+  test('refuses a signer that disagrees with the attested source', () => {
+    expect(
+      withWorkflow({
+        signerDigest: middle,
+        sourceDigest: tip,
+        sourceDescent: [tip, producerCommit()],
+      }),
+    ).toThrow(/schema-v2 Chat producer/);
+  });
+
+  test.each([
+    ['a single-entry descent', [tip]],
+    ['a repeated commit', [tip, tip, 'c'.repeat(40)]],
+  ])('refuses %s', (_label, sourceDescent) => {
+    expect(
+      withWorkflow({ signerDigest: tip, sourceDigest: tip, sourceDescent }),
+    ).toThrow();
   });
 });

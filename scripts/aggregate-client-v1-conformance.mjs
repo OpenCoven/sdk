@@ -181,6 +181,57 @@ function inspectGitCommitAuthority(root, commit, label) {
   };
 }
 
+/** Inspect and validate the selected producer and attested-source Git ancestry. */
+export function inspectChatProducerAuthority(root, frozenLock) {
+  const evidenceProducer = assertEvidenceProducerCompatibility(frozenLock);
+  return validateChatProducerAuthorityBinding(
+    frozenLock,
+    {
+      producerCommit: inspectGitCommitAuthority(
+        root,
+        evidenceProducer.commit,
+        'Chat merged producer commit',
+      ),
+      sourceCommit: inspectGitCommitAuthority(
+        root,
+        evidenceProducer.source.commit,
+        'Chat source-bound producer commit',
+      ),
+      sourceAuthorityCommits: evidenceProducer.sourceAuthorityPath.map(
+        (entry, index) =>
+          inspectGitCommitAuthority(
+            root,
+            entry.commit,
+            `Chat source authority path commit ${index + 1}`,
+          ),
+      ),
+      harnessCommit: inspectGitCommitAuthority(
+        root,
+        evidenceProducer.harnessAuthority.commit,
+        'Chat historical harness commit',
+      ),
+      ...(evidenceProducer.workflow.sourceDescent.length > 0 ? {
+        sourceDescentCommits: evidenceProducer.workflow.sourceDescent.map(
+          (commit, index) => inspectGitCommitAuthority(
+            root,
+            commit,
+            `Chat attested source descent commit ${index + 1}`,
+          ),
+        ),
+      } : {}),
+      phase1LockText: runGit(
+        root,
+        [
+          'show',
+          `${evidenceProducer.commit}:phase1-conformance.lock.json`,
+        ],
+        'Chat producer phase1 lock',
+      ),
+    },
+    'Chat producer checkout authority',
+  );
+}
+
 function countLocalExcludeRules(root, label, gitOptions) {
   const gitPath = runGit(
     root,
@@ -1298,43 +1349,7 @@ async function runConformanceAggregationWithScrubbedEnvironment(argv) {
     },
     'Chat harness checkout',
   );
-  validateChatProducerAuthorityBinding(
-    frozenLock,
-    {
-      producerCommit: inspectGitCommitAuthority(
-        harnessCheckout.root,
-        evidenceProducer.commit,
-        'Chat merged producer commit',
-      ),
-      sourceCommit: inspectGitCommitAuthority(
-        harnessCheckout.root,
-        evidenceProducer.source.commit,
-        'Chat source-bound producer commit',
-      ),
-      sourceAuthorityCommits: evidenceProducer.sourceAuthorityPath.map(
-        (entry, index) =>
-          inspectGitCommitAuthority(
-            harnessCheckout.root,
-            entry.commit,
-            `Chat source authority path commit ${index + 1}`,
-          ),
-      ),
-      harnessCommit: inspectGitCommitAuthority(
-        harnessCheckout.root,
-        evidenceProducer.harnessAuthority.commit,
-        'Chat historical harness commit',
-      ),
-      phase1LockText: runGit(
-        harnessCheckout.root,
-        [
-          'show',
-          `${evidenceProducer.commit}:phase1-conformance.lock.json`,
-        ],
-        'Chat producer phase1 lock',
-      ),
-    },
-    'Chat producer checkout authority',
-  );
+  inspectChatProducerAuthority(harnessCheckout.root, frozenLock);
   for (const expected of frozenLock.candidate.cavePackageFiles) {
     assertCommittedFileMetadata(
       candidateCheckout.root,

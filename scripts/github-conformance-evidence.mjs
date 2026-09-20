@@ -710,7 +710,15 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
       artifact,
     ]),
   );
+  const resolvesProducer = isRecord(workflow.jobs)
+    && Object.hasOwn(workflow.jobs, 'producer-revision');
+  if (producer.workflow.sourceDescent.length > 0 && !resolvesProducer) {
+    workflowError('descendant source requires the reviewed producer revision resolver');
+  }
+  const producerRevision = resolvesProducer
+    ? "${{ needs['producer-revision'].outputs.revision }}" : '${{ github.sha }}';
   const expectedJobIds = [
+    ...(resolvesProducer ? ['producer-revision'] : []),
     'windows-supervisor',
     producer.workflow.job,
     producer.workflow.validationJob,
@@ -733,6 +741,17 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
             required: true,
             type: 'string',
           },
+          ...(resolvesProducer ? {
+            producer_revision: {
+              description: 'Exact merged Chat commit to validate. Defaults to the dispatch ref '
+                + 'tip. It must already be an ancestor of that tip: an unmerged or '
+                + 'unrelated revision is refused, so this decouples a protected run from '
+                + 'whatever happens to be at the tip without widening what may be '
+                + 'validated.',
+              required: false,
+              type: 'string',
+            },
+          } : {}),
         },
       },
     },
@@ -749,8 +768,40 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
   expectExactWorkflowValue(
     Object.keys(workflow.jobs),
     expectedJobIds,
-    'five-job graph',
+    'workflow job graph',
   );
+
+  if (resolvesProducer) {
+    const resolver = splitJob(workflow.jobs['producer-revision'], 'producer revision');
+    expectExactWorkflowValue(resolver.configuration, {
+      name: 'resolve-producer-revision',
+      if: `github.ref == '${producer.workflow.sourceRef}'`,
+      'runs-on': 'ubuntu-24.04',
+      'timeout-minutes': 5,
+      permissions: { contents: 'read' },
+      outputs: { revision: "${{ steps['resolve'].outputs.revision }}" },
+    }, 'producer revision job configuration');
+    if (resolver.steps.length !== 2) workflowError('producer revision must have two steps');
+    expectExactWorkflowValue(resolver.steps[0], {
+      uses: CHECKOUT_ACTION,
+      with: { 'fetch-depth': 0, 'persist-credentials': false, ref: '${{ github.sha }}' },
+    }, 'producer revision dispatch checkout');
+    const { run, ...resolveStep } = resolver.steps[1];
+    expectExactWorkflowValue(resolveStep, {
+      id: 'resolve',
+      name: 'Resolve and verify the producer revision',
+      env: {
+        OPENCOVEN_PRODUCER_REVISION_INPUT: '${{ inputs.producer_revision }}',
+        OPENCOVEN_DISPATCH_SHA: '${{ github.sha }}',
+      },
+    }, 'producer revision resolution step');
+    // Exact script from Chat #314, retained at f4e061470ed6b410f24908463e2e47043f7f2673.
+    // It checks lowercase commit identity, object existence, and dispatch ancestry.
+    if (typeof run !== 'string'
+      || sha256(run) !== 'fad6bc3dd214b95e02a252ab0fe708bbcf21cb77092f4d37458753b1cef04297') {
+      workflowError('does not use the reviewed producer revision ancestry guard');
+    }
+  }
 
   const windows = splitJob(
     workflow.jobs['windows-supervisor'],
@@ -793,6 +844,7 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
     {
       name: WINDOWS_SUPERVISOR_JOB_NAME,
       if: mainRefCondition,
+      ...(resolvesProducer ? { needs: 'producer-revision' } : {}),
       'runs-on': WINDOWS_SUPERVISOR_RUNNER_LABELS[0],
       'timeout-minutes': 30,
       permissions: { contents: 'read' },
@@ -810,7 +862,7 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
         matrixExpression,
       ),
       if: mainRefCondition,
-      needs: 'windows-supervisor',
+      needs: resolvesProducer ? ['producer-revision', 'windows-supervisor'] : 'windows-supervisor',
       'timeout-minutes': 60,
       strategy: {
         'fail-fast': false,
@@ -892,7 +944,7 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
   );
 
   const expectedUses = new Map([
-    [CHECKOUT_ACTION, 8],
+    [CHECKOUT_ACTION, resolvesProducer ? 9 : 8],
     [SETUP_NODE_ACTION, 3],
     [PNPM_SETUP_ACTION, 1],
     [UPLOAD_ARTIFACT_ACTION, 2],
@@ -928,7 +980,7 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
       with: {
         'fetch-depth': 0,
         'persist-credentials': false,
-        ref: '${{ github.sha }}',
+        ref: producerRevision,
       },
     },
     'Windows supervisor checkout',
@@ -1061,7 +1113,7 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
       isRecord(step)
       && step.uses === CHECKOUT_ACTION
       && isRecord(step.with)
-      && step.with.ref === '${{ github.sha }}',
+      && step.with.ref === producerRevision,
   );
   if (
     producerCheckout.length !== 1
@@ -1198,7 +1250,7 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
       OPENCOVEN_VALIDATOR_REVISION_INPUT: inputExpression,
       OPENCOVEN_PROTECTED_VALIDATOR_REVISION: protectedExpression,
       OPENCOVEN_CHAT_REPOSITORY: '${{ github.repository }}',
-      OPENCOVEN_CHAT_SHA: '${{ github.sha }}',
+      OPENCOVEN_CHAT_SHA: producerRevision,
       ...requiredWindowsPins,
       OPENCOVEN_WINDOWS_SUPERVISOR_ARTIFACT_ID:
         "${{ needs['windows-supervisor'].outputs.artifact_id }}",
@@ -1500,6 +1552,7 @@ function verifyProtectedWorkflowGraph(workflow, producer, toolchain) {
       workflowError('artifact metadata is not unique');
     }
   }
+  return resolvesProducer;
 }
 
 export function verifyProtectedWorkflow(text, producer, toolchain) {
@@ -1528,9 +1581,13 @@ export function verifyProtectedWorkflow(text, producer, toolchain) {
       'Frozen Chat workflow must use canonical printable ASCII LF YAML',
     );
   }
-  if (
-    /^[ ]*[A-Za-z0-9_-]+:\s*>[+-]?\s*(?:#.*)?$/mu.test(text)
-  ) {
+  const foldedScalars = [...text.matchAll(/^[ ]*[A-Za-z0-9_-]+:[ ]*>[+-]?[ ]*(?:#.*)?$/gmu)];
+  // Only the reviewed non-executable dispatch description may be folded.
+  if (foldedScalars.length > 0 && (
+    foldedScalars.length !== 1
+    || foldedScalars[0][0] !== '        description: >-'
+    || !text.includes('      producer_revision:\n        description: >-\n')
+  )) {
     throw new Error(
       'Frozen Chat workflow must not use folded YAML scalars',
     );
@@ -1545,7 +1602,7 @@ export function verifyProtectedWorkflow(text, producer, toolchain) {
       { cause: error },
     );
   }
-  verifyProtectedWorkflowGraph(workflow, producer, toolchain);
+  return verifyProtectedWorkflowGraph(workflow, producer, toolchain);
 }
 
 function expectSuccessfulRun(value, expected, label) {
@@ -1554,7 +1611,7 @@ function expectSuccessfulRun(value, expected, label) {
     || value.id !== Number(expected.runId)
     || value.name !== expected.producer.workflow.name
     || value.run_attempt !== expected.runAttempt
-    || value.head_sha !== expected.producer.commit
+    || value.head_sha !== expected.producer.workflow.sourceDigest
     || value.head_branch !== expectedBranch(expected.producer.workflow.sourceRef)
     || value.path !== expected.producer.workflow.path
     || value.status !== 'completed'
@@ -1587,7 +1644,7 @@ function expectSuccessfulJob(value, expected, label) {
     || value.id !== Number(expected.jobId)
     || value.run_id !== Number(expected.runId)
     || value.run_attempt !== expected.runAttempt
-    || value.head_sha !== expected.producer.commit
+    || value.head_sha !== expected.producer.workflow.sourceDigest
     || value.html_url !== expectedJobUrl(expected)
     || value.name !== expectedName
     || value.workflow_name !== expected.producer.workflow.name
@@ -1610,7 +1667,7 @@ function expectSuccessfulAggregationJob(value, expected, label) {
     || value.id <= 0
     || value.run_id !== Number(expected.runId)
     || value.run_attempt !== expected.runAttempt
-    || value.head_sha !== expected.producer.commit
+    || value.head_sha !== expected.producer.workflow.sourceDigest
     || value.html_url
       !== (
         `https://github.com/${expected.producer.repository}/actions/runs/`
@@ -1641,7 +1698,7 @@ function expectSuccessfulWorkflowJob(
     || value.id <= 0
     || value.run_id !== Number(expected.runId)
     || value.run_attempt !== expected.runAttempt
-    || value.head_sha !== expected.producer.commit
+    || value.head_sha !== expected.producer.workflow.sourceDigest
     || value.html_url
       !== (
         `https://github.com/${expected.producer.repository}/actions/runs/`
@@ -1667,7 +1724,7 @@ function expectSuccessfulWindowsSupervisorJob(value, expected, label) {
     || value.id <= 0
     || value.run_id !== Number(expected.runId)
     || value.run_attempt !== expected.runAttempt
-    || value.head_sha !== expected.producer.commit
+    || value.head_sha !== expected.producer.workflow.sourceDigest
     || value.html_url
       !== (
         `https://github.com/${expected.producer.repository}/actions/runs/`
@@ -1687,12 +1744,13 @@ function expectSuccessfulWindowsSupervisorJob(value, expected, label) {
   return value;
 }
 
-function expectAttemptJobGraph(value, expectedByPlatform, label) {
+function expectAttemptJobGraph(value, expectedByPlatform, label, resolvesProducer) {
+  const expectedCount = expectedByPlatform.length + (resolvesProducer ? 5 : 4);
   if (
     !isRecord(value)
-    || value.total_count !== expectedByPlatform.length + 4
+    || value.total_count !== expectedCount
     || !Array.isArray(value.jobs)
-    || value.jobs.length !== expectedByPlatform.length + 4
+    || value.jobs.length !== expectedCount
   ) {
     throw new Error(`${label} does not match the exact frozen workflow job graph`);
   }
@@ -1722,6 +1780,15 @@ function expectAttemptJobGraph(value, expectedByPlatform, label) {
   const supportJobs = value.jobs.filter(
     (job) => isRecord(job) && !protectedIds.has(job.id),
   );
+  if (resolvesProducer) {
+    const resolverJobs = supportJobs.filter((job) => job.name === 'resolve-producer-revision');
+    if (resolverJobs.length !== 1) {
+      throw new Error(`${label} does not match the exact frozen producer revision job`);
+    }
+    expectSuccessfulWorkflowJob(resolverJobs[0], expectedByPlatform[0], {
+      name: 'resolve-producer-revision', labels: ['ubuntu-24.04'],
+    }, `${label} producer revision job`);
+  }
   const windowsSupervisorJobs = supportJobs.filter(
     (job) => job.name === WINDOWS_SUPERVISOR_JOB_NAME,
   );
@@ -1834,7 +1901,7 @@ function expectJobDeployment(value, expected, label) {
   if (
     !isRecord(value)
     || value.id !== deploymentId
-    || value.sha !== expected.producer.commit
+    || value.sha !== expected.producer.workflow.sourceDigest
     || value.ref !== expectedBranch(expected.producer.workflow.sourceRef)
     || value.task !== 'deploy'
     || value.environment !== expected.producer.workflow.environment
@@ -1900,7 +1967,7 @@ function expectArtifact(value, expected, label) {
     || artifact.expired !== false
     || !isRecord(artifact.workflow_run)
     || artifact.workflow_run.id !== Number(expected.runId)
-    || artifact.workflow_run.head_sha !== expected.producer.commit
+    || artifact.workflow_run.head_sha !== expected.producer.workflow.sourceDigest
   ) {
     throw new Error(`${label} is not bound to the frozen workflow run`);
   }
@@ -1981,10 +2048,10 @@ function verifyAttestationOutput(text, expected, label) {
         && certificate.runnerEnvironment === 'github-hosted'
         && certificate.sourceRepositoryURI
           === `https://github.com/${expected.producer.repository}`
-        && certificate.sourceRepositoryDigest === expected.producer.commit
+        && certificate.sourceRepositoryDigest === expected.producer.workflow.sourceDigest
         && certificate.sourceRepositoryRef
           === expected.producer.workflow.sourceRef
-        && certificate.buildSignerDigest === expected.producer.commit
+        && certificate.buildSignerDigest === expected.producer.workflow.signerDigest
         && statement.predicateType === expected.producer.workflow.predicateType
         && subjects.some(
           (subject) =>
@@ -2115,6 +2182,17 @@ export function verifyGitHubConformanceEvidence({
         producerCommit,
         sourceCommit,
         sourceAuthorityCommits,
+        ...(producer.workflow.sourceDescent.length > 0 ? {
+          sourceDescentCommits: producer.workflow.sourceDescent.map(
+            (commit, index) => fetchGitCommitAuthority(
+              execute,
+              producer,
+              commit,
+              `GitHub Chat attested source descent commit ${index + 1}`,
+              githubOptions,
+            ),
+          ),
+        } : {}),
         harnessCommit,
         phase1LockText,
       },
@@ -2134,7 +2212,32 @@ export function verifyGitHubConformanceEvidence({
       ],
       githubOptions,
     );
-    verifyProtectedWorkflow(workflowText, producer, lock.toolchain);
+    const resolvesProducer = verifyProtectedWorkflow(workflowText, producer, lock.toolchain);
+    // The run that signs the attestation executes the workflow as it exists at
+    // the attested source, not at the producer commit. When those differ, the
+    // reviewed bytes must still be what ran, or a descendant commit could
+    // attest evidence produced by an unreviewed workflow.
+    if (producer.workflow.sourceDigest !== producer.commit) {
+      verifyProtectedWorkflow(
+        runGh(
+          execute,
+          [
+            'api',
+            '--hostname',
+            'github.com',
+            '--method',
+            'GET',
+            '--header',
+            'Accept: application/vnd.github.raw+json',
+            `repos/${producer.repository}/contents/${producer.workflow.path}`
+              + `?ref=${producer.workflow.sourceDigest}`,
+          ],
+          githubOptions,
+        ),
+        producer,
+        lock.toolchain,
+      );
+    }
     const environment = parseGitHubJson(
       runGh(
         execute,
@@ -2208,6 +2311,7 @@ export function verifyGitHubConformanceEvidence({
       jobsResponse,
       expectedByPlatform,
       'GitHub evidence workflow jobs',
+      resolvesProducer,
     );
     const records = [];
     const receiptPlatforms = [];
@@ -2408,7 +2512,7 @@ export function verifyGitHubConformanceEvidence({
           attempt: protectedJob.runAttempt,
           workflow: producer.workflow.path,
           sourceRef: producer.workflow.sourceRef,
-          commit: producer.commit,
+          commit: producer.workflow.sourceDigest,
         },
         job: {
           id: protectedJob.jobId,

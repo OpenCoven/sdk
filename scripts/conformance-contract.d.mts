@@ -106,6 +106,8 @@ export interface CompatibleConformanceWorkflow {
   signerWorkflow: 'OpenCoven/chat/.github/workflows/client-v1-conformance.yml';
   signerDigest: string;
   sourceDigest: string;
+  /** Attested source down to the producer commit; empty when they are equal. */
+  sourceDescent: readonly string[];
   predicateType: 'https://slsa.dev/provenance/v1';
   denySelfHostedRunners: true;
 }
@@ -539,6 +541,7 @@ export function validateChatProducerAuthorityBinding(
     producerCommit: unknown;
     sourceCommit: unknown;
     sourceAuthorityCommits: unknown[];
+    sourceDescentCommits?: unknown[];
     harnessCommit: unknown;
     phase1LockText: string;
   },

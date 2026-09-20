@@ -900,6 +900,7 @@ const TEST_COMPATIBLE_PRODUCER = {
       'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
     signerDigest: 'f'.repeat(40),
     sourceDigest: 'f'.repeat(40),
+    sourceDescent: [],
     predicateType: 'https://slsa.dev/provenance/v1',
     denySelfHostedRunners: true,
   },
@@ -1543,8 +1544,7 @@ function createPlatformEvidence(
   };
 }
 
-function aggregate(records: Array<Record<string, unknown>>) {
-  const lock = createCompatibleLock();
+function aggregate(records: Array<Record<string, unknown>>, lock = createCompatibleLock()) {
   const registry = readRegistry();
   const caveEngine = createCaveEngine(registry);
   const lockBytes = Buffer.from(
@@ -1923,6 +1923,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
         signerDigest: '157fb3206b9b90f24049aa2043bae534d2b9a709',
         sourceDigest: '157fb3206b9b90f24049aa2043bae534d2b9a709',
+        sourceDescent: [],
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -5247,6 +5248,128 @@ describe('unresolved SDK #38 conformance gaps', () => {
         indexText: contract.serializeCanonicalJson(selfAssertedJob),
       } as never),
     ).toThrow(/GitHub job id/u);
+
+    // The selected harness stays fixed while GitHub runs and signs at its descendant.
+    const dispatchTip = 'b'.repeat(40);
+    const dispatchMiddle = 'c'.repeat(40);
+    const resolverJob = readFileSync(resolve(workspaceRoot,
+      'tests/fixtures/chat314-producer-revision-job.yml'), 'utf8');
+    const dispatchWorkflow = TEST_PRODUCER_WORKFLOW_TEXT
+      .replace('permissions:\n', [
+        '      producer_revision:',
+        '        description: >-',
+        '          Exact merged Chat commit to validate. Defaults to the dispatch ref',
+        '          tip. It must already be an ancestor of that tip: an unmerged or',
+        '          unrelated revision is refused, so this decouples a protected run from',
+        '          whatever happens to be at the tip without widening what may be',
+        '          validated.',
+        '        required: false',
+        '        type: string',
+        'permissions:', '',
+      ].join('\n'))
+      .replace('jobs:\n', `jobs:\n${resolverJob}`)
+      .replace("    name: build-windows-supervisor\n    if: github.ref == 'refs/heads/main'\n",
+        "    name: build-windows-supervisor\n    if: github.ref == 'refs/heads/main'\n    needs: producer-revision\n")
+      .replace('    needs: windows-supervisor\n', '    needs: [producer-revision, windows-supervisor]\n');
+    // Leave the resolver checkout bound to the dispatch itself.
+    const dispatchParts = dispatchWorkflow.split('  windows-supervisor:\n');
+    expect(dispatchParts).toHaveLength(2);
+    const resolvedWorkflow = dispatchParts[0] + '  windows-supervisor:\n'
+      + dispatchParts[1]!.replaceAll('${{ github.sha }}', "${{ needs['producer-revision'].outputs.revision }}");
+    const descendantInput = verificationInputForWorkflow(resolvedWorkflow);
+    const descendantLock = JSON.parse(descendantInput.frozenLockText) as FrozenConformanceLock;
+    const descendantProducer = contract.assertEvidenceProducerCompatibility(descendantLock);
+    descendantProducer.workflow.sourceDigest = dispatchTip;
+    descendantProducer.workflow.signerDigest = dispatchTip;
+    descendantProducer.workflow.sourceDescent = [dispatchTip, dispatchMiddle, producer.commit];
+    descendantLock.evidenceProducer = descendantProducer;
+    const descendantLockText = contract.serializeCanonicalJson(descendantLock);
+    const descendantRecords = PLATFORMS.map((platform) => {
+      const record = createPlatformEvidence(platform, descendantLock as unknown as Record<string, unknown>, registry);
+      record.artifacts.frozenLock = artifactMetadata(
+        'conformance/client-v1-cross-repository-lock.json', Buffer.from(descendantLockText));
+      return record;
+    });
+    const descendantAggregate = aggregate(descendantRecords, descendantLock as unknown as Record<string, unknown>);
+    const descendantAggregateText = contract.serializeCanonicalJson(descendantAggregate);
+    const descendantIndex = { ...structuredClone(index),
+      producer: { ...structuredClone(index.producer), workflow: descendantProducer.workflow },
+      aggregate: { ...index.aggregate, size: Buffer.byteLength(descendantAggregateText), sha256: sha256(descendantAggregateText) },
+    };
+    for (const [i, platform] of PLATFORMS.entries()) {
+      const text = contract.serializeCanonicalJson(descendantRecords[i]);
+      recordTexts.set(platform, text);
+      const platformIndex = descendantIndex.platforms[i]!;
+      platformIndex.record = { size: Buffer.byteLength(text), sha256: sha256(text) };
+      platformIndex.protectedJob.artifactSha256 = sha256(text);
+      platformIndex.protectedJob.attestationSubjectSha256 = sha256(text);
+    }
+    const descendantExecute: typeof execute = (command, args, options) => {
+      const endpoint = args.at(-1) ?? '';
+      if (args[0] === 'api' && endpoint.includes('/contents/.github/workflows/')) return resolvedWorkflow;
+      if (args[0] === 'api' && (endpoint.endsWith(`/git/commits/${dispatchTip}`)
+        || endpoint.endsWith(`/git/commits/${dispatchMiddle}`))) {
+        const tip = endpoint.endsWith(dispatchTip);
+        return JSON.stringify({ sha: tip ? dispatchTip : dispatchMiddle,
+          tree: { sha: 'd'.repeat(40) }, parents: [{ sha: tip ? dispatchMiddle : producer.commit }] });
+      }
+      const result = execute(command, args, options);
+      if ((args[0] === 'api' && /\/(?:actions|deployments)\//u.test(endpoint))
+        || (args[0] === 'attestation' && args[1] === 'verify')) {
+        const rewritten = result.replaceAll(producer.commit, dispatchTip);
+        if (endpoint.includes('/jobs?')) {
+          const jobs = JSON.parse(rewritten) as { total_count: number; jobs: Array<Record<string, unknown>> };
+          jobs.jobs.push({ ...jobs.jobs.find((job) => job.name === producer.workflow.validationJobName),
+            id: 24_300, name: 'resolve-producer-revision',
+            html_url: 'https://github.com/OpenCoven/chat/actions/runs/10000/job/24300' });
+          jobs.total_count += 1;
+          return JSON.stringify(jobs);
+        }
+        return rewritten;
+      }
+      return result;
+    };
+    const descendantVerification = {
+      ...descendantInput,
+      aggregateText: descendantAggregateText,
+      frozenLockText: contract.serializeCanonicalJson(descendantLock),
+      indexText: contract.serializeCanonicalJson(descendantIndex),
+      execute: descendantExecute,
+    };
+    const descendantResult = verifyGitHubConformanceEvidence(descendantVerification as never);
+    expect(descendantResult.aggregate).toEqual(descendantAggregate);
+    expect(descendantResult.receipt).toMatchObject({ platforms: PLATFORMS.map(() => ({ run: { commit: dispatchTip } })) });
+    for (const endpointKind of ['runs', 'jobs', 'deployments', 'artifacts', 'certificate', 'source-workflow', 'ancestry']) {
+      expect(() => verifyGitHubConformanceEvidence({
+        ...descendantVerification,
+        execute: (command: string, args: string[], options: Parameters<typeof execute>[2]) => {
+          const result = descendantExecute(command, args, options);
+          const endpoint = args.at(-1) ?? '';
+          if (endpointKind === 'source-workflow' && endpoint.endsWith(`?ref=${dispatchTip}`)) return result + '# unreviewed\n';
+          if (endpointKind === 'ancestry' && endpoint.endsWith(`/git/commits/${dispatchMiddle}`)) {
+            return result.replace(producer.commit, '0'.repeat(40));
+          }
+          const matches = endpointKind === 'certificate' ? args[0] === 'attestation' && args[1] === 'verify'
+            : args[0] === 'api' && (endpointKind === 'runs' ? /\/actions\/runs\/\d+$/u.test(endpoint)
+              : endpoint.includes(`/${endpointKind}${endpointKind === 'jobs' || endpointKind === 'artifacts' ? '?' : '/'}`));
+          return matches ? result.replaceAll(dispatchTip, producer.commit) : result;
+        },
+      } as never), endpointKind).toThrow();
+    }
+    for (const [before, after] of [
+      ['git merge-base --is-ancestor', 'git merge-base --is-ancestor-disabled'],
+      ['    needs: [producer-revision, windows-supervisor]', '    needs: windows-supervisor'],
+      ["OPENCOVEN_CHAT_SHA: ${{ needs['producer-revision'].outputs.revision }}", 'OPENCOVEN_CHAT_SHA: ${{ github.sha }}'],
+      ["OPENCOVEN_DISPATCH_SHA: ${{ github.sha }}", "OPENCOVEN_DISPATCH_SHA: ${{ inputs.producer_revision }}"],
+    ]) {
+      const text = resolvedWorkflow.replace(before!, after!);
+      expect(text).not.toBe(resolvedWorkflow);
+      expect(() => verifyProtectedWorkflow(text, {
+        ...descendantProducer, workflow: { ...descendantProducer.workflow,
+          size: Buffer.byteLength(text), sha256: sha256(text) },
+      }, toolchain)).toThrow();
+    }
+
   });
 
   test.each([

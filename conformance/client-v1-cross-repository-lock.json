@@ -268,6 +268,7 @@
       "signerWorkflow": "OpenCoven/chat/.github/workflows/client-v1-conformance.yml",
       "signerDigest": "157fb3206b9b90f24049aa2043bae534d2b9a709",
       "sourceDigest": "157fb3206b9b90f24049aa2043bae534d2b9a709",
+      "sourceDescent": [],
       "predicateType": "https://slsa.dev/provenance/v1",
       "denySelfHostedRunners": true
     }
