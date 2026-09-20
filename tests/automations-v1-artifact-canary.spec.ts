@@ -346,6 +346,34 @@ function mutateVectors(
   files.set(path, jsonBytes(vectors));
 }
 
+interface ConformanceFixture {
+  schemas: string[];
+  objects: string[];
+  requiredSuites: string[];
+  conformanceResultVectors?: string;
+}
+
+function addResultContract(files: Map<string, Buffer>): void {
+  const schemaPath = 'conformance-result.schema.json';
+  files.set(schemaPath, jsonBytes({
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: `https://opencoven.ai/spec/coven-automations/v1/${schemaPath}`,
+    type: 'object',
+  }));
+  files.set('conformance-result.vectors.json', jsonBytes({
+    schemaVersion: 'coven.automations.conformance-result-vectors.v1',
+    contractProfile,
+    status: 'synthetic-test-vectors',
+    cases: [{ name: 'synthetic-incomplete', expectation: 'accept', object: {} }],
+  }));
+  const manifest = JSON.parse(files.get('conformance-manifest.json')!.toString('utf8')) as ConformanceFixture;
+  manifest.schemas.push(schemaPath);
+  manifest.objects.push('ConformanceResult');
+  manifest.conformanceResultVectors = 'conformance-result.vectors.json';
+  manifest.requiredSuites.push('conformance-result-envelope-verification');
+  files.set('conformance-manifest.json', jsonBytes(manifest));
+}
+
 function contentDigest(files: Map<string, Buffer>): string {
   const digestInput = [...files.entries()]
     .map(([path, bytes]) => `${path}\0${sha256(bytes)}\n`)
@@ -467,6 +495,38 @@ afterEach(() => {
 });
 
 describe('Automations v1 exact-artifact canary', () => {
+  test('supports the complete released result-contract inventory without claiming result authentication', () => {
+    const artifact = createArtifact({ contractTransform: addResultContract });
+    const result = runCanary(writeArtifact(artifact.archive), artifact);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('manifestFiles=19');
+    expect(result.stdout).toContain('conformanceResultEnvelopeVerification=not-performed');
+  });
+
+  test.each(['conformance-result.schema.json', 'conformance-result.vectors.json'])('rejects a partial result inventory missing %s', (missing) => {
+    const artifact = createArtifact({ contractTransform(files) {
+      addResultContract(files);
+      files.delete(missing);
+    } });
+    const result = runCanary(writeArtifact(artifact.archive), artifact);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('manifest file list');
+  });
+
+  test.each(['reference', 'suite', 'vectors', 'schema', 'object'])('rejects inconsistent released result metadata: %s', (mutation) => {
+    const artifact = createArtifact({ contractTransform(files) {
+      addResultContract(files);
+      const manifest = JSON.parse(files.get('conformance-manifest.json')!.toString('utf8')) as ConformanceFixture;
+      if (mutation === 'reference') manifest.conformanceResultVectors = 'unknown.json';
+      if (mutation === 'suite') manifest.requiredSuites.pop();
+      if (mutation === 'schema') manifest.schemas.pop();
+      if (mutation === 'object') manifest.objects.pop();
+      files.set('conformance-manifest.json', jsonBytes(manifest));
+      if (mutation === 'vectors') files.set('conformance-result.vectors.json', jsonBytes({}));
+    } });
+    expect(runCanary(writeArtifact(artifact.archive), artifact).status).not.toBe(0);
+  });
+
   test('requires every externally recorded artifact identity argument', () => {
     const result = spawnSync(process.execPath, [scriptPath], {
       cwd: root,
