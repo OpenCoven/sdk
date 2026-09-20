@@ -1,3 +1,4 @@
+import { associateManagedIteratorAuthority } from './managed-hpke.js';
 import {
   assessCompatibility,
   createOperationScope,
@@ -2208,12 +2209,15 @@ export class CaveClient {
       options,
       async (context) => {
         this.#ensureActive(context, operation);
+        if (!inheritDefaults && options.signal !== undefined) {
+          associateManagedIteratorAuthority(options.signal, context.signal);
+        }
         const response = this.#managedSnapshot(await read(context), operation);
         try {
           const parsed = parse(response);
-          return this.#managedCredentialTransport === undefined
-            ? parsed
-            : immutableManagedResult(parsed);
+          return this.#usesManagedCredentialTransport()
+            ? immutableManagedResult(parsed)
+            : parsed;
         } catch (error) {
           if (error instanceof CaveCanonicalSchemaError) {
             throw invalidCanonicalResponse(operation, error.field);
@@ -2451,9 +2455,9 @@ export class CaveClient {
     }
 
     const familiars = response.familiars.map(toFamiliar);
-    return this.#managedCredentialTransport === undefined
-      ? familiars
-      : immutableManagedResult(familiars);
+    return this.#usesManagedCredentialTransport()
+      ? immutableManagedResult(familiars)
+      : familiars;
   }
 
   async familiars(options: OperationOptions = {}): Promise<CaveFamiliar[]> {

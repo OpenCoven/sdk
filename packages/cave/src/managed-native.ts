@@ -1,3 +1,12 @@
+import {
+  captureManagedHpkeDiscovery,
+  createManagedHpkeAuthorityResolver,
+  requireManagedHpkeAuthentication,
+  type CaveManagedHpkeDiscovery,
+  type CaveManagedHpkeAuthentication,
+} from './managed-hpke.js';
+import type { CaveManagedDiscoveredEndpoint } from './managed-discovery.js';
+import { snapshotManagedResult } from './managed-snapshot.js';
 import type {
   OperationContext,
   OperationDefaults,
@@ -42,6 +51,10 @@ export interface CaveManagedNativeResponse {
   payload: unknown;
 }
 
+export interface CaveManagedNativeAuthenticatedResponse extends CaveManagedNativeResponse {
+  authentication: CaveManagedHpkeAuthentication;
+}
+
 export interface CaveManagedNativePairingCreated {
   handle: string;
   response: CaveManagedNativeResponse;
@@ -59,6 +72,14 @@ export type CaveManagedNativeDiscardResult =
   | 'deleted';
 
 export interface CaveManagedNativeTransport {
+  /** Native-owned authenticated reads: one HPKE request per invocation, without retry. */
+  familiarsHpke?(discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedNativeAuthenticatedResponse>;
+  listFamiliarsHpke?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedNativeAuthenticatedResponse>;
+  listProjectsHpke?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedNativeAuthenticatedResponse>;
+  listConversationsHpke?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedNativeAuthenticatedResponse>;
+  getConversationHpke?(conversationId: string, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedNativeAuthenticatedResponse>;
+  listConversationMessagesHpke?(conversationId: string, options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedNativeAuthenticatedResponse>;
+
   health(context?: OperationContext): Promise<CaveManagedNativeResponse>;
   pairingCreate(
     request: CavePairingRequest,
@@ -107,6 +128,7 @@ export interface CaveManagedNativeTransport {
 
 export interface CaveManagedClientOptions {
   transport: CaveManagedNativeTransport;
+  discovery?: CaveManagedHpkeDiscovery;
   operation?: OperationDefaults;
 }
 
@@ -471,6 +493,7 @@ async function invokeNative<T>(
   methodName: keyof CaveManagedNativeTransport,
   arguments_: readonly unknown[],
   operation: string,
+  beforeInvoke?: () => void,
 ): Promise<T> {
   let method: unknown;
   try {
@@ -481,6 +504,7 @@ async function invokeNative<T>(
   if (typeof method !== 'function') {
     throw unsupported(operation);
   }
+  beforeInvoke?.();
   try {
     return await Promise.resolve(
       Reflect.apply(method, native, arguments_) as T | PromiseLike<T>,
@@ -493,7 +517,31 @@ async function invokeNative<T>(
 export function createManagedCaveClient(
   options: CaveManagedClientOptions,
 ): CaveClient {
+  let discovery: CaveManagedHpkeDiscovery | undefined;
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(options, 'discovery');
+    if (descriptor !== undefined && !Object.hasOwn(descriptor, 'value')) throw new TypeError();
+    discovery = captureManagedHpkeDiscovery(descriptor?.value);
+  } catch {
+    throw new TypeError('Managed Cave discovery options must use own data properties.');
+  }
   const native = options.transport;
+  const resolver = createManagedHpkeAuthorityResolver(discovery);
+  const read = (name: keyof CaveManagedNativeTransport, hpke: keyof CaveManagedNativeTransport,
+    args: unknown[], context: OperationContext | undefined,
+    requirements?: CaveCanonicalEnvelopeRequirements): Promise<unknown> => resolver.run(String(name), context, async (context) => {
+    const authority = await resolver.resolve(context);
+    const guard = () => resolver.beforeDispatch(authority, context);
+    guard();
+    if (authority?.version !== 2) {
+      return parseResponse(await invokeNative(native, name, [...args, context], String(name), guard), requirements);
+    }
+    const response = ownDataObject(snapshotManagedResult(await invokeNative(native, hpke, [...args, authority, context], String(name), guard)),
+      'Managed native Cave authenticated response');
+    expectExactKeys(response, ['authentication', 'statusCode', 'payload'], 'Managed native Cave authenticated response');
+    requireManagedHpkeAuthentication(response.authentication, authority);
+    return parseResponse({ statusCode: response.statusCode, payload: response.payload }, requirements);
+  });
   const transport: CaveStagedManagedCredentialTransport = {
     credentialMode: 'managed-native',
     async health(context) {
@@ -608,71 +656,13 @@ export function createManagedCaveClient(
       return result;
     },
     async familiars(context) {
-      return parseFamiliarsResponse(
-        parseResponse(
-          await invokeNative(native, 'familiars', [context], 'familiars'),
-        ),
-      );
+      return parseFamiliarsResponse(await read('familiars', 'familiarsHpke', [], context));
     },
-    async listFamiliars(pageOptions, context) {
-      return parseResponse(
-        await invokeNative(
-          native,
-          'listFamiliars',
-          [pageOptions, context],
-          'listFamiliars',
-        ),
-        CAVE_CANONICAL_FAMILIARS_REQUIREMENTS,
-      );
-    },
-    async listProjects(pageOptions, context) {
-      return parseResponse(
-        await invokeNative(
-          native,
-          'listProjects',
-          [pageOptions, context],
-          'listProjects',
-        ),
-        CAVE_CANONICAL_PROJECTS_REQUIREMENTS,
-      );
-    },
-    async listConversations(pageOptions, context) {
-      return parseResponse(
-        await invokeNative(
-          native,
-          'listConversations',
-          [pageOptions, context],
-          'listConversations',
-        ),
-        CAVE_CANONICAL_CONVERSATIONS_REQUIREMENTS,
-      );
-    },
-    async getConversation(conversationId, context) {
-      return parseResponse(
-        await invokeNative(
-          native,
-          'getConversation',
-          [conversationId, context],
-          'getConversation',
-        ),
-        CAVE_CANONICAL_CONVERSATION_REQUIREMENTS,
-      );
-    },
-    async listConversationMessages(
-      conversationId,
-      pageOptions,
-      context,
-    ) {
-      return parseResponse(
-        await invokeNative(
-          native,
-          'listConversationMessages',
-          [conversationId, pageOptions, context],
-          'listConversationMessages',
-        ),
-        CAVE_CANONICAL_MESSAGES_REQUIREMENTS,
-      );
-    },
+    listFamiliars: (options, context) => read('listFamiliars', 'listFamiliarsHpke', [options], context, CAVE_CANONICAL_FAMILIARS_REQUIREMENTS),
+    listProjects: (options, context) => read('listProjects', 'listProjectsHpke', [options], context, CAVE_CANONICAL_PROJECTS_REQUIREMENTS),
+    listConversations: (options, context) => read('listConversations', 'listConversationsHpke', [options], context, CAVE_CANONICAL_CONVERSATIONS_REQUIREMENTS),
+    getConversation: (id, context) => read('getConversation', 'getConversationHpke', [id], context, CAVE_CANONICAL_CONVERSATION_REQUIREMENTS),
+    listConversationMessages: (id, options, context) => read('listConversationMessages', 'listConversationMessagesHpke', [id, options], context, CAVE_CANONICAL_MESSAGES_REQUIREMENTS),
   };
 
   return createCaveClient({

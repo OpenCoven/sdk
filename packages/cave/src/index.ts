@@ -18,6 +18,7 @@ export {
   type CaveManagedNativePairingCreated,
   type CaveManagedNativePairingExchange,
   type CaveManagedNativeResponse,
+  type CaveManagedNativeAuthenticatedResponse,
   type CaveManagedNativeTransport,
 } from './managed-native.js';
 export {
@@ -121,3 +122,5 @@ export type {
   CaveTransport,
 } from './transport.js';
 export { CAVE_CLIENT_VERSION } from './version.js';
+
+export type { CaveManagedHpkeDiscovery, CaveManagedHpkeAuthentication, CaveManagedHpkeResult } from './managed-hpke.js';

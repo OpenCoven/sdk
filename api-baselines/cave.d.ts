@@ -1,6 +1,6 @@
 // Entrypoint: .
-// Declaration: dist/client-D7W5v5ON.d.ts
-import { OperationContext, PageOptions, OperationDefaults, SecretStore, SecretStoreReference, OperationOptions, Page, BoundedPageOptions, NormalizedError, CompatibilityAssessment } from '@opencoven/sdk-core/browser';
+// Declaration: dist/client-KVVQ5ct5.d.ts
+import { OperationContext, OperationOptions, OperationDefaults, PageOptions, SecretStore, SecretStoreReference, Page, BoundedPageOptions, NormalizedError, CompatibilityAssessment } from '@opencoven/sdk-core/browser';
 
 interface CaveCanonicalFamiliar {
     id: string;
@@ -398,6 +398,66 @@ interface CaveFamiliarAnalyticsResponse {
     error?: string;
 }
 
+interface CaveManagedDiscoverySource {
+    /**
+     * Native code must read the owner-checked record. The SDK validates the
+     * returned bytes and metadata; browser code never reads the filesystem.
+     */
+    read(context?: OperationContext): Promise<unknown>;
+}
+interface CaveManagedDiscoveryOptions extends OperationOptions {
+    maxRecordBytes?: number;
+    operation?: OperationDefaults;
+}
+interface CaveManagedDiscoveredEndpointBase {
+    endpoint: {
+        kind: 'http';
+        url: string;
+    };
+    freshness: {
+        pid: number;
+        nonce: string;
+        startedAt: string;
+    };
+    record: {
+        identity: string;
+        device: number;
+        inode: number;
+    };
+}
+interface CaveManagedHpkeAuthority {
+    mechanism: 'hpke-bound-v1';
+    mode: 'advertise' | 'enforce';
+    keyId: string;
+    publicKey: string;
+    suite: {
+        kemId: 32;
+        kdfId: 1;
+        aeadId: 2;
+    };
+}
+type CaveManagedDiscoveredEndpoint = CaveManagedDiscoveredEndpointBase & {
+    version: 1;
+} | CaveManagedDiscoveredEndpointBase & {
+    version: 2;
+    authority: CaveManagedHpkeAuthority;
+};
+declare function discoverManagedCaveEndpoint(source: CaveManagedDiscoverySource, options?: CaveManagedDiscoveryOptions): Promise<CaveManagedDiscoveredEndpoint>;
+
+interface CaveManagedHpkeDiscovery {
+    source: CaveManagedDiscoverySource;
+    options?: CaveManagedDiscoveryOptions;
+}
+/** Native-owned proof, issued only after opening the bound HPKE response. */
+interface CaveManagedHpkeAuthentication {
+    mechanism: 'hpke-bound-v1';
+    keyId: string;
+}
+interface CaveManagedHpkeResult<T = unknown> {
+    authentication: CaveManagedHpkeAuthentication;
+    value: T;
+}
+
 interface CaveTransport {
     health(context?: OperationContext): Promise<CaveHealthResponse>;
     pairingCreate?(request: CavePairingRequest, context?: OperationContext): Promise<CavePairingCreated>;
@@ -434,6 +494,25 @@ interface CaveCredentialPersistingTransport extends CaveTransport {
  * non-secret value before exposing a public DTO.
  */
 interface CaveManagedCredentialTransport extends CaveTransport {
+    /** Each HPKE read performs one bound request; it must not retry or expose credentials. */
+    managedHpkeFamiliars?(discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+    managedHpkeListFamiliars?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+    managedHpkeListProjects?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+    managedHpkeListConversations?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+    managedHpkeGetConversation?(conversationId: string, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+    managedHpkeListConversationMessages?(conversationId: string, options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
     managedPairingCreate(request: CavePairingRequest, context?: OperationContext): Promise<unknown>;
     managedPairingPoll(requestId: string, context?: OperationContext): Promise<unknown>;
     managedPairingExchange(requestId: string, context?: OperationContext): Promise<unknown>;
@@ -539,11 +618,11 @@ declare class CaveClient {
 }
 declare function createCaveClient(options: CaveClientOptions): CaveClient;
 
-export { type CavePairingScope as $, type CaveExecutionSlice as A, type CaveExecutionWindow as B, type CavePairingRequest as C, type CaveFamiliar as D, type CaveFamiliarAnalytics as E, type CaveFamiliarAnalyticsOptions as F, type CaveFamiliarAnalyticsResponse as G, type CaveFamiliarAnalyticsTransportOptions as H, type CaveFamiliarContract as I, type CaveFamiliarContractResponse as J, type CaveFamiliarIdentity as K, type CaveFamiliarPresence as L, type CaveFamiliarProperty as M, type CaveFamiliarWard as N, type CaveFamiliarWire as O, type CaveFamiliarsResponse as P, type CaveHealth as Q, type CaveHealthData as R, type CaveHealthResponse as S, type CaveManagedCredentialStatusResult as T, type CaveManagedCredentialTransport as U, type CaveManagedForgetCredentialResult as V, type CaveManagedNativeCredentialCustody as W, type CaveManagedPairingCreated as X, type CaveManagedPairingExchange as Y, type CavePairingCreated as Z, type CavePairingExchange as _, CaveClient as a, CavePairingSession as a0, type CavePairingState as a1, type CavePairingStatus as a2, type CaveProject as a3, type CavePropertyCoverage as a4, type CaveTransport as a5, createCaveClient as a6, isCaveClientError as a7, normalizeCaveError as a8, canonicalFamiliarAnalyticsData as a9, canonicalFamiliarContractData as aa, CAVE_ANALYTICS_WINDOWS as b, CAVE_FAMILIAR_PROPERTIES as c, CAVE_PAIRING_SCOPES as d, CAVE_PAIRING_STATUSES as e, type CaveAnalyticsWindowKey as f, type CaveAuthorityBinding as g, type CaveAuthorityBoundPairingExchange as h, type CaveCanonicalFamiliar as i, CaveClientError as j, type CaveClientOptions as k, type CaveContractFile as l, type CaveContractReport as m, type CaveContractViolation as n, type CaveConversation as o, type CaveConversationMessage as p, type CaveCredentialAccess as q, type CaveCredentialBinding as r, type CaveCredentialDisconnectedReason as s, type CaveCredentialMetadata as t, type CaveCredentialPersistingTransport as u, type CaveCredentialStatus as v, type CaveExecutionAttempt as w, type CaveExecutionBackfill as x, type CaveExecutionCoverage as y, type CaveExecutionDay as z };
+export { type CaveManagedPairingCreated as $, type CaveExecutionBackfill as A, type CaveExecutionCoverage as B, type CaveManagedDiscoveredEndpoint as C, type CaveExecutionDay as D, type CaveExecutionSlice as E, type CaveExecutionWindow as F, type CaveFamiliar as G, type CaveFamiliarAnalytics as H, type CaveFamiliarAnalyticsOptions as I, type CaveFamiliarAnalyticsResponse as J, type CaveFamiliarAnalyticsTransportOptions as K, type CaveFamiliarContract as L, type CaveFamiliarContractResponse as M, type CaveFamiliarIdentity as N, type CaveFamiliarPresence as O, type CaveFamiliarProperty as P, type CaveFamiliarWard as Q, type CaveFamiliarWire as R, type CaveFamiliarsResponse as S, type CaveHealth as T, type CaveHealthData as U, type CaveHealthResponse as V, type CaveManagedCredentialStatusResult as W, type CaveManagedCredentialTransport as X, type CaveManagedForgetCredentialResult as Y, type CaveManagedHpkeResult as Z, type CaveManagedNativeCredentialCustody as _, type CaveManagedHpkeAuthentication as a, type CaveManagedPairingExchange as a0, type CavePairingCreated as a1, type CavePairingExchange as a2, type CavePairingScope as a3, CavePairingSession as a4, type CavePairingState as a5, type CavePairingStatus as a6, type CaveProject as a7, type CavePropertyCoverage as a8, type CaveTransport as a9, createCaveClient as aa, isCaveClientError as ab, normalizeCaveError as ac, type CaveManagedDiscoveryOptions as ad, type CaveManagedDiscoverySource as ae, canonicalFamiliarAnalyticsData as af, canonicalFamiliarContractData as ag, discoverManagedCaveEndpoint as ah, type CavePairingRequest as b, type CaveManagedHpkeDiscovery as c, CaveClient as d, CAVE_ANALYTICS_WINDOWS as e, CAVE_FAMILIAR_PROPERTIES as f, CAVE_PAIRING_SCOPES as g, CAVE_PAIRING_STATUSES as h, type CaveAnalyticsWindowKey as i, type CaveAuthorityBinding as j, type CaveAuthorityBoundPairingExchange as k, type CaveCanonicalFamiliar as l, CaveClientError as m, type CaveClientOptions as n, type CaveContractFile as o, type CaveContractReport as p, type CaveContractViolation as q, type CaveConversation as r, type CaveConversationMessage as s, type CaveCredentialAccess as t, type CaveCredentialBinding as u, type CaveCredentialDisconnectedReason as v, type CaveCredentialMetadata as w, type CaveCredentialPersistingTransport as x, type CaveCredentialStatus as y, type CaveExecutionAttempt as z };
 // Entrypoint: .
 // Declaration: dist/index.d.ts
-import { C as CavePairingRequest, a as CaveClient } from './client-D7W5v5ON.js';
-export { b as CAVE_ANALYTICS_WINDOWS, c as CAVE_FAMILIAR_PROPERTIES, d as CAVE_PAIRING_SCOPES, e as CAVE_PAIRING_STATUSES, f as CaveAnalyticsWindowKey, g as CaveAuthorityBinding, h as CaveAuthorityBoundPairingExchange, i as CaveCanonicalFamiliar, j as CaveClientError, k as CaveClientOptions, l as CaveContractFile, m as CaveContractReport, n as CaveContractViolation, o as CaveConversation, p as CaveConversationMessage, q as CaveCredentialAccess, r as CaveCredentialBinding, s as CaveCredentialDisconnectedReason, t as CaveCredentialMetadata, u as CaveCredentialPersistingTransport, v as CaveCredentialStatus, w as CaveExecutionAttempt, x as CaveExecutionBackfill, y as CaveExecutionCoverage, z as CaveExecutionDay, A as CaveExecutionSlice, B as CaveExecutionWindow, D as CaveFamiliar, E as CaveFamiliarAnalytics, F as CaveFamiliarAnalyticsOptions, G as CaveFamiliarAnalyticsResponse, H as CaveFamiliarAnalyticsTransportOptions, I as CaveFamiliarContract, J as CaveFamiliarContractResponse, K as CaveFamiliarIdentity, L as CaveFamiliarPresence, M as CaveFamiliarProperty, N as CaveFamiliarWard, O as CaveFamiliarWire, P as CaveFamiliarsResponse, Q as CaveHealth, R as CaveHealthData, S as CaveHealthResponse, T as CaveManagedCredentialStatusResult, U as CaveManagedCredentialTransport, V as CaveManagedForgetCredentialResult, W as CaveManagedNativeCredentialCustody, X as CaveManagedPairingCreated, Y as CaveManagedPairingExchange, Z as CavePairingCreated, _ as CavePairingExchange, $ as CavePairingScope, a0 as CavePairingSession, a1 as CavePairingState, a2 as CavePairingStatus, a3 as CaveProject, a4 as CavePropertyCoverage, a5 as CaveTransport, a6 as createCaveClient, a7 as isCaveClientError, a8 as normalizeCaveError } from './client-D7W5v5ON.js';
+import { C as CaveManagedDiscoveredEndpoint, a as CaveManagedHpkeAuthentication, b as CavePairingRequest, c as CaveManagedHpkeDiscovery, d as CaveClient } from './client-KVVQ5ct5.js';
+export { e as CAVE_ANALYTICS_WINDOWS, f as CAVE_FAMILIAR_PROPERTIES, g as CAVE_PAIRING_SCOPES, h as CAVE_PAIRING_STATUSES, i as CaveAnalyticsWindowKey, j as CaveAuthorityBinding, k as CaveAuthorityBoundPairingExchange, l as CaveCanonicalFamiliar, m as CaveClientError, n as CaveClientOptions, o as CaveContractFile, p as CaveContractReport, q as CaveContractViolation, r as CaveConversation, s as CaveConversationMessage, t as CaveCredentialAccess, u as CaveCredentialBinding, v as CaveCredentialDisconnectedReason, w as CaveCredentialMetadata, x as CaveCredentialPersistingTransport, y as CaveCredentialStatus, z as CaveExecutionAttempt, A as CaveExecutionBackfill, B as CaveExecutionCoverage, D as CaveExecutionDay, E as CaveExecutionSlice, F as CaveExecutionWindow, G as CaveFamiliar, H as CaveFamiliarAnalytics, I as CaveFamiliarAnalyticsOptions, J as CaveFamiliarAnalyticsResponse, K as CaveFamiliarAnalyticsTransportOptions, L as CaveFamiliarContract, M as CaveFamiliarContractResponse, N as CaveFamiliarIdentity, O as CaveFamiliarPresence, P as CaveFamiliarProperty, Q as CaveFamiliarWard, R as CaveFamiliarWire, S as CaveFamiliarsResponse, T as CaveHealth, U as CaveHealthData, V as CaveHealthResponse, W as CaveManagedCredentialStatusResult, X as CaveManagedCredentialTransport, Y as CaveManagedForgetCredentialResult, Z as CaveManagedHpkeResult, _ as CaveManagedNativeCredentialCustody, $ as CaveManagedPairingCreated, a0 as CaveManagedPairingExchange, a1 as CavePairingCreated, a2 as CavePairingExchange, a3 as CavePairingScope, a4 as CavePairingSession, a5 as CavePairingState, a6 as CavePairingStatus, a7 as CaveProject, a8 as CavePropertyCoverage, a9 as CaveTransport, aa as createCaveClient, ab as isCaveClientError, ac as normalizeCaveError } from './client-KVVQ5ct5.js';
 import { OperationOptions, OperationContext, PageOptions, OperationDefaults, SecretStore, SecretStoreReference } from '@opencoven/sdk-core';
 import '@opencoven/sdk-core/browser';
 
@@ -644,6 +723,9 @@ interface CaveManagedNativeResponse {
     statusCode: number;
     payload: unknown;
 }
+interface CaveManagedNativeAuthenticatedResponse extends CaveManagedNativeResponse {
+    authentication: CaveManagedHpkeAuthentication;
+}
 interface CaveManagedNativePairingCreated {
     handle: string;
     response: CaveManagedNativeResponse;
@@ -655,6 +737,25 @@ interface CaveManagedNativePairingExchange {
 }
 type CaveManagedNativeDiscardResult = 'absent' | 'changed' | 'deleted';
 interface CaveManagedNativeTransport {
+    /** Native-owned authenticated reads: one HPKE request per invocation, without retry. */
+    familiarsHpke?(discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedNativeAuthenticatedResponse>;
+    listFamiliarsHpke?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedNativeAuthenticatedResponse>;
+    listProjectsHpke?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedNativeAuthenticatedResponse>;
+    listConversationsHpke?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedNativeAuthenticatedResponse>;
+    getConversationHpke?(conversationId: string, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedNativeAuthenticatedResponse>;
+    listConversationMessagesHpke?(conversationId: string, options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedNativeAuthenticatedResponse>;
     health(context?: OperationContext): Promise<CaveManagedNativeResponse>;
     pairingCreate(request: CavePairingRequest, context?: OperationContext): Promise<CaveManagedNativePairingCreated>;
     pairingPoll(handle: string, context?: OperationContext): Promise<CaveManagedNativeResponse>;
@@ -672,6 +773,7 @@ interface CaveManagedNativeTransport {
 }
 interface CaveManagedClientOptions {
     transport: CaveManagedNativeTransport;
+    discovery?: CaveManagedHpkeDiscovery;
     operation?: OperationDefaults;
 }
 declare function createManagedCaveClient(options: CaveManagedClientOptions): CaveClient;
@@ -838,10 +940,10 @@ declare function parseVerifiedCaveContractFixture(value: string | Uint8Array, ex
 
 declare const CAVE_CLIENT_VERSION: string;
 
-export { CAVE_CLIENT_VERSION, CaveClient, type CaveContractCursor, type CaveContractEnvelopeMetadata, type CaveContractFixture, type CaveContractHealthData, type CaveContractIdentity, type CaveContractOperation, type CaveContractPairingCreatedData, type CaveContractPairingExchangeData, type CaveContractPairingStatusData, type CaveContractPublicRoute, type CaveContractRevision, type CaveDiscoveredClientOptions, type CaveDiscoveredEndpoint, type CaveDiscoveryDependencies, CaveDiscoveryError, type CaveDiscoveryErrorCode, type CaveDiscoveryFileHandle, type CaveDiscoveryPathIdentity, type CaveDiscoveryRecordIdentity, type CaveEndpointFreshness, type CaveManagedClientOptions, type CaveManagedNativeDiscardResult, type CaveManagedNativePairingCreated, type CaveManagedNativePairingExchange, type CaveManagedNativeResponse, type CaveManagedNativeTransport, CavePairingRequest, type CaveWindowsPathTrustResult, type CaveWindowsPathTrustValidator, type DiscoverCaveEndpointOptions, createDiscoveredCaveClient, createManagedCaveClient, digestCaveContractFixture, discoverCaveEndpoint, isCaveDiscoveryError, parseCaveContractFixture, parseVerifiedCaveContractFixture, verifyCaveContractFixtureDigest };
+export { CAVE_CLIENT_VERSION, CaveClient, type CaveContractCursor, type CaveContractEnvelopeMetadata, type CaveContractFixture, type CaveContractHealthData, type CaveContractIdentity, type CaveContractOperation, type CaveContractPairingCreatedData, type CaveContractPairingExchangeData, type CaveContractPairingStatusData, type CaveContractPublicRoute, type CaveContractRevision, type CaveDiscoveredClientOptions, type CaveDiscoveredEndpoint, type CaveDiscoveryDependencies, CaveDiscoveryError, type CaveDiscoveryErrorCode, type CaveDiscoveryFileHandle, type CaveDiscoveryPathIdentity, type CaveDiscoveryRecordIdentity, type CaveEndpointFreshness, type CaveManagedClientOptions, CaveManagedHpkeAuthentication, CaveManagedHpkeDiscovery, type CaveManagedNativeAuthenticatedResponse, type CaveManagedNativeDiscardResult, type CaveManagedNativePairingCreated, type CaveManagedNativePairingExchange, type CaveManagedNativeResponse, type CaveManagedNativeTransport, CavePairingRequest, type CaveWindowsPathTrustResult, type CaveWindowsPathTrustValidator, type DiscoverCaveEndpointOptions, createDiscoveredCaveClient, createManagedCaveClient, digestCaveContractFixture, discoverCaveEndpoint, isCaveDiscoveryError, parseCaveContractFixture, parseVerifiedCaveContractFixture, verifyCaveContractFixtureDigest };
 // Entrypoint: ./managed
-// Declaration: dist/client-D7W5v5ON.d.ts
-import { OperationContext, PageOptions, OperationDefaults, SecretStore, SecretStoreReference, OperationOptions, Page, BoundedPageOptions, NormalizedError, CompatibilityAssessment } from '@opencoven/sdk-core/browser';
+// Declaration: dist/client-KVVQ5ct5.d.ts
+import { OperationContext, OperationOptions, OperationDefaults, PageOptions, SecretStore, SecretStoreReference, Page, BoundedPageOptions, NormalizedError, CompatibilityAssessment } from '@opencoven/sdk-core/browser';
 
 interface CaveCanonicalFamiliar {
     id: string;
@@ -1239,6 +1341,66 @@ interface CaveFamiliarAnalyticsResponse {
     error?: string;
 }
 
+interface CaveManagedDiscoverySource {
+    /**
+     * Native code must read the owner-checked record. The SDK validates the
+     * returned bytes and metadata; browser code never reads the filesystem.
+     */
+    read(context?: OperationContext): Promise<unknown>;
+}
+interface CaveManagedDiscoveryOptions extends OperationOptions {
+    maxRecordBytes?: number;
+    operation?: OperationDefaults;
+}
+interface CaveManagedDiscoveredEndpointBase {
+    endpoint: {
+        kind: 'http';
+        url: string;
+    };
+    freshness: {
+        pid: number;
+        nonce: string;
+        startedAt: string;
+    };
+    record: {
+        identity: string;
+        device: number;
+        inode: number;
+    };
+}
+interface CaveManagedHpkeAuthority {
+    mechanism: 'hpke-bound-v1';
+    mode: 'advertise' | 'enforce';
+    keyId: string;
+    publicKey: string;
+    suite: {
+        kemId: 32;
+        kdfId: 1;
+        aeadId: 2;
+    };
+}
+type CaveManagedDiscoveredEndpoint = CaveManagedDiscoveredEndpointBase & {
+    version: 1;
+} | CaveManagedDiscoveredEndpointBase & {
+    version: 2;
+    authority: CaveManagedHpkeAuthority;
+};
+declare function discoverManagedCaveEndpoint(source: CaveManagedDiscoverySource, options?: CaveManagedDiscoveryOptions): Promise<CaveManagedDiscoveredEndpoint>;
+
+interface CaveManagedHpkeDiscovery {
+    source: CaveManagedDiscoverySource;
+    options?: CaveManagedDiscoveryOptions;
+}
+/** Native-owned proof, issued only after opening the bound HPKE response. */
+interface CaveManagedHpkeAuthentication {
+    mechanism: 'hpke-bound-v1';
+    keyId: string;
+}
+interface CaveManagedHpkeResult<T = unknown> {
+    authentication: CaveManagedHpkeAuthentication;
+    value: T;
+}
+
 interface CaveTransport {
     health(context?: OperationContext): Promise<CaveHealthResponse>;
     pairingCreate?(request: CavePairingRequest, context?: OperationContext): Promise<CavePairingCreated>;
@@ -1275,6 +1437,25 @@ interface CaveCredentialPersistingTransport extends CaveTransport {
  * non-secret value before exposing a public DTO.
  */
 interface CaveManagedCredentialTransport extends CaveTransport {
+    /** Each HPKE read performs one bound request; it must not retry or expose credentials. */
+    managedHpkeFamiliars?(discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+    managedHpkeListFamiliars?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+    managedHpkeListProjects?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+    managedHpkeListConversations?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+    managedHpkeGetConversation?(conversationId: string, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+    managedHpkeListConversationMessages?(conversationId: string, options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, {
+        version: 2;
+    }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
     managedPairingCreate(request: CavePairingRequest, context?: OperationContext): Promise<unknown>;
     managedPairingPoll(requestId: string, context?: OperationContext): Promise<unknown>;
     managedPairingExchange(requestId: string, context?: OperationContext): Promise<unknown>;
@@ -1380,63 +1561,18 @@ declare class CaveClient {
 }
 declare function createCaveClient(options: CaveClientOptions): CaveClient;
 
-export { type CavePairingScope as $, type CaveExecutionSlice as A, type CaveExecutionWindow as B, type CavePairingRequest as C, type CaveFamiliar as D, type CaveFamiliarAnalytics as E, type CaveFamiliarAnalyticsOptions as F, type CaveFamiliarAnalyticsResponse as G, type CaveFamiliarAnalyticsTransportOptions as H, type CaveFamiliarContract as I, type CaveFamiliarContractResponse as J, type CaveFamiliarIdentity as K, type CaveFamiliarPresence as L, type CaveFamiliarProperty as M, type CaveFamiliarWard as N, type CaveFamiliarWire as O, type CaveFamiliarsResponse as P, type CaveHealth as Q, type CaveHealthData as R, type CaveHealthResponse as S, type CaveManagedCredentialStatusResult as T, type CaveManagedCredentialTransport as U, type CaveManagedForgetCredentialResult as V, type CaveManagedNativeCredentialCustody as W, type CaveManagedPairingCreated as X, type CaveManagedPairingExchange as Y, type CavePairingCreated as Z, type CavePairingExchange as _, CaveClient as a, CavePairingSession as a0, type CavePairingState as a1, type CavePairingStatus as a2, type CaveProject as a3, type CavePropertyCoverage as a4, type CaveTransport as a5, createCaveClient as a6, isCaveClientError as a7, normalizeCaveError as a8, canonicalFamiliarAnalyticsData as a9, canonicalFamiliarContractData as aa, CAVE_ANALYTICS_WINDOWS as b, CAVE_FAMILIAR_PROPERTIES as c, CAVE_PAIRING_SCOPES as d, CAVE_PAIRING_STATUSES as e, type CaveAnalyticsWindowKey as f, type CaveAuthorityBinding as g, type CaveAuthorityBoundPairingExchange as h, type CaveCanonicalFamiliar as i, CaveClientError as j, type CaveClientOptions as k, type CaveContractFile as l, type CaveContractReport as m, type CaveContractViolation as n, type CaveConversation as o, type CaveConversationMessage as p, type CaveCredentialAccess as q, type CaveCredentialBinding as r, type CaveCredentialDisconnectedReason as s, type CaveCredentialMetadata as t, type CaveCredentialPersistingTransport as u, type CaveCredentialStatus as v, type CaveExecutionAttempt as w, type CaveExecutionBackfill as x, type CaveExecutionCoverage as y, type CaveExecutionDay as z };
+export { type CaveManagedPairingCreated as $, type CaveExecutionBackfill as A, type CaveExecutionCoverage as B, type CaveManagedDiscoveredEndpoint as C, type CaveExecutionDay as D, type CaveExecutionSlice as E, type CaveExecutionWindow as F, type CaveFamiliar as G, type CaveFamiliarAnalytics as H, type CaveFamiliarAnalyticsOptions as I, type CaveFamiliarAnalyticsResponse as J, type CaveFamiliarAnalyticsTransportOptions as K, type CaveFamiliarContract as L, type CaveFamiliarContractResponse as M, type CaveFamiliarIdentity as N, type CaveFamiliarPresence as O, type CaveFamiliarProperty as P, type CaveFamiliarWard as Q, type CaveFamiliarWire as R, type CaveFamiliarsResponse as S, type CaveHealth as T, type CaveHealthData as U, type CaveHealthResponse as V, type CaveManagedCredentialStatusResult as W, type CaveManagedCredentialTransport as X, type CaveManagedForgetCredentialResult as Y, type CaveManagedHpkeResult as Z, type CaveManagedNativeCredentialCustody as _, type CaveManagedHpkeAuthentication as a, type CaveManagedPairingExchange as a0, type CavePairingCreated as a1, type CavePairingExchange as a2, type CavePairingScope as a3, CavePairingSession as a4, type CavePairingState as a5, type CavePairingStatus as a6, type CaveProject as a7, type CavePropertyCoverage as a8, type CaveTransport as a9, createCaveClient as aa, isCaveClientError as ab, normalizeCaveError as ac, type CaveManagedDiscoveryOptions as ad, type CaveManagedDiscoverySource as ae, canonicalFamiliarAnalyticsData as af, canonicalFamiliarContractData as ag, discoverManagedCaveEndpoint as ah, type CavePairingRequest as b, type CaveManagedHpkeDiscovery as c, CaveClient as d, CAVE_ANALYTICS_WINDOWS as e, CAVE_FAMILIAR_PROPERTIES as f, CAVE_PAIRING_SCOPES as g, CAVE_PAIRING_STATUSES as h, type CaveAnalyticsWindowKey as i, type CaveAuthorityBinding as j, type CaveAuthorityBoundPairingExchange as k, type CaveCanonicalFamiliar as l, CaveClientError as m, type CaveClientOptions as n, type CaveContractFile as o, type CaveContractReport as p, type CaveContractViolation as q, type CaveConversation as r, type CaveConversationMessage as s, type CaveCredentialAccess as t, type CaveCredentialBinding as u, type CaveCredentialDisconnectedReason as v, type CaveCredentialMetadata as w, type CaveCredentialPersistingTransport as x, type CaveCredentialStatus as y, type CaveExecutionAttempt as z };
 // Entrypoint: ./managed
 // Declaration: dist/managed.d.ts
-import { U as CaveManagedCredentialTransport, a as CaveClient } from './client-D7W5v5ON.js';
-export { b as CAVE_ANALYTICS_WINDOWS, c as CAVE_FAMILIAR_PROPERTIES, d as CAVE_PAIRING_SCOPES, e as CAVE_PAIRING_STATUSES, i as CaveCanonicalFamiliar, j as CaveClientError, k as CaveClientOptions, o as CaveConversation, p as CaveConversationMessage, q as CaveCredentialAccess, r as CaveCredentialBinding, t as CaveCredentialMetadata, v as CaveCredentialStatus, F as CaveFamiliarAnalyticsOptions, Q as CaveHealth, T as CaveManagedCredentialStatusResult, V as CaveManagedForgetCredentialResult, W as CaveManagedNativeCredentialCustody, X as CaveManagedPairingCreated, Y as CaveManagedPairingExchange, C as CavePairingRequest, $ as CavePairingScope, a0 as CavePairingSession, a1 as CavePairingState, a2 as CavePairingStatus, a3 as CaveProject, a5 as CaveTransport, a9 as canonicalFamiliarAnalyticsData, aa as canonicalFamiliarContractData, a7 as isCaveClientError, a8 as normalizeCaveError } from './client-D7W5v5ON.js';
-import { OperationOptions, OperationDefaults, OperationContext } from '@opencoven/sdk-core/browser';
-
-interface CaveManagedDiscoverySource {
-    /**
-     * Native code must read the owner-checked record. The SDK validates the
-     * returned bytes and metadata; browser code never reads the filesystem.
-     */
-    read(context?: OperationContext): Promise<unknown>;
-}
-interface CaveManagedDiscoveryOptions extends OperationOptions {
-    maxRecordBytes?: number;
-    operation?: OperationDefaults;
-}
-interface CaveManagedDiscoveredEndpointBase {
-    endpoint: {
-        kind: 'http';
-        url: string;
-    };
-    freshness: {
-        pid: number;
-        nonce: string;
-        startedAt: string;
-    };
-    record: {
-        identity: string;
-        device: number;
-        inode: number;
-    };
-}
-interface CaveManagedHpkeAuthority {
-    mechanism: 'hpke-bound-v1';
-    mode: 'advertise' | 'enforce';
-    keyId: string;
-    publicKey: string;
-    suite: {
-        kemId: 32;
-        kdfId: 1;
-        aeadId: 2;
-    };
-}
-type CaveManagedDiscoveredEndpoint = CaveManagedDiscoveredEndpointBase & {
-    version: 1;
-} | CaveManagedDiscoveredEndpointBase & {
-    version: 2;
-    authority: CaveManagedHpkeAuthority;
-};
-declare function discoverManagedCaveEndpoint(source: CaveManagedDiscoverySource, options?: CaveManagedDiscoveryOptions): Promise<CaveManagedDiscoveredEndpoint>;
+import { X as CaveManagedCredentialTransport, c as CaveManagedHpkeDiscovery, d as CaveClient } from './client-KVVQ5ct5.js';
+export { e as CAVE_ANALYTICS_WINDOWS, f as CAVE_FAMILIAR_PROPERTIES, g as CAVE_PAIRING_SCOPES, h as CAVE_PAIRING_STATUSES, l as CaveCanonicalFamiliar, m as CaveClientError, n as CaveClientOptions, r as CaveConversation, s as CaveConversationMessage, t as CaveCredentialAccess, u as CaveCredentialBinding, w as CaveCredentialMetadata, y as CaveCredentialStatus, I as CaveFamiliarAnalyticsOptions, T as CaveHealth, W as CaveManagedCredentialStatusResult, C as CaveManagedDiscoveredEndpoint, ad as CaveManagedDiscoveryOptions, ae as CaveManagedDiscoverySource, Y as CaveManagedForgetCredentialResult, a as CaveManagedHpkeAuthentication, Z as CaveManagedHpkeResult, _ as CaveManagedNativeCredentialCustody, $ as CaveManagedPairingCreated, a0 as CaveManagedPairingExchange, b as CavePairingRequest, a3 as CavePairingScope, a4 as CavePairingSession, a5 as CavePairingState, a6 as CavePairingStatus, a7 as CaveProject, a9 as CaveTransport, af as canonicalFamiliarAnalyticsData, ag as canonicalFamiliarContractData, ah as discoverManagedCaveEndpoint, ab as isCaveClientError, ac as normalizeCaveError } from './client-KVVQ5ct5.js';
+import { OperationDefaults } from '@opencoven/sdk-core/browser';
 
 interface CaveManagedClientOptions {
     transport: CaveManagedCredentialTransport;
     operation?: OperationDefaults;
+    discovery?: CaveManagedHpkeDiscovery;
 }
 declare function createManagedCaveClient(options: CaveManagedClientOptions): CaveClient;
 
-export { CaveClient, type CaveManagedClientOptions, CaveManagedCredentialTransport, type CaveManagedDiscoveredEndpoint, type CaveManagedDiscoveryOptions, type CaveManagedDiscoverySource, createManagedCaveClient, discoverManagedCaveEndpoint };
+export { CaveClient, type CaveManagedClientOptions, CaveManagedCredentialTransport, CaveManagedHpkeDiscovery, createManagedCaveClient };

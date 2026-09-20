@@ -1,4 +1,11 @@
 import {
+  captureManagedHpkeDiscovery,
+  createManagedHpkeAuthorityResolver,
+  unwrapManagedHpkeResult,
+  type CaveManagedHpkeDiscovery,
+} from './managed-hpke.js';
+import type { OperationContext } from '@opencoven/sdk-core/browser';
+import {
   CaveClient,
   type CaveManagedNativeCredentialCustody,
 } from './client.js';
@@ -9,11 +16,12 @@ import type { CaveManagedCredentialTransport } from './transport.js';
 export interface CaveManagedClientOptions {
   transport: CaveManagedCredentialTransport;
   operation?: OperationDefaults;
+  discovery?: CaveManagedHpkeDiscovery;
 }
 
 function ownManagedClientOptions(
   value: unknown,
-): { transport: CaveManagedCredentialTransport; operation: OperationDefaults | undefined } | undefined {
+): { transport: CaveManagedCredentialTransport; operation: OperationDefaults | undefined; discovery: CaveManagedHpkeDiscovery | undefined } | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return undefined;
   }
@@ -29,7 +37,7 @@ function ownManagedClientOptions(
           }
           const descriptor = descriptors[key];
           return (
-            (key !== 'transport' && key !== 'operation') ||
+            (key !== 'transport' && key !== 'operation' && key !== 'discovery') ||
             descriptor === undefined ||
             !Object.hasOwn(descriptor, 'value')
           );
@@ -43,11 +51,13 @@ function ownManagedClientOptions(
       return undefined;
     }
 
+    const discovery = captureManagedHpkeDiscovery(descriptors.discovery?.value);
     const operationDescriptor = descriptors.operation;
     const operationValue: unknown = operationDescriptor?.value;
     if (operationDescriptor === undefined) {
       return {
         transport: transport.value as CaveManagedCredentialTransport,
+        discovery,
         operation: undefined,
       };
     }
@@ -81,6 +91,7 @@ function ownManagedClientOptions(
     }
     return {
       transport: transport.value as CaveManagedCredentialTransport,
+        discovery,
       operation: Object.freeze({
         ...(operationDescriptors.timeoutMs?.value !== undefined
           ? { timeoutMs: operationDescriptors.timeoutMs.value as number }
@@ -98,6 +109,43 @@ function ownManagedClientOptions(
   }
 }
 
+function wrapManagedReads(transport: CaveManagedCredentialTransport, discovery: CaveManagedHpkeDiscovery): CaveManagedCredentialTransport {
+  const resolver = createManagedHpkeAuthorityResolver(discovery);
+  const invoke = (name: keyof CaveManagedCredentialTransport, args: unknown[], beforeInvoke?: () => void): Promise<unknown> => {
+    const method: unknown = Reflect.get(transport, name);
+    if (typeof method !== 'function') throw Object.assign(new Error('Managed Cave read was not configured.'), {
+      code: 'unsupported_operation', retryable: false,
+    });
+    beforeInvoke?.();
+    return Promise.resolve(Reflect.apply(method, transport, args) as unknown);
+  };
+  const read = (name: keyof CaveManagedCredentialTransport, hpke: keyof CaveManagedCredentialTransport,
+    args: unknown[], context?: OperationContext): Promise<unknown> => resolver.run(String(name), context, async (context) => {
+    const authority = await resolver.resolve(context);
+    const guard = () => resolver.beforeDispatch(authority, context);
+    guard();
+    return authority?.version === 2
+      ? unwrapManagedHpkeResult(await invoke(hpke, [...args, authority, context], guard), authority)
+      : await invoke(name, [...args, context], guard);
+  });
+  return {
+    health: (context) => transport.health(context),
+    managedPairingCreate: (request, context) => transport.managedPairingCreate(request, context),
+    managedPairingPoll: (id, context) => transport.managedPairingPoll(id, context),
+    managedPairingExchange: (id, context) => transport.managedPairingExchange(id, context),
+    managedCredentialStatus: (context) => transport.managedCredentialStatus(context),
+    managedForgetCredential: (context) => transport.managedForgetCredential(context),
+    familiars: (context) => read('familiars', 'managedHpkeFamiliars', [], context) as ReturnType<NonNullable<CaveManagedCredentialTransport['familiars']>>,
+    listFamiliars: (options, context) => read('listFamiliars', 'managedHpkeListFamiliars', [options], context),
+    listProjects: (options, context) => read('listProjects', 'managedHpkeListProjects', [options], context),
+    listConversations: (options, context) => read('listConversations', 'managedHpkeListConversations', [options], context),
+    getConversation: (id, context) => read('getConversation', 'managedHpkeGetConversation', [id], context),
+    listConversationMessages: (id, options, context) => read('listConversationMessages', 'managedHpkeListConversationMessages', [id, options], context),
+    familiarContract: (id, context) => invoke('familiarContract', [id, context]) as ReturnType<NonNullable<CaveManagedCredentialTransport['familiarContract']>>,
+    familiarAnalytics: (id, options, context) => invoke('familiarAnalytics', [id, options, context]) as ReturnType<NonNullable<CaveManagedCredentialTransport['familiarAnalytics']>>,
+  };
+}
+
 export function createManagedCaveClient(
   options: CaveManagedClientOptions,
 ): CaveClient {
@@ -109,7 +157,7 @@ export function createManagedCaveClient(
     mode: 'managed-native',
   };
   return new CaveClient({
-    transport: captured.transport,
+    transport: captured.discovery === undefined ? captured.transport : wrapManagedReads(captured.transport, captured.discovery),
     credentialCustody,
     ...(captured.operation === undefined ? {} : { operation: captured.operation }),
   });
@@ -166,3 +214,5 @@ export type {
 } from './schemas.js';
 
 export { canonicalFamiliarContractData, canonicalFamiliarAnalyticsData } from './client.js';
+
+export type { CaveManagedHpkeDiscovery, CaveManagedHpkeAuthentication, CaveManagedHpkeResult } from './managed-hpke.js';
