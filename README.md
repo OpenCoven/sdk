@@ -203,8 +203,16 @@ corepack pnpm@10.34.0 canary:automations-v1 -- \
   --content-sha256 <contract-content-sha256>
 ```
 
-The canary verifies gzip and tar structure, the exact 17-file manifest, every
+The canary verifies gzip and tar structure, an exact supported manifest, every
 file size and digest, the content digest, and the expected v1 contract shape.
+It accepts the original 17-file layout and the 19-file layout released in Coven
+v0.4.4, which adds the conformance-result schema and synthetic vectors. Partial
+extensions, unknown files, and inconsistent schema/object/vector references are
+rejected. The added result-vector inventory is checked structurally;
+`conformanceResultEnvelopeVerification=not-performed` explicitly records that
+this canary does not execute result-envelope authentication or release-policy
+verification. Supporting the layout does not promote it into the historical
+CI artifact lock below.
 Before trusting the golden fixtures, it independently recomputes each embedded
 `integrity` SHA-256 using the producer's recursive removal of `integrity`
 members and canonical key ordering. It requires the golden definition, receipt,

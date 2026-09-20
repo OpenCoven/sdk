@@ -34,7 +34,12 @@ const expectedContractFiles = [
   'state-machines.json',
   'test-vectors.json',
 ];
-const schemaFiles = expectedContractFiles.filter((path) => path.endsWith('.schema.json'));
+const resultContractFiles = ['conformance-result.schema.json', 'conformance-result.vectors.json'];
+function supportedContractFiles(paths) {
+  return resultContractFiles.some((path) => paths.includes(path))
+    ? [...expectedContractFiles, ...resultContractFiles]
+    : expectedContractFiles;
+}
 const usage =
   'usage: verify-automations-v1-artifact.mjs --archive <path> --bundle-sha256 <sha256> --source-commit <commit> --content-sha256 <sha256>';
 
@@ -305,14 +310,14 @@ function parseManifest(entries) {
     files.push(file);
   }
 
-  assertExactStrings([...paths], expectedContractFiles, 'manifest file list');
+  assertExactStrings([...paths], supportedContractFiles([...paths]), 'manifest file list');
   return { ...manifest, files };
 }
 
 function verifyManifestFiles(entries, manifest) {
   const expectedArchivePaths = new Set([
     'manifest.json',
-    ...expectedContractFiles.map((path) => `${contractDirectory}/${path}`),
+    ...manifest.files.map(({ path }) => `${contractDirectory}/${path}`),
   ]);
 
   for (const path of entries.keys()) {
@@ -368,7 +373,10 @@ function readContractJson(entries, path) {
   return assertObject(parseJson(bytes, path), path);
 }
 
-function validateContractSet(entries) {
+function validateContractSet(entries, manifest) {
+  const paths = manifest.files.map(({ path }) => path);
+  const hasResultContract = paths.includes('conformance-result.schema.json');
+  const schemaFiles = supportedContractFiles(paths).filter((path) => path.endsWith('.schema.json'));
   for (const path of schemaFiles) {
     const schema = readContractJson(entries, path);
     let validRoot;
@@ -427,6 +435,7 @@ function validateContractSet(entries) {
       'CommandResponse',
       'ErrorEnvelope',
       'EventEnvelope',
+      ...(hasResultContract ? ['ConformanceResult'] : []),
     ],
     'conformance object list',
   );
@@ -440,6 +449,34 @@ function validateContractSet(entries) {
     ].every((suite) => requiredSuites.includes(suite))
   ) {
     fail('Malformed Automations v1 contract set: required conformance suites are missing.');
+  }
+  if (hasResultContract) {
+    if (conformance.conformanceResultVectors !== 'conformance-result.vectors.json'
+      || !requiredSuites.includes('conformance-result-envelope-verification')) {
+      fail('Malformed Automations v1 contract set: result contract references are invalid.');
+    }
+    // Inventory/shape checks only. These synthetic vectors are not authenticated
+    // conformance observations and this canary does not execute their verifier.
+    const results = readContractJson(entries, 'conformance-result.vectors.json');
+    if (results.schemaVersion !== 'coven.automations.conformance-result-vectors.v1'
+      || results.contractProfile !== 'coven.automations.v1'
+      || results.status !== 'synthetic-test-vectors'
+      || !Array.isArray(results.cases) || results.cases.length === 0) {
+      fail('Malformed Automations v1 contract set: result vector identity is invalid.');
+    }
+    const names = new Set();
+    for (const entry of results.cases) {
+      const vector = assertObject(entry, 'conformance result vector');
+      if (typeof vector.name !== 'string' || vector.name.length === 0 || names.has(vector.name)
+        || !['accept', 'reject'].includes(vector.expectation)) {
+        fail('Malformed Automations v1 contract set: result vector case is invalid.');
+      }
+      names.add(vector.name);
+      assertObject(vector.object, 'conformance result vector object');
+    }
+  } else if (Object.hasOwn(conformance, 'conformanceResultVectors')
+    || requiredSuites.includes('conformance-result-envelope-verification')) {
+    fail('Malformed Automations v1 contract set: result metadata requires the complete result inventory.');
   }
   const canaryRequirements = assertObject(
     conformance.canaryRequirements,
@@ -1004,7 +1041,7 @@ export function verifyAutomationsArtifact({
     );
   }
 
-  const vectors = validateContractSet(entries);
+  const vectors = validateContractSet(entries, manifest);
   verifyFixtureIntegrity(vectors);
   typecheckPinnedDeclaration(entries);
   exerciseGoldenVectors(vectors);
@@ -1028,6 +1065,7 @@ function main() {
       `bundleSha256=${result.bundleSha256}`,
       `contractContentSha256=${result.contractContentSha256}`,
       `manifestFiles=${result.manifestFiles}`,
+      ...(result.manifestFiles === 19 ? ['conformanceResultEnvelopeVerification=not-performed'] : []),
       'fixtureIntegrity=passed',
       'receiptDefinitionBinding=passed',
       'typecheck=passed',
