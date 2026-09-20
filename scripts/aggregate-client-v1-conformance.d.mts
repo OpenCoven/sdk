@@ -1,7 +1,9 @@
+import { validateChatProducerAuthorityBinding } from './conformance-contract.mjs';
 import type {
   AggregatedConformanceEvidence,
   CaveAssertionEngine,
   CheckoutIdentity,
+  FrozenConformanceLock,
 } from './conformance-contract.d.mts';
 
 export interface InspectedCheckout extends CheckoutIdentity {
@@ -94,3 +96,8 @@ export function publishEvidenceAtomically(
 export function runConformanceAggregation(
   argv?: string[],
 ): Promise<AggregatedConformanceEvidence>;
+
+export function inspectChatProducerAuthority(
+  root: string,
+  frozenLock: FrozenConformanceLock,
+): ReturnType<typeof validateChatProducerAuthorityBinding>;

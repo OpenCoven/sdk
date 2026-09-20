@@ -18,7 +18,7 @@ export function verifyProtectedWorkflow(
     { status: 'compatible' }
   >,
   toolchain: FrozenConformanceLock['toolchain'],
-): void;
+): boolean;
 
 export function verifyGitHubConformanceEvidence(options: {
   frozenLockText: string;

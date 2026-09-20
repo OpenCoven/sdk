@@ -1,0 +1,43 @@
+  producer-revision:
+    name: resolve-producer-revision
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      revision: ${{ steps['resolve'].outputs.revision }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - id: resolve
+        name: Resolve and verify the producer revision
+        env:
+          OPENCOVEN_PRODUCER_REVISION_INPUT: ${{ inputs.producer_revision }}
+          OPENCOVEN_DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          requested="${OPENCOVEN_PRODUCER_REVISION_INPUT:-}"
+          if [ -z "$requested" ]; then
+            requested="$OPENCOVEN_DISPATCH_SHA"
+          fi
+          case "$requested" in
+            *[!0-9a-f]* | "" ) echo 'Producer revision must be an exact lowercase 40-hex commit.' >&2; exit 1 ;;
+          esac
+          if [ "${#requested}" -ne 40 ]; then
+            echo 'Producer revision must be an exact lowercase 40-hex commit.' >&2
+            exit 1
+          fi
+          if ! git cat-file -e "$requested^{commit}" 2>/dev/null; then
+            echo 'Producer revision is not a commit in this repository.' >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$requested" "$OPENCOVEN_DISPATCH_SHA"; then
+            echo 'Producer revision is not an ancestor of the dispatch ref; only merged revisions may be validated.' >&2
+            exit 1
+          fi
+          printf 'revision=%s\n' "$requested" >> "$GITHUB_OUTPUT"
+          echo "Validating producer revision $requested"

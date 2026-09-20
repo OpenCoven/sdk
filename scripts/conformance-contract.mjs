@@ -1596,6 +1596,8 @@ export function validateChatProducerAuthorityBinding(
       'sourceAuthorityCommits',
       'harnessCommit',
       'phase1LockText',
+      ...(Object.hasOwn(authorityValue ?? {}, 'sourceDescentCommits')
+        ? ['sourceDescentCommits'] : []),
     ],
     source,
   );

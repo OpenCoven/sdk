@@ -467,6 +467,30 @@ to `false` so the dispatcher and sole reviewer can approve, no wait-timer rule
 (zero minutes), and protected-branch-only deployment policy. Aggregation
 rejects any policy drift.
 
+### Dispatching against a merged ancestor
+
+The validator also recognizes Chat #314's exact `producer-revision` resolver
+and its `producer_revision` input. The resolver checks a full lowercase commit
+ID against the dispatch commit's ancestry before any producer checkout. Its
+script, dependencies, permissions, checkout references, and successful GitHub
+job are verified alongside the existing protected workflow.
+
+For such a run, `evidenceProducer.commit` remains the selected harness revision.
+`workflow.sourceDigest` and `workflow.signerDigest` identify the dispatch
+revision. Set `workflow.sourceDescent` to the ordered Git commits from dispatch
+to producer, including both endpoints (2–16 unique commits). Local aggregation
+and GitHub verification inspect every actual parent edge. Runs, jobs,
+deployments, artifacts, and certificates must identify the dispatch revision;
+platform records must still identify the selected producer.
+
+Both revisions must contain the same reviewed workflow bytes. Refresh the
+producer binding to a reviewed revision containing the new resolver before
+using this path; the current frozen producer predates that workflow. The
+existing empty descent remains correct for its tip-only binding. Historical
+locks and indexes that omit the field retain that same tip-only meaning.
+Supporting the resolver does not supply the missing three-platform evidence
+or change the release's BLOCK disposition.
+
 ## Exact platform record
 
 Every input must satisfy both:

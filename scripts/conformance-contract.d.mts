@@ -541,6 +541,7 @@ export function validateChatProducerAuthorityBinding(
     producerCommit: unknown;
     sourceCommit: unknown;
     sourceAuthorityCommits: unknown[];
+    sourceDescentCommits?: unknown[];
     harnessCommit: unknown;
     phase1LockText: string;
   },
