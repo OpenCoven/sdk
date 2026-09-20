@@ -2,6 +2,7 @@ import { runOperation, type OperationContext } from '@opencoven/sdk-core';
 
 import type { CovenAutomationsTransport } from './automations.js';
 import { definitionReadBytes } from './automations-definitions.js';
+import { AUTOMATION_EVENTS_MAX_BYTES } from './automations-events.js';
 import { CovenClientError, normalizeCovenError } from './client-errors.js';
 import {
   requestCovenPolicyOverSocket,
@@ -11,7 +12,7 @@ import {
 export function createCovenAutomationsSocketTransport(
   access: CovenSocketAccess,
 ): CovenAutomationsTransport {
-  async function request(wire: Buffer, context: OperationContext, operation: string) {
+  async function request(wire: Buffer, context: OperationContext, operation: string, maxBodyBytes = 16_384) {
     if (context === undefined || (context.deadline !== undefined && !Number.isFinite(context.deadline))) {
       throw new CovenClientError(normalizeCovenError({ code: 'invalid_options' }, operation));
     }
@@ -26,7 +27,7 @@ export function createCovenAutomationsSocketTransport(
       async (scope) => {
         const bounded = { signal: scope.signal, deadline };
         const hooks = await access.prepare(bounded);
-        return requestCovenPolicyOverSocket(access.path, hooks, bounded, wire);
+        return requestCovenPolicyOverSocket(access.path, hooks, bounded, wire, maxBodyBytes);
       },
     );
   }
@@ -39,6 +40,8 @@ export function createCovenAutomationsSocketTransport(
     },
     async readDefinitions(input, context) {
       const body = definitionReadBytes(input);
+      // Inspect only the validated, serialized request, never caller accessors.
+      const { action } = JSON.parse(body.toString()) as { action: string };
       return request(Buffer.concat([
         Buffer.from(
           'POST /api/v1/actions HTTP/1.1\r\nHost: coven\r\nAccept: application/json\r\n' +
@@ -46,7 +49,7 @@ export function createCovenAutomationsSocketTransport(
           `Content-Length: ${body.byteLength}\r\n\r\n`,
         ),
         body,
-      ]), context, 'automations.read');
+      ]), context, 'automations.read', action === 'coven.automations.events.subscribe.v1' ? AUTOMATION_EVENTS_MAX_BYTES : 16_384);
     },
   };
 }

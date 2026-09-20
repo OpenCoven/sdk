@@ -134,6 +134,7 @@ does not poll or activate Automations.
 | `list()`, `get()`, `health()` | Allowlisted reads | Same actions and decoders |
 | `runs()`, `occurrences()`, `getOccurrence()` | Bounded diagnostic reads | Same actions and decoders |
 | `getReceipt()` | Public/operational receipt result | Same result and privacy checks |
+| `events()`, `subscribe()` | Bounded domain event pages | Same pages and cancellation |
 | Normal/discovered client and `sdk.coven` | Explicit opt-in | Explicit opt-in |
 | TCP fallback, mutations, independent receipt authentication | Not supported | Not supported |
 
@@ -233,7 +234,7 @@ owns the compatibility routine fields. No GET definition routes, normative
 command-envelope adaptation, pagination, changefeed emission, or certification
 are inferred from the schemas in `spec/coven-automations/v1`. Existing artifact
 pins are unchanged. Individual run reads, per-automation occurrence history, receipt verification,
-subscriptions and authority-bearing phases remain separate #80 work.
+global feed subscriptions and authority-bearing phases remain separate #80 work.
 
 ### Routine health
 
@@ -382,7 +383,7 @@ and
 [`automations/contract/error.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/automations/contract/error.rs)
 define the serialized receipt and error constraints. These types are not
 generated or mechanically checked against released schemas. This slice does
-not change artifact canary pins or complete #80 verification, subscriptions,
+not change artifact canary pins or complete #80 verification, global feed subscriptions,
 or authority-bearing commands.
 
 ### Global occurrence inspection
@@ -442,8 +443,89 @@ defines nullability, ordering, snapshot transactions and the 20-run truncation;
 [`api.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/api.rs)
 routes authenticated `POST /api/v1/actions`. There is no advertised individual
 run-read action at this pin; `coven.automations.run` is a mutation and is never
-used as a read fallback. Independent receipt verification, subscriptions,
+used as a read fallback. Independent receipt verification, global feed subscriptions,
 per-automation occurrence history and individual-run lookup remain unimplemented.
+
+### Bounded event subscriptions
+
+Use `events()` to read one page or `subscribe()` to iterate pages from a domain
+stream. Both require the exact advertised
+`coven.automations.events.subscribe.v1` action and the existing opt-in
+Automations transport.
+
+```ts
+const stream = { kind: 'automation', id: 'morning' } as const;
+const page = await automations.events({ stream }, { timeoutMs: 5_000 });
+for (const event of page.events) console.log(event.kind, event.sequence);
+
+// Resume only after you have processed every event in the saved page.
+const controller = new AbortController();
+for await (const next of automations.subscribe(
+  { stream, checkpoint: page.checkpoint },
+  { signal: controller.signal, timeoutMs: 5_000 },
+)) {
+  for (const event of next.events) console.log(event.kind, event.sequence);
+  // Persist next.checkpoint together with your successfully updated read model.
+}
+```
+
+The producer returns at most 100 events per request. Each iterator `next()`
+performs one capability check and one action request, with a shared per-page
+deadline. There is no prefetch, polling, automatic retry, or persistent socket.
+An empty page is yielded once so you can save its checkpoint, then iteration
+ends. Call `subscribe()` again with that checkpoint when you choose to check
+for new events. Concurrent `next()` calls fail with `invalid_options` instead
+of queuing more pages. Breaking the loop or calling `return()` or `throw()` aborts that
+iterator's pending request. Other iterators keep their own cancellation scope.
+
+Supply either an exclusive numeric `after` cursor or an opaque `checkpoint`.
+Omit both to start at the beginning. Explicit `limit` and `from` fields are
+rejected. Supported stream kinds are `automation`, `occurrence`, and `run`.
+The global `feed/all` mode is unsupported: the producer returns domain events
+with a separate feed cursor, so an event's `sequence` cannot establish global
+ordering. The SDK does not substitute domain sequences for feed positions.
+
+Every page is validated and deeply frozen before it is returned or yielded. The SDK binds the
+page and its events to the requested stream, requires gapless sequence order,
+ignores identical duplicate event IDs within a page, and refuses conflicting
+duplicates. It checks that a resumed iterator page starts after the previous
+page's `nextAfter`. Earlier deliveries outside the current page are refused
+as cursor regressions; the SDK retains no unbounded event-ID history. Explicit
+`feed.snapshot` events may advance a domain cursor to `throughSequence`.
+Their `state` remains opaque data for your application to validate and apply.
+Event producer and integrity fields are diagnostic data; reading them does
+not authenticate a receipt or authorize execution.
+
+An expired checkpoint surfaces `CovenClientError.code === 'CURSOR_EXPIRED'`
+with HTTP status `410`. Unknown checkpoints surface `NOT_FOUND`; invalid
+checkpoint bindings surface `VALIDATION_FAILED`. Errors close the iterator.
+The SDK never resets a cursor or fetches an earlier page automatically.
+Choose and validate your recovery source explicitly before opening a new
+subscription. Persist a checkpoint only after committing the whole page;
+stopping midway and saving that page's checkpoint would skip its remaining
+events on reconnect.
+
+Event responses are capped at 1 MiB and 100 wire events, with the existing
+16-level JSON depth limit. Oversized or malformed pages fail closed without
+yielding partial events. All other Automations and policy response limits
+remain 16 KiB. A producer page larger than the event byte cap cannot be
+retried with a smaller subscription limit because the producer forbids that
+field. The SDK does not silently truncate it.
+
+This additive surface follows Coven commit
+[`aa28d994965a83c0dfba8eaca071e182d605fed1`](https://github.com/OpenCoven/coven/tree/aa28d994965a83c0dfba8eaca071e182d605fed1):
+[`control_plane.rs`](https://github.com/OpenCoven/coven/blob/aa28d994965a83c0dfba8eaca071e182d605fed1/crates/coven-cli/src/control_plane.rs)
+owns the advertised action, fixed page size, mutually exclusive cursors, and
+completed `result` envelope;
+[`events.rs`](https://github.com/OpenCoven/coven/blob/aa28d994965a83c0dfba8eaca071e182d605fed1/crates/coven-cli/src/automations/contract/events.rs)
+owns checkpoint expiry, stream binding, exclusive cursors, and snapshots;
+[`types.rs`](https://github.com/OpenCoven/coven/blob/aa28d994965a83c0dfba8eaca071e182d605fed1/crates/coven-cli/src/automations/contract/types.rs)
+and the versioned event schema own the validated payload union. Exact schema
+and canonical duplicate-delivery fixture bytes and source digests are recorded
+in `fixtures/automations-events-v1/provenance.json`. These adapter tests do not
+claim live-daemon or artifact conformance and do not complete #80's remaining
+global feed, receipt authentication, individual-run lookup, per-automation
+history, or command-authority work.
 
 `capabilities()` sends only `GET /api/v1/capabilities`. It reads the uniquely identified
 `coven.automations` catalog entry, preserves supported, experimental and refused

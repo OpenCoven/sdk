@@ -311,6 +311,8 @@ function createFixture(fixtureRoot, tarballs) {
 import {
   COVEN_DAEMON_PROTOCOL, CovenClient, createCovenAutomationsWindowsTransport,
   type CovenAutomationsClient, type CovenAutomationsWindowsTransportOptions,
+  type CovenAutomationEvent, type CovenAutomationEventPage, type CovenAutomationEventStream,
+  type CovenAutomationEventsOptions, type CovenAutomationEventsRequest,
 } from '@opencoven/coven-client';
 import {
   createFileOpenCovenProfileStore,
@@ -394,6 +396,27 @@ const windowsAutomationsFactory: (
   options: CovenAutomationsWindowsTransportOptions,
 ) => ReturnType<typeof createCovenAutomationsWindowsTransport> = createCovenAutomationsWindowsTransport;
 await automations.capabilities();
+const stream: CovenAutomationEventStream = { kind: 'automation', id: 'morning' };
+const query: CovenAutomationEventsOptions = { stream, after: 0 };
+const request: CovenAutomationEventsRequest = { action: 'coven.automations.events.subscribe.v1', ...query };
+const page: CovenAutomationEventPage = await automations.events(query);
+const subscription: AsyncIterableIterator<CovenAutomationEventPage> = automations.subscribe({ stream, checkpoint: page.checkpoint });
+for await (const next of subscription) {
+  for (const event of next.events) {
+    const typedEvent: CovenAutomationEvent = event;
+    if (typedEvent.kind === 'run.transitioned') {
+      const entity: 'run' = typedEvent.payload.entity;
+      void entity;
+    }
+  }
+}
+// @ts-expect-error cursors are mutually exclusive
+automations.events({ stream, after: 0, checkpoint: 'checkpoint' });
+// @ts-expect-error global feed is intentionally unsupported
+automations.subscribe({ stream: { kind: 'feed', id: 'all' } });
+// @ts-expect-error the producer forbids explicit subscription limits
+automations.events({ stream, limit: 100 });
+void request;
 void optionalAutomations;
 void windowsAutomationsFactory;
 const store = createMemorySecretStore();
@@ -472,6 +495,13 @@ assert.equal(typeof createCovenAutomationsWindowsTransport, 'function');
 const operationEvents = [];
 const contexts = [];
 const listAction = 'coven.automations.definition.list.v1';
+const eventsAction = 'coven.automations.events.subscribe.v1';
+const eventStream = { kind: 'automation', id: 'morning' };
+const eventPage = {
+  stream: eventStream, after: null, nextAfter: null, events: [],
+  checkpoint: 'ecp00000000000000000000000000000001', checkpointExpiresAt: '2026-09-21T00:00:00Z',
+};
+const eventRequests = [];
 const automationsClient = new CovenClient({
   transport: { health: () => { throw new Error('Automations must not invoke health'); } },
   operation: {
@@ -483,7 +513,7 @@ const automationsClient = new CovenClient({
       contexts.push(context);
       return { status: 200, body: Buffer.from(JSON.stringify({ capabilities: [{
         id: 'coven.automations', label: 'Automations', adapter: 'coven-daemon', status: 'available',
-        policy: 'allow', actions: [listAction], variantNegotiation: {
+        policy: 'allow', actions: [listAction, eventsAction], variantNegotiation: {
           version: 1, contractProfile: 'coven.automations.v1', description: 'Negotiation',
           supported: { triggers: [], conditions: [], actions: [], triggerPolicies: [], deliveryPolicies: [], retentionPolicies: [] },
           experimental: [], refused: [], negotiationRules: [],
@@ -492,6 +522,12 @@ const automationsClient = new CovenClient({
     },
     readDefinitions: async (request, context) => {
       contexts.push(context);
+      if (request.action === eventsAction) {
+        eventRequests.push(request);
+        return { status: 200, body: Buffer.from(JSON.stringify({
+          ok: true, accepted: true, action: eventsAction, status: 'completed', result: eventPage,
+        })) };
+      }
       assert.deepEqual(request, { action: listAction, includeTombstoned: false });
       return { status: 200, body: Buffer.from(JSON.stringify({
         ok: true, accepted: true, action: listAction, status: 'completed',
@@ -510,6 +546,21 @@ assert.deepEqual(await sdk.requireCoven().requireAutomations().list(),
 assert.equal(contexts[0], contexts[1]);
 assert.ok(contexts[0].deadline >= beforeRead + 990);
 assert.ok(operationEvents.length > 0);
+const automations = sdk.requireCoven().requireAutomations();
+assert.deepEqual(await automations.events({ stream: eventStream }), eventPage);
+assert.deepEqual(eventRequests, [{ action: eventsAction, stream: eventStream }]);
+const subscription = automations.subscribe({ stream: eventStream, checkpoint: eventPage.checkpoint });
+assert.equal(eventRequests.length, 1);
+assert.deepEqual(await subscription.next(), { done: false, value: eventPage });
+assert.deepEqual(await subscription.next(), { done: true, value: undefined });
+assert.deepEqual(eventRequests[1], { action: eventsAction, stream: eventStream, checkpoint: eventPage.checkpoint });
+const cancelled = automations.subscribe({ stream: eventStream });
+await cancelled.return();
+assert.deepEqual(await cancelled.next(), { done: true, value: undefined });
+const thrown = automations.subscribe({ stream: eventStream });
+await assert.rejects(thrown.throw(new Error('stop')), /stop/);
+assert.deepEqual(await thrown.next(), { done: true, value: undefined });
+assert.equal(eventRequests.length, 2);
 const unconfigured = new CovenClient({ transport: { health: async () => ({}) } });
 assert.equal(unconfigured.automations, undefined);
 assert.throws(() => unconfigured.requireAutomations(), (error) =>

@@ -868,13 +868,14 @@ export function requestCovenPolicyOverSocket(
   hooks: SocketRequestHooks,
   context: OperationContext,
   requestBytes: Buffer,
+  maxBodyBytes = 16_384,
 ): Promise<CovenSessionPolicyTransportResponse> {
   const controlError = operationControlError(context, 'connect');
   if (controlError !== undefined) return Promise.reject(controlError);
   return requestCovenOverSocket(
-    path, hooks, context, { maxBodyBytes: 16_384 }, requestBytes,
+    path, hooks, context, { maxBodyBytes }, requestBytes,
     (response) => ({ status: response.statusCode, body: new Uint8Array(response.body) }),
-    DEFAULT_MAX_HEADER_BYTES + 16_384 + 4,
+    DEFAULT_MAX_HEADER_BYTES + maxBodyBytes + 4,
   );
 }
 
