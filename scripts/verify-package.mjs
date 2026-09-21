@@ -309,10 +309,11 @@ function createFixture(fixtureRoot, tarballs) {
   type CaveProject,
 } from '@opencoven/cave-client';
 import {
-  COVEN_DAEMON_PROTOCOL, CovenClient, createCovenAutomationsWindowsTransport,
+  COVEN_DAEMON_PROTOCOL, CovenClient, createCovenAutomationsWindowsTransport, verifyReceipt,
   type CovenAutomationsClient, type CovenAutomationsWindowsTransportOptions,
   type CovenAutomationEvent, type CovenAutomationEventPage, type CovenAutomationEventStream,
   type CovenAutomationEventsOptions, type CovenAutomationEventsRequest,
+  type CovenAutomationReceiptTrustContext, type CovenAutomationReceiptVerification,
 } from '@opencoven/coven-client';
 import {
   createFileOpenCovenProfileStore,
@@ -417,6 +418,16 @@ automations.subscribe({ stream: { kind: 'feed', id: 'all' } });
 // @ts-expect-error the producer forbids explicit subscription limits
 automations.events({ stream, limit: 100 });
 void request;
+const expectedReceiptBindings: CovenAutomationReceiptTrustContext = {
+  receiptId: 'receipt-daily-notes-0001', automationId: 'daily-notes', automationRevision: 1,
+  occurrenceId: 'daily-notes-1756544400000', runId: 'run-daily-notes-0001',
+  attemptId: 'att-daily-notes-0001-1', familiarId: 'charm',
+};
+const localReceiptCheck: CovenAutomationReceiptVerification = verifyReceipt(undefined, expectedReceiptBindings);
+const clientReceiptCheck: CovenAutomationReceiptVerification = automations.verifyReceipt(undefined, expectedReceiptBindings);
+const localReceiptStatus: 'invalid' | 'unverifiable' = localReceiptCheck.status;
+void clientReceiptCheck;
+void localReceiptStatus;
 void optionalAutomations;
 void windowsAutomationsFactory;
 const store = createMemorySecretStore();
@@ -487,7 +498,7 @@ void caveIterators;
     `const { strict: assert } = await import('node:assert');
 const core = await import('@opencoven/sdk-core');
 const { CaveClient } = await import('@opencoven/cave-client');
-const { CovenClient, CovenClientError, isCovenClientError, createCovenAutomationsWindowsTransport } =
+const { CovenClient, CovenClientError, isCovenClientError, createCovenAutomationsWindowsTransport, verifyReceipt } =
   await import('@opencoven/coven-client');
 const { createOpenCovenSdk } = await import('@opencoven/sdk');
 
@@ -540,6 +551,26 @@ const automationsClient = new CovenClient({
 const sdk = createOpenCovenSdk({ coven: automationsClient });
 assert.equal(contexts.length, 0);
 assert.equal(sdk.coven.automations, sdk.requireCoven().requireAutomations());
+const { readFile } = await import('node:fs/promises');
+const { createRequire } = await import('node:module');
+const { pathToFileURL } = await import('node:url');
+const covenManifestUrl = pathToFileURL(createRequire(import.meta.url).resolve('@opencoven/coven-client/package.json'));
+const receiptVectors = JSON.parse(await readFile(new URL('./fixtures/automations-receipt-v1/receipt-integrity-validation.vectors.json', covenManifestUrl), 'utf8'));
+const receiptBindings = {
+  receiptId: 'receipt-daily-notes-0001', automationId: 'daily-notes', automationRevision: 1,
+  occurrenceId: 'daily-notes-1756544400000', runId: 'run-daily-notes-0001',
+  attemptId: 'att-daily-notes-0001-1', familiarId: 'charm',
+};
+const receiptCheck = verifyReceipt(receiptVectors.cases[0].receipt, receiptBindings);
+assert.equal(receiptCheck.integrity, 'valid');
+assert.equal(receiptCheck.status, 'unverifiable');
+assert.equal(receiptCheck.receiptAuthentication.status, 'unverified');
+assert.equal(receiptCheck.runtimeAuthority.evidence, 'unavailable');
+assert.ok(Object.isFrozen(receiptCheck.bindings));
+assert.equal(verifyReceipt(receiptVectors.cases[1].receipt, receiptBindings).integrity, 'invalid');
+assert.deepEqual(sdk.requireCoven().requireAutomations().verifyReceipt(receiptVectors.cases[0].receipt, receiptBindings), receiptCheck);
+assert.equal(contexts.length, 0);
+console.log('Packed local receipt verification passed.');
 const beforeRead = performance.now();
 assert.deepEqual(await sdk.requireCoven().requireAutomations().list(),
   { routines: [], revisionById: {}, tombstonedAtById: {} });

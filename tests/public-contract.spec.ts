@@ -479,6 +479,7 @@ describe('public package entry points', () => {
       'isCovenIpcError',
       'isCovenSessionPolicyError',
       'normalizeCovenError',
+      'verifyReceipt',
     ]);
     expect(exportedKeys(sdk)).toEqual([
       'OpenCovenSdk',

@@ -9,6 +9,10 @@ import { CovenClientError, normalizeCovenError } from './client-errors.js';
 import { parsePolicyJson } from './policy-json.js';
 import { integer, object } from './automations-read-validation.js';
 import type { CovenAutomationReceiptResult } from './automations-receipts.js';
+import {
+  verifyReceipt,
+  type CovenAutomationReceiptTrustContext, type CovenAutomationReceiptVerification,
+} from './automations-receipt-verification.js';
 import type { CovenAutomationRunsOptions, CovenAutomationRunsResult } from './automations-runs.js';
 import {
   eventsOptions, eventsRequest, subscribeEvents, type CovenAutomationEventPage, type CovenAutomationEventsOptions,
@@ -202,6 +206,11 @@ export class CovenAutomationsClient {
 
   async getReceipt(id: string, options: OperationOptions = {}): Promise<CovenAutomationReceiptResult> {
     return await this.#read({ action: 'coven.automations.receipt.get.v1', id }, options) as CovenAutomationReceiptResult;
+  }
+
+  /** Local integrity and caller-binding checks; no transport or authentication inference. */
+  verifyReceipt(receipt: unknown, trustContext: CovenAutomationReceiptTrustContext): CovenAutomationReceiptVerification {
+    return verifyReceipt(receipt, trustContext);
   }
 
   async events(query: CovenAutomationEventsOptions, options: OperationOptions = {}): Promise<CovenAutomationEventPage> {

@@ -36,6 +36,15 @@ polling, automatic retries, cursor resets, or global feed consumption. See the
 [event contract](packages/coven/README.md#bounded-event-subscriptions) for
 checkpoint, cancellation, and response-limit semantics.
 
+Automations `verifyReceipt()` is a local, synchronous integrity and explicit
+caller-binding check over the supported public/operational receipt projection
+at Coven `aa28d994965a83c0dfba8eaca071e182d605fed1`. It leaves `getReceipt()`
+semantics unchanged. Valid local checks return overall `unverifiable`, with
+producer authentication and runtime authority evidence unavailable. Optional
+digest expectations compare references; they do not verify artifact bytes.
+Unknown fields and unsupported variants fail closed. See the
+[receipt verification contract](packages/coven/README.md#local-receipt-integrity-and-binding-checks).
+
 ## Deprecation
 
 An API planned for removal is documented as deprecated, receives a Changeset,

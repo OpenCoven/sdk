@@ -1,0 +1,39 @@
+{
+  "repository": "https://github.com/OpenCoven/coven",
+  "commit": "aa28d994965a83c0dfba8eaca071e182d605fed1",
+  "files": [
+    {
+      "file": "automation-receipt.schema.json",
+      "sourcePath": "spec/coven-automations/v1/automation-receipt.schema.json",
+      "sha256": "8c50cd955e43cef1649e384bd9aa48b3e4214db989e9ba4e3e704aad19cb1fc7"
+    },
+    {
+      "file": "common.schema.json",
+      "sourcePath": "spec/coven-automations/v1/common.schema.json",
+      "sha256": "891933e8d88110eb19336ef7b268554be05352d5150ae0f45a6a41b814ef75e6"
+    },
+    {
+      "file": "receipt-integrity-validation.vectors.json",
+      "sourcePath": "conformance/automations/runner/receipt-integrity-validation.vectors.json",
+      "sha256": "10ca288e3f3b897abcdf11b8581dfc317b3582f6fb2eaffd988fdf91d67012d3"
+    }
+  ],
+  "sources": [
+    {
+      "sourcePath": "crates/coven-cli/src/automations/contract/types.rs",
+      "sha256": "e9eaca6922cec465544bcb69dc6e5e07458d6779af6b635d9916118f84455d72"
+    },
+    {
+      "sourcePath": "crates/coven-cli/src/automations/contract/canonical_json.rs",
+      "sha256": "5ba05768c9c303294da4b2d6005781afbf51a7447696363bc96e4c15e61e3be2"
+    },
+    {
+      "sourcePath": "crates/coven-cli/src/automations/receipts.rs",
+      "sha256": "d56fce1ec5aa56f030eabc65387f8721543f111d68e4b96d255fb1838a68a774"
+    },
+    {
+      "sourcePath": "crates/coven-cli/src/control_plane.rs",
+      "sha256": "57155ca118b4520c3abab4ea5b3968a89e0164f394e46e308a17e37749772e34"
+    }
+  ]
+}

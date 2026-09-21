@@ -145,6 +145,11 @@ const validReceipt = shape({
   deliveryDigest: digest, resultDigest: digest, exercisedCapabilities: capabilities(128),
 });
 
+/** Internal seam: callers must first capture owned data or decode bounded JSON. */
+export function isReceiptReadProjection(value: unknown): value is CovenAutomationReceipt {
+  return validReceipt(value);
+}
+
 const unverified = shape({ status: oneOf('unverified'), evidence: oneOf('unavailable') });
 const validResult = shape({
   receipt: validReceipt,
