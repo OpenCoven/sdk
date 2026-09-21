@@ -56,7 +56,7 @@ export function reduceAutomationEvents(events: unknown): CovenAutomationEventRed
     } else {
       if (cursor === Number.MAX_SAFE_INTEGER || entry.sequence !== (cursor ?? -1) + 1) return invalid('STREAM_OUT_OF_ORDER');
       if (stream.kind === 'occurrence' && entry.kind === 'occurrence.transitioned') {
-        const from = cursor === null ? 'none' : object(state) && state.entity === 'occurrence' && typeof state.state === 'string' ? state.state : undefined;
+        const from = object(state) && state.entity === 'occurrence' && typeof state.state === 'string' ? state.state : undefined;
         if (from === undefined) unavailable = true;
         else {
           checked = true;

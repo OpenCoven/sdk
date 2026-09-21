@@ -444,9 +444,14 @@ For occurrence streams, the reducer checks `payload.from` against a known prior
 occurrence state and refuses departure from a known terminal state.
 `occurrenceContinuity: 'checked'` means at least one occurrence transition was
 checked and all occurrence transitions in this batch had known prior state.
-Opaque snapshots or intervening projections without occurrence state make that
-check unavailable. The helper does not enforce every state-machine adjacency,
-actor, or guard, and does not claim full all-stream transition validation.
+An occurrence transition at the start of a batch has no known prior state,
+even at sequence zero. The reducer does not infer one from its `from` field or
+assume `none`; that batch therefore reports continuity as unavailable.
+An actual preceding occurrence event or a snapshot containing occurrence state
+can supply the prior state for later checks. Opaque snapshots or intervening
+projections without occurrence state make that check unavailable. The helper
+does not enforce every state-machine adjacency, actor, or guard, and does not
+claim full all-stream transition validation.
 Its `authority` remains `unverified`; local projection is not evidence of execution
 or success. There is no persistent replay cache, automatic reset, polling,
 prefetch, or implicit invocation by `events()` or `subscribe()`.

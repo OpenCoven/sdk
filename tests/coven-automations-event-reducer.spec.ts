@@ -12,11 +12,21 @@ const event = (sequence: number, kind: string, payload: object): object => ({
 
 test('matches the canonical duplicate and state-digest vector', () => {
   const result = reduce(events);
-  expect(result).toMatchObject({ status: 'projected', cursor: 2, authority: 'unverified', occurrenceContinuity: 'checked',
+  expect(result).toMatchObject({ status: 'projected', cursor: 2, authority: 'unverified', occurrenceContinuity: 'unavailable',
     state: { entity: 'occurrence', state: 'claimed', eventWindow: { firstSequence: 0, lastSequence: 2 } },
     stateDigest: vector.expectedStateDigest });
   const duplicate = [...events]; duplicate.splice(vector.duplicateIndex, 0, events[vector.duplicateIndex]!);
   expect(reduce(duplicate)).toEqual(result);
+});
+test.each([
+  ['planned', 'eligible'],
+  ['none', 'planned'],
+])('sequence zero %s to %s has no known prior occurrence state', (from, to) => {
+  const result = reduce([event(0, 'occurrence.transitioned', {
+    entity: 'occurrence', from, to, reason: 'producer_transition',
+  })]);
+  expect(result).toMatchObject({ status: 'projected', cursor: 0, occurrenceContinuity: 'unavailable',
+    state: { entity: 'occurrence', state: to, eventWindow: { firstSequence: 0, lastSequence: 0 } } });
 });
 test('starts empty without synthesizing a cursor or entity', () => {
   expect(reduce([])).toMatchObject({ status: 'projected', stream: null, cursor: null, state: null,
@@ -35,7 +45,15 @@ test('snapshot plus strictly later tail matches full reduction', () => {
   const snapshot = event(1, 'feed.snapshot', { throughSequence: 1, state: {
     entity: 'occurrence', state: 'eligible', eventWindow: { firstSequence: 0, lastSequence: 1 },
   } });
-  expect(reduce([snapshot, events[2]])).toEqual(reduce(events));
+  const compacted = reduce([snapshot, events[2]]);
+  const full = reduce(events);
+  if (compacted.status !== 'projected' || full.status !== 'projected') throw new Error('Expected projected batches');
+  expect(compacted.state).toEqual(full.state);
+  expect(compacted.stateDigest).toBe(full.stateDigest);
+  expect(compacted.cursor).toBe(full.cursor);
+  expect(compacted.stream).toEqual(full.stream);
+  expect(compacted.occurrenceContinuity).toBe('checked');
+  expect(full.occurrenceContinuity).toBe('unavailable');
   expect(reduce([...events, snapshot])).toEqual({ status: 'invalid', reason: 'STREAM_OUT_OF_ORDER' });
   expect(reduce([event(1, 'feed.snapshot', { throughSequence: 2, state: {} })]))
     .toEqual({ status: 'invalid', reason: 'STREAM_OUT_OF_ORDER' });
