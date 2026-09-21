@@ -146,3 +146,9 @@ export type {
   CovenSessionPolicyTransportRequest,
   CovenSessionPolicyTransportResponse,
 } from './session-policy.js';
+
+export type { CovenAutomationDefinitionDocument } from './automations-definition-document.js';
+export { computeDefinitionDigest, verifyEventIntegrity } from './automations-integrity.js';
+export type { CovenAutomationDefinitionDigestResult, CovenAutomationEventIntegrity } from './automations-integrity.js';
+export { reduceAutomationEvents } from './automations-event-reducer.js';
+export type { CovenAutomationEventReduction, CovenAutomationProjectionJson } from './automations-event-reducer.js';

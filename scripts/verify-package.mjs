@@ -310,10 +310,13 @@ function createFixture(fixtureRoot, tarballs) {
 } from '@opencoven/cave-client';
 import {
   COVEN_DAEMON_PROTOCOL, CovenClient, createCovenAutomationsWindowsTransport, verifyReceipt,
+  computeDefinitionDigest, verifyEventIntegrity, reduceAutomationEvents,
   type CovenAutomationsClient, type CovenAutomationsWindowsTransportOptions,
   type CovenAutomationEvent, type CovenAutomationEventPage, type CovenAutomationEventStream,
   type CovenAutomationEventsOptions, type CovenAutomationEventsRequest,
   type CovenAutomationReceiptTrustContext, type CovenAutomationReceiptVerification,
+  type CovenAutomationDefinitionDocument, type CovenAutomationDefinitionDigestResult,
+  type CovenAutomationEventIntegrity, type CovenAutomationEventReduction,
 } from '@opencoven/coven-client';
 import {
   createFileOpenCovenProfileStore,
@@ -428,6 +431,13 @@ const clientReceiptCheck: CovenAutomationReceiptVerification = automations.verif
 const localReceiptStatus: 'invalid' | 'unverifiable' = localReceiptCheck.status;
 void clientReceiptCheck;
 void localReceiptStatus;
+declare const completeDefinition: CovenAutomationDefinitionDocument;
+const definitionDigest: CovenAutomationDefinitionDigestResult = computeDefinitionDigest(completeDefinition);
+const eventIntegrity: CovenAutomationEventIntegrity = verifyEventIntegrity(undefined);
+const eventProjection: CovenAutomationEventReduction = reduceAutomationEvents([]);
+void definitionDigest;
+void eventIntegrity;
+void eventProjection;
 void optionalAutomations;
 void windowsAutomationsFactory;
 const store = createMemorySecretStore();
@@ -498,7 +508,7 @@ void caveIterators;
     `const { strict: assert } = await import('node:assert');
 const core = await import('@opencoven/sdk-core');
 const { CaveClient } = await import('@opencoven/cave-client');
-const { CovenClient, CovenClientError, isCovenClientError, createCovenAutomationsWindowsTransport, verifyReceipt } =
+const { CovenClient, CovenClientError, isCovenClientError, createCovenAutomationsWindowsTransport, verifyReceipt, computeDefinitionDigest, verifyEventIntegrity, reduceAutomationEvents } =
   await import('@opencoven/coven-client');
 const { createOpenCovenSdk } = await import('@opencoven/sdk');
 
@@ -571,6 +581,17 @@ assert.equal(verifyReceipt(receiptVectors.cases[1].receipt, receiptBindings).int
 assert.deepEqual(sdk.requireCoven().requireAutomations().verifyReceipt(receiptVectors.cases[0].receipt, receiptBindings), receiptCheck);
 assert.equal(contexts.length, 0);
 console.log('Packed local receipt verification passed.');
+const definitionVectors = JSON.parse(await readFile(new URL('./fixtures/automations-pure-v1/test-vectors.json', covenManifestUrl), 'utf8'));
+const definition = definitionVectors.fixtures['definition.golden'];
+assert.deepEqual(computeDefinitionDigest(definition), { status: 'computed', digest: definition.integrity });
+const reducerVector = JSON.parse(await readFile(new URL('./fixtures/automations-events-v1/event-reducer-determinism.vectors.json', covenManifestUrl), 'utf8')).cases[0];
+assert.equal(verifyEventIntegrity(reducerVector.events[0]).integrity, 'unavailable');
+const reduction = reduceAutomationEvents(reducerVector.events);
+assert.equal(reduction.status, 'projected');
+assert.equal(reduction.stateDigest, reducerVector.expectedStateDigest);
+assert.equal(reduction.authority, 'unverified');
+assert.equal(contexts.length, 0);
+console.log('Packed local Automations pure helpers passed.');
 const beforeRead = performance.now();
 assert.deepEqual(await sdk.requireCoven().requireAutomations().list(),
   { routines: [], revisionById: {}, tombstonedAtById: {} });

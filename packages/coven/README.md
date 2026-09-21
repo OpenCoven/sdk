@@ -387,6 +387,91 @@ projection is also checked against the pinned schemas described below. This
 slice does not change artifact canary pins or complete #80 verification,
 global feed subscriptions, or authority-bearing commands.
 
+### Local definition digests and event projection
+
+Use the standalone helpers to check supplied Automations objects without making
+transport requests:
+
+```ts
+import {
+  computeDefinitionDigest,
+  verifyEventIntegrity,
+  reduceAutomationEvents,
+} from '@opencoven/coven-client';
+
+export function inspectAutomation(definition: unknown, event: unknown, events: unknown) {
+  return {
+    definitionDigest: computeDefinitionDigest(definition),
+    eventIntegrity: verifyEventIntegrity(event),
+    projection: reduceAutomationEvents(events),
+  };
+}
+```
+
+`computeDefinitionDigest()` accepts a complete `CovenAutomationDefinitionDocument`,
+including its existing well-formed `integrity` field. It hashes every supplied
+normative field and extension using SHA-256 over RFC 8785 JSON, excluding only the
+top-level `integrity`. The result is `computed` with a digest, or `invalid` with
+`INVALID_DEFINITION`. A computed digest does not compare the supplied integrity;
+you can compare it with an independent expected reference. `get()` still returns
+the legacy routine projection, which lacks the fields needed to construct a full
+definition. The helper never fills defaults or normalizes prompts, schedules,
+paths, capabilities, or extension values.
+
+Definition checks cover the pinned structural fields, variants, bounds,
+uniqueness, and conditional requirements. They do not validate schedules against
+the scheduler or IANA identifiers against Coven's pinned timezone database.
+Hashing a reserved delivery shape does not advertise delivery capability.
+Bindings and runtime requirements remain unverified authority claims.
+
+`verifyEventIntegrity()` reports `schema` and `integrity` separately. A valid
+event without an optional digest returns `integrity: 'unavailable'` with
+`INTEGRITY_ABSENT`; a present digest either matches or returns
+`INTEGRITY_MISMATCH`. `producerAuthentication` always remains `unverified`.
+Nested `integrity` members inside snapshot state are covered by the event digest.
+
+`reduceAutomationEvents()` projects a bounded array from sequence zero or from
+an actual canonical `feed.snapshot` followed by its tail. It returns an immutable
+`state`, `cursor`, `stream`, and `stateDigest`, or a fixed invalid reason without
+partial state. Identical event IDs and bodies deduplicate; changed bodies under
+one ID, mixed streams, gaps, stale snapshots, sequence regressions, and invalid
+present event digests fail. Each ordinary event replaces the prior payload
+projection and carries its canonical `eventWindow`. A snapshot replaces state
+exactly. The state digest covers the complete state, including any `integrity`
+member, and uses the producer's `sha256:<hex>` format.
+
+For occurrence streams, the reducer checks `payload.from` against a known prior
+occurrence state and refuses departure from a known terminal state.
+`occurrenceContinuity: 'checked'` means at least one occurrence transition was
+checked and all occurrence transitions in this batch had known prior state.
+Opaque snapshots or intervening projections without occurrence state make that
+check unavailable. The helper does not enforce every state-machine adjacency,
+actor, or guard, and does not claim full all-stream transition validation.
+Its `authority` remains `unverified`; local projection is not evidence of execution
+or success. There is no persistent replay cache, automatic reset, polling,
+prefetch, or implicit invocation by `events()` or `subscribe()`.
+
+All three helpers take an owned snapshot before validation. Limits apply to the
+whole input, including a whole reducer batch: depth 16, 4,096 object/array nodes,
+8,192 own properties, 262,144 UTF-16 code units across keys and string values, and
+4,096 elements per array. Inputs exceeding any limit fail without truncation.
+The helpers support finite fractional JSON values in extensions and snapshot
+state; schema integer fields still require safe integers. They reject nonfinite
+numbers, unsafe integers, lone surrogates, cycles, accessors, sparse arrays, and
+unsupported host objects. Receipt verification retains its existing integer-only
+JSON domain. Outputs contain fixed reasons without copying prompts or paths into
+error messages; projection state itself retains supplied event data.
+
+These helpers pin Coven `aa28d994965a83c0dfba8eaca071e182d605fed1`.
+The [fixture provenance](fixtures/automations-pure-v1/manifest.provenance.json)
+records executable-source differences: top-level-only integrity exclusion takes
+precedence over vector prose saying every integrity member; Rust/schema allow
+optional draft/invalid `binding.familiarId` and optional delivery members subject
+to `outputTarget` requiring `mode`, while the pinned TypeScript artifact narrows
+those fields. The wire timezone string carries no local IANA-validation brand.
+The older artifact canary remains independently pinned and is not the runtime
+implementation of these helpers.
+
 ### Local receipt integrity and binding checks
 
 `verifyReceipt(receipt, trustContext)` checks a receipt's SHA-256 integrity and
