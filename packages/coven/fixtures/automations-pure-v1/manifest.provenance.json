@@ -1,0 +1,75 @@
+{
+  "repository": "https://github.com/OpenCoven/coven",
+  "commit": "aa28d994965a83c0dfba8eaca071e182d605fed1",
+  "regeneration": "git -C /path/to/coven show aa28d994965a83c0dfba8eaca071e182d605fed1:<sourcePath> > <file>; verify every SHA-256 below",
+  "files": [
+    {
+      "file": "automation-definition.schema.json",
+      "sourcePath": "spec/coven-automations/v1/automation-definition.schema.json",
+      "sha256": "5b369bb5fd69de356b96c521aa7c7b79b847514f94fc03633d33c44f864bd91a"
+    },
+    {
+      "file": "test-vectors.json",
+      "sourcePath": "spec/coven-automations/v1/test-vectors.json",
+      "sha256": "b6f6c663b28084b29caf4f46ee988efa097ac1ca96af63ee08debbe1b6968dd7"
+    },
+    {
+      "file": "state-machines.json",
+      "sourcePath": "spec/coven-automations/v1/state-machines.json",
+      "sha256": "2cef95d98b945cd11fb362abd736c5fe6901bea8621083819d66fa61d849dc94"
+    },
+    {
+      "file": "definition-validation.vectors.json",
+      "sourcePath": "conformance/automations/runner/definition-validation.vectors.json",
+      "sha256": "cfe1f9bb680b4f5b5bb28812b56d6c17828c8fa4858b523268208c56038abefa"
+    }
+  ],
+  "reusedFiles": [
+    {
+      "file": "../automations-events-v1/event-envelope.schema.json",
+      "sourcePath": "spec/coven-automations/v1/event-envelope.schema.json",
+      "sha256": "9eb27e62d6133bb506bdf311a74208689e502397cc1d73a3cf8963f9d5610a30"
+    },
+    {
+      "file": "../automations-events-v1/common.schema.json",
+      "sourcePath": "spec/coven-automations/v1/common.schema.json",
+      "sha256": "891933e8d88110eb19336ef7b268554be05352d5150ae0f45a6a41b814ef75e6"
+    },
+    {
+      "file": "../automations-events-v1/coven.automations.v1.d.ts",
+      "sourcePath": "spec/coven-automations/v1/coven.automations.v1.d.ts",
+      "sha256": "dff07129d244d1b8aa2f04315696814aea64087410f96066fa1ebd47f6755ad7"
+    },
+    {
+      "file": "../automations-events-v1/event-reducer-determinism.vectors.json",
+      "sourcePath": "conformance/automations/runner/event-reducer-determinism.vectors.json",
+      "sha256": "416238d7b52f741630be9be80212f18c03b39d8cd237b1cc2d147cbcd4dd46f9"
+    }
+  ],
+  "sources": [
+    {
+      "sourcePath": "crates/coven-cli/src/automations/contract/events.rs",
+      "sha256": "9ff8f9b7b7b6e3586ad29b207cc87cbde24167e6fb74220d31d3212cb4b035ee"
+    },
+    {
+      "sourcePath": "crates/coven-cli/src/automations/contract/types.rs",
+      "sha256": "e9eaca6922cec465544bcb69dc6e5e07458d6779af6b635d9916118f84455d72"
+    },
+    {
+      "sourcePath": "crates/coven-cli/src/automations/contract/canonical_json.rs",
+      "sha256": "5ba05768c9c303294da4b2d6005781afbf51a7447696363bc96e4c15e61e3be2"
+    },
+    {
+      "sourcePath": "crates/coven-cli/src/automations/conformance_target.rs",
+      "sha256": "e2a734cf602ab3c8abaef4dad24b97ced461625871ed3c3240fe418dc533a336"
+    }
+  ],
+  "discrepancies": [
+    "Digest verification removes only top-level integrity per canonical_json.rs, not every integrity member as test-vectors.json prose says.",
+    "common.schema.json extensionBag.description says extensions never influence digests, but types.rs:993-1004 serializes extensions into the definition body and canonical_json.rs removes only top-level integrity. Runtime follows the executable recipe; tests/coven-automations-definition-digest.spec.ts contains named SDK-authored extension vectors with independently computed literal digests, not upstream certification. The unchanged published definition.golden contains extensions:{} and has digest 8921b840a98f0b700d0144e70b9418af2431f9863bc4e4d8529b2d9848fa4ce9; independently omitting extensions yields 444628a422ccc48f322243fb9c57e6f9f23441a53db7deed5c74bd72c1b86091, directly contradicting that prose.",
+    "Definition familiarId is optional for draft/invalid in Rust/schema but always required by pinned TS.",
+    "Delivery members are optional in Rust/schema subject to outputTarget requiring mode; pinned TS requires both.",
+    "Timezone brand is a TS marker; local digest checks do not validate the pinned Rust timezone database.",
+    "Reference reducer tests skip state-machine adjacency intermediates; full guarded transition validation is not provided."
+  ]
+}

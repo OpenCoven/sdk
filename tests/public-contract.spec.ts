@@ -464,6 +464,7 @@ describe('public package entry points', () => {
       'CovenIpcError',
       'CovenSessionPolicyClient',
       'CovenSessionPolicyError',
+      'computeDefinitionDigest',
       'createCovenAutomationsClient',
       'createCovenAutomationsUnixTransport',
       'createCovenAutomationsWindowsTransport',
@@ -479,6 +480,8 @@ describe('public package entry points', () => {
       'isCovenIpcError',
       'isCovenSessionPolicyError',
       'normalizeCovenError',
+      'reduceAutomationEvents',
+      'verifyEventIntegrity',
       'verifyReceipt',
     ]);
     expect(exportedKeys(sdk)).toEqual([
