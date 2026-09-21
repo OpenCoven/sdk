@@ -23,6 +23,13 @@ export type {
   CovenAutomationReceiptReadVerification,
   CovenAutomationReceiptResult,
 } from './automations-receipts.js';
+export { verifyReceipt } from './automations-receipt-verification.js';
+export type {
+  CovenAutomationReceiptTrustContext,
+  CovenAutomationReceiptVerification,
+  CovenAutomationReceiptVerificationCheck,
+  CovenAutomationReceiptVerificationReason,
+} from './automations-receipt-verification.js';
 export type {
   CovenAutomationOccurrence,
   CovenAutomationOccurrenceDetail,

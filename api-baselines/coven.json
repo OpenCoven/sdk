@@ -40,7 +40,8 @@
           "isCovenDaemonResponseError",
           "isCovenIpcError",
           "isCovenSessionPolicyError",
-          "normalizeCovenError"
+          "normalizeCovenError",
+          "verifyReceipt"
         ]
       }
     }

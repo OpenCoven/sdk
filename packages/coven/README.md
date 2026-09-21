@@ -233,7 +233,7 @@ with `event.kind: "automations.changed"` even for reads, and defines
 owns the compatibility routine fields. No GET definition routes, normative
 command-envelope adaptation, pagination, changefeed emission, or certification
 are inferred from the schemas in `spec/coven-automations/v1`. Existing artifact
-pins are unchanged. Individual run reads, per-automation occurrence history, receipt verification,
+pins are unchanged. Individual run reads, per-automation occurrence history, receipt authentication,
 global feed subscriptions and authority-bearing phases remain separate #80 work.
 
 ### Routine health
@@ -341,9 +341,10 @@ checking stored receipt, event, and durable run correlations. Both
 `receiptAuthentication` and `runtimeAuthority` remain
 `{ status: "unverified", evidence: "unavailable" }`, with the explicit reasons
 `PRODUCER_AUTHENTICATION_UNVERIFIED` and `RUNTIME_AUTHORITY_UNVERIFIED`.
-The SDK validates this shape and the requested receipt ID. It does **not**
+`getReceipt()` validates this shape and the requested receipt ID. It does **not**
 recompute the receipt digest, authenticate signatures, verify external bindings,
-or authorize execution. An `integrity.authentication` label such as
+or authorize execution. Use the separate local `verifyReceipt()` function below
+for integrity and explicit caller-binding checks. An `integrity.authentication` label such as
 `producer-hmac` or `cosign` is metadata, not proof. Even a `succeeded` outcome
 does not establish authenticated success or certification.
 
@@ -381,10 +382,75 @@ defines `read_receipt`, not the separate `read_authorized_receipt`;
 [`automations/contract/types.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/automations/contract/types.rs)
 and
 [`automations/contract/error.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/automations/contract/error.rs)
-define the serialized receipt and error constraints. These types are not
-generated or mechanically checked against released schemas. This slice does
-not change artifact canary pins or complete #80 verification, global feed subscriptions,
-or authority-bearing commands.
+define the serialized receipt and error constraints. The hand-authored read
+projection is also checked against the pinned schemas described below. This
+slice does not change artifact canary pins or complete #80 verification,
+global feed subscriptions, or authority-bearing commands.
+
+### Local receipt integrity and binding checks
+
+`verifyReceipt(receipt, trustContext)` checks a receipt's SHA-256 integrity and
+the exact identity bindings you supply, without transport or credential access.
+
+```ts
+import { verifyReceipt } from '@opencoven/coven-client';
+
+export function checkReceipt(receipt: unknown) {
+  return verifyReceipt(receipt, {
+    receiptId: 'receipt-daily-notes-0001',
+    automationId: 'daily-notes',
+    automationRevision: 1,
+    occurrenceId: 'daily-notes-1756544400000',
+    runId: 'run-daily-notes-0001',
+    attemptId: 'att-daily-notes-0001-1',
+    familiarId: 'charm',
+  });
+}
+```
+
+Use identities from your independently held expectations. Copying them from
+the receipt would only compare its claims to themselves. The configured
+`client.automations.verifyReceipt()` convenience performs the same synchronous
+local checks and does not invoke capability discovery, observers, or retries.
+`getReceipt()` keeps its existing producer-reported verification result.
+
+The local result contains `schema`, `integrity`, individual `bindings`, and fixed
+`reasons`. A malformed receipt or context, an integrity mismatch, or a binding
+mismatch makes `status` `invalid`. Otherwise `status` is `unverifiable`.
+`receiptAuthentication` and `runtimeAuthority` always remain
+`{ status: "unverified", evidence: "unavailable" }`. An unkeyed digest can be
+recomputed by anyone; `producer-hmac`, `cosign`, and `succeeded` labels do not
+establish authenticated provenance, delivery success, or verified execution.
+
+You can also supply `occurrenceFenceGeneration`, `attemptNumber`, `runtimeId`,
+`definitionDigest`, `deliveryDigest`, and `resultDigest` expectations. An omitted
+expectation produces `unavailable` for that binding, even when the receipt has a
+value. A supplied expectation whose receipt field is missing or different is
+`invalid`. Digest expectations use the exact `{ algorithm: "sha256",
+canonicalization: "jcs-rfc8785", value }` shape. They compare references only;
+the verifier does not read or verify definition, delivery, or result artifact
+bytes. It does not derive a full-definition digest from `get()`'s legacy
+projection or invent a digest over the runtime descriptor.
+
+Input must fit the supported public/operational receipt projection. Unknown
+fields and variants, accessors, `toJSON`, cycles, undefined values, lone
+surrogates, and nonintegral or unsafe numbers are rejected. Owned snapshots are
+bounded to depth 16, 4,096 object/array nodes, 8,192 properties, and 262,144 total
+string code units per input, with at most 4,096 elements per array. Results are deeply
+immutable and contain no receipt content, IDs, prompts, paths, or producer errors.
+
+The hash follows Coven's
+[`canonicalize_without_integrity`](https://github.com/OpenCoven/coven/blob/aa28d994965a83c0dfba8eaca071e182d605fed1/crates/coven-cli/src/automations/contract/canonical_json.rs)
+and
+[`AutomationReceipt::verify_integrity`](https://github.com/OpenCoven/coven/blob/aa28d994965a83c0dfba8eaca071e182d605fed1/crates/coven-cli/src/automations/contract/types.rs):
+RFC 8785 canonical JSON with only the top-level `integrity` member removed,
+UTF16 key ordering, and ECMAScript primitive encoding. The pinned
+[schema and vector manifest](fixtures/automations-receipt-v1/manifest.provenance.json)
+records exact source paths, commit, and SHA-256 hashes. Tests mechanically cover
+the schema's fields, required properties, closed objects, and supported enum
+variants, and execute the producer's valid and tampered receipt vectors.
+This increment leaves authentication, authority verification, and the remaining
+[SDK #80 phases](https://github.com/OpenCoven/sdk/issues/80) open.
 
 ### Global occurrence inspection
 
@@ -443,7 +509,7 @@ defines nullability, ordering, snapshot transactions and the 20-run truncation;
 [`api.rs`](https://github.com/OpenCoven/coven/blob/4e35dd4c99013159fcee4c1ab2f183accdf7a5f8/crates/coven-cli/src/api.rs)
 routes authenticated `POST /api/v1/actions`. There is no advertised individual
 run-read action at this pin; `coven.automations.run` is a mutation and is never
-used as a read fallback. Independent receipt verification, global feed subscriptions,
+used as a read fallback. Independent receipt authentication, global feed subscriptions,
 per-automation occurrence history and individual-run lookup remain unimplemented.
 
 ### Bounded event subscriptions
@@ -563,7 +629,7 @@ The earlier immutable artifact canary pin remains unchanged.
 This is a focused part of [SDK #80](https://github.com/OpenCoven/sdk/issues/80),
 not its completion. A local authenticated channel and an advertised capability
 are **not receipt authentication, execution authorization, or certification**.
-No individual-run retrieval, independent receipt verification, subscription,
+No individual-run retrieval, independent receipt authentication, global feed subscription,
 mutation, or positive authority acceptance is implemented here. Producer rich
 execution (#1054), trust (#857), and certification (#858) remain separate.
 The unified `@opencoven/sdk` coordinates health and exposes the configured
