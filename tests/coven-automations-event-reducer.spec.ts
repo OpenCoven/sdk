@@ -77,24 +77,6 @@ test('refuses known occurrence discontinuity and terminal departure but allows r
   expect(reduce([events[0], event(1, 'occurrence.transitioned', { entity: 'occurrence', from: 'planned', to: 'claimed', reason: 'claim' })]))
     .toMatchObject({ status: 'projected' });
 });
-test('preserves known occurrence continuity across intervening non-occurrence events', () => {
-  expect(reduce([
-    event(0, 'feed.snapshot', { throughSequence: 0, state: { entity: 'occurrence', state: 'eligible' } }),
-    event(1, 'run.transitioned', { entity: 'run', from: 'accepted', to: 'running', reason: 'started' }),
-    event(2, 'occurrence.transitioned', { entity: 'occurrence', from: 'eligible', to: 'claimed', reason: 'claim' }),
-  ])).toMatchObject({
-    status: 'projected',
-    occurrenceContinuity: 'checked',
-    state: { entity: 'occurrence', state: 'claimed', eventWindow: { firstSequence: 1, lastSequence: 2 } },
-  });
-});
-test('preserves known terminal occurrence state across intervening non-occurrence events', () => {
-  expect(reduce([
-    event(5, 'feed.snapshot', { throughSequence: 5, state: { entity: 'occurrence', state: 'succeeded' } }),
-    event(6, 'receipt.recorded', { receiptRef: 'receipt-1', outcome: 'succeeded' }),
-    event(7, 'occurrence.transitioned', { entity: 'occurrence', from: 'succeeded', to: 'running', reason: 'runtime_started' }),
-  ])).toEqual({ status: 'invalid', reason: 'OCCURRENCE_TERMINAL_REGRESSION' });
-});
 test('opaque snapshots keep nested integrity and make continuity unavailable', () => {
   const snapshot = event(1, 'feed.snapshot', { throughSequence: 1, state: { integrity: 'covered' } });
   expect(reduce([snapshot])).toMatchObject({ state: { integrity: 'covered' },

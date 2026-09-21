@@ -73,10 +73,9 @@ test('honors draft optional bindings and executable conditional requirements', (
   expect(digest(changed(['policies', 'retry'], { maxAttempts: 1, backoffPolicy: 'fixed' }))).toMatchObject({ status: 'invalid' });
 });
 
-test('accepts finite opaque JSON numbers while rejecting nonfinite values and host values', () => {
-  expect(digest(changed(['extensions'], { 'x-json': [1.5, -0, 1e-7, Number.MAX_SAFE_INTEGER + 1, null, true] })))
-    .toMatchObject({ status: 'computed' });
-  for (const value of [NaN, Infinity, undefined, 1n, Symbol('secret')]) {
+test('accepts finite opaque JSON fractions while rejecting unsafe integers and host values', () => {
+  expect(digest(changed(['extensions'], { 'x-json': [1.5, -0, 1e-7, null, true] }))).toMatchObject({ status: 'computed' });
+  for (const value of [NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, undefined, 1n, Symbol('secret')]) {
     expect(digest(changed(['extensions'], { 'x-json': value }))).toEqual({ status: 'invalid', reason: 'INVALID_DEFINITION' });
   }
 });

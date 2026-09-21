@@ -34,14 +34,13 @@ test('rejects oversized arrays before enumerating their elements', () => {
   expect(enumerated).toBe(false);
 });
 
-test('opts into finite JCS numbers without changing receipt defaults', () => {
-  expect(snapshotAutomationJson(Number.MAX_SAFE_INTEGER + 1)).toBeUndefined();
-  for (const value of [1.5, 1e-7, Number.MAX_SAFE_INTEGER + 1]) {
+test('opts into finite fractional JCS numbers without changing receipt defaults', () => {
+  for (const value of [1.5, 1e-7]) {
     expect(snapshotAutomationJson(value)).toBeUndefined();
     expect(canonicalAutomationJson(snapshotAutomationJson(value, 'jcs')!)).toBe(JSON.stringify(value));
   }
   expect(canonicalAutomationJson(snapshotAutomationJson(-0, 'jcs')!)).toBe('0');
-  for (const value of [NaN, Infinity, -Infinity]) {
+  for (const value of [NaN, Infinity, -Infinity, Number.MAX_SAFE_INTEGER + 1]) {
     expect(snapshotAutomationJson(value, 'jcs')).toBeUndefined();
   }
 });

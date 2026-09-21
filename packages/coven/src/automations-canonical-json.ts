@@ -16,7 +16,7 @@ export function snapshotAutomationJson(input: unknown, numberMode: 'safe-integer
   const visit = (value: unknown, depth: number): AutomationJson => {
     if (value === null || typeof value === 'boolean') return value;
     if (typeof value === 'number' && (Number.isSafeInteger(value) ||
-      (numberMode === 'jcs' && Number.isFinite(value)))) return value;
+      (numberMode === 'jcs' && Number.isFinite(value) && !Number.isInteger(value)))) return value;
     if (typeof value === 'string') return text(value);
     if (typeof value !== 'object' || value === null || depth > 16 || ++nodes > 4_096 || ancestors.has(value)) {
       throw new TypeError();
