@@ -152,7 +152,7 @@ is not a current issue-status mirror; see the [plan index](superpowers/plans/REA
 | [#42](https://github.com/OpenCoven/sdk/issues/42) | Conversational control depends on #41, canonical Cave mutation authority, and real-authority mutation evidence. |
 | [#43](https://github.com/OpenCoven/sdk/issues/43) | Rich content and privileged actions depend on #42 and their separately reviewed authority contracts. |
 | [#44](https://github.com/OpenCoven/sdk/issues/44) | Offline reads and tooling depend on #41 and approved native cache semantics. |
-| [#80](https://github.com/OpenCoven/sdk/issues/80) | Domain event pages and subscriptions shipped in #300. Local receipt integrity and caller-binding verification shipped in #304. Reducer/event/definition helpers are under review in #305; they are not yet credited as delivered. Missing producer queries and authority-bearing commands have separate upstream gates. |
+| [#80](https://github.com/OpenCoven/sdk/issues/80) | Domain event pages and subscriptions shipped in #300. Local receipt integrity and caller-binding verification shipped in #304. Bounded reducer, event-integrity and definition-digest helpers shipped in #305; full guarded transitions remain unreconciled. Missing producer queries and authority-bearing commands have separate upstream gates. |
 | [#199](https://github.com/OpenCoven/sdk/issues/199) | Preserve the delivered refusal-only consumer until Coven publishes a reviewed, explicitly negotiated positive admission contract. |
 
 ### Contract truth
@@ -262,11 +262,12 @@ caller-supplied identity bindings. The reviewed and delivered trees match;
 all final PR checks passed, including 2,912 tests in both normal and coverage
 runs. Authentication and runtime authority remain explicitly unverified.
 
-Three pure helpers are under review in [#305](https://github.com/OpenCoven/sdk/pull/305):
-a bounded reference reducer,
-event-integrity verification, and complete canonical-definition digest
-computation. These follow published contracts and do not require authority
-certification to proceed. They cannot authenticate a producer or runtime,
+[SDK #305](https://github.com/OpenCoven/sdk/pull/305), merged at `49b7ab5e3`,
+delivered `reduceAutomationEvents()`, `verifyEventIntegrity()`, and
+`computeDefinitionDigest()`. The delivered tree matches the reviewed tree;
+all final PR checks passed, including 2,978 tests in both normal and coverage
+runs. Occurrence continuity is checked only when prior occurrence state is
+available in the current projection. These helpers cannot authenticate a producer or runtime,
 and a complete normative definition cannot be reconstructed from `get()`'s
 legacy projection. Full guarded transition validation across every stream
 remains unreconciled.

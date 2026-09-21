@@ -1,9 +1,9 @@
-/** Internal owned JSON representation for the supported Automations receipt projection. */
+/** Internal owned JSON representation for bounded Automations local helpers. */
 export type AutomationJson = null | boolean | number | string | readonly AutomationJson[] |
   { readonly [key: string]: AutomationJson };
 
-/** Reject unsupported host objects before inspecting or hashing receipt fields. */
-export function snapshotAutomationJson(input: unknown): AutomationJson | undefined {
+/** Reject unsupported host objects before inspecting or hashing fields. Receipt calls keep safe-integer semantics. */
+export function snapshotAutomationJson(input: unknown, numberMode: 'safe-integers' | 'jcs' = 'safe-integers'): AutomationJson | undefined {
   const ancestors = new WeakSet<object>();
   let nodes = 0;
   let entries = 0;
@@ -15,7 +15,8 @@ export function snapshotAutomationJson(input: unknown): AutomationJson | undefin
   };
   const visit = (value: unknown, depth: number): AutomationJson => {
     if (value === null || typeof value === 'boolean') return value;
-    if (typeof value === 'number' && Number.isSafeInteger(value)) return value;
+    if (typeof value === 'number' && (Number.isSafeInteger(value) ||
+      (numberMode === 'jcs' && Number.isFinite(value) && !Number.isInteger(value)))) return value;
     if (typeof value === 'string') return text(value);
     if (typeof value !== 'object' || value === null || depth > 16 || ++nodes > 4_096 || ancestors.has(value)) {
       throw new TypeError();

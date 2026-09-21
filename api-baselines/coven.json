@@ -26,6 +26,7 @@
           "CovenIpcError",
           "CovenSessionPolicyClient",
           "CovenSessionPolicyError",
+          "computeDefinitionDigest",
           "createCovenAutomationsClient",
           "createCovenAutomationsUnixTransport",
           "createCovenAutomationsWindowsTransport",
@@ -41,6 +42,8 @@
           "isCovenIpcError",
           "isCovenSessionPolicyError",
           "normalizeCovenError",
+          "reduceAutomationEvents",
+          "verifyEventIntegrity",
           "verifyReceipt"
         ]
       }

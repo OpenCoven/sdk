@@ -73,3 +73,13 @@ corepack pnpm@10.34.0 verify:package
 Baseline changes must accompany the implementation, tests, documentation, and
 Changeset that justify the compatibility impact. Never update a baseline only
 to silence verification.
+
+Standalone Automations `computeDefinitionDigest()`, `verifyEventIntegrity()`, and
+`reduceAutomationEvents()` consume complete caller-supplied objects pinned to
+Coven `aa28d994965a83c0dfba8eaca071e182d605fed1`. They provide bounded local digest
+consistency and reference projection, with explicit unavailable event integrity
+and occurrence continuity. They do not establish producer or runtime authority,
+validate scheduler/timezone semantics, or claim full all-stream guarded transition
+validation. `get()` remains a legacy routine projection. See the
+[local helper contract](packages/coven/README.md#local-definition-digests-and-event-projection)
+for bounds and executable-source differences from artifact prose and types.

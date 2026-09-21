@@ -172,6 +172,11 @@ const validEvent = shape({
   automationId: identifier(96), occurrenceId: identifier(160), runId: identifier(160), attemptId: identifier(160), integrity: digest,
 });
 
+/** Internal predicate; callers must supply an owned JSON snapshot. */
+export function isAutomationEvent(value: unknown): value is CovenAutomationEvent {
+  return validEvent(value) && object(value) && typeof value.kind === 'string' && payloads[value.kind]!(value.payload);
+}
+
 /** Never invoke input accessors, including nested stream fields. */
 function ownData(value: unknown): Record<string, unknown> {
   const copy: Record<string, unknown> = {};
@@ -247,7 +252,7 @@ export function decodeEvents(status: number, value: Record<string, unknown>, req
   const seen = new Map<string, CovenAutomationEvent>();
   const events: CovenAutomationEvent[] = [];
   for (const event of page.events) {
-    if (!validEvent(event) || !payloads[event.kind]!(event.payload) ||
+    if (!isAutomationEvent(event) ||
       event.stream.kind !== page.stream.kind || event.stream.id !== page.stream.id) return invalid();
     const previous = seen.get(event.eventId);
     if (previous !== undefined) {
