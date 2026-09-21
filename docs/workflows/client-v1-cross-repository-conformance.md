@@ -73,22 +73,32 @@ cleanup. Residual-open diagnostics derive fixed purpose/access labels and retain
 scope; legacy role-only calls remain compatible. No native access masks, sharing,
 privileges or limits change.
 
-The latest terminal protected [run 35146928092](https://github.com/OpenCoven/chat/actions/runs/35146928092)
-used Chat #311 and SDK #293. Linux and macOS independently passed all 197
-ordered assertions each. Windows failed with
-`access-denied; root=harness-execution-aggregate; scope=checkouts; operation=directory-enumeration-depth-3-plus; repeat=persistent`.
-No Windows record or aggregate was accepted; validation and attestation did not
-complete. This is separate from run `35138402347`'s operator Cave-home isolation
-failure. The current binding requires verified SDK landing, both validator-scope
-rotations with readback, and fresh authenticated protected validation.
+SDK [#302](https://github.com/OpenCoven/sdk/pull/302) delivered this binding at
+`1c10e63a9ff87934397e8defc2d0b98f3932abe2`; its signed delivery tree matches the
+reviewed head, and all PR and merged-main checks passed. Both validator scopes
+were rotated and read back at that exact revision.
+
+Protected [run 35500732205](https://github.com/OpenCoven/chat/actions/runs/35500732205)
+is terminal failure. Linux and macOS artifacts independently passed exact
+run/job and validator identities, ZIP digests, canonical schema, privacy/isolation
+checks, timing, and all 197 ordered assertions each (110 Cave, 46 SDK, 41 Chat).
+Windows failed at
+`phase1.packaging.chat-native-build.build-script` and produced no platform
+record. Validation, attestation, and aggregation were skipped. The fixed
+category identifies a Cargo custom-build-command failure but does not identify
+the failing dependency or underlying compiler diagnostic.
+
+Earlier run `35146928092` used Chat #311 / SDK #293 and produced independently
+verified Unix records with 197 assertions each. Its Windows checkout-quota
+failure is separate from the current native-build failure and from run
+`35138402347`'s operator Cave-home isolation failure.
 
 Historical run `35125287541` failed Windows execution-root cleanup before
 isolation validation. Run `35111662551` failed Windows isolation; run
 `35100084575` failed Windows secure-store preflight and deletion-purpose cleanup.
-Keep these failures distinct. The current Chat #328 binding requires verified
-SDK landing, both validator-scope rotations, and fresh authenticated protected
-validation. No aggregate is accepted. Chat consumer, candidate, Cave and Coven
-identities remain frozen.
+Keep these failures distinct. Windows repair and a complete authenticated
+three-platform aggregate remain required. Chat consumer, candidate, Cave and
+Coven identities remain frozen.
 
 Production Cave remains `ecdcdcf8a75b62bb912ec48215ae20ab0809a181`,
 release `0.4.2`.
@@ -766,16 +776,17 @@ intermediate authority path to harness `683e9991`; the equal-tree and parent
 validation gates are unchanged. Compressed fixtures contain actual Git objects
 for the delivery, reviewed head, both intermediates, and harness.
 
-Both live validator scopes remain on SDK #274 (`1535e48e`) until this binding
-lands. Latest terminal protected run `34935323170` used Chat #285 and SDK #274:
+At that checkpoint, both validator scopes still selected SDK #274 (`1535e48e`).
+The latest terminal protected run then was `34935323170`, using Chat #285 and SDK #274:
 Linux/macOS records passed independent checks of identity, Cave timing, and all
 197 ordered assertions. Windows failed at `phase1.native-scenarios.native-preflight`
 and produced no record; cleanup separately reported child-open access denial
 `ntstatus=c0000022`. Validation, attestation, and aggregation were skipped.
 
-Next: verify and land this SDK binding, rotate both validator scopes with
-readback, verify Chat main still equals the bound producer, then dispatch fresh
-protected validation and authenticate the supervisor before environment approval.
+The next steps at that checkpoint were SDK binding verification and landing,
+validator-scope rotation with readback, producer identity verification, and fresh
+protected validation with supervisor authentication before environment approval.
+Subsequent delivery and run outcomes are recorded below.
 The four new preflight boundaries identify an operation; they do not prove a
 Windows repair. No aggregate, publication, or release acceptance is claimed.
 
@@ -806,9 +817,10 @@ SDK [#277](https://github.com/OpenCoven/sdk/pull/277) separately delivered
 per-client discovery v2 retention, concurrent current-credential preservation,
 and snapshots used to pin pairing authority. That development-source change is
 not included in frozen candidate `96804bc4` or validated by the SDK #276 run.
-The retained HPKE branch still requires managed/retry reconciliation under
-[#45](https://github.com/OpenCoven/sdk/issues/45). Candidate and counterpart
-authorities remain frozen; a later candidate needs its own review and evidence.
+SDK #299 and #301 subsequently delivered pairing guard regressions and managed
+HPKE iterator continuity; both blockers in #296 are closed. Native adapter
+adoption remains separate. Candidate and counterpart authorities stay frozen;
+a later candidate needs its own review and evidence.
 
 ## Historical protected validation result, SDK #284
 
@@ -826,9 +838,9 @@ and produced no record. Validation, attestation and aggregation were skipped.
 That historical run exposed the native secure-store category without identifying
 the failing installation operation. Chat #297 subsequently landed profile
 ownership and cleanup repairs, bounded operation diagnostics, and a restricted
-native installation roundtrip. Its ordinary CI passed, but protected acceptance
-still requires this SDK binding to land, both validator scopes to rotate, and a
-fresh authenticated protected run. SDK #38 acceptance remains open.
+native installation roundtrip. Its ordinary CI passed. SDK #290 then landed
+that binding and both validator scopes rotated for protected run `35111662551`,
+which failed Windows isolation. SDK #38 acceptance remains open.
 
 ## Historical residual cleanup purpose binding, Chat #302
 
@@ -851,6 +863,7 @@ landed and both scopes rotated to it for run `35100084575`, whose terminal resul
 is recorded above. SDK #290 then bound Chat #297 for run `35111662551`,
 which failed Windows isolation. SDK #291 then bound Chat #305 for run `35125287541`, which failed
 Windows execution-root cleanup. SDK #292 then bound Chat #309 for run `35138402347`, which failed
-Windows operator Cave-home isolation. The current Chat #328 binding needs a
-new SDK landing, both scope rotations, and fresh protected validation. No aggregate or
-release acceptance is claimed.
+Windows operator Cave-home isolation. SDK #302 subsequently landed the Chat
+#328 binding and both validator scopes rotated to it. Protected run
+`35500732205` failed the Windows native build, as recorded above; no aggregate
+or release acceptance is claimed.

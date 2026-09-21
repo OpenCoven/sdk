@@ -1,14 +1,26 @@
 # OpenCoven SDK Roadmap
 
-Current conformance checkpoint: the lock binds Chat #311 producer
-`157fb3206b9b90f24049aa2043bae534d2b9a709`, which pins Cave build state under execution HOME.
-SDK landing, both validator-scope rotations, and fresh protected validation
-remain required. Run `35138402347` tested Chat #309 and SDK #292: Linux/macOS
-records independently passed identities, schema, privacy, timing, and all 197
-assertions each. Windows failed the operator Cave-home fingerprint comparison.
-The build routing gap is reproduced, but protected Windows repair is unproven.
-No aggregate is accepted. SDK #38 acceptance and SDK #45 consolidation remain
-open. See the [binding and validation record](workflows/client-v1-cross-repository-conformance.md).
+Conformance checkpoint, 2026-09-20: [SDK #302](https://github.com/OpenCoven/sdk/pull/302)
+merged at `1c10e63a9ff87934397e8defc2d0b98f3932abe2`, binding Chat #328 producer
+`ac1c4f4ca658fbb03bd2541bf265a57666e80c7c`. Its reviewed tree matches the
+signed delivery, and all exact-head hosted checks passed. Both Chat validator
+scopes were rotated and read back at that SDK revision.
+
+Protected [run `35500732205`](https://github.com/OpenCoven/chat/actions/runs/35500732205)
+is terminal failure. Linux and macOS artifacts independently passed exact
+run/job and validator identities, ZIP digests, canonical schema, privacy/isolation
+checks, timing, and all 197 ordered assertions each (110 Cave, 46 SDK, 41 Chat).
+Windows failed at
+`phase1.packaging.chat-native-build.build-script` and produced no platform
+record. Artifact validation, attestation, and aggregation were skipped.
+This is a different failure stage from the earlier checkout-quota monitor;
+it does not establish a repaired Windows journey or an accepted aggregate.
+
+[SDK #295](https://github.com/OpenCoven/sdk/pull/295) delivered descendant
+provenance validation through both collectors at `888358012`. The current
+binding remains specific to the reviewed producer; subsequent Chat main
+changes require their own provenance review. See the
+[binding and validation record](workflows/client-v1-cross-repository-conformance.md).
 
 The OpenCoven SDK is experimental and unpublished. The current objective is a secure read-only **0.0.1** release that proves discovery, consent, identity, credential custody, canonical reads, native trust, and packed-consumer behavior before adding mutation authority.
 
@@ -105,9 +117,16 @@ SDK [#277](https://github.com/OpenCoven/sdk/pull/277) separately delivered
 per-client discovery v2 retention, concurrent current-credential preservation,
 and snapshots used to pin pairing authority. That development-source change is
 not included in frozen candidate `96804bc4` or validated by the SDK #276 run.
-The retained HPKE branch still requires managed/retry reconciliation under
-[#45](https://github.com/OpenCoven/sdk/issues/45). Candidate and counterpart
-authorities remain frozen; a later candidate needs its own review and evidence.
+
+SDK [#299](https://github.com/OpenCoven/sdk/pull/299), merged at `b80fc6d76`,
+adds real-HPKE regressions for forged stale guidance while preserving single-use
+pairing's no-retry behavior. [#301](https://github.com/OpenCoven/sdk/pull/301),
+merged at `09c537753`, adds managed authenticated reads with authority pinned
+separately for each iterator. PR-head and merged-main checks passed for both;
+[#296](https://github.com/OpenCoven/sdk/issues/296) is closed after both blockers
+were delivered. Native adapter adoption remains separate. Candidate and
+counterpart authorities stay frozen; a later candidate needs its own review
+and evidence.
 
 Historical candidate77 protected
 [run `34796638173`, attempt 1](https://github.com/OpenCoven/chat/actions/runs/34796638173/attempts/1)
@@ -118,6 +137,23 @@ gate. See the [dated release checkpoint](../RELEASING.md#release-gate-checkpoint
 for the remaining evidence and authorization requirements.
 
 ## Now: secure read-only 0.0.1
+
+### Open issue queue, 2026-09-20
+
+Use the GitHub issue graph for active delivery. The historical Beads ledger
+is not a current issue-status mirror; see the [plan index](superpowers/plans/README.md).
+
+| Issue | Remaining work and dependency |
+| --- | --- |
+| [#31](https://github.com/OpenCoven/sdk/issues/31) | Keep the release program open through #38, #40, and #41, including registry verification. |
+| [#38](https://github.com/OpenCoven/sdk/issues/38) | Resolve the Windows native build-script failure in protected run 35500732205 and obtain an authenticated three-platform aggregate. The #302 binding and validator rotations are delivered; partial Unix records and ordinary CI do not close this gate. |
+| [#40](https://github.com/OpenCoven/sdk/issues/40) | The [security review](workflows/first-release-security-review.md) records BLOCK. Re-review the exact publication candidate after #38 passes. |
+| [#41](https://github.com/OpenCoven/sdk/issues/41) | Execute publication only after #40 recommends ship and the maintainer explicitly authorizes each release mutation. |
+| [#42](https://github.com/OpenCoven/sdk/issues/42) | Conversational control depends on #41, canonical Cave mutation authority, and real-authority mutation evidence. |
+| [#43](https://github.com/OpenCoven/sdk/issues/43) | Rich content and privileged actions depend on #42 and their separately reviewed authority contracts. |
+| [#44](https://github.com/OpenCoven/sdk/issues/44) | Offline reads and tooling depend on #41 and approved native cache semantics. |
+| [#80](https://github.com/OpenCoven/sdk/issues/80) | Domain event pages and subscriptions shipped in #300. Local receipt integrity and caller-binding verification shipped in #304. Bounded reducer, event-integrity and definition-digest helpers shipped in #305; full guarded transitions remain unreconciled. Missing producer queries and authority-bearing commands have separate upstream gates. |
+| [#199](https://github.com/OpenCoven/sdk/issues/199) | Preserve the delivered refusal-only consumer until Coven publishes a reviewed, explicitly negotiated positive admission contract. |
 
 ### Contract truth
 
@@ -194,7 +230,7 @@ The [implementation design](superpowers/specs/2026-08-28-sdk-offline-reads-and-t
 requires real producer revisions and keeps the CLI private unless a separate
 distribution gate is approved.
 
-## Future — Coven Automations
+## Coven Automations
 
 [#80](https://github.com/OpenCoven/sdk/issues/80) adds a constrained Automations
 SDK consuming canonical `coven.automations.v1` artifacts.
@@ -204,26 +240,56 @@ independently recomputes golden definition/receipt integrity and checks the
 receipt's definition binding before exercising replay vectors. This is
 constrained contract conformance, not a public receipt-authentication API.
 
-The standalone Automations client on SDK main discovers capabilities and exposes
-seven allowlisted reads: `list()`, `get()`, `health()`, `runs()`, `occurrences()`,
-`getOccurrence()`, and `getReceipt()`. Authenticated Unix socket and Windows
-named-pipe transports use the source-pinned `POST /api/v1/actions` surface.
+The Automations client on SDK main discovers capabilities and exposes
+`list()`, `get()`, `health()`, `runs()`, `occurrences()`, `getOccurrence()`,
+`getReceipt()`, and bounded `events()` reads. Authenticated Unix socket and
+Windows named-pipe transports use the source-pinned `POST /api/v1/actions` surface.
 Reads require their exact advertised action; receipt retrieval does not
 independently authenticate receipt identity, authority, or outcome claims.
 The [package contract](../packages/coven/README.md#automations-phase-1-capability-discovery-and-diagnostic-reads) describes the
-read projections and native-adapter requirements. These APIs on main do not
-recapture the frozen `96804bc` release candidate. Normative rich definitions,
-pagination, subscriptions, independent receipt verification, mutations, and
-authority acceptance remain outside these reads.
+read projections and native-adapter requirements.
+
+[SDK #300](https://github.com/OpenCoven/sdk/pull/300), merged at `dd07e1d45`,
+delivered `events()` and demand-driven `subscribe()` pages for automation,
+occurrence, and run streams. PR-head and merged-main checks passed. The API
+supports explicit checkpoints, duplicate handling, ordering, cancellation,
+and bounded pages without polling, prefetch, retry, or implicit cursor reset.
+These APIs do not recapture the frozen `96804bc` release candidate.
+
+[SDK #304](https://github.com/OpenCoven/sdk/pull/304), merged at `0cd6e510b`,
+delivered local `verifyReceipt()` integrity checks and seven explicit
+caller-supplied identity bindings. The reviewed and delivered trees match;
+all final PR checks passed, including 2,912 tests in both normal and coverage
+runs. Authentication and runtime authority remain explicitly unverified.
+
+[SDK #305](https://github.com/OpenCoven/sdk/pull/305), merged at `49b7ab5e3`,
+delivered `reduceAutomationEvents()`, `verifyEventIntegrity()`, and
+`computeDefinitionDigest()`. The delivered tree matches the reviewed tree;
+all final PR checks passed, including 2,978 tests in both normal and coverage
+runs. Occurrence continuity is checked only when prior occurrence state is
+available in the current projection. These helpers cannot authenticate a producer or runtime,
+and a complete normative definition cannot be reconstructed from `get()`'s
+legacy projection. Full guarded transition validation across every stream
+remains unreconciled.
+
+An optional global-feed API remains deferred. The producer supports `feed/all`
+with a separate page cursor; domain event sequences do not establish feed-wide
+ordering. This is separate SDK API design, not a missing producer route.
+Individual-run lookup and per-automation occurrence history still lack
+supported producer read actions.
+
+[SDK #303](https://github.com/OpenCoven/sdk/pull/303) separately added exact
+17-file and released 19-file Automations artifact inventories at `d4cf105df`.
+The actual Coven v0.4.4 bundle passed its integrity checks; result-envelope
+authentication remains explicitly unperformed.
 
 OpenCoven/coven#991 (`d277ade3`) and OpenCoven/coven#999 (`735e2f05`) publish packaged base capability
 negotiation, durable `CAPABILITY_UNSUPPORTED` outcomes, and exact wire request
 fingerprinting. The rich normative `AutomationDefinition` remains
-negotiation-only. Read/verify/subscribe implementation can progress against
-committed producer surfaces without treating certification as a blanket gate;
-remaining individual-run retrieval/subscription APIs, production lifecycle emission, rich
-executable persistence, command-catalog parity, and current packed
-cross-repository certification are not credited as complete.
+negotiation-only. [Coven #1054](https://github.com/OpenCoven/coven/issues/1054)
+tracks executable rich persistence, command-catalog parity, and production
+lifecycle emission. Current packed cross-repository certification remains
+separate from these SDK development increments.
 Authority-bearing commands remain additionally blocked by
 [OpenCoven/coven#857](https://github.com/OpenCoven/coven/issues/857) and
 [OpenCoven/coven#858](https://github.com/OpenCoven/coven/issues/858).
@@ -232,9 +298,29 @@ Automations are not part of the 0.0.1 release bar. The SDK will consume pinned
 Coven-owned contracts and evidence rather than defining scheduling, authority,
 or run state independently.
 
+## Coven session policy
+
+[#199](https://github.com/OpenCoven/sdk/issues/199) has delivered the strict
+refusal-only v1 consumer. Its refreshed prerequisite checkpoint records that
+[Coven #1083](https://github.com/OpenCoven/coven/pull/1083) merged the macOS
+Seatbelt backend at `2c173cf2`. Coven's
+[canonical implementation at `14487ac7`](https://github.com/OpenCoven/coven/blob/14487ac7b23fe285db6ff6dd102109b995f58cdc/crates/coven-cli/src/session_policy.rs#L86-L95)
+still advertises `enforcement: "unavailable"` and `supported_profiles: []`;
+the backend merge does not activate admission.
+SDK acceptance and lifecycle support require a separately reviewed negotiated
+revision with verified enforcement and the evidence tracked by
+[Wand #9](https://github.com/OpenCoven/wand/issues/9) and
+[Wand #10](https://github.com/OpenCoven/wand/issues/10). Metadata does not grant
+authority, and this work does not block the read-only 0.0.1 release.
+
 ## Parallel maintenance
 
-[#45](https://github.com/OpenCoven/sdk/issues/45) audits legacy branches, worktrees, and stash state. Cleanup is separately authorized and does not block 0.0.1 unless unique work or release/provenance risk is discovered.
+[#45](https://github.com/OpenCoven/sdk/issues/45) and
+[#296](https://github.com/OpenCoven/sdk/issues/296) are closed. The two HPKE
+integration blockers landed through #299 and #301; the original branch tip
+remains preserved at `archive/retired-branch/sdk-20260918/cave-hpke-bound-v1`.
+Those development merges do not change the frozen candidate or authorize
+publication.
 
 ## 0.0.1 release bar
 
