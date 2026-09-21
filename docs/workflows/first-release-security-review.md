@@ -101,13 +101,23 @@ Repaired in [#297](https://github.com/OpenCoven/sdk/pull/297), merged at `aec069
 
 **Severity: Informational. Disposition: accepted. Owner: SDK maintainer (@BunsDev). Follow-up due 2026-10-17, or the next occurrence, whichever comes first.**
 
-During this review, `tests/conformance-checkouts-publication.spec.ts > rejects staged, unstaged, hidden-index, and wrong-remote states` failed once in a full `npm test` run at 7168ms against its explicit 15s budget. It passed in isolation and passed in four subsequent full runs, including three at 2,678 passed with zero failures.
+During this review, `tests/conformance-checkouts-publication.spec.ts > rejects staged, unstaged, hidden-index, and wrong-remote states` failed once in a full `npm test` run at 7168ms against the default five-second budget. It passed in isolation and passed in four subsequent full runs, including three at 2,678 passed with zero failures.
 
-**Rationale for acceptance.** This is test infrastructure, not shipped source: the file is a `tests/` spec and appears in no package tarball, so it cannot affect a released artifact. The test asserts that `inspectRepositoryCheckout` *rejects* dirty and wrong-remote checkouts, so the guard it covers fails closed by construction; a flaky run produces a red build rather than a silently weakened check. The suite has a passing record of four full runs out of five at this revision, and the underlying verification it guards is additionally enforced in CI by the `verify` jobs on all three platforms.
+**Rationale for acceptance.** This is test infrastructure, not shipped source: the file is a `tests/` spec and appears in no package tarball, so it cannot affect a released artifact. The test asserts that `inspectRepositoryCheckout` *rejects* dirty and wrong-remote checkouts, so the guard it covers fails closed by construction; a flaky run produces a red build rather than a silently weakened check. The suite has a passing record of four full runs out of five at this revision, and CI additionally runs it in the frozen Node 24.18.1 `verify` job on Ubuntu. The moving Node 24.x compatibility job excludes conformance suites; the separate three-platform jobs exercise native keyring adapters.
 
 **Why it is not fixed now.** The test spawns real `git` subprocesses to build fixture repositories, and subprocess contention is the plausible cause, but a single unreproduced failure does not establish one. The one observation captured a duration, not an assertion message. Changing the budget or serializing subprocesses on that evidence would be a guess, and would likely mask the signal needed to diagnose a genuine defect if one exists.
 
 **Follow-up, owned and dated.** By 2026-10-17, or immediately on the next occurrence if sooner, the owner will either (a) capture the assertion text from a reproduction and land a targeted fix, or (b) record four further consecutive clean full runs and close the finding as non-reproducing. If the failure instead proves to be a real defect in `inspectRepositoryCheckout` rather than test timing, this finding is re-severitised and this document's disposition is recomputed before any ship decision.
+
+**2026-09-20 follow-up.** Local full coverage for SDK #300 reproduced the
+five-second deadline in six checkout cases, including the combined dirty-state
+case. The captured failure was `Error: Test timed out in 5000ms.`, not a failed
+checkout assertion. One separate conformance-artifact test also timed out.
+The same exact PR head passed all 2,796 normal and coverage tests in the pinned
+hosted verifier, with the timeout and checkout guards unchanged. This records
+the recurrence and its error rather than closing the finding as non-reproducing.
+The local scheduling cause remains unproven; any infrastructure change needs a
+separate reproduction and review before the final release security disposition.
 
 **This acceptance does not gate the current disposition**, which is BLOCK for an unrelated structural reason.
 
@@ -117,7 +127,20 @@ During this review, `tests/conformance-checkouts-publication.spec.ts > rejects s
 
 The blocking condition is structural and unrelated to the findings above: `release.config.json` carries `conformanceEvidence.aggregateRecord: null`. No cross-repository aggregate record has ever existed, so #38's criterion that "a release candidate cannot advance without a named passing evidence record" is unmet.
 
-The live technical cause sits in the Chat producer, not this repository. On protected run `35146928092`, Linux job `104966270715` and macOS job `104966270737` each independently passed all 197 ordered assertions (110 Cave, 46 SDK, 41 Chat). Windows job `104966270723` failed closed in the resource quota monitor with `access-denied; root=harness-execution-aggregate; scope=checkouts; operation=directory-enumeration-depth-3-plus; repeat=persistent`. No Windows record was produced, so artifact validation, attestation, and aggregation were skipped.
+The latest protected evidence remains incomplete. Run
+[35500732205](https://github.com/OpenCoven/chat/actions/runs/35500732205) used
+Chat `ac1c4f4c` and SDK validator `1c10e63a`. Linux and macOS artifacts
+independently passed exact identities, digests, canonical schema, privacy/isolation,
+timing and all 197 ordered assertions each. Windows job `106052383153`
+failed at `phase1.packaging.chat-native-build.build-script`, with no Windows
+record. Validation, attestation, and aggregation were skipped. This newer
+checkpoint does not constitute a fresh security review of subsequent SDK
+features; the exact publication candidate still needs that review.
+
+The earlier run `35146928092` independently passed 197 ordered assertions on
+each Unix platform but failed the Windows checkout-quota monitor. Keep that
+historical cause separate from the newer Cargo build-script category; the
+latter does not identify the underlying dependency or compiler error.
 
 Sequence to SHIP, in order:
 

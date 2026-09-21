@@ -50,22 +50,32 @@ deltas are bound to reviewed Git bytes. Token/profile ownership, native cleanup,
 resource limits, and operator isolation remain required. The SDK candidate and
 Chat consumer, Cave, and Coven revisions remain frozen.
 
-The latest terminal protected [run 35146928092](https://github.com/OpenCoven/chat/actions/runs/35146928092)
-used Chat #311 and SDK #293. Linux and macOS independently passed all 197
-ordered assertions each. Windows failed with
-`access-denied; root=harness-execution-aggregate; scope=checkouts; operation=directory-enumeration-depth-3-plus; repeat=persistent`.
-No Windows record or aggregate was accepted; validation and attestation did not
-complete. This is separate from run `35138402347`'s operator Cave-home isolation
-failure. The current binding requires verified SDK landing, both validator-scope
-rotations with readback, and fresh authenticated protected validation.
+SDK [#302](https://github.com/OpenCoven/sdk/pull/302) delivered this binding at
+`1c10e63a9ff87934397e8defc2d0b98f3932abe2`; its signed delivery tree matches the
+reviewed head, and all PR and merged-main checks passed. Both validator scopes
+were rotated and read back at that exact revision.
+
+Protected [run 35500732205](https://github.com/OpenCoven/chat/actions/runs/35500732205)
+is terminal failure. Linux and macOS artifacts independently passed exact
+run/job and validator identities, ZIP digests, canonical schema, privacy/isolation
+checks, timing, and all 197 ordered assertions each (110 Cave, 46 SDK, 41 Chat).
+Windows failed at
+`phase1.packaging.chat-native-build.build-script` and produced no platform
+record. Validation, attestation, and aggregation were skipped. The fixed
+category identifies a Cargo custom-build-command failure but does not identify
+the failing dependency or underlying compiler diagnostic.
+
+Earlier run `35146928092` used Chat #311 / SDK #293 and produced independently
+verified Unix records with 197 assertions each. Its Windows checkout-quota
+failure is separate from the current native-build failure and from run
+`35138402347`'s operator Cave-home isolation failure.
 
 Historical run `35125287541` failed Windows execution-root cleanup before
 isolation validation. Run `35111662551` failed Windows isolation; run
 `35100084575` failed Windows secure-store preflight and deletion-purpose cleanup.
-Keep these failures distinct. The current Chat #328 binding requires verified
-SDK landing, both validator-scope rotations, and fresh authenticated protected
-validation. No aggregate is accepted. Chat consumer, candidate, Cave and Coven
-identities remain frozen.
+Keep these failures distinct. Windows repair and a complete authenticated
+three-platform aggregate remain required. Chat consumer, candidate, Cave and
+Coven identities remain frozen.
 
 Historical protected [run 34977202052](https://github.com/OpenCoven/chat/actions/runs/34977202052)
 used Chat producer `047e8ad7f4a2ca5a9009217de3c3f5f32fd98ba6` and SDK #284
@@ -111,9 +121,10 @@ SDK [#277](https://github.com/OpenCoven/sdk/pull/277) separately delivered
 per-client discovery v2 retention, concurrent current-credential preservation,
 and snapshots used to pin pairing authority. That development-source change is
 not included in frozen candidate `96804bc4` or validated by the SDK #276 run.
-The retained HPKE branch still requires managed/retry reconciliation under
-[#45](https://github.com/OpenCoven/sdk/issues/45). Candidate and counterpart
-authorities remain frozen; a later candidate needs its own review and evidence.
+SDK #299 and #301 subsequently delivered pairing guard regressions and managed
+HPKE iterator continuity; both blockers in #296 are closed. Native adapter
+adoption remains separate. Candidate and counterpart authorities stay frozen;
+a later candidate needs its own review and evidence.
 Complete protected #38 evidence and #40 authorization are still required; see the
 [v0.0.1 preparation checklist](RELEASING.md#v001-preparation-decision-2026-09-12)
 for the remaining gates and required release sequence.
@@ -236,7 +247,7 @@ valid integrity fixtures.
 The historical base-artifact pin remains unchanged; it does not certify the
 later capability-negotiation changes from OpenCoven/coven#991 and
 OpenCoven/coven#999. See the
-[Automations roadmap](docs/ROADMAP.md#future--coven-automations) for the current
+[Automations roadmap](docs/ROADMAP.md#coven-automations) for the current
 producer status and remaining SDK phases.
 
 The exact-runtime CI job checks out Coven at the locked source commit,
