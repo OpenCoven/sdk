@@ -35,7 +35,8 @@ export function snapshotAutomationJson(input: unknown): AutomationJson | undefin
     if (entries > 8_192 || keys.some((key) => typeof key !== 'string')) throw new TypeError();
     const descriptors = Object.getOwnPropertyDescriptors(value);
     const capturedKeys = Reflect.ownKeys(descriptors);
-    if (capturedKeys.length !== keys.length || capturedKeys.some((key) => !keys.includes(key))) throw new TypeError();
+    const keySet = new Set(keys);
+    if (capturedKeys.length !== keys.length || capturedKeys.some((key) => !keySet.has(key))) throw new TypeError();
     if (keys.some((key) => !Object.hasOwn(descriptors[key as string]!, 'value'))) throw new TypeError();
     if (array) {
       const length: unknown = descriptors.length?.value;
