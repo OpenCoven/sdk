@@ -36,6 +36,8 @@ export function reduceAutomationEvents(events: unknown): CovenAutomationEventRed
   let stream: CovenAutomationEventStream | null = null;
   let cursor: number | null = null;
   let state: AutomationJson = null;
+  let occurrenceState: string | undefined;
+  let occurrenceWindow: Record<string, unknown> | undefined;
   let checked = false;
   let unavailable = false;
   const seen = new Map<string, string>();
@@ -53,10 +55,17 @@ export function reduceAutomationEvents(events: unknown): CovenAutomationEventRed
     if (entry.kind === 'feed.snapshot') {
       if (entry.sequence !== entry.payload.throughSequence || entry.sequence <= (cursor ?? -1)) return invalid('STREAM_OUT_OF_ORDER');
       state = entry.payload.state as AutomationJson;
+      if (stream?.kind === 'occurrence' && object(state) && state.entity === 'occurrence' && typeof state.state === 'string') {
+        occurrenceState = state.state;
+        occurrenceWindow = object(state.eventWindow) ? state.eventWindow : undefined;
+      } else if (stream?.kind === 'occurrence') {
+        occurrenceState = undefined;
+        occurrenceWindow = undefined;
+      }
     } else {
       if (cursor === Number.MAX_SAFE_INTEGER || entry.sequence !== (cursor ?? -1) + 1) return invalid('STREAM_OUT_OF_ORDER');
       if (stream.kind === 'occurrence' && entry.kind === 'occurrence.transitioned') {
-        const from = object(state) && state.entity === 'occurrence' && typeof state.state === 'string' ? state.state : undefined;
+        const from = occurrenceState;
         if (from === undefined) unavailable = true;
         else {
           checked = true;
@@ -64,9 +73,13 @@ export function reduceAutomationEvents(events: unknown): CovenAutomationEventRed
           if (terminal.has(from)) return invalid('OCCURRENCE_TERMINAL_REGRESSION');
         }
       }
-      const window: Record<string, unknown> | undefined = object(state) && object(state.eventWindow) ? state.eventWindow : undefined;
+      const window: Record<string, unknown> | undefined = object(state) && object(state.eventWindow) ? state.eventWindow : occurrenceWindow;
       const firstSequence: number = integer(window?.firstSequence, 0) ? window.firstSequence : entry.sequence;
       state = Object.freeze({ ...payloadState(entry), eventWindow: Object.freeze({ firstSequence, lastSequence: entry.sequence }) });
+      if (stream.kind === 'occurrence' && entry.kind === 'occurrence.transitioned') {
+        occurrenceState = entry.payload.to;
+        occurrenceWindow = object(state.eventWindow) ? state.eventWindow : undefined;
+      }
     }
     cursor = entry.sequence;
     seen.set(entry.eventId, serialized);
