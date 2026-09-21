@@ -470,10 +470,24 @@ error messages; projection state itself retains supplied event data.
 These helpers pin Coven `aa28d994965a83c0dfba8eaca071e182d605fed1`.
 The [fixture provenance](fixtures/automations-pure-v1/manifest.provenance.json)
 records executable-source differences: top-level-only integrity exclusion takes
-precedence over vector prose saying every integrity member; Rust/schema allow
-optional draft/invalid `binding.familiarId` and optional delivery members subject
-to `outputTarget` requiring `mode`, while the pinned TypeScript artifact narrows
-those fields. The wire timezone string carries no local IANA-validation brand.
+precedence over vector prose saying every integrity member. The pinned
+`common.schema.json` description also says extensions never influence digests,
+but `types.rs:993–1004` serializes them into the definition body, and
+`canonical_json.rs` excludes only top-level `integrity`. The SDK follows that
+executable recipe: extension values, including nested `integrity`, affect the
+digest. Named vectors in `tests/coven-automations-definition-digest.spec.ts` check
+this with independently computed literal digests. They are SDK-authored
+executable-recipe checks, not upstream certification. The published golden
+includes `extensions: {}` and has digest
+`8921b840a98f0b700d0144e70b9418af2431f9863bc4e4d8529b2d9848fa4ce9`;
+omitting that field independently yields
+`444628a422ccc48f322243fb9c57e6f9f23441a53db7deed5c74bd72c1b86091`.
+This directly contradicts the schema prose while preserving the upstream golden.
+
+Rust/schema allow optional draft/invalid `binding.familiarId` and optional
+delivery members subject to `outputTarget` requiring `mode`, while the pinned
+TypeScript artifact narrows those fields. The wire timezone string carries no
+local IANA-validation brand.
 The older artifact canary remains independently pinned and is not the runtime
 implementation of these helpers.
 

@@ -66,6 +66,7 @@
   ],
   "discrepancies": [
     "Digest verification removes only top-level integrity per canonical_json.rs, not every integrity member as test-vectors.json prose says.",
+    "common.schema.json extensionBag.description says extensions never influence digests, but types.rs:993-1004 serializes extensions into the definition body and canonical_json.rs removes only top-level integrity. Runtime follows the executable recipe; tests/coven-automations-definition-digest.spec.ts contains named SDK-authored extension vectors with independently computed literal digests, not upstream certification. The unchanged published definition.golden contains extensions:{} and has digest 8921b840a98f0b700d0144e70b9418af2431f9863bc4e4d8529b2d9848fa4ce9; independently omitting extensions yields 444628a422ccc48f322243fb9c57e6f9f23441a53db7deed5c74bd72c1b86091, directly contradicting that prose.",
     "Definition familiarId is optional for draft/invalid in Rust/schema but always required by pinned TS.",
     "Delivery members are optional in Rust/schema subject to outputTarget requiring mode; pinned TS requires both.",
     "Timezone brand is a TS marker; local digest checks do not validate the pinned Rust timezone database.",

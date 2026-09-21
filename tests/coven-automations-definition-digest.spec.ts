@@ -18,11 +18,32 @@ test('computes the exact normative golden body digest without normalization', ()
   expect(digest(golden)).toEqual({ status: 'computed', digest: golden.integrity });
 });
 
-test('excludes only top-level integrity and covers the prompt and nested extension integrity', () => {
+test('excludes only top-level integrity and covers the prompt', () => {
   expect(digest(changed(['integrity', 'value'], 'a'.repeat(64)))).toEqual(digest(golden));
   expect(digest(changed(['action', 'prompt'], 'changed'))).not.toEqual(digest(golden));
-  expect(digest(changed(['extensions'], { 'x-proof': { integrity: 'a' } })))
-    .not.toEqual(digest(changed(['extensions'], { 'x-proof': { integrity: 'b' } })));
+});
+
+// SDK-authored executable-recipe checks, not upstream certification. Expected hashes
+// were computed independently with Python hashlib.sha256(json.dumps(body,
+// sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode('utf8')) after
+// asserting ASCII strings/safe integers and removing only top-level integrity.
+// body is the unchanged golden definition with extensions replaced as shown.
+test.each([
+  { name: 'extension-integrity-a', integrity: 'a', expectedSha256: 'c0520958ee39d9aa88e2340fa77bf922e2ebe1da321b0c1d5ac51ba083ecede1' },
+  { name: 'extension-integrity-b', integrity: 'b', expectedSha256: '304c31e1b18ba7cbfa24db7a39a927c5a9fc190668192c7d111e61ebf4064f2b' },
+])('SDK-authored executable-recipe vector: $name', ({ integrity, expectedSha256 }) => {
+  expect(digest(changed(['extensions'], { 'x-proof': { integrity } }))).toEqual({
+    status: 'computed', digest: { algorithm: 'sha256', canonicalization: 'jcs-rfc8785', value: expectedSha256 },
+  });
+});
+
+test('SDK-authored executable-recipe vector: omitted-golden-extensions', () => {
+  expect(golden.extensions).toEqual({});
+  expect(golden.integrity.value).toBe('8921b840a98f0b700d0144e70b9418af2431f9863bc4e4d8529b2d9848fa4ce9');
+  expect(digest(changed(['extensions'], undefined, true))).toEqual({
+    status: 'computed', digest: { algorithm: 'sha256', canonicalization: 'jcs-rfc8785',
+      value: '444628a422ccc48f322243fb9c57e6f9f23441a53db7deed5c74bd72c1b86091' },
+  });
 });
 
 test.each([
