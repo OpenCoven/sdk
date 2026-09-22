@@ -83,7 +83,7 @@ nested causes are emitted.
 
 ## Native secure storage
 
-The CLI uses `@napi-rs/keyring` `2.0.0` directly and does not fall back to
+The CLI uses `@napi-rs/keyring` `2.1.0` directly and does not fall back to
 files, shell commands, environment variables, or alternate keychain adapters.
 Missing credentials remain distinct from locked or inaccessible backend errors.
 When a credential disappears before native deletion, `delete()` returns `false`

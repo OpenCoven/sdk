@@ -31,19 +31,25 @@ is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
 tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the merged [Chat #328](https://github.com/OpenCoven/chat/pull/328)
-producer `ac1c4f4ca658fbb03bd2541bf265a57666e80c7c`, tree `26a65cedb02a09652c637dff77f2ed66d6ac96aa`.
-Its reviewed head `45326eb7c95c6d2abed7d29ab17972fbb5d0a72d` has the same complete tree
+This binding selects the merged [Chat #358](https://github.com/OpenCoven/chat/pull/358)
+producer `8be8d09a3a3119ad3bc4df91652ad5ab6c45b701`, tree `15e7fe8bb298234aaa50241ceae23d70494d8bf1`.
+Its reviewed head `0492818645fc098ecff74e1a285901f7527462de` has the same complete tree
 and has executable harness authority
-`8c3d7354ca86cce864029d3586356eaaf07908f0`, tree `34689f03042dee69d71f999114f569d9784e04a4`,
+`3877057ffc6ba5d9dc22e6062bae9f0c32478f28`, tree `2db310ae3ddc54b50b3e066e456b0ca870fea604`,
 as its sole parent.
 The merge parents are that harness authority and the reviewed head. The validator
 checks the merge-to-reviewed-source edge, the source-to-harness edge, and complete
 reviewed/delivery tree equality. The intermediate source-authority path is empty.
 
-This producer retains Chat #311's build-time home isolation and adds the exact
-Chat #314 producer-revision resolver, bounded Windows quota diagnostics, and
-Chat #327's pinned-main freshness guard. All 25 governed files and ten production
+This producer retains Chat #311's build-time home isolation, the exact Chat #314
+producer-revision resolver, bounded Windows quota diagnostics, and Chat #327's
+pinned-main freshness guard, and adds Chat #348's shortened isolated Windows
+bootstrap root. That root is now `oc` plus the first eight hex of the run nonce
+rather than `opencoven-win32-` plus all thirty-two. It prefixes every Cargo
+registry source path, and `aws-lc-sys`'s deepest relative include overflowed
+`MAX_PATH` beneath the longer name, failing the Windows lane at
+`phase1.packaging.chat-native-build.build-script` before the resource quota
+monitor was reached. All 25 governed files and ten production
 deltas are bound to reviewed Git bytes. Token/profile ownership, native cleanup,
 resource limits, and operator isolation remain required. The SDK candidate and
 Chat consumer, Cave, and Coven revisions remain frozen.
@@ -73,20 +79,25 @@ cleanup. Residual-open diagnostics derive fixed purpose/access labels and retain
 scope; legacy role-only calls remain compatible. No native access masks, sharing,
 privileges or limits change.
 
-SDK [#302](https://github.com/OpenCoven/sdk/pull/302) delivered this binding at
-`1c10e63a9ff87934397e8defc2d0b98f3932abe2`; its signed delivery tree matches the
-reviewed head, and all PR and merged-main checks passed. Both validator scopes
-were rotated and read back at that exact revision.
+SDK [#302](https://github.com/OpenCoven/sdk/pull/302) delivered the preceding
+Chat #328 binding at `1c10e63a9ff87934397e8defc2d0b98f3932abe2`; its signed
+delivery tree matched the reviewed head, and all PR and merged-main checks
+passed. Both validator scopes were rotated and read back at that exact revision
+and still select it. The binding recorded above is not delivered until its own
+merge, after which both scopes must be rotated again before any dispatch.
 
-Protected [run 35500732205](https://github.com/OpenCoven/chat/actions/runs/35500732205)
-is terminal failure. Linux and macOS artifacts independently passed exact
-run/job and validator identities, ZIP digests, canonical schema, privacy/isolation
-checks, timing, and all 197 ordered assertions each (110 Cave, 46 SDK, 41 Chat).
-Windows failed at
+Protected [run 35566636457](https://github.com/OpenCoven/chat/actions/runs/35566636457)
+is the latest terminal result and belongs to the preceding Chat #328 binding,
+not to the binding recorded above. Linux and macOS artifacts independently
+passed exact run/job and validator identities, ZIP digests, canonical schema,
+privacy/isolation checks, timing, and all 197 ordered assertions each (110 Cave,
+46 SDK, 41 Chat). Windows failed at
 `phase1.packaging.chat-native-build.build-script` and produced no platform
-record. Validation, attestation, and aggregation were skipped. The fixed
-category identifies a Cargo custom-build-command failure but does not identify
-the failing dependency or underlying compiler diagnostic.
+record. Validation, attestation, and aggregation were skipped. The earlier
+[run 35500732205](https://github.com/OpenCoven/chat/actions/runs/35500732205)
+failed at the same stage. That stage is now identified: the `aws-lc-sys` build
+script, whose deepest relative include exceeded `MAX_PATH` beneath the previous
+isolated bootstrap root, which Chat #348 shortens.
 
 Earlier run `35146928092` used Chat #311 / SDK #293 and produced independently
 verified Unix records with 197 assertions each. Its Windows checkout-quota
