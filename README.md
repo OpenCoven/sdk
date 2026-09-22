@@ -56,20 +56,25 @@ deltas are bound to reviewed Git bytes. Token/profile ownership, native cleanup,
 resource limits, and operator isolation remain required. The SDK candidate and
 Chat consumer, Cave, and Coven revisions remain frozen.
 
-SDK [#302](https://github.com/OpenCoven/sdk/pull/302) delivered this binding at
-`1c10e63a9ff87934397e8defc2d0b98f3932abe2`; its signed delivery tree matches the
-reviewed head, and all PR and merged-main checks passed. Both validator scopes
-were rotated and read back at that exact revision.
+SDK [#302](https://github.com/OpenCoven/sdk/pull/302) delivered the preceding
+Chat #328 binding at `1c10e63a9ff87934397e8defc2d0b98f3932abe2`; its signed
+delivery tree matched the reviewed head, and all PR and merged-main checks
+passed. Both validator scopes were rotated and read back at that exact revision
+and still select it. The binding recorded above is not delivered until its own
+merge, after which both scopes must be rotated again before any dispatch.
 
-Protected [run 35500732205](https://github.com/OpenCoven/chat/actions/runs/35500732205)
-is terminal failure. Linux and macOS artifacts independently passed exact
-run/job and validator identities, ZIP digests, canonical schema, privacy/isolation
-checks, timing, and all 197 ordered assertions each (110 Cave, 46 SDK, 41 Chat).
-Windows failed at
+Protected [run 35566636457](https://github.com/OpenCoven/chat/actions/runs/35566636457)
+is the latest terminal result and belongs to the preceding Chat #328 binding,
+not to the binding recorded above. Linux and macOS artifacts independently
+passed exact run/job and validator identities, ZIP digests, canonical schema,
+privacy/isolation checks, timing, and all 197 ordered assertions each (110 Cave,
+46 SDK, 41 Chat). Windows failed at
 `phase1.packaging.chat-native-build.build-script` and produced no platform
-record. Validation, attestation, and aggregation were skipped. The fixed
-category identifies a Cargo custom-build-command failure but does not identify
-the failing dependency or underlying compiler diagnostic.
+record. Validation, attestation, and aggregation were skipped. The earlier
+[run 35500732205](https://github.com/OpenCoven/chat/actions/runs/35500732205)
+failed at the same stage. That stage is now identified: the `aws-lc-sys` build
+script, whose deepest relative include exceeded `MAX_PATH` beneath the previous
+isolated bootstrap root, which Chat #348 shortens.
 
 Earlier run `35146928092` used Chat #311 / SDK #293 and produced independently
 verified Unix records with 197 assertions each. Its Windows checkout-quota
