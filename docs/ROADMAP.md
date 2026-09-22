@@ -1,20 +1,30 @@
 # OpenCoven SDK Roadmap
 
-Conformance checkpoint, 2026-09-20: [SDK #302](https://github.com/OpenCoven/sdk/pull/302)
-merged at `1c10e63a9ff87934397e8defc2d0b98f3932abe2`, binding Chat #328 producer
-`ac1c4f4ca658fbb03bd2541bf265a57666e80c7c`. Its reviewed tree matches the
-signed delivery, and all exact-head hosted checks passed. Both Chat validator
-scopes were rotated and read back at that SDK revision.
+Conformance checkpoint, 2026-09-22: this binding selects Chat #358 producer
+`8be8d09a3a3119ad3bc4df91652ad5ab6c45b701`, the merge that repins Chat's harness
+authority to `3877057ffc6ba5d9dc22e6062bae9f0c32478f28` after the Windows
+`MAX_PATH` repair in [Chat #348](https://github.com/OpenCoven/chat/pull/348).
+Its reviewed head has the same complete tree, and the harness authority is that
+head's sole parent. Chat `main` equals the producer commit at binding time.
 
-Protected [run `35500732205`](https://github.com/OpenCoven/chat/actions/runs/35500732205)
-is terminal failure. Linux and macOS artifacts independently passed exact
-run/job and validator identities, ZIP digests, canonical schema, privacy/isolation
-checks, timing, and all 197 ordered assertions each (110 Cave, 46 SDK, 41 Chat).
-Windows failed at
-`phase1.packaging.chat-native-build.build-script` and produced no platform
-record. Artifact validation, attestation, and aggregation were skipped.
-This is a different failure stage from the earlier checkout-quota monitor;
-it does not establish a repaired Windows journey or an accepted aggregate.
+The preceding [SDK #302](https://github.com/OpenCoven/sdk/pull/302) merged at
+`1c10e63a9ff87934397e8defc2d0b98f3932abe2`, binding Chat #328 producer
+`ac1c4f4ca658fbb03bd2541bf265a57666e80c7c`, with both Chat validator scopes
+rotated and read back at that revision.
+
+Protected [run `35566636457`](https://github.com/OpenCoven/chat/actions/runs/35566636457)
+is the latest terminal result and remains a failure. Linux and macOS records
+independently passed exact identities, canonical schema, privacy and retained-evidence
+scans, Cave timing, and all 197 ordered assertions each (110 Cave, 46 SDK, 41 Chat).
+Windows failed at `phase1.packaging.chat-native-build.build-script` and produced
+no platform record; artifact validation, attestation, and aggregation were skipped.
+That stage is the `aws-lc-sys` build script, whose deepest relative include
+overflowed `MAX_PATH` beneath the previous isolated bootstrap root. Chat #348
+shortens that root and was verified on a scratch copy of the Windows lane
+(deepest include 250 characters, `cargo build` exit 0), but no protected run has
+yet exercised it. This binding therefore does not establish a repaired Windows
+journey or an accepted aggregate, and the earlier checkout-quota monitor question
+remains unanswered because the monitor was never reached.
 
 [SDK #295](https://github.com/OpenCoven/sdk/pull/295) delivered descendant
 provenance validation through both collectors at `888358012`. The current
