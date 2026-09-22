@@ -186,8 +186,8 @@
     "harness": {
       "path": "scripts/phase1-conformance.mjs",
       "version": "2.0.0",
-      "size": 219462,
-      "sha256": "fd90e35308ea6b8dd0488cb874d00d7ad40aa16b33e38b46a9a76c3ea13d5056"
+      "size": 219920,
+      "sha256": "2a3e806366167e3d4919fb502f2e5589380d6b211f943f839fd16e164ecaab70"
     },
     "command": "test:phase1-conformance",
     "recordSchemaVersion": 2,
