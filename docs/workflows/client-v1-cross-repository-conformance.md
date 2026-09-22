@@ -117,7 +117,8 @@ Historical run `35125287541` failed Windows execution-root cleanup before
 isolation validation. Run `35111662551` failed Windows isolation; run
 `35100084575` failed Windows secure-store preflight and deletion-purpose cleanup.
 Keep these failures distinct. Resolving the Windows evidence-assembly failure
-and obtaining a complete authenticated three-platform aggregate remain required. Chat consumer, candidate, Cave and
+and obtaining a complete authenticated three-platform aggregate remain required.
+Chat consumer, candidate, Cave and
 Coven identities remain frozen.
 
 Production Cave remains `ecdcdcf8a75b62bb912ec48215ae20ab0809a181`,

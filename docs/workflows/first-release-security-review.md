@@ -133,7 +133,7 @@ Chat `ac1c4f4c` and SDK validator `1c10e63a`. Linux and macOS artifacts
 independently passed exact identities, digests, canonical schema, privacy/isolation,
 timing and all 197 ordered assertions each. Windows job `106052383153`
 failed at `phase1.packaging.chat-native-build.build-script`, with no Windows
-record. Validation, attestation, and aggregation were skipped. This newer
+record. Validation, attestation, and aggregation were skipped. This historical
 checkpoint does not constitute a fresh security review of subsequent SDK
 features; the exact publication candidate still needs that review.
 
