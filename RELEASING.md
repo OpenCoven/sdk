@@ -490,19 +490,25 @@ passing evidence record for each target.
 The frozen Chat consumer is
 `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`, tree
 `ffd1963ef9539c7a679909200175fb11a9305c95`, with all four committed vendor
-archives byte-identical to candidate 96804bc. This binding selects the merged [Chat #328](https://github.com/OpenCoven/chat/pull/328)
-producer `ac1c4f4ca658fbb03bd2541bf265a57666e80c7c`, tree `26a65cedb02a09652c637dff77f2ed66d6ac96aa`.
-Its reviewed head `45326eb7c95c6d2abed7d29ab17972fbb5d0a72d` has the same complete tree
+archives byte-identical to candidate 96804bc. This binding selects the merged [Chat #358](https://github.com/OpenCoven/chat/pull/358)
+producer `8be8d09a3a3119ad3bc4df91652ad5ab6c45b701`, tree `15e7fe8bb298234aaa50241ceae23d70494d8bf1`.
+Its reviewed head `0492818645fc098ecff74e1a285901f7527462de` has the same complete tree
 and has executable harness authority
-`8c3d7354ca86cce864029d3586356eaaf07908f0`, tree `34689f03042dee69d71f999114f569d9784e04a4`,
+`3877057ffc6ba5d9dc22e6062bae9f0c32478f28`, tree `2db310ae3ddc54b50b3e066e456b0ca870fea604`,
 as its sole parent.
 The merge parents are that harness authority and the reviewed head. The validator
 checks the merge-to-reviewed-source edge, the source-to-harness edge, and complete
 reviewed/delivery tree equality. The intermediate source-authority path is empty.
 
-This producer retains Chat #311's build-time home isolation and adds the exact
-Chat #314 producer-revision resolver, bounded Windows quota diagnostics, and
-Chat #327's pinned-main freshness guard. All 25 governed files and ten production
+This producer retains Chat #311's build-time home isolation, the exact Chat #314
+producer-revision resolver, bounded Windows quota diagnostics, and Chat #327's
+pinned-main freshness guard, and adds Chat #348's shortened isolated Windows
+bootstrap root. That root is now `oc` plus the first eight hex of the run nonce
+rather than `opencoven-win32-` plus all thirty-two. It prefixes every Cargo
+registry source path, and `aws-lc-sys`'s deepest relative include overflowed
+`MAX_PATH` beneath the longer name, failing the Windows lane at
+`phase1.packaging.chat-native-build.build-script` before the resource quota
+monitor was reached. All 25 governed files and ten production
 deltas are bound to reviewed Git bytes. Token/profile ownership, native cleanup,
 resource limits, and operator isolation remain required. The SDK candidate and
 Chat consumer, Cave, and Coven revisions remain frozen.
