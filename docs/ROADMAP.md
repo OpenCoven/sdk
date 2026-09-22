@@ -6,6 +6,17 @@ authority to `3877057ffc6ba5d9dc22e6062bae9f0c32478f28` after the Windows
 `MAX_PATH` repair in [Chat #348](https://github.com/OpenCoven/chat/pull/348).
 Its reviewed head has the same complete tree, and the harness authority is that
 head's sole parent. Chat `main` equals the producer commit at binding time.
+SDK [#310](https://github.com/OpenCoven/sdk/pull/310) delivered the binding at
+`1ad0dae0e09df37a42df11be5d0329ffc20f567e`; all merged-main checks passed, and
+both validator scopes read back that revision. Protected
+[run 35704479061](https://github.com/OpenCoven/chat/actions/runs/35704479061)
+completed with failure for this exact pair. Linux and macOS records passed
+the committed validators and all 197 assertions each; Windows failed at
+`phase1.stage.evidence-authority.build.failed`, in schema-v2 evidence assembly.
+No Windows record exists; validation, attestation and aggregation were skipped.
+The underlying exception remains unclassified. The temporary macOS inspector's extra
+upload-step timestamp guard refused; exact artifact identity, digest and
+unchanged committed validation passed. No aggregate acceptance is established.
 
 The preceding [SDK #302](https://github.com/OpenCoven/sdk/pull/302) merged at
 `1c10e63a9ff87934397e8defc2d0b98f3932abe2`, binding Chat #328 producer
@@ -13,7 +24,7 @@ The preceding [SDK #302](https://github.com/OpenCoven/sdk/pull/302) merged at
 rotated and read back at that revision.
 
 Protected [run `35566636457`](https://github.com/OpenCoven/chat/actions/runs/35566636457)
-is the latest terminal result and remains a failure. Linux and macOS records
+is historical and failed. Linux and macOS records
 independently passed exact identities, canonical schema, privacy and retained-evidence
 scans, Cave timing, and all 197 ordered assertions each (110 Cave, 46 SDK, 41 Chat).
 Windows failed at `phase1.packaging.chat-native-build.build-script` and produced
@@ -21,10 +32,10 @@ no platform record; artifact validation, attestation, and aggregation were skipp
 That stage is the `aws-lc-sys` build script, whose deepest relative include
 overflowed `MAX_PATH` beneath the previous isolated bootstrap root. Chat #348
 shortens that root and was verified on a scratch copy of the Windows lane
-(deepest include 250 characters, `cargo build` exit 0), but no protected run has
-yet exercised it. This binding therefore does not establish a repaired Windows
+(deepest include 250 characters, `cargo build` exit 0). The current protected run
+reached evidence assembly but did not establish a complete Windows
 journey or an accepted aggregate, and the earlier checkout-quota monitor question
-remains unanswered because the monitor was never reached.
+remains unanswered by those preceding failed runs, which never reached the monitor.
 
 [SDK #295](https://github.com/OpenCoven/sdk/pull/295) delivered descendant
 provenance validation through both collectors at `888358012`. The current
@@ -156,7 +167,7 @@ is not a current issue-status mirror; see the [plan index](superpowers/plans/REA
 | Issue | Remaining work and dependency |
 | --- | --- |
 | [#31](https://github.com/OpenCoven/sdk/issues/31) | Keep the release program open through #38, #40, and #41, including registry verification. |
-| [#38](https://github.com/OpenCoven/sdk/issues/38) | Resolve the Windows native build-script failure in protected run 35500732205 and obtain an authenticated three-platform aggregate. The #302 binding and validator rotations are delivered; partial Unix records and ordinary CI do not close this gate. |
+| [#38](https://github.com/OpenCoven/sdk/issues/38) | SDK #310 delivered the Chat #358 binding; both validator scopes read back `1ad0dae0e`. Run `35704479061` produced Unix records passing committed validators but failed Windows schema-v2 evidence assembly. Diagnose that bounded producer failure and obtain a complete authenticated aggregate. |
 | [#40](https://github.com/OpenCoven/sdk/issues/40) | The [security review](workflows/first-release-security-review.md) records BLOCK. Re-review the exact publication candidate after #38 passes. |
 | [#41](https://github.com/OpenCoven/sdk/issues/41) | Execute publication only after #40 recommends ship and the maintainer explicitly authorizes each release mutation. |
 | [#42](https://github.com/OpenCoven/sdk/issues/42) | Conversational control depends on #41, canonical Cave mutation authority, and real-authority mutation evidence. |
