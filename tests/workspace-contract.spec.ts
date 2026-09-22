@@ -71,7 +71,7 @@ describe('workspace contract', () => {
 
     expect(cliReadme).toContain('runCli(argv, runtime?)');
     expect(cliReadme).toContain('@napi-rs/keyring');
-    expect(cliReadme).toContain('2.0.0');
+    expect(cliReadme).toContain('2.1.0');
     expect(cliReadme).toContain('platform_security_unavailable');
     expect(cliReadme).toContain('secret-free');
     expect(cliReadme).toContain('CliRuntime.cave.discovery.dependencies.windowsPathTrust');
