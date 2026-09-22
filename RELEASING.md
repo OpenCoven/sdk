@@ -538,15 +538,24 @@ cleanup. Residual-open diagnostics derive fixed purpose/access labels and retain
 scope; legacy role-only calls remain compatible. No native access masks, sharing,
 privileges or limits change.
 
-SDK [#302](https://github.com/OpenCoven/sdk/pull/302) delivered the preceding
-Chat #328 binding at `1c10e63a9ff87934397e8defc2d0b98f3932abe2`; its signed
-delivery tree matched the reviewed head, and all PR and merged-main checks
-passed. Both validator scopes were rotated and read back at that exact revision
-and still select it. The binding recorded above is not delivered until its own
-merge, after which both scopes must be rotated again before any dispatch.
+SDK [#310](https://github.com/OpenCoven/sdk/pull/310) delivered this binding at
+signed merge `1ad0dae0e09df37a42df11be5d0329ffc20f567e`, with all merged-main
+checks passing. Both repository and protected-environment validator scopes
+read back that exact merge. Protected
+[run 35704479061](https://github.com/OpenCoven/chat/actions/runs/35704479061)
+completed with failure for this producer/validator pair. Linux and macOS records
+passed the committed validators and all 197 assertions each. Windows failed at
+`phase1.stage.evidence-authority.build.failed` during schema-v2 evidence
+assembly, produced no platform record, and left validation, attestation and
+aggregation skipped. The underlying exception is not exposed by this category.
+The temporary macOS inspector's extra upload-step timestamp guard refused:
+GitHub artifact metadata is one second after the step end. Exact upload-log
+identity/digest checks and unchanged committed validators passed.
+Aggregate acceptance remains absent. SDK #302's preceding Chat #328 binding at
+`1c10e63a9ff87934397e8defc2d0b98f3932abe2` is historical.
 
 Protected [run 35566636457](https://github.com/OpenCoven/chat/actions/runs/35566636457)
-is the latest terminal result and belongs to the preceding Chat #328 binding,
+is historical and belongs to the preceding Chat #328 binding,
 not to the binding recorded above. Linux and macOS artifacts independently
 passed exact run/job and validator identities, ZIP digests, canonical schema,
 privacy/isolation checks, timing, and all 197 ordered assertions each (110 Cave,
@@ -560,14 +569,15 @@ isolated bootstrap root, which Chat #348 shortens.
 
 Earlier run `35146928092` used Chat #311 / SDK #293 and produced independently
 verified Unix records with 197 assertions each. Its Windows checkout-quota
-failure is separate from the current native-build failure and from run
+failure is separate from the historical native-build failure and from run
 `35138402347`'s operator Cave-home isolation failure.
 
 Historical run `35125287541` failed Windows execution-root cleanup before
 isolation validation. Run `35111662551` failed Windows isolation; run
 `35100084575` failed Windows secure-store preflight and deletion-purpose cleanup.
-Keep these failures distinct. Windows repair and a complete authenticated
-three-platform aggregate remain required. Chat consumer, candidate, Cave and
+Keep these failures distinct. Resolving the Windows evidence-assembly failure
+and obtaining a complete authenticated three-platform aggregate remain required.
+Chat consumer, candidate, Cave and
 Coven identities remain frozen.
 The original Chat consumer and Coven pin remain frozen. Production Cave is
 `ecdcdcf8a75b62bb912ec48215ae20ab0809a181`, tree

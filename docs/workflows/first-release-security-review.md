@@ -127,24 +127,38 @@ separate reproduction and review before the final release security disposition.
 
 The blocking condition is structural and unrelated to the findings above: `release.config.json` carries `conformanceEvidence.aggregateRecord: null`. No cross-repository aggregate record has ever existed, so #38's criterion that "a release candidate cannot advance without a named passing evidence record" is unmet.
 
-The latest protected evidence remains incomplete. Run
+Historical protected evidence remains incomplete. Run
 [35500732205](https://github.com/OpenCoven/chat/actions/runs/35500732205) used
 Chat `ac1c4f4c` and SDK validator `1c10e63a`. Linux and macOS artifacts
 independently passed exact identities, digests, canonical schema, privacy/isolation,
 timing and all 197 ordered assertions each. Windows job `106052383153`
 failed at `phase1.packaging.chat-native-build.build-script`, with no Windows
-record. Validation, attestation, and aggregation were skipped. This newer
+record. Validation, attestation, and aggregation were skipped. This historical
 checkpoint does not constitute a fresh security review of subsequent SDK
 features; the exact publication candidate still needs that review.
 
 The earlier run `35146928092` independently passed 197 ordered assertions on
 each Unix platform but failed the Windows checkout-quota monitor. Keep that
-historical cause separate from the newer Cargo build-script category; the
-latter does not identify the underlying dependency or compiler error.
+historical cause separate from the later Cargo build-script failure. Subsequent
+producer diagnosis identified `aws-lc-sys` include paths exceeding `MAX_PATH`;
+Chat #348 shortened the isolated bootstrap root.
+
+Operational checkpoint, 2026-09-22: SDK #310 delivered the Chat #358 binding
+at `1ad0dae0e09df37a42df11be5d0329ffc20f567e`, with both validator scopes
+read back at that revision. Protected
+[run 35704479061](https://github.com/OpenCoven/chat/actions/runs/35704479061)
+completed with failure. Both Unix records passed the committed validators
+and all 197 assertions each; the temporary macOS inspector's extra upload-step
+timestamp guard refused, a discrepancy retained separately from committed
+validation. Windows failed at
+`phase1.stage.evidence-authority.build.failed` during schema-v2 evidence
+assembly and uploaded no record. Validation, attestation and aggregation were
+skipped. This checkpoint is not a new security review; no accepted aggregate
+or publication approval is established.
 
 Sequence to SHIP, in order:
 
-1. Repair the Windows producer failure in OpenCoven/chat.
+1. Diagnose and repair the Windows schema-v2 evidence assembly failure in Chat.
 2. Obtain a passing three-platform aggregate with attestation under #38.
 3. Re-review the exact packed artifacts of the named candidate.
 4. Record a fresh ship-or-block disposition here and link it from #31.
