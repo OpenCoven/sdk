@@ -31,29 +31,28 @@ is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
 tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the merged [Chat #364](https://github.com/OpenCoven/chat/pull/364)
-producer `d37c20589509a68e002acc78ce4df168ba33267c`, tree `d02d9b8395368122640322041dedd9dd11d90b6f`.
-Its reviewed head `b666ec03192760d98d418e64e457571bc825a874` has the same complete tree
-and reaches executable harness authority
-`e969c888cc548072bb5d3cf96f96672289b8df63`, tree `fe44ee907d41048179212c5f2fa6d257549a3ead`,
-through one intermediate commit, `cf7a37332f5cbaf544af102f81b5d60927b1344b`, which the lock
-names in `sourceAuthorityPath` and the validator proves against real parents.
-The merge parents are that harness authority and the reviewed head, and the
-validator checks both: the first parent against the frozen harness authority and
-the second against the reviewed source. It also walks the reviewed head through
-the one-entry intermediate path to the harness authority against real parent
-lists, and checks complete reviewed/delivery tree equality.
+This binding selects the merged [Chat #366](https://github.com/OpenCoven/chat/pull/366)
+producer `deee56ba0750e6b2097a5241ba8a6b010c24e96b`, tree `2068184fc6151c8644dc514d20c08e63dee7e743`.
+Its reviewed head `b491b8abfeac175b90143a4c1b57349378bf76e6` has the same complete tree
+and has executable harness authority
+`97803d0ab42b21e7aa1f33fffb3824df3a16a765`, tree `23edb8111ba78d67cb716af505a6a8a9dabf1cfc`,
+as its sole parent.
+The merge parents are that harness authority and the reviewed head. The validator
+checks the merge-to-reviewed-source edge, the source-to-harness edge, and complete
+reviewed/delivery tree equality. The intermediate source-authority path is empty
+again: this repin landed as a single commit.
 
 This producer retains Chat #311's build-time home isolation, the exact Chat #314
 producer-revision resolver, bounded Windows quota diagnostics, and Chat #327's
 pinned-main freshness guard and Chat #348's shortened isolated Windows
 bootstrap root and Chat #361's named primary-report assertion failures, and
-adds Chat #363's Coven handshake stages. #361 made a protected Windows run name
-`phase1.coven.same-user-identity` as the failing assertion rather than reporting
-the opaque `phase1.stage.evidence-authority.build.failed`. #363 carries that one
-step further: the schema-v2 identity scenario now records
-`phase1.coven-identity.<stage>` for the four stages it can reach, so the step of
-the daemon handshake that fails is named as well.
+adds Chat #363's Coven handshake stages and #365's preference for them. #361 made
+a protected Windows run name `phase1.coven.same-user-identity` as the failing
+assertion rather than reporting the opaque
+`phase1.stage.evidence-authority.build.failed`. #363 made the identity scenario
+record `phase1.coven-identity.<stage>` for the four stages it can reach, and #365
+made the report check prefer that recorded identifier over the one derived from
+the assertion name, so the handshake stage reaches the printed category.
 All 25 governed files and ten production
 deltas are bound to reviewed Git bytes. Token/profile ownership, native cleanup,
 resource limits, and operator isolation remain required. The SDK candidate and
@@ -84,13 +83,13 @@ cleanup. Residual-open diagnostics derive fixed purpose/access labels and retain
 scope; legacy role-only calls remain compatible. No native access masks, sharing,
 privileges or limits change.
 
-SDK [#312](https://github.com/OpenCoven/sdk/pull/312) and
-[#313](https://github.com/OpenCoven/sdk/pull/313) delivered the preceding Chat
-#362 binding; that binding is historical and is not the one recorded above.
-Protected [run 35752778995](https://github.com/OpenCoven/chat/actions/runs/35752778995)
+SDK [#314](https://github.com/OpenCoven/sdk/pull/314) delivered the preceding
+Chat #364 binding; that binding is historical and is not the one recorded above.
+Protected [run 35774072327](https://github.com/OpenCoven/chat/actions/runs/35774072327)
 belongs to it, not to this producer. In that run Linux and macOS passed and
 retained records, and Windows failed with
-`phase1.stage.evidence-authority.report.assertions.failed.coven.same-user-identity`. Linux and macOS records
+`phase1.stage.evidence-authority.report.assertions.failed.coven.same-user-identity`,
+which named the assertion but not yet the handshake stage. Linux and macOS records
 passed the committed validators and all 197 assertions each. Windows failed at
 `phase1.stage.evidence-authority.build.failed` during schema-v2 evidence
 assembly, produced no platform record, and left validation, attestation and

@@ -1,23 +1,22 @@
 # OpenCoven SDK Roadmap
 
-Conformance checkpoint, 2026-09-22: this binding selects Chat #364 producer
-`d37c20589509a68e002acc78ce4df168ba33267c`, the merge that repins Chat's harness
-authority to `e969c888cc548072bb5d3cf96f96672289b8df63` after the named Coven
-handshake stages in [Chat #363](https://github.com/OpenCoven/chat/pull/363).
-Its reviewed head has the same complete tree and reaches the harness authority
-through one intermediate commit, which the lock names in `sourceAuthorityPath`.
-Chat `main` equals the producer commit at binding time.
-SDK [#312](https://github.com/OpenCoven/sdk/pull/312) and
-[#313](https://github.com/OpenCoven/sdk/pull/313) delivered the preceding Chat
-#362 binding; that binding and its protected
-[run 35752778995](https://github.com/OpenCoven/chat/actions/runs/35752778995)
+Conformance checkpoint, 2026-09-22: this binding selects Chat #366 producer
+`deee56ba0750e6b2097a5241ba8a6b010c24e96b`, the merge that repins Chat's harness
+authority to `97803d0ab42b21e7aa1f33fffb3824df3a16a765` after
+[Chat #365](https://github.com/OpenCoven/chat/pull/365) made the report check
+prefer a recorded handshake stage over the assertion name.
+Its reviewed head has the same complete tree, and the harness authority is that
+head's sole parent. Chat `main` equals the producer commit at binding time.
+SDK [#314](https://github.com/OpenCoven/sdk/pull/314) delivered the preceding
+Chat #364 binding; that binding and its protected
+[run 35774072327](https://github.com/OpenCoven/chat/actions/runs/35774072327)
 are historical and belong to it, not to the producer recorded here. In that run
 Linux and macOS records passed the committed validators and all 197 assertions
 each; Windows failed with
 `phase1.stage.evidence-authority.report.assertions.failed.coven.same-user-identity`,
-naming the failing assertion for the first time. No Windows record exists;
+which named the assertion but not the handshake stage. No Windows record exists;
 validation, attestation and aggregation were skipped. This producer is bound so
-that the next protected run also names the handshake stage behind it. The temporary macOS inspector's extra
+that the next protected run names that stage. The temporary macOS inspector's extra
 upload-step timestamp guard refused; exact artifact identity, digest and
 unchanged committed validation passed. No aggregate acceptance is established.
 
@@ -170,7 +169,7 @@ is not a current issue-status mirror; see the [plan index](superpowers/plans/REA
 | Issue | Remaining work and dependency |
 | --- | --- |
 | [#31](https://github.com/OpenCoven/sdk/issues/31) | Keep the release program open through #38, #40, and #41, including registry verification. |
-| [#38](https://github.com/OpenCoven/sdk/issues/38) | Run `35752778995` named `phase1.coven.same-user-identity` as the Windows failure. This binding selects the Chat #364 producer, which also names the handshake stage behind it. Rotate both validator scopes, obtain a fresh protected run, and reach a complete authenticated aggregate. |
+| [#38](https://github.com/OpenCoven/sdk/issues/38) | Runs `35752778995` and `35774072327` named `phase1.coven.same-user-identity` as the Windows failure without its handshake stage. This binding selects the Chat #366 producer, whose report check prefers the recorded stage. Rotate both validator scopes, obtain a fresh protected run, and reach a complete authenticated aggregate. |
 | [#40](https://github.com/OpenCoven/sdk/issues/40) | The [security review](workflows/first-release-security-review.md) records BLOCK. Re-review the exact publication candidate after #38 passes. |
 | [#41](https://github.com/OpenCoven/sdk/issues/41) | Execute publication only after #40 recommends ship and the maintainer explicitly authorizes each release mutation. |
 | [#42](https://github.com/OpenCoven/sdk/issues/42) | Conversational control depends on #41, canonical Cave mutation authority, and real-authority mutation evidence. |
