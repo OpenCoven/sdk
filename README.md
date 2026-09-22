@@ -40,9 +40,11 @@ and reaches executable harness authority
 `e969c888cc548072bb5d3cf96f96672289b8df63`, tree `fe44ee907d41048179212c5f2fa6d257549a3ead`,
 through one intermediate commit, `cf7a37332f5cbaf544af102f81b5d60927b1344b`, which the lock
 names in `sourceAuthorityPath` and the validator proves against real parents.
-The merge parents are that harness authority and the reviewed head. The validator
-checks the merge-to-reviewed-source edge, the source-to-harness edge, and complete
-reviewed/delivery tree equality. The intermediate source-authority path is empty.
+The merge parents are that harness authority and the reviewed head, and the
+validator checks both: the first parent against the frozen harness authority and
+the second against the reviewed source. It also walks the reviewed head through
+the one-entry intermediate path to the harness authority against real parent
+lists, and checks complete reviewed/delivery tree equality.
 
 This producer retains Chat #311's build-time home isolation, the exact Chat #314
 producer-revision resolver, bounded Windows quota diagnostics, and Chat #327's
