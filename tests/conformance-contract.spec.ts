@@ -188,9 +188,9 @@ describe('local producer ancestry inspection', () => {
 
 describe('reviewed Chat Cave build home isolation', () => {
   test('retains complete Git source bytes, governance files, and combined native deltas', () => {
-    expect(sourceFixtureBytes.length).toBe(16_682_790);
+    expect(sourceFixtureBytes.length).toBe(17_558_542);
     expect(digest(sourceFixtureBytes)).toBe(
-      '9760c55aee5ac848f118e4df22a4863494d77ddec0b4b7b59487a46abcea45d7',
+      'c45d01bfecc6c3175a2703583aad6a244d197e55ea39fb90179016d3869bd549',
     );
     for (const source of Object.values(sourceFixture.sources)) {
       const rawCommit = objectBytes(source.commit);
@@ -226,14 +226,14 @@ describe('reviewed Chat Cave build home isolation', () => {
 
   test('accepts the exact delivered merge and its reviewed source and binding ancestry', () => {
     const lock = currentLock();
-    expect(lock.evidenceProducer.commit).toBe('8be8d09a3a3119ad3bc4df91652ad5ab6c45b701');
+    expect(lock.evidenceProducer.commit).toBe('33497d1a69ccf1ba1d884a010439f437313101f3');
     expect(lock.sources.cave).toMatchObject({
       commit: 'ecdcdcf8a75b62bb912ec48215ae20ab0809a181',
       tree: '1634a8eb0a391419bf28af4be0020cfd8c4df472',
       releaseVersion: '0.4.2',
     });
     expect(sourceAuthority().sourceCommit.parents).toEqual([
-      { sha: '3877057ffc6ba5d9dc22e6062bae9f0c32478f28' },
+      { sha: '2426bc32f01f0f571b39f102a8de1da598b50aaa' },
     ]);
     expect(() => validateChatProducerAuthorityBinding(lock, sourceAuthority())).not.toThrow();
     expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([]);
@@ -601,7 +601,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      '8be8d09a3a3119ad3bc4df91652ad5ab6c45b701',
+      '33497d1a69ccf1ba1d884a010439f437313101f3',
     );
     expect(workflowDocument).not.toContain(
       'f6eba8af1f71d4251583cf39d4e5fb5b4797d209',
@@ -616,10 +616,10 @@ describe('cross-repository conformance contract entrypoints', () => {
       '9f073f05241c2d3241b23ed9d73b26c6cd55ce7e',
     );
     expect(workflowDocument).toContain(
-      '0492818645fc098ecff74e1a285901f7527462de',
+      '59d4e6ecea36f1bfbfeca34b6f1d1605628c5f3a',
     );
     expect(workflowDocument).toContain(
-      '3877057ffc6ba5d9dc22e6062bae9f0c32478f28',
+      '2426bc32f01f0f571b39f102a8de1da598b50aaa',
     );
     expect(workflowDocument).toContain('validator_revision');
     expect(workflowDocument).toContain('20863036831');

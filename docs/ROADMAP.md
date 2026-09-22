@@ -1,20 +1,22 @@
 # OpenCoven SDK Roadmap
 
-Conformance checkpoint, 2026-09-22: this binding selects Chat #358 producer
-`8be8d09a3a3119ad3bc4df91652ad5ab6c45b701`, the merge that repins Chat's harness
-authority to `3877057ffc6ba5d9dc22e6062bae9f0c32478f28` after the Windows
-`MAX_PATH` repair in [Chat #348](https://github.com/OpenCoven/chat/pull/348).
+Conformance checkpoint, 2026-09-22: this binding selects Chat #362 producer
+`33497d1a69ccf1ba1d884a010439f437313101f3`, the merge that repins Chat's harness
+authority to `2426bc32f01f0f571b39f102a8de1da598b50aaa` after the named
+primary-report assertion failures in
+[Chat #361](https://github.com/OpenCoven/chat/pull/361).
 Its reviewed head has the same complete tree, and the harness authority is that
 head's sole parent. Chat `main` equals the producer commit at binding time.
-SDK [#310](https://github.com/OpenCoven/sdk/pull/310) delivered the binding at
-`1ad0dae0e09df37a42df11be5d0329ffc20f567e`; all merged-main checks passed, and
-both validator scopes read back that revision. Protected
+SDK [#310](https://github.com/OpenCoven/sdk/pull/310) delivered the preceding
+Chat #358 binding at `1ad0dae0e09df37a42df11be5d0329ffc20f567e`; that binding
+and its protected
 [run 35704479061](https://github.com/OpenCoven/chat/actions/runs/35704479061)
-completed with failure for this exact pair. Linux and macOS records passed
-the committed validators and all 197 assertions each; Windows failed at
-`phase1.stage.evidence-authority.build.failed`, in schema-v2 evidence assembly.
-No Windows record exists; validation, attestation and aggregation were skipped.
-The underlying exception remains unclassified. The temporary macOS inspector's extra
+are historical and belong to it, not to the producer recorded here. In that run
+Linux and macOS records passed the committed validators and all 197 assertions
+each; Windows failed at `phase1.stage.evidence-authority.build.failed`, in
+schema-v2 evidence assembly. No Windows record exists; validation, attestation
+and aggregation were skipped. This producer is bound so that the next protected
+run names the assertion behind that category instead of reporting the stage. The temporary macOS inspector's extra
 upload-step timestamp guard refused; exact artifact identity, digest and
 unchanged committed validation passed. No aggregate acceptance is established.
 
@@ -167,7 +169,7 @@ is not a current issue-status mirror; see the [plan index](superpowers/plans/REA
 | Issue | Remaining work and dependency |
 | --- | --- |
 | [#31](https://github.com/OpenCoven/sdk/issues/31) | Keep the release program open through #38, #40, and #41, including registry verification. |
-| [#38](https://github.com/OpenCoven/sdk/issues/38) | SDK #310 delivered the Chat #358 binding; both validator scopes read back `1ad0dae0e`. Run `35704479061` produced Unix records passing committed validators but failed Windows schema-v2 evidence assembly. Diagnose that bounded producer failure and obtain a complete authenticated aggregate. |
+| [#38](https://github.com/OpenCoven/sdk/issues/38) | This binding selects the Chat #362 producer, which names the primary-report assertion behind the Windows schema-v2 evidence-assembly failure seen in run `35704479061`. Rotate both validator scopes, obtain a fresh protected run, and reach a complete authenticated aggregate. |
 | [#40](https://github.com/OpenCoven/sdk/issues/40) | The [security review](workflows/first-release-security-review.md) records BLOCK. Re-review the exact publication candidate after #38 passes. |
 | [#41](https://github.com/OpenCoven/sdk/issues/41) | Execute publication only after #40 recommends ship and the maintainer explicitly authorizes each release mutation. |
 | [#42](https://github.com/OpenCoven/sdk/issues/42) | Conversational control depends on #41, canonical Cave mutation authority, and real-authority mutation evidence. |
