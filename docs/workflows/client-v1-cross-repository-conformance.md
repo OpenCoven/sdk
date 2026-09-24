@@ -31,11 +31,11 @@ is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
 tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
 archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the merged [Chat #366](https://github.com/OpenCoven/chat/pull/366)
-producer `deee56ba0750e6b2097a5241ba8a6b010c24e96b`, tree `2068184fc6151c8644dc514d20c08e63dee7e743`.
-Its reviewed head `b491b8abfeac175b90143a4c1b57349378bf76e6` has the same complete tree
+This binding selects the merged [Chat #371](https://github.com/OpenCoven/chat/pull/371)
+producer `359933db2fa88810ca7e3c37393eeb8517aa03a2`, tree `eb9e21cf51d2acb38917dea8b2cd881b9017be96`.
+Its reviewed head `612f7644b2499959e6b26226e337b516e964c1d5` has the same complete tree
 and has executable harness authority
-`97803d0ab42b21e7aa1f33fffb3824df3a16a765`, tree `23edb8111ba78d67cb716af505a6a8a9dabf1cfc`,
+`4e19c176491eeabb4e0b06421f77e28e68a30c18`, tree `9d23c6fef99fe8b2966370e3adfaaa9156e3ef5d`,
 as its sole parent.
 The merge parents are that harness authority and the reviewed head. The validator
 checks the merge-to-reviewed-source edge, the source-to-harness edge, and complete
@@ -44,15 +44,16 @@ again: this repin landed as a single commit.
 
 This producer retains Chat #311's build-time home isolation, the exact Chat #314
 producer-revision resolver, bounded Windows quota diagnostics, and Chat #327's
-pinned-main freshness guard and Chat #348's shortened isolated Windows
-bootstrap root and Chat #361's named primary-report assertion failures, and
-adds Chat #363's Coven handshake stages and #365's preference for them. #361 made
-a protected Windows run name `phase1.coven.same-user-identity` as the failing
-assertion rather than reporting the opaque
-`phase1.stage.evidence-authority.build.failed`. #363 made the identity scenario
-record `phase1.coven-identity.<stage>` for the four stages it can reach, and #365
-made the report check prefer that recorded identifier over the one derived from
-the assertion name, so the handshake stage reaches the printed category.
+pinned-main freshness guard, Chat #348's shortened isolated Windows bootstrap
+root, and the named report and Coven handshake diagnostics from Chat #361, #363
+and #365. It adds Chat #370's two Windows repairs. First, the bootstrap selects
+a whole reviewed profile per runner image, because GitHub's gradual rollout of
+`20260922.246.2` serves it alongside `20260907.229.1` and the two differ in OS
+build, PowerShell and .NET as well as Visual Studio. Second, the Coven
+same-user identity scenario accepts exit code 1 from the daemon on Windows only,
+after the authenticated stop succeeds: `coven daemon stop` ends the verified
+daemon there with `TerminateProcess(handle, 1)`, and requiring 0 had failed that
+assertion at its `result` stage on every Windows run.
 All 25 governed files and ten production
 deltas are bound to reviewed Git bytes. Token/profile ownership, native cleanup,
 resource limits, and operator isolation remain required. The SDK candidate and
@@ -83,22 +84,17 @@ cleanup. Residual-open diagnostics derive fixed purpose/access labels and retain
 scope; legacy role-only calls remain compatible. No native access masks, sharing,
 privileges or limits change.
 
-SDK [#314](https://github.com/OpenCoven/sdk/pull/314) delivered the preceding
-Chat #364 binding; that binding is historical and is not the one recorded above.
-Protected [run 35774072327](https://github.com/OpenCoven/chat/actions/runs/35774072327)
-belongs to it, not to this producer. In that run Linux and macOS passed and
-retained records, and Windows failed with
-`phase1.stage.evidence-authority.report.assertions.failed.coven.same-user-identity`,
-which named the assertion but not yet the handshake stage. Linux and macOS records
-passed the committed validators and all 197 assertions each. Windows failed at
-`phase1.stage.evidence-authority.build.failed` during schema-v2 evidence
-assembly, produced no platform record, and left validation, attestation and
-aggregation skipped. The underlying exception is not exposed by this category.
-The temporary macOS inspector's extra upload-step timestamp guard refused:
-GitHub artifact metadata is one second after the step end. Exact upload-log
-identity/digest checks and unchanged committed validators passed.
-Aggregate acceptance remains absent. SDK #302's preceding Chat #328 binding at
-`1c10e63a9ff87934397e8defc2d0b98f3932abe2` is historical.
+SDK [#315](https://github.com/OpenCoven/sdk/pull/315) delivered the preceding
+Chat #366 binding; that binding is historical and is not the one recorded above.
+Protected [run 35787441651](https://github.com/OpenCoven/chat/actions/runs/35787441651)
+belongs to it. Linux and macOS passed and retained records in both attempts;
+Windows failed in the resource quota monitor with
+`operation=directory-enumeration-depth-3-plus`, as `io-sharing-violation` and then
+`persistent-access-denied`. A scratch copy of the lane on four shards then showed
+the identity failure that #370 repairs, and that every monitor denial it logged
+was a directory removed mid-walk during teardown. Earlier bindings, SDK #302's
+Chat #328 binding at `1c10e63a9ff87934397e8defc2d0b98f3932abe2` among them, are
+historical.
 
 Protected [run 35566636457](https://github.com/OpenCoven/chat/actions/runs/35566636457)
 is historical and belongs to the preceding Chat #328 binding,
@@ -396,12 +392,14 @@ diagnostics through both producer wrappers. Malformed timestamps are rejected
 before range comparisons; record values and private error causes are never logged.
 Windows schema-v2 commands use the nonce-bound pnpm CLI through Node, and
 the bootstrap does not reference child-only variables in the parent scope.
-The Windows bootstrap accepts only the reviewed image/Visual Studio pairs
-`20260824.214.3`/`18.9.12112.369` and
-`20260907.229.1`/`18.9.12120.119`, reviewed against immutable
-`actions/runner-images` inventories. Unknown images, unknown Visual Studio
-versions, and crossed pairs fail closed; other runtime pins, trusted paths,
-signature checks, containment, and quotas remain unchanged.
+The Windows bootstrap accepts only two reviewed image profiles, each binding
+the image to its Visual Studio, Windows build, PowerShell and .NET runtime:
+`20260907.229.1` with `18.9.12120.119`, `26100.33296`, `7.6.5` and `10.0.11`,
+and `20260922.246.2` with `18.10.12210.168`, `26100.33438`, `7.6.6` and
+`10.0.12`. The values were measured on the hosted runners the same way the
+bootstrap measures them. Unknown images and any crossed value fail closed;
+other runtime pins, trusted paths, signature checks, containment, and quotas
+remain unchanged.
 Windows quotas follow the isolated identity's actual temporary directory.
 The Cave checkout receives 4 GiB while execution and bootstrap aggregates
 retain their 10 GiB and 12 GiB bounds. Only Windows schema-v2 native builds
