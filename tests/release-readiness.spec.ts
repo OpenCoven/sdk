@@ -497,7 +497,7 @@ describe('release readiness contract', () => {
     expect(publishJob).not.toContain('pnpm pack');
   });
 
-  test('blocks candidate advancement until a named passing aggregate exists', () => {
+  test('blocks candidate advancement until the named aggregate verifies live', () => {
     const config = readReleaseConfig(workspaceRoot);
     const workspaceManifest = JSON.parse(
       readFileSync(resolve(workspaceRoot, 'package.json'), 'utf8'),
@@ -559,8 +559,10 @@ describe('release readiness contract', () => {
         root: workspaceRoot,
         requireConformanceEvidence: true,
       }),
-    ).toThrow('release.config.json must name a passing SDK #38 aggregate record');
-  });
+    ).toThrow(
+      'release.config.json conformance evidence record is not a complete canonical aggregate',
+    );
+   }, 30_000);
 
   test('rejects a fabricated untracked aggregate at the configured path', () => {
     const fixture = createReleaseFixture();
@@ -809,8 +811,10 @@ describe('release readiness contract', () => {
         version: '0.0.1',
         tag: 'sdk-v0.0.1',
       }),
-    ).toThrow('release.config.json must name a passing SDK #38 aggregate record');
-  });
+    ).toThrow(
+      'release.config.json conformance evidence record is not a complete canonical aggregate',
+    );
+   }, 30_000);
 
   test('requires fixed versions and exact internal ranges', () => {
     const fixture = createReleaseFixture();
