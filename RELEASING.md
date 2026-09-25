@@ -490,11 +490,11 @@ passing evidence record for each target.
 The frozen Chat consumer is
 `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`, tree
 `ffd1963ef9539c7a679909200175fb11a9305c95`, with all four committed vendor
-archives byte-identical to candidate 96804bc. This binding selects the merged [Chat #371](https://github.com/OpenCoven/chat/pull/371)
-producer `359933db2fa88810ca7e3c37393eeb8517aa03a2`, tree `eb9e21cf51d2acb38917dea8b2cd881b9017be96`.
-Its reviewed head `612f7644b2499959e6b26226e337b516e964c1d5` has the same complete tree
+archives byte-identical to candidate 96804bc. This binding selects the merged [Chat #375](https://github.com/OpenCoven/chat/pull/375)
+producer `b10910545b14133a619e56641e5692a4335c83c4`, tree `7220622280415441646a3f6aef74113a98cc5bd2`.
+Its reviewed head `27b41082d60f9acaaad2935e5a2b42005ee9e7fb` has the same complete tree
 and has executable harness authority
-`4e19c176491eeabb4e0b06421f77e28e68a30c18`, tree `9d23c6fef99fe8b2966370e3adfaaa9156e3ef5d`,
+`6a95b93d3eeb73a01f4a1882ea94ae9aa466345f`, tree `fd814b80ae2dd7bf59429672d9758be2f438085c`,
 as its sole parent.
 The merge parents are that harness authority and the reviewed head. The validator
 checks the merge-to-reviewed-source edge, the source-to-harness edge, and complete
@@ -512,7 +512,10 @@ build, PowerShell and .NET as well as Visual Studio. Second, the Coven
 same-user identity scenario accepts exit code 1 from the daemon on Windows only,
 after the authenticated stop succeeds: `coven daemon stop` ends the verified
 daemon there with `TerminateProcess(handle, 1)`, and requiring 0 had failed that
-assertion at its `result` stage on every Windows run.
+assertion at its `result` stage on every Windows run. It also adds Chat #374:
+a Google Fonts download failure during the frozen Cave build, previously reported
+as `compile.module-resolution`, now reports `compile.font-fetch`, and only that
+failure retries the Cave build once.
 All 25 governed files and ten production
 deltas are bound to reviewed Git bytes. Token/profile ownership, native cleanup,
 resource limits, and operator isolation remain required. The SDK candidate and
@@ -543,17 +546,13 @@ cleanup. Residual-open diagnostics derive fixed purpose/access labels and retain
 scope; legacy role-only calls remain compatible. No native access masks, sharing,
 privileges or limits change.
 
-SDK [#315](https://github.com/OpenCoven/sdk/pull/315) delivered the preceding
-Chat #366 binding; that binding is historical and is not the one recorded above.
-Protected [run 35787441651](https://github.com/OpenCoven/chat/actions/runs/35787441651)
-belongs to it. Linux and macOS passed and retained records in both attempts;
-Windows failed in the resource quota monitor with
-`operation=directory-enumeration-depth-3-plus`, as `io-sharing-violation` and then
-`persistent-access-denied`. A scratch copy of the lane on four shards then showed
-the identity failure that #370 repairs, and that every monitor denial it logged
-was a directory removed mid-walk during teardown. Earlier bindings, SDK #302's
-Chat #328 binding at `1c10e63a9ff87934397e8defc2d0b98f3932abe2` among them, are
-historical.
+SDK [#316](https://github.com/OpenCoven/sdk/pull/316) delivered the preceding
+Chat #371 binding; that binding is historical and is not the one recorded above.
+Its protected runs [36033589858](https://github.com/OpenCoven/chat/actions/runs/36033589858)
+and [36038079308](https://github.com/OpenCoven/chat/actions/runs/36038079308) belong
+to it, and both completed every platform, validation, attestation and aggregation
+job with success. Earlier bindings, SDK #302's Chat #328 binding at
+`1c10e63a9ff87934397e8defc2d0b98f3932abe2` among them, are historical.
 
 Protected [run 35566636457](https://github.com/OpenCoven/chat/actions/runs/35566636457)
 is historical and belongs to the preceding Chat #328 binding,

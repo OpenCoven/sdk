@@ -1,18 +1,15 @@
 # OpenCoven SDK Roadmap
 
-Conformance checkpoint, 2026-09-24: this binding selects Chat #371 producer
-`359933db2fa88810ca7e3c37393eeb8517aa03a2`, the merge that repins Chat's harness
-authority to `4e19c176491eeabb4e0b06421f77e28e68a30c18` after
-[Chat #370](https://github.com/OpenCoven/chat/pull/370). That change selects a
-whole reviewed profile per Windows runner image during GitHub's rollout of
-`20260922.246.2`, and accepts the Coven daemon's documented Windows termination
-code after an authenticated stop, which had failed the same-user identity
-assertion on every Windows run. The reviewed head has the same complete tree and
-the harness authority as its sole parent. Chat `main` equals the producer commit
-at binding time. SDK [#315](https://github.com/OpenCoven/sdk/pull/315) delivered
-the preceding Chat #366 binding; it and its protected
-[run 35787441651](https://github.com/OpenCoven/chat/actions/runs/35787441651) are
-historical. No aggregate acceptance is established.
+Conformance checkpoint, 2026-09-25: this binding selects Chat #375 producer
+`b10910545b14133a619e56641e5692a4335c83c4`, the merge that repins Chat's harness
+authority to `6a95b93d3eeb73a01f4a1882ea94ae9aa466345f` after
+[Chat #374](https://github.com/OpenCoven/chat/pull/374). That change reports a
+Google Fonts download failure in the frozen Cave build as `compile.font-fetch`
+and retries the Cave build once on exactly that failure. The reviewed head has
+the same complete tree and the harness authority as its sole parent. SDK
+[#316](https://github.com/OpenCoven/sdk/pull/316) delivered the preceding Chat
+#371 binding, whose protected runs 36033589858 and 36038079308 were the first
+complete authenticated aggregates.
 
 The preceding [SDK #302](https://github.com/OpenCoven/sdk/pull/302) merged at
 `1c10e63a9ff87934397e8defc2d0b98f3932abe2`, binding Chat #328 producer
@@ -163,7 +160,7 @@ is not a current issue-status mirror; see the [plan index](superpowers/plans/REA
 | Issue | Remaining work and dependency |
 | --- | --- |
 | [#31](https://github.com/OpenCoven/sdk/issues/31) | Keep the release program open through #38, #40, and #41, including registry verification. |
-| [#38](https://github.com/OpenCoven/sdk/issues/38) | The Windows identity failure is traced to Coven's `TerminateProcess(handle, 1)` stop and the runner image rollout is profiled per image; this binding selects the Chat #371 producer carrying both repairs. Rotate both validator scopes, obtain a fresh protected run, and reach a complete authenticated aggregate. |
+| [#38](https://github.com/OpenCoven/sdk/issues/38) | The Windows identity failure is traced to Coven's `TerminateProcess(handle, 1)` stop and the runner image rollout is profiled per image; runs `36033589858` and `36038079308` completed full aggregates, and this binding selects the Chat #375 producer, which also names and retries the Cave build's Google Fonts failures. Rotate both validator scopes, obtain a fresh protected run, and reach a complete authenticated aggregate. |
 | [#40](https://github.com/OpenCoven/sdk/issues/40) | The [security review](workflows/first-release-security-review.md) records BLOCK. Re-review the exact publication candidate after #38 passes. |
 | [#41](https://github.com/OpenCoven/sdk/issues/41) | Execute publication only after #40 recommends ship and the maintainer explicitly authorizes each release mutation. |
 | [#42](https://github.com/OpenCoven/sdk/issues/42) | Conversational control depends on #41, canonical Cave mutation authority, and real-authority mutation evidence. |
