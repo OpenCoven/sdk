@@ -9,6 +9,18 @@ publication lock remains closed.
 `@opencoven/dev-cli` is not part of the 0.0.1 release group. Release tooling must
 not pack, publish, attest, or configure a trusted publisher for it.
 
+## Current conformance evidence state (2026-09-25)
+
+`release.config.json` `conformanceEvidence.aggregateRecord` names the first
+accepted SDK #38 aggregate, [`96804bc483a063e41e9a9738a4ace61970f6c0a4.json`](docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json),
+for frozen candidate `96804bc483a063e41e9a9738a4ace61970f6c0a4`. Dated
+checkpoints below that say `aggregateRecord` remains `null` or unset, or that
+no passing aggregate exists, describe the state at their own dates.
+`publishingEnabled` remains `false`, all packages remain private, and the #40
+disposition in
+[`docs/workflows/first-release-security-review.md`](docs/workflows/first-release-security-review.md)
+still governs. An aggregate is evidence, not SHIP.
+
 ## v0.0.1 preparation decision (2026-09-12)
 
 The intended first public release is now **v0.0.1**, replacing the earlier
