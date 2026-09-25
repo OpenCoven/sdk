@@ -511,9 +511,12 @@ deployments, artifacts, and certificates must identify the dispatch revision;
 platform records must still identify the selected producer.
 
 Both revisions must contain the same reviewed workflow bytes. The current
-frozen producer includes the resolver, and its empty descent selects the
-producer tip itself. A later dispatch requires an explicitly reviewed descent
-binding before its evidence can be accepted. Historical
+binding dispatches from Chat `main` at
+`f4fbb423c811cc33ddbbc9a388933aa4089560df` ([Chat #380](https://github.com/OpenCoven/chat/pull/380)),
+which descends from the producer through `813ddde5`, `e1d9c643`, `cab1cace`
+and `dbe11775`. None of those commits changes the workflow or a governed harness
+file. Any other dispatch revision needs its own reviewed descent binding
+before its evidence can be accepted. Historical
 locks and indexes that omit the field retain that same tip-only meaning.
 Supporting the resolver does not supply the missing three-platform evidence
 or change the release's BLOCK disposition.
