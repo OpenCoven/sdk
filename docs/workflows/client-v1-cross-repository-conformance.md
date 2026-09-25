@@ -24,7 +24,11 @@ verification on those hosts authenticates the root-owned, non-writable
 a required record platform, but Node does not expose the directory-relative
 publication primitives needed to support the aggregator safely on Windows.
 
-There is no passing aggregate in this repository yet. The new 0.0.1 SDK candidate
+The first passing aggregate is committed at
+[`96804bc4….json`](../client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json)
+(2026-09-25), and `release.config.json` names it. Dated checkpoints below that
+say `aggregateRecord` remains `null`, or that no passing aggregate exists,
+describe the state at their own dates. The 0.0.1 SDK candidate
 is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 `aa9eb8e924735419a9afdbcc80a5b087504ccc9d`, with normalized runtime SHA-256
 `8c46276b5698d32d570ad4a89998b412cb0efde5641313b0c71ae41519e64ae7`.

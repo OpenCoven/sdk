@@ -616,7 +616,9 @@ describe('cross-repository conformance contract entrypoints', () => {
       ),
       'utf8',
     );
-    expect(resultsReadme).toContain('There is no passing record yet.');
+    expect(resultsReadme).toContain(
+      '[`96804bc483a063e41e9a9738a4ace61970f6c0a4.json`]',
+    );
 
     const workflowDocument = readFileSync(
       resolve(
