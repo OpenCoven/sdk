@@ -2,7 +2,7 @@
 
 Tracking issue: [#40](https://github.com/OpenCoven/sdk/issues/40). Program issue: [#31](https://github.com/OpenCoven/sdk/issues/31).
 
-**Disposition: BLOCK.** The blocking condition is structural, not a defect. See [Disposition](#disposition).
+**Disposition: BLOCK.** The frozen 0.0.1 candidate `96804bc4` predates two High-severity Cave fixes, so its packed bytes must not ship. See [Candidate re-review](#candidate-re-review-2026-09-25) and [Disposition](#disposition).
 
 This document is the durable record required by #40. It does not authorize publication, create credentials, change branch protection, or waive a finding.
 
@@ -121,11 +121,62 @@ separate reproduction and review before the final release security disposition.
 
 **This acceptance does not gate the current disposition**, which is BLOCK for an unrelated structural reason.
 
+## Candidate re-review, 2026-09-25
+
+The reviews above were run against `main` (`aec069089`). The frozen
+publication candidate is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, cut on
+2026-09-14. It is an **ancestor** of `aec069089`, not a descendant. This
+re-review examined the candidate's exact packed bytes, not `main`.
+
+### Evidence
+
+- **Aggregate.** The first accepted three-platform aggregate exists for this candidate: [`96804bc4….json`](../client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json), from protected Chat [run 36113801474](https://github.com/OpenCoven/chat/actions/runs/36113801474), validator `185d6264` ([#318](https://github.com/OpenCoven/sdk/pull/318), [#319](https://github.com/OpenCoven/sdk/pull/319)).
+  - `verify-committed-conformance-evidence.mjs` re-verified it live against GitHub.
+  - Strict release readiness passes with it named.
+  - #38's structural criterion is therefore met for this candidate.
+- **Packed bytes.** The four tarballs consumed by Chat `ef8c747f` (`vendor/opencoven-sdk/*.tgz`) match the lock's candidate digests: `sdk-core` `5f41291d…`, `cave-client` `c4e44fb4…`, `coven-client` `bc24d3c1…`, `sdk` `5318c4c6…`. All four are `private: true` and declare no install or prepare lifecycle script.
+- **Missing fixes.** `git merge-base --is-ancestor` shows that none of these fixes are in the candidate: [#277](https://github.com/OpenCoven/sdk/pull/277), [#285](https://github.com/OpenCoven/sdk/pull/285), [#294](https://github.com/OpenCoven/sdk/pull/294) and [#297](https://github.com/OpenCoven/sdk/pull/297). The candidate source and the packed `cave-client` `dist/` were read directly to confirm the consequences below.
+
+### Findings against the candidate
+
+| ID | Severity | Area | Owner | Disposition |
+|---|---|---|---|---|
+| F4 | High | `packages/cave/src/pairing.ts`: discovery-v2 downgrade latch absent | SDK maintainer (@BunsDev) | **Blocks publication of `96804bc4`**; fixed on `main` by #277 |
+| F5 | High | `packages/cave/src/pairing.ts`: protected fetch error cause retained | SDK maintainer (@BunsDev) | **Blocks publication of `96804bc4`**; fixed on `main` by #285 |
+| F1 | Low | `packages/cave/src/pairing.ts`: single-use timeout retry | SDK maintainer (@BunsDev) | Fixed on `main` by #294; **absent from `96804bc4`** |
+
+**F4.** The candidate keeps no record that a client has observed a
+discovery-v2 (`hpke-bound-v1`) authority. `observedV2` and
+`assertProtectedAuthority` do not occur in the candidate source or in the
+packed `cave-client` `dist/`. A later discovery that returns a v1 authority can
+therefore receive protected pairing and bearer requests, which is the
+downgrade that threat boundary 2 requires to fail closed. Manual review item 5
+above was accurate for `main` and does not hold for the candidate.
+
+**F5.** In the candidate, `requestJson` attaches the caller-supplied fetch
+exception as `cause` unconditionally (`pairing.ts:929` at `96804bc4`). After an
+HPKE-protected request is constructed, that exception can carry a bearer or
+request metadata, which then reaches the public error cause chain in full-depth
+inspection. This breaches threat boundary 4.
+
+**F1.** The fix and its verification recorded above apply to `main` only. The
+candidate does not contain #294.
+
+`main` at `185d6264` contains all three fixes. The findings concern the frozen
+candidate's bytes, not current source.
+
 ## Disposition
 
 **BLOCK.**
 
-The blocking condition is structural and unrelated to the findings above: `release.config.json` carries `conformanceEvidence.aggregateRecord: null`. No cross-repository aggregate record has ever existed, so #38's criterion that "a release candidate cannot advance without a named passing evidence record" is unmet.
+The earlier structural block is lifted: a passing, attested, live-verified
+three-platform aggregate now exists for the frozen candidate. The block now
+rests on F4 and F5. Publishing `96804bc4` would ship a known downgrade path and
+a known credential-disclosure path whose fixes are on `main`. No critical or
+high finding may remain unresolved in shipped bytes, so this candidate cannot
+be the 0.0.1 release.
+
+The history below explains why the candidate took this long to evidence.
 
 Historical protected evidence remains incomplete. Run
 [35500732205](https://github.com/OpenCoven/chat/actions/runs/35500732205) used
@@ -156,15 +207,22 @@ assembly and uploaded no record. Validation, attestation and aggregation were
 skipped. This checkpoint is not a new security review; no accepted aggregate
 or publication approval is established.
 
-Sequence to SHIP, in order:
+Items 1 and 2 of the previous sequence are complete: the Windows evidence path
+was repaired in Chat, and the aggregate above exists. Sequence to SHIP, in
+order:
 
-1. Diagnose and repair the Windows schema-v2 evidence assembly failure in Chat.
-2. Obtain a passing three-platform aggregate with attestation under #38.
-3. Re-review the exact packed artifacts of the named candidate.
+1. Freeze a new publication candidate from `main` that contains #277, #285 and
+   #294. Regenerate its tarballs and runtime manifest.
+2. Rebind the SDK conformance lock and Chat's vendored tarballs to that
+   candidate, then obtain a fresh protected three-platform aggregate for it.
+3. Re-review that candidate's exact packed bytes. Carry forward F3's dated
+   follow-up.
 4. Record a fresh ship-or-block disposition here and link it from #31.
 5. Only then does #41 begin, and it requires its own fresh authorization.
 
-"Probably safe" and silent deferral are not valid dispositions. This disposition stands until a passing aggregate exists.
+"Probably safe" and silent deferral are not valid dispositions. This
+disposition stands until a candidate without unresolved High findings has its
+own passing aggregate.
 
 ## Revision history
 
@@ -173,3 +231,4 @@ Sequence to SHIP, in order:
 | 2026-09-17 | `3459dcaad` | BLOCK | Initial checkpoint. F1 open, F2 accepted with follow-up. |
 | 2026-09-19 | `50e017578` | BLOCK | F1 fixed and verified via #294. F2 fix open as #297. F3 first observed. |
 | 2026-09-19 | `aec069089` | BLOCK | #297 merged, so F2 is now fixed and verified in the reviewed source. F3 dispositioned as accepted with owner and dated follow-up after review feedback. Blocking condition unchanged. |
+| 2026-09-25 | `96804bc4` (candidate), validator `185d6264` | BLOCK | First passing aggregate for the frozen candidate lifts the structural block. Re-review of the candidate's packed bytes finds F4 and F5 (High), both fixed on `main` but absent from the candidate. A new candidate is required. |
