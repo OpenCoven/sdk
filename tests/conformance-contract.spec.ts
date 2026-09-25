@@ -75,11 +75,36 @@ function sourceAuthority(previous = false, chain = false) {
     phase1LockText: sourceBytes(
       previous ? 'previousProducer' : chain ? 'chainProducer' : 'producer', 'phase1-conformance.lock.json',
     ).toString('utf8'),
+    ...(previous || chain ? {} : { sourceDescentCommits: [
+      ...currentDescent.map(([sha, tree, parents]) => ({
+        sha, tree: { sha: tree }, parents: parents.map((parent) => ({ sha: parent })),
+      })),
+      commit('producer'),
+    ] }),
   };
 }
+// Chat main from the dispatch revision down to the producer's first child,
+// read from real Git; `producer` closes the walk from the source fixture.
+const currentDescent: readonly [string, string, readonly string[]][] = [
+  ['f4fbb423c811cc33ddbbc9a388933aa4089560df', 'b5fd7984787aba7f13097138320fa0b4111aa88e', ['813ddde5f2478ac831da784e51cea61a0cb436b1', '636cb958664cf376bd9c2c7861792f18a42441a8']],
+  ['813ddde5f2478ac831da784e51cea61a0cb436b1', '9058182c5414dcc1ff5aaddda60157e9657f0d0c', ['e1d9c64391f4f8369d33f5178f73531ecde8530d', '169b61507aa7069eb94b9d6e50d2804de0596d86']],
+  ['e1d9c64391f4f8369d33f5178f73531ecde8530d', 'f3aa0cc99d1609c7d34d7a4891a55500dea39049', ['cab1cace4cf8b38349794af069363936fa7269f1', 'd9c5d6a90d84f24117139c13f232445ac98bb3db']],
+  ['cab1cace4cf8b38349794af069363936fa7269f1', 'c11325f1bb2a7cbb57378c2a0ed09f66c544b400', ['dbe11775eb63ab321f0bf2b925335397117b0180', '3874b5928eb7d1f6bada6a0c5ddaee66e24d4c8d']],
+  ['dbe11775eb63ab321f0bf2b925335397117b0180', 'c110fd771dfcba22bf9dc4c6f50fdeee0dc85aec', ['b10910545b14133a619e56641e5692a4335c83c4', 'df5bdf56459d55c798ce1ce4b8025ff4359bf06d']],
+];
 const currentLock = () => readFrozenConformanceLock(resolve(
   workspaceRoot, 'conformance/client-v1-cross-repository-lock.json',
 ));
+// The current lock with its descent removed, as a producer-tip dispatch binds it.
+const tipOnlyLock = () => {
+  const lock = currentLock();
+  const producer = assertEvidenceProducerCompatibility(lock);
+  producer.workflow.sourceDigest = producer.commit;
+  producer.workflow.signerDigest = producer.commit;
+  producer.workflow.sourceDescent = [];
+  lock.evidenceProducer = producer;
+  return lock;
+};
 
 describe('attested source ancestry', () => {
   function fixture() {
@@ -124,7 +149,7 @@ describe('attested source ancestry', () => {
   });
 
   test('refuses descent evidence for a tip-only lock', () => {
-    expect(() => validateChatProducerAuthorityBinding(currentLock(), {
+    expect(() => validateChatProducerAuthorityBinding(tipOnlyLock(), {
       ...sourceAuthority(), sourceDescentCommits: [],
     })).toThrow(/must be absent/);
   });
