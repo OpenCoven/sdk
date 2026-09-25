@@ -86,8 +86,9 @@ For normal OIDC publication (section 8), `npm-release` still prevents
 self-review: its sole required reviewer needs a distinct authorized dispatcher.
 That workflow requirement is not an inferred prerequisite for the separate,
 manually approved first-publish bootstrap (section 6). This preparation creates
-neither identity nor permissions, and leaves all packages private,
-`publishingEnabled: false` and `aggregateRecord: null`.
+neither identity nor permissions, and leaves all packages private and
+`publishingEnabled: false`. `aggregateRecord` names the accepted SDK #38
+aggregate for the frozen candidate; it does not enable publication.
 
 ### Compatibility prerequisite
 
