@@ -119,7 +119,10 @@ the recurrence and its error rather than closing the finding as non-reproducing.
 The local scheduling cause remains unproven; any infrastructure change needs a
 separate reproduction and review before the final release security disposition.
 
-**This acceptance does not gate the current disposition**, which is BLOCK for an unrelated structural reason.
+**This acceptance does not gate the disposition.** At `aec069089` the block was
+structural. Since 2026-09-25 it rests on F4 and F5 (see
+[Candidate re-review](#candidate-re-review-2026-09-25)); F3 is unrelated to
+either.
 
 ## Candidate re-review, 2026-09-25
 
@@ -184,9 +187,9 @@ Chat `ac1c4f4c` and SDK validator `1c10e63a`. Linux and macOS artifacts
 independently passed exact identities, digests, canonical schema, privacy/isolation,
 timing and all 197 ordered assertions each. Windows job `106052383153`
 failed at `phase1.packaging.chat-native-build.build-script`, with no Windows
-record. Validation, attestation, and aggregation were skipped. This historical
-checkpoint does not constitute a fresh security review of subsequent SDK
-features; the exact publication candidate still needs that review.
+record. Validation, attestation, and aggregation were skipped. That historical
+checkpoint was not a fresh security review of subsequent SDK features; the
+exact candidate's review is the 2026-09-25 re-review above.
 
 The earlier run `35146928092` independently passed 197 ordered assertions on
 each Unix platform but failed the Windows checkout-quota monitor. Keep that
