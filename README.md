@@ -36,13 +36,15 @@ High-severity Cave fixes (see
 [Second candidate source preparation](RELEASING.md#second-candidate-source-preparation-2026-09-25));
 its aggregate and evidence remain historical, as do earlier 0.1.0 artifacts.
 This candidate includes the merged Coven Automations APIs and those fixes. Candidate77
-records remain historical evidence. This binding selects the merged [Chat #385](https://github.com/OpenCoven/chat/pull/385)
-producer `ce151728a309f8f5532d1426d7503c2c4efe38be`, tree `9bd0afb9e0bca14252052946494ee0af1ae92a8c`.
-Its reviewed head `2fa7dd8437e596b399668d841297dcffa75e4c87` has the same complete tree
+records remain historical evidence. This binding selects the merged [Chat #390](https://github.com/OpenCoven/chat/pull/390)
+producer `399e1f199417e74db6a1b9096500d0e953fdfa6b`, tree `76adbce55467a6bd276a040284d7004d88e452b8`.
+Its reviewed head `b7ceff48066a6649366fc27aa4ca41db064ad5ee` has the same complete tree
 and has executable harness authority
-`1c80212e3aca79c2800d703abaedc080b1cf9ef8`, tree `26f64bf54aef11ec784f8e2d370c288a1161cc5c`
-([Chat #383](https://github.com/OpenCoven/chat/pull/383), which adopts the
-replacement candidate), as its sole parent.
+`2f72ecedd225759a11889ec4b7dd112b71361d56`, tree `0a2e550bddbeaec405367d1dcb383c38fb10fb51`
+([Chat #389](https://github.com/OpenCoven/chat/pull/389), which retries the
+Windows run-root rename through a transient access denial), as its sole
+parent. Its consumer is still `dabcdd4` from
+[Chat #383](https://github.com/OpenCoven/chat/pull/383).
 The merge parents are that harness authority and the reviewed head. The validator
 checks the merge-to-reviewed-source edge, the source-to-harness edge, and complete
 reviewed/delivery tree equality. The intermediate source-authority path is empty

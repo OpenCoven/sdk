@@ -75,19 +75,8 @@ function sourceAuthority(previous = false, chain = false) {
     phase1LockText: sourceBytes(
       previous ? 'previousProducer' : chain ? 'chainProducer' : 'producer', 'phase1-conformance.lock.json',
     ).toString('utf8'),
-    ...(previous || chain ? {} : { sourceDescentCommits: [
-      ...currentDescent.map(([sha, tree, parents]) => ({
-        sha, tree: { sha: tree }, parents: parents.map((parent) => ({ sha: parent })),
-      })),
-      commit('producer'),
-    ] }),
   };
 }
-// Chat main from the dispatch revision down to the producer's first child,
-// read from real Git; `producer` closes the walk from the source fixture.
-const currentDescent: readonly [string, string, readonly string[]][] = [
-  ['f6e99b49507f3f27305232383f22bf2acf1a5305', 'd4f3d4c96bed1554814c7b260b06ef4249c2dad3', ['ce151728a309f8f5532d1426d7503c2c4efe38be', 'd8c0b32fbf10d001d4d4b8788714701490e88259']],
-];
 const currentLock = () => readFrozenConformanceLock(resolve(
   workspaceRoot, 'conformance/client-v1-cross-repository-lock.json',
 ));
@@ -209,9 +198,9 @@ describe('local producer ancestry inspection', () => {
 
 describe('reviewed Chat Cave build home isolation', () => {
   test('retains complete Git source bytes, governance files, and combined native deltas', () => {
-    expect(sourceFixtureBytes.length).toBe(20_479_124);
+    expect(sourceFixtureBytes.length).toBe(20_760_756);
     expect(digest(sourceFixtureBytes)).toBe(
-      '5da37042febac473ca3a998c7476d81c3ba5b60f5adc4d63aefc8fe95839acb1',
+      'da9fb17344ba2a8a4ba731ee27014f6b98375480e64fc9405fa4644982dde2aa',
     );
     for (const source of Object.values(sourceFixture.sources)) {
       const rawCommit = objectBytes(source.commit);
@@ -247,14 +236,14 @@ describe('reviewed Chat Cave build home isolation', () => {
 
   test('accepts the exact delivered merge and its reviewed source and binding ancestry', () => {
     const lock = currentLock();
-    expect(lock.evidenceProducer.commit).toBe('ce151728a309f8f5532d1426d7503c2c4efe38be');
+    expect(lock.evidenceProducer.commit).toBe('399e1f199417e74db6a1b9096500d0e953fdfa6b');
     expect(lock.sources.cave).toMatchObject({
       commit: 'ecdcdcf8a75b62bb912ec48215ae20ab0809a181',
       tree: '1634a8eb0a391419bf28af4be0020cfd8c4df472',
       releaseVersion: '0.4.2',
     });
     expect(sourceAuthority().sourceCommit.parents).toEqual([
-      { sha: '1c80212e3aca79c2800d703abaedc080b1cf9ef8' },
+      { sha: '2f72ecedd225759a11889ec4b7dd112b71361d56' },
     ]);
     expect(() => validateChatProducerAuthorityBinding(lock, sourceAuthority())).not.toThrow();
     expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([]);
@@ -626,7 +615,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      'ce151728a309f8f5532d1426d7503c2c4efe38be',
+      '399e1f199417e74db6a1b9096500d0e953fdfa6b',
     );
     expect(workflowDocument).not.toContain(
       'f6eba8af1f71d4251583cf39d4e5fb5b4797d209',
@@ -641,10 +630,10 @@ describe('cross-repository conformance contract entrypoints', () => {
       '9f073f05241c2d3241b23ed9d73b26c6cd55ce7e',
     );
     expect(workflowDocument).toContain(
-      '2fa7dd8437e596b399668d841297dcffa75e4c87',
+      'b7ceff48066a6649366fc27aa4ca41db064ad5ee',
     );
     expect(workflowDocument).toContain(
-      '1c80212e3aca79c2800d703abaedc080b1cf9ef8',
+      '2f72ecedd225759a11889ec4b7dd112b71361d56',
     );
     expect(workflowDocument).toContain('validator_revision');
     expect(workflowDocument).toContain('20863036831');

@@ -35,13 +35,15 @@ The 0.0.1 SDK candidate is `cd10a3fa1d9900e0dbcb04bbb2477140854fba1d`, tree
 The frozen Chat consumer is `dabcdd47e7509880f26e9895ffb63d42d9070ca8`,
 tree `48e9387d2f3727e944a82376652fdc0c1dd02732`; its four committed vendor
 archives exactly match the candidate tarballs and raw release manifest.
-This binding selects the merged [Chat #385](https://github.com/OpenCoven/chat/pull/385)
-producer `ce151728a309f8f5532d1426d7503c2c4efe38be`, tree `9bd0afb9e0bca14252052946494ee0af1ae92a8c`.
-Its reviewed head `2fa7dd8437e596b399668d841297dcffa75e4c87` has the same complete tree
+This binding selects the merged [Chat #390](https://github.com/OpenCoven/chat/pull/390)
+producer `399e1f199417e74db6a1b9096500d0e953fdfa6b`, tree `76adbce55467a6bd276a040284d7004d88e452b8`.
+Its reviewed head `b7ceff48066a6649366fc27aa4ca41db064ad5ee` has the same complete tree
 and has executable harness authority
-`1c80212e3aca79c2800d703abaedc080b1cf9ef8`, tree `26f64bf54aef11ec784f8e2d370c288a1161cc5c`
-([Chat #383](https://github.com/OpenCoven/chat/pull/383), which adopts the
-replacement candidate), as its sole parent.
+`2f72ecedd225759a11889ec4b7dd112b71361d56`, tree `0a2e550bddbeaec405367d1dcb383c38fb10fb51`
+([Chat #389](https://github.com/OpenCoven/chat/pull/389), which retries the
+Windows run-root rename through a transient access denial), as its sole
+parent. Its consumer is still `dabcdd4` from
+[Chat #383](https://github.com/OpenCoven/chat/pull/383).
 The merge parents are that harness authority and the reviewed head. The validator
 checks the merge-to-reviewed-source edge, the source-to-harness edge, and complete
 reviewed/delivery tree equality. The intermediate source-authority path is empty
@@ -516,10 +518,10 @@ deployments, artifacts, and certificates must identify the dispatch revision;
 platform records must still identify the selected producer.
 
 Both revisions must contain the same reviewed workflow bytes. The current
-binding dispatches from Chat `main` at
-`f6e99b49507f3f27305232383f22bf2acf1a5305` ([Chat #386](https://github.com/OpenCoven/chat/pull/386)),
-a first-parent merge directly on producer `ce151728` that changes neither the
-workflow nor a governed harness file. The previous binding dispatched from `f4fbb423` ([Chat #380](https://github.com/OpenCoven/chat/pull/380))
+binding is tip-only: its empty descent selects producer `399e1f19` itself, so
+the protected run must dispatch while Chat `main` is still at that commit. An
+earlier binding dispatched from `f6e99b49` ([Chat #386](https://github.com/OpenCoven/chat/pull/386))
+by a one-link descent to producer `ce151728`. The binding before that dispatched from `f4fbb423` ([Chat #380](https://github.com/OpenCoven/chat/pull/380))
 through a five-link descent to producer `b1091054`. Any other dispatch revision
 needs its own reviewed descent binding before its evidence can be accepted. Historical
 locks and indexes that omit the field retain that same tip-only meaning.
