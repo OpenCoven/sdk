@@ -260,9 +260,12 @@
         ]
       },
       "signerWorkflow": "OpenCoven/chat/.github/workflows/client-v1-conformance.yml",
-      "signerDigest": "ce151728a309f8f5532d1426d7503c2c4efe38be",
-      "sourceDigest": "ce151728a309f8f5532d1426d7503c2c4efe38be",
-      "sourceDescent": [],
+      "signerDigest": "f6e99b49507f3f27305232383f22bf2acf1a5305",
+      "sourceDigest": "f6e99b49507f3f27305232383f22bf2acf1a5305",
+      "sourceDescent": [
+        "f6e99b49507f3f27305232383f22bf2acf1a5305",
+        "ce151728a309f8f5532d1426d7503c2c4efe38be"
+      ],
       "predicateType": "https://slsa.dev/provenance/v1",
       "denySelfHostedRunners": true
     }
