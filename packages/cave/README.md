@@ -407,7 +407,8 @@ has a separate `managedHpkeFamiliars` method, and `familiarContract()` and
 `managedHpkeFamiliarAnalytics`. Like the other reads, those two refuse a v1
 authority once the client has observed v2, and a v2 authority without the
 adapter method fails with `unsupported_operation`; they never fall back to the
-plain method.
+plain method. The staged-native root factory does not expose familiar contract or
+analytics reads, and reports both as `unsupported_operation`.
 
 The root factory uses the corresponding `listFamiliarsHpke`,
 `listProjectsHpke`, `listConversationsHpke`, `getConversationHpke`,

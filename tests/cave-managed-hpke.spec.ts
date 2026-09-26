@@ -470,3 +470,19 @@ describe('browser managed familiar contract and analytics authority', () => {
     },
   );
 });
+
+describe('staged-native managed familiar contract and analytics', () => {
+  // The staged-native factory exposes no familiar contract or analytics read,
+  // so there is no plain method that could bypass the authority resolver.
+  test.each(['familiarContract', 'familiarAnalytics'] as const)(
+    'reports %s as unsupported without touching discovery or the native transport', async (method) => {
+      const f = await fixture('native');
+      const native = vi.fn(unused);
+      Object.assign(f.transport, { [method]: native, [`${method}Hpke`]: native });
+      const call = method === 'familiarContract' ? f.client.familiarContract('cody') : f.client.familiarAnalytics('cody');
+      await expect(call).rejects.toMatchObject({ code: 'unsupported_operation', retryable: false });
+      expect(native).not.toHaveBeenCalled();
+      expect(f.read).not.toHaveBeenCalled();
+    },
+  );
+});
