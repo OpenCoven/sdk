@@ -1,0 +1,4182 @@
+{
+  "authorities": {
+    "cave": {
+      "commit": "ecdcdcf8a75b62bb912ec48215ae20ab0809a181",
+      "repository": "OpenCoven/coven-cave",
+      "tree": "1634a8eb0a391419bf28af4be0020cfd8c4df472"
+    },
+    "chat": {
+      "commit": "dabcdd47e7509880f26e9895ffb63d42d9070ca8",
+      "repository": "OpenCoven/chat",
+      "tree": "48e9387d2f3727e944a82376652fdc0c1dd02732"
+    },
+    "coven": {
+      "commit": "8c3735f374d6bc95e5b6fd107f7e7308fa26a2f8",
+      "repository": "OpenCoven/coven",
+      "tree": "163ea5b3fb89c741679dce0e121a2c1d9391472f"
+    },
+    "harness": {
+      "commit": "399e1f199417e74db6a1b9096500d0e953fdfa6b",
+      "name": "scripts/phase1-conformance.mjs",
+      "repository": "OpenCoven/chat",
+      "tree": "76adbce55467a6bd276a040284d7004d88e452b8",
+      "version": "2.0.0"
+    }
+  },
+  "candidate": {
+    "cavePackageFiles": [
+      {
+        "path": "packages/cave/fixtures/contract-fixture.json",
+        "sha256": "0c03baea9c21f0985df41eef3c5ae5223497b9081c665b53ddecab36598f5ede",
+        "size": 18280
+      },
+      {
+        "path": "packages/cave/fixtures/contract-fixture.sha256",
+        "sha256": "e0c526d05cb0ba0fde6d3002fdf091b1686e9363656501bc57c5ece99d11af81",
+        "size": 65
+      },
+      {
+        "path": "packages/cave/fixtures/contract-fixture.provenance.json",
+        "sha256": "a2600544f609137df465c0350ee38e7ff56c2eb649556440714c2e0ba3b96010",
+        "size": 333
+      },
+      {
+        "path": "packages/cave/fixtures/hpke-bound-v1-vectors.json",
+        "sha256": "f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797",
+        "size": 4041
+      },
+      {
+        "path": "packages/cave/fixtures/hpke-bound-v1-vectors.sha256",
+        "sha256": "20a0e7737d940fd661cb95ba1d1b9fda01eac840fbdff667c64659966ca3d544",
+        "size": 65
+      }
+    ],
+    "provenance": {
+      "commit": "cd10a3fa1d9900e0dbcb04bbb2477140854fba1d",
+      "repository": "OpenCoven/sdk",
+      "tree": "6977092046b4cd5c3a3ce4a720141b1a97cfed39"
+    },
+    "releaseManifest": {
+      "file": "release-manifest.json",
+      "sha256": "72041bfe9a236d709ea3fe26d32b871f17c7c5183e2991cd0229063ade730cb4",
+      "size": 1032,
+      "version": "0.0.1"
+    },
+    "sdkPackages": [
+      {
+        "packageName": "@opencoven/sdk-core",
+        "releaseFile": "tarballs/core/opencoven-sdk-core-0.0.1.tgz",
+        "sha256": "5f41291d303cf25e5ff4a3c40d0169f025f7e218da8637fc905935524b5e4e2b",
+        "size": 33308,
+        "vendorPath": "vendor/opencoven-sdk/sdk-core-0.0.1.tgz",
+        "version": "0.0.1"
+      },
+      {
+        "packageName": "@opencoven/cave-client",
+        "releaseFile": "tarballs/cave/opencoven-cave-client-0.0.1.tgz",
+        "sha256": "7389376ebc40ff59d942957339769d4dbdb566e25adef9a9deb372581b39a245",
+        "size": 89873,
+        "vendorPath": "vendor/opencoven-sdk/cave-client-0.0.1.tgz",
+        "version": "0.0.1"
+      },
+      {
+        "packageName": "@opencoven/coven-client",
+        "releaseFile": "tarballs/coven/opencoven-coven-client-0.0.1.tgz",
+        "sha256": "4162dd685f78c8703497cba65f68a2f0c28fc640bb7da64b0dc9462c74f357dc",
+        "size": 102172,
+        "vendorPath": "vendor/opencoven-sdk/coven-client-0.0.1.tgz",
+        "version": "0.0.1"
+      },
+      {
+        "packageName": "@opencoven/sdk",
+        "releaseFile": "tarballs/sdk/opencoven-sdk-0.0.1.tgz",
+        "sha256": "68b258d21eb61360588c41db528d4b37e4594ddd82dac04cdf6477728161e43a",
+        "size": 16783,
+        "vendorPath": "vendor/opencoven-sdk/sdk-0.0.1.tgz",
+        "version": "0.0.1"
+      }
+    ]
+  },
+  "canonicalPlatforms": [
+    "darwin-arm64",
+    "linux-x64",
+    "win32-x64"
+  ],
+  "contract": {
+    "assertionRegistry": {
+      "path": "conformance/client-v1-cross-repository-assertions.json",
+      "sha256": "1d336071ae46862aec387558e1540b9aeaaacf75675b77724d04c1ac5d2cdda6",
+      "size": 10715
+    },
+    "frozenLock": {
+      "path": "conformance/client-v1-cross-repository-lock.json",
+      "sha256": "7fddaaaec14a0e1a8165fae0ac77133be5bdc2dc50cd8ed9f64b51bf60ff5181",
+      "size": 11367
+    }
+  },
+  "issue": "OpenCoven/sdk#38",
+  "kind": "client-v1-cross-repository-conformance",
+  "platforms": [
+    {
+      "artifacts": {
+        "assertionRegistry": {
+          "path": "conformance/client-v1-cross-repository-assertions.json",
+          "sha256": "1d336071ae46862aec387558e1540b9aeaaacf75675b77724d04c1ac5d2cdda6",
+          "size": 10715
+        },
+        "candidateCaveFiles": [
+          {
+            "path": "packages/cave/fixtures/contract-fixture.json",
+            "sha256": "0c03baea9c21f0985df41eef3c5ae5223497b9081c665b53ddecab36598f5ede",
+            "size": 18280
+          },
+          {
+            "path": "packages/cave/fixtures/contract-fixture.sha256",
+            "sha256": "e0c526d05cb0ba0fde6d3002fdf091b1686e9363656501bc57c5ece99d11af81",
+            "size": 65
+          },
+          {
+            "path": "packages/cave/fixtures/contract-fixture.provenance.json",
+            "sha256": "a2600544f609137df465c0350ee38e7ff56c2eb649556440714c2e0ba3b96010",
+            "size": 333
+          },
+          {
+            "path": "packages/cave/fixtures/hpke-bound-v1-vectors.json",
+            "sha256": "f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797",
+            "size": 4041
+          },
+          {
+            "path": "packages/cave/fixtures/hpke-bound-v1-vectors.sha256",
+            "sha256": "20a0e7737d940fd661cb95ba1d1b9fda01eac840fbdff667c64659966ca3d544",
+            "size": 65
+          }
+        ],
+        "caveAuthorityFiles": [
+          {
+            "path": "scripts/client-v1-conformance.mjs",
+            "sha256": "e2742e3041648082e1087313f005a6e9407e2b8d2180881c42e109257804ec7b",
+            "size": 153390
+          },
+          {
+            "path": "src/lib/server/client-v1/contract-fixture.json",
+            "sha256": "0c03baea9c21f0985df41eef3c5ae5223497b9081c665b53ddecab36598f5ede",
+            "size": 18280
+          },
+          {
+            "path": "src/lib/server/client-v1/contract-fixture.sha256",
+            "sha256": "e0c526d05cb0ba0fde6d3002fdf091b1686e9363656501bc57c5ece99d11af81",
+            "size": 65
+          },
+          {
+            "path": "src/lib/server/client-v1/hpke-bound-v1-vectors.json",
+            "sha256": "f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797",
+            "size": 4041
+          },
+          {
+            "path": "src/lib/server/client-v1/hpke-bound-v1-vectors.sha256",
+            "sha256": "20a0e7737d940fd661cb95ba1d1b9fda01eac840fbdff667c64659966ca3d544",
+            "size": 65
+          }
+        ],
+        "chatVendorFiles": [
+          {
+            "packageName": "@opencoven/sdk-core",
+            "path": "vendor/opencoven-sdk/sdk-core-0.0.1.tgz",
+            "sha256": "5f41291d303cf25e5ff4a3c40d0169f025f7e218da8637fc905935524b5e4e2b",
+            "size": 33308
+          },
+          {
+            "packageName": "@opencoven/cave-client",
+            "path": "vendor/opencoven-sdk/cave-client-0.0.1.tgz",
+            "sha256": "7389376ebc40ff59d942957339769d4dbdb566e25adef9a9deb372581b39a245",
+            "size": 89873
+          },
+          {
+            "packageName": "@opencoven/coven-client",
+            "path": "vendor/opencoven-sdk/coven-client-0.0.1.tgz",
+            "sha256": "4162dd685f78c8703497cba65f68a2f0c28fc640bb7da64b0dc9462c74f357dc",
+            "size": 102172
+          },
+          {
+            "packageName": "@opencoven/sdk",
+            "path": "vendor/opencoven-sdk/sdk-0.0.1.tgz",
+            "sha256": "68b258d21eb61360588c41db528d4b37e4594ddd82dac04cdf6477728161e43a",
+            "size": 16783
+          }
+        ],
+        "consumerLock": {
+          "path": "pnpm-lock.yaml",
+          "sha256": "1721be3c4ac1c8d0e31690e0a6d4a8f77b59db1bb4b5ae31bf288eaadc652719",
+          "size": 56222
+        },
+        "frozenLock": {
+          "path": "conformance/client-v1-cross-repository-lock.json",
+          "sha256": "7fddaaaec14a0e1a8165fae0ac77133be5bdc2dc50cd8ed9f64b51bf60ff5181",
+          "size": 11367
+        },
+        "releaseManifest": {
+          "file": "release-manifest.json",
+          "sha256": "72041bfe9a236d709ea3fe26d32b871f17c7c5183e2991cd0229063ade730cb4",
+          "size": 1032,
+          "version": "0.0.1"
+        },
+        "sdkPackages": [
+          {
+            "packageName": "@opencoven/sdk-core",
+            "releaseFile": "tarballs/core/opencoven-sdk-core-0.0.1.tgz",
+            "sha256": "5f41291d303cf25e5ff4a3c40d0169f025f7e218da8637fc905935524b5e4e2b",
+            "size": 33308,
+            "vendorPath": "vendor/opencoven-sdk/sdk-core-0.0.1.tgz",
+            "version": "0.0.1"
+          },
+          {
+            "packageName": "@opencoven/cave-client",
+            "releaseFile": "tarballs/cave/opencoven-cave-client-0.0.1.tgz",
+            "sha256": "7389376ebc40ff59d942957339769d4dbdb566e25adef9a9deb372581b39a245",
+            "size": 89873,
+            "vendorPath": "vendor/opencoven-sdk/cave-client-0.0.1.tgz",
+            "version": "0.0.1"
+          },
+          {
+            "packageName": "@opencoven/coven-client",
+            "releaseFile": "tarballs/coven/opencoven-coven-client-0.0.1.tgz",
+            "sha256": "4162dd685f78c8703497cba65f68a2f0c28fc640bb7da64b0dc9462c74f357dc",
+            "size": 102172,
+            "vendorPath": "vendor/opencoven-sdk/coven-client-0.0.1.tgz",
+            "version": "0.0.1"
+          },
+          {
+            "packageName": "@opencoven/sdk",
+            "releaseFile": "tarballs/sdk/opencoven-sdk-0.0.1.tgz",
+            "sha256": "68b258d21eb61360588c41db528d4b37e4594ddd82dac04cdf6477728161e43a",
+            "size": 16783,
+            "vendorPath": "vendor/opencoven-sdk/sdk-0.0.1.tgz",
+            "version": "0.0.1"
+          }
+        ]
+      },
+      "caveRecord": {
+        "assertions": [
+          {
+            "detail": "",
+            "id": "admin.unconfigured/admin/pairing-requests.GET",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured/admin/credentials.GET",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured/admin/pairing-requests/:id/decision.POST",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured/admin/credentials/:id.DELETE",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured.pairing-still-opens",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured.exchange-stays-pending",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "health.envelope",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "health.live-inventory",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "health.instance-stable",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "health.discovery-record",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.escaped-path.percent",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.escaped-path.percent-encoded-separator",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.backslash-path-reaches-no-handler",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.forwarded.public",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.forwarded.authenticated",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.forwarded.admin",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.exchange-requires-content-length",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.refuses-transfer-encoding",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.body-cap",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.pairing-content-type",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.wrong-token",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.no-token",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.mutation-requires-source",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.create",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.poll-pending",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.admin-queue",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.admin-approve",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.poll-approved",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.admin-approve-idempotent",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.admin-decision-conflict",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.exchange",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.bearer-works",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.replay-refused",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.poll-after-exchange",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.poll-denied",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.exchange-denied",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.unknown-id",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.wrong-secret",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.correct-secret-polling-is-free",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.budget-charges-wrong-secret-on-poll",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.budget-locks-out-the-holder",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.budget-is-shared-across-routes",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.budget-is-per-pairing",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.empty-first-page/projects",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.empty-first-page/conversations",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.no-bearer",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.unknown-bearer",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.bearer-not-accepted-in-query",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.scope-denied",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.familiars",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.familiars-paging",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.projects-shape",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.projects-paging-partial-final-page",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.cursor-replay-is-stable",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.cursor-current-echoes-the-token",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.cursor-survives-deletion",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.projects-paging-exact-multiple",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-zero",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-over-ceiling",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-leading-zero",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-exponent",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-signed",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-repeated",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.unsupported-parameter",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.offset",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.cursor-outside-alphabet",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.cursor-not-canonical",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.limit-ceiling-is-served",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.default-page-size",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-shape",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-paging",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversation-by-id",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversation-by-id-refuses-limit",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversation-by-id-refuses-cursor",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversation-by-id-not-found",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-touch-unserved-row-is-still-served",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-touch-served-row-is-not-repeated",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-touch-cursor-row-keeps-the-position",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-row-created-mid-walk-is-not-served",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-row-deleted-mid-walk-does-not-strand",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-tied-sort-key-breaks-on-id",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-without-created-at-are-served-last",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-keyless-row-written-mid-walk-is-still-served",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-keyless-rows-tie-on-the-id-tiebreak",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-keyless-row-keyed-between-walks-moves-once",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-unreadable-row-keeps-its-position-mid-walk",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-recovering-row-keeps-its-position-mid-walk",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-active-branch",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-values",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-paging",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-counts-not-contents",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-reconcile-required",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-restart-after-reconcile",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-not-found",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-canonical-conversation-id",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.bearer-works-before",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.admin-listing",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.revoke",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.bearer-refused-after",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.is-idempotent",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.unknown-credential",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.tombstone-persists",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.ttl-poll-expired",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.ttl-exchange-expired",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.legacy.exposes-pairing-secret",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.bound.exposes-ciphertext-only",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.bound.replacement-cannot-open",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.bound.plaintext-response-rejected",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.bound.forged-auth-response-rejected",
+            "result": "pass"
+          },
+          {
+            "detail": "complete",
+            "id": "harness.assertion-coverage",
+            "result": "pass"
+          }
+        ],
+        "authorityTakeover": {
+          "authorityMode": "enforce",
+          "discoveryVersion": 2,
+          "mechanism": "hpke-bound-v1"
+        },
+        "caveVersion": "0.4.2",
+        "commit": "ecdcdcf8a75b62bb912ec48215ae20ab0809a181",
+        "findings": [
+          {
+            "id": "backslash-refusal-is-unreachable",
+            "measured": "the \"%\" half holds; a \"\\\" is normalised to \"/\" by Next and answered 308 to the normalised target before proxy.ts runs, and that target is then refused 401 by the ordinary gate",
+            "says": "a malformed/noncanonical escaped target, backslash target, or escaped non-conversation target is answered 400 {\"ok\":false,\"error\":\"invalid client v1 path\"}",
+            "severity": "documentation",
+            "where": "docs/api/client-v1.md — Reaching the API at all",
+            "why": "no handler is reached and nothing is served, so the gate still holds; the doc describes an answer no client will observe"
+          },
+          {
+            "id": "admin-unauthorized-envelope-is-unreachable",
+            "measured": "the proxy's sidecar-token gate answers first, so the wire carries 401 {\"ok\":false,\"error\":\"unauthorized\"} and requireClientV1Admin's envelope is never produced on a Cave with a token configured",
+            "says": "a mismatched or absent x-coven-cave-token is 401 unauthorized from requireClientV1Admin",
+            "severity": "documentation",
+            "where": "docs/api/client-v1.md — Administrator routes, Authentication",
+            "why": "the refusal is correct and same-status; only its body differs from the documented one, which a handler-level test cannot see"
+          }
+        ],
+        "harness": "scripts/client-v1-conformance.mjs",
+        "includeTtl": true,
+        "issues": [
+          "OpenCoven/coven-cave#4832",
+          "OpenCoven/coven-cave#4838"
+        ],
+        "nodeVersion": "v24.18.1",
+        "notCovered": [
+          "The SDK and Chat halves of #4838. Both live in other repositories; this run is the Cave half only.",
+          "The production Coven daemon. /familiars is served from a loopback fixture daemon in hub mode.",
+          "A genuinely remote peer. Off-machine ingress is exercised by making the listener classify a loopback request as forwarded.",
+          "The write scopes. Nothing enforces them yet — there are no write routes on this surface.",
+          "OAuth-backed flows and the desktop consent UI. Approval is driven through the admin HTTP route.",
+          "Cross-process pairing state. The pairing store is in-memory and process-local by contract."
+        ],
+        "platform": "darwin-arm64",
+        "ranAt": "2026-09-26T06:20:29.556Z",
+        "scope": "cave-only",
+        "summary": {
+          "failed": 0,
+          "passed": 110,
+          "skipped": 0,
+          "status": "passed",
+          "total": 110
+        }
+      },
+      "chatAssertions": [
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.install.exact-sdk-tarballs",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.install.consumer-lock-matches",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.install.no-source-checkout",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.install.no-workspace-link",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.compatibility-before-pairing",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.pairing-secret-remains-native",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.bearer-remains-native",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.bearer-never-enters-webview",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.native-store.roundtrip",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.restart.credential-reused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.restart.no-automatic-repairing",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.replacement.stale-state-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.familiars",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.projects",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.conversations",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.conversation",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.messages",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.reconcile.reloads-query-only",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.revocation.transitions-state",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.revocation.all-reads-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.discovery.owner-local",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.executable.trusted",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.health",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.structured-errors-preserved",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.deadline.total-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.native.keychain-unavailable-fails-closed",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.native.trust-provider-unavailable-fails-closed",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.evidence.no-prompts",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.evidence.no-message-bodies",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.evidence.no-attachments",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.evidence.no-command-output",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.connected-peer-identity",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.malicious-home-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.symlink-socket-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.replaced-socket-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.wrong-owner-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.wrong-mode-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.wrong-peer-uid-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.peer-provider-failure-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.executable-trust-failure-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.native.macos-keychain.isolated",
+          "result": "pass"
+        }
+      ],
+      "coverage": {
+        "cave": true,
+        "chat": true,
+        "coven": true,
+        "sdk": true
+      },
+      "environment": {
+        "arch": "arm64",
+        "covenIdentity": {
+          "available": true,
+          "backend": "unix-peer-credentials"
+        },
+        "nativeCustody": {
+          "available": true,
+          "backend": "macos-keychain"
+        },
+        "nodeVersion": "v24.18.1",
+        "os": "darwin",
+        "pnpmVersion": "pnpm@10.34.0",
+        "rustVersion": "1.95.0",
+        "tauriVersion": "2.11.4"
+      },
+      "harness": {
+        "commit": "399e1f199417e74db6a1b9096500d0e953fdfa6b",
+        "invocationId": "28e0c7d4-55d4-4972-982d-ca0236a112a4",
+        "name": "scripts/phase1-conformance.mjs",
+        "repository": "OpenCoven/chat",
+        "tree": "76adbce55467a6bd276a040284d7004d88e452b8",
+        "version": "2.0.0"
+      },
+      "isolation": {
+        "network": "loopback-only",
+        "operatorState": [
+          {
+            "afterSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "beforeSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "id": "cave-home"
+          },
+          {
+            "afterSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "beforeSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "id": "coven-home"
+          },
+          {
+            "afterSha256": "a13d1e5e1e02c04bfcffdef6b936e7f285d4094375cd5434d9829ffa8cf22f98",
+            "beforeSha256": "a13d1e5e1e02c04bfcffdef6b936e7f285d4094375cd5434d9829ffa8cf22f98",
+            "id": "native-credential-store"
+          },
+          {
+            "afterSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "beforeSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "id": "projects"
+          }
+        ],
+        "retainedPrivatePaths": false,
+        "retainedSocketHandles": false,
+        "roots": [
+          {
+            "id": "cave-home",
+            "opaqueId": "301c75456a7ebe8b86e9283ceb8d26d9",
+            "ownershipVerified": true,
+            "removedAfterRun": true
+          },
+          {
+            "id": "coven-home",
+            "opaqueId": "75cbbc632c333ebba8325ddd68210d4b",
+            "ownershipVerified": true,
+            "removedAfterRun": true
+          },
+          {
+            "id": "consumer-home",
+            "opaqueId": "59446bbe95cb264de0a17af7055abe44",
+            "ownershipVerified": true,
+            "removedAfterRun": true
+          },
+          {
+            "id": "native-credential-store",
+            "opaqueId": "efd6dd22728bf8695944cdb28e0c4aa5",
+            "ownershipVerified": true,
+            "removedAfterRun": true
+          }
+        ],
+        "sourceCheckoutDependency": false,
+        "strategy": "process-owned-temporary-roots",
+        "workspaceLinkDependency": false
+      },
+      "issue": "OpenCoven/sdk#38",
+      "notCovered": [
+        {
+          "diagnosticId": "phase1.scope.cross-process-pairing.not-covered",
+          "scopeId": "cross-process-pairing"
+        },
+        {
+          "diagnosticId": "phase1.scope.oauth-ui.not-covered",
+          "scopeId": "oauth-ui"
+        },
+        {
+          "diagnosticId": "phase1.scope.remote-peer.not-covered",
+          "scopeId": "remote-peer"
+        },
+        {
+          "diagnosticId": "phase1.scope.write-apis.not-covered",
+          "scopeId": "write-apis"
+        }
+      ],
+      "platform": "darwin-arm64",
+      "provenance": {
+        "candidate": {
+          "commit": "cd10a3fa1d9900e0dbcb04bbb2477140854fba1d",
+          "repository": "OpenCoven/sdk",
+          "tree": "6977092046b4cd5c3a3ce4a720141b1a97cfed39"
+        },
+        "cave": {
+          "commit": "ecdcdcf8a75b62bb912ec48215ae20ab0809a181",
+          "repository": "OpenCoven/coven-cave",
+          "tree": "1634a8eb0a391419bf28af4be0020cfd8c4df472"
+        },
+        "chat": {
+          "commit": "dabcdd47e7509880f26e9895ffb63d42d9070ca8",
+          "repository": "OpenCoven/chat",
+          "tree": "48e9387d2f3727e944a82376652fdc0c1dd02732"
+        },
+        "coven": {
+          "commit": "8c3735f374d6bc95e5b6fd107f7e7308fa26a2f8",
+          "repository": "OpenCoven/coven",
+          "tree": "163ea5b3fb89c741679dce0e121a2c1d9391472f"
+        },
+        "validator": {
+          "commit": "67fd5d8af73283348782de185efe77f24af6e391",
+          "contract": {
+            "path": "scripts/conformance-contract.mjs",
+            "sha256": "d59c416006f605e02eadacb456b42cfdf7a64ecf81812254e22580d9a1918f74",
+            "size": 135669
+          },
+          "repository": "OpenCoven/sdk",
+          "schema": {
+            "path": "conformance/client-v1-cross-repository-evidence.schema.json",
+            "sha256": "5691ee1fae34e867c706565fa79a9763edbbdd3cdbb53fcb4e39832f911ad644",
+            "size": 23176
+          },
+          "tree": "52a30cc0909c2f043f6be5d7a206e3f22fb70fa8"
+        }
+      },
+      "releases": {
+        "cave": "0.4.2",
+        "coven": "0.1.0"
+      },
+      "scans": {
+        "redaction": {
+          "scanner": "chat-phase1-redaction",
+          "status": "passed",
+          "version": "1"
+        },
+        "retainedEvidence": {
+          "scanner": "phase1-artifact-secret-scan",
+          "status": "passed",
+          "version": "1"
+        }
+      },
+      "schemaVersion": 2,
+      "sdkAssertions": [
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.install.packed-tarballs",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.install.public-exports",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.install.no-source-checkout",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.install.no-workspace-link",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.provenance.fixture-bytes-match",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.provenance.hpke-vectors-match",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.discovery.release-mode",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.discovery.stale-record-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.discovery.replaced-instance-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.health.compatible",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.create",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.pending",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.exchange-once",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.denied",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.expired",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.wrong-secret-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.replay-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.shared-failure-budget",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.rate-limit",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.exchange.missing-content-length-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.exchange.content-length-zero-accepted",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.proxy-rejection.distinct-envelope",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.credential.native-store-required",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.credential.restart-reused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.familiars",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.projects",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.conversations",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.conversation",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.messages",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.cursor.malformed-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.cursor.noncanonical-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.cursor.reconcile-required",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.familiars-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.projects-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.conversations-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.conversation-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.messages-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.coven.discovery.owner-local",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.coven.health",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.coven.structured-errors",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.deadline.connect-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.deadline.read-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.deadline.body-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.deadline.frame-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.native.keychain-missing-fails-closed",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.native.trust-binding-missing-fails-closed",
+          "result": "pass"
+        }
+      ],
+      "timing": {
+        "completedAt": "2026-09-26T06:20:50.403Z",
+        "durationMs": 971643,
+        "startedAt": "2026-09-26T06:04:38.760Z"
+      }
+    },
+    {
+      "artifacts": {
+        "assertionRegistry": {
+          "path": "conformance/client-v1-cross-repository-assertions.json",
+          "sha256": "1d336071ae46862aec387558e1540b9aeaaacf75675b77724d04c1ac5d2cdda6",
+          "size": 10715
+        },
+        "candidateCaveFiles": [
+          {
+            "path": "packages/cave/fixtures/contract-fixture.json",
+            "sha256": "0c03baea9c21f0985df41eef3c5ae5223497b9081c665b53ddecab36598f5ede",
+            "size": 18280
+          },
+          {
+            "path": "packages/cave/fixtures/contract-fixture.sha256",
+            "sha256": "e0c526d05cb0ba0fde6d3002fdf091b1686e9363656501bc57c5ece99d11af81",
+            "size": 65
+          },
+          {
+            "path": "packages/cave/fixtures/contract-fixture.provenance.json",
+            "sha256": "a2600544f609137df465c0350ee38e7ff56c2eb649556440714c2e0ba3b96010",
+            "size": 333
+          },
+          {
+            "path": "packages/cave/fixtures/hpke-bound-v1-vectors.json",
+            "sha256": "f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797",
+            "size": 4041
+          },
+          {
+            "path": "packages/cave/fixtures/hpke-bound-v1-vectors.sha256",
+            "sha256": "20a0e7737d940fd661cb95ba1d1b9fda01eac840fbdff667c64659966ca3d544",
+            "size": 65
+          }
+        ],
+        "caveAuthorityFiles": [
+          {
+            "path": "scripts/client-v1-conformance.mjs",
+            "sha256": "e2742e3041648082e1087313f005a6e9407e2b8d2180881c42e109257804ec7b",
+            "size": 153390
+          },
+          {
+            "path": "src/lib/server/client-v1/contract-fixture.json",
+            "sha256": "0c03baea9c21f0985df41eef3c5ae5223497b9081c665b53ddecab36598f5ede",
+            "size": 18280
+          },
+          {
+            "path": "src/lib/server/client-v1/contract-fixture.sha256",
+            "sha256": "e0c526d05cb0ba0fde6d3002fdf091b1686e9363656501bc57c5ece99d11af81",
+            "size": 65
+          },
+          {
+            "path": "src/lib/server/client-v1/hpke-bound-v1-vectors.json",
+            "sha256": "f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797",
+            "size": 4041
+          },
+          {
+            "path": "src/lib/server/client-v1/hpke-bound-v1-vectors.sha256",
+            "sha256": "20a0e7737d940fd661cb95ba1d1b9fda01eac840fbdff667c64659966ca3d544",
+            "size": 65
+          }
+        ],
+        "chatVendorFiles": [
+          {
+            "packageName": "@opencoven/sdk-core",
+            "path": "vendor/opencoven-sdk/sdk-core-0.0.1.tgz",
+            "sha256": "5f41291d303cf25e5ff4a3c40d0169f025f7e218da8637fc905935524b5e4e2b",
+            "size": 33308
+          },
+          {
+            "packageName": "@opencoven/cave-client",
+            "path": "vendor/opencoven-sdk/cave-client-0.0.1.tgz",
+            "sha256": "7389376ebc40ff59d942957339769d4dbdb566e25adef9a9deb372581b39a245",
+            "size": 89873
+          },
+          {
+            "packageName": "@opencoven/coven-client",
+            "path": "vendor/opencoven-sdk/coven-client-0.0.1.tgz",
+            "sha256": "4162dd685f78c8703497cba65f68a2f0c28fc640bb7da64b0dc9462c74f357dc",
+            "size": 102172
+          },
+          {
+            "packageName": "@opencoven/sdk",
+            "path": "vendor/opencoven-sdk/sdk-0.0.1.tgz",
+            "sha256": "68b258d21eb61360588c41db528d4b37e4594ddd82dac04cdf6477728161e43a",
+            "size": 16783
+          }
+        ],
+        "consumerLock": {
+          "path": "pnpm-lock.yaml",
+          "sha256": "1721be3c4ac1c8d0e31690e0a6d4a8f77b59db1bb4b5ae31bf288eaadc652719",
+          "size": 56222
+        },
+        "frozenLock": {
+          "path": "conformance/client-v1-cross-repository-lock.json",
+          "sha256": "7fddaaaec14a0e1a8165fae0ac77133be5bdc2dc50cd8ed9f64b51bf60ff5181",
+          "size": 11367
+        },
+        "releaseManifest": {
+          "file": "release-manifest.json",
+          "sha256": "72041bfe9a236d709ea3fe26d32b871f17c7c5183e2991cd0229063ade730cb4",
+          "size": 1032,
+          "version": "0.0.1"
+        },
+        "sdkPackages": [
+          {
+            "packageName": "@opencoven/sdk-core",
+            "releaseFile": "tarballs/core/opencoven-sdk-core-0.0.1.tgz",
+            "sha256": "5f41291d303cf25e5ff4a3c40d0169f025f7e218da8637fc905935524b5e4e2b",
+            "size": 33308,
+            "vendorPath": "vendor/opencoven-sdk/sdk-core-0.0.1.tgz",
+            "version": "0.0.1"
+          },
+          {
+            "packageName": "@opencoven/cave-client",
+            "releaseFile": "tarballs/cave/opencoven-cave-client-0.0.1.tgz",
+            "sha256": "7389376ebc40ff59d942957339769d4dbdb566e25adef9a9deb372581b39a245",
+            "size": 89873,
+            "vendorPath": "vendor/opencoven-sdk/cave-client-0.0.1.tgz",
+            "version": "0.0.1"
+          },
+          {
+            "packageName": "@opencoven/coven-client",
+            "releaseFile": "tarballs/coven/opencoven-coven-client-0.0.1.tgz",
+            "sha256": "4162dd685f78c8703497cba65f68a2f0c28fc640bb7da64b0dc9462c74f357dc",
+            "size": 102172,
+            "vendorPath": "vendor/opencoven-sdk/coven-client-0.0.1.tgz",
+            "version": "0.0.1"
+          },
+          {
+            "packageName": "@opencoven/sdk",
+            "releaseFile": "tarballs/sdk/opencoven-sdk-0.0.1.tgz",
+            "sha256": "68b258d21eb61360588c41db528d4b37e4594ddd82dac04cdf6477728161e43a",
+            "size": 16783,
+            "vendorPath": "vendor/opencoven-sdk/sdk-0.0.1.tgz",
+            "version": "0.0.1"
+          }
+        ]
+      },
+      "caveRecord": {
+        "assertions": [
+          {
+            "detail": "",
+            "id": "admin.unconfigured/admin/pairing-requests.GET",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured/admin/credentials.GET",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured/admin/pairing-requests/:id/decision.POST",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured/admin/credentials/:id.DELETE",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured.pairing-still-opens",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured.exchange-stays-pending",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "health.envelope",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "health.live-inventory",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "health.instance-stable",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "health.discovery-record",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.escaped-path.percent",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.escaped-path.percent-encoded-separator",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.backslash-path-reaches-no-handler",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.forwarded.public",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.forwarded.authenticated",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.forwarded.admin",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.exchange-requires-content-length",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.refuses-transfer-encoding",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.body-cap",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.pairing-content-type",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.wrong-token",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.no-token",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.mutation-requires-source",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.create",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.poll-pending",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.admin-queue",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.admin-approve",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.poll-approved",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.admin-approve-idempotent",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.admin-decision-conflict",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.exchange",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.bearer-works",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.replay-refused",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.poll-after-exchange",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.poll-denied",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.exchange-denied",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.unknown-id",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.wrong-secret",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.correct-secret-polling-is-free",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.budget-charges-wrong-secret-on-poll",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.budget-locks-out-the-holder",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.budget-is-shared-across-routes",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.budget-is-per-pairing",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.empty-first-page/projects",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.empty-first-page/conversations",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.no-bearer",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.unknown-bearer",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.bearer-not-accepted-in-query",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.scope-denied",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.familiars",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.familiars-paging",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.projects-shape",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.projects-paging-partial-final-page",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.cursor-replay-is-stable",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.cursor-current-echoes-the-token",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.cursor-survives-deletion",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.projects-paging-exact-multiple",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-zero",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-over-ceiling",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-leading-zero",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-exponent",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-signed",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-repeated",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.unsupported-parameter",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.offset",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.cursor-outside-alphabet",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.cursor-not-canonical",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.limit-ceiling-is-served",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.default-page-size",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-shape",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-paging",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversation-by-id",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversation-by-id-refuses-limit",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversation-by-id-refuses-cursor",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversation-by-id-not-found",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-touch-unserved-row-is-still-served",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-touch-served-row-is-not-repeated",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-touch-cursor-row-keeps-the-position",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-row-created-mid-walk-is-not-served",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-row-deleted-mid-walk-does-not-strand",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-tied-sort-key-breaks-on-id",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-without-created-at-are-served-last",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-keyless-row-written-mid-walk-is-still-served",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-keyless-rows-tie-on-the-id-tiebreak",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-keyless-row-keyed-between-walks-moves-once",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-unreadable-row-keeps-its-position-mid-walk",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-recovering-row-keeps-its-position-mid-walk",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-active-branch",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-values",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-paging",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-counts-not-contents",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-reconcile-required",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-restart-after-reconcile",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-not-found",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-canonical-conversation-id",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.bearer-works-before",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.admin-listing",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.revoke",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.bearer-refused-after",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.is-idempotent",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.unknown-credential",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.tombstone-persists",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.ttl-poll-expired",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.ttl-exchange-expired",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.legacy.exposes-pairing-secret",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.bound.exposes-ciphertext-only",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.bound.replacement-cannot-open",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.bound.plaintext-response-rejected",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.bound.forged-auth-response-rejected",
+            "result": "pass"
+          },
+          {
+            "detail": "complete",
+            "id": "harness.assertion-coverage",
+            "result": "pass"
+          }
+        ],
+        "authorityTakeover": {
+          "authorityMode": "enforce",
+          "discoveryVersion": 2,
+          "mechanism": "hpke-bound-v1"
+        },
+        "caveVersion": "0.4.2",
+        "commit": "ecdcdcf8a75b62bb912ec48215ae20ab0809a181",
+        "findings": [
+          {
+            "id": "backslash-refusal-is-unreachable",
+            "measured": "the \"%\" half holds; a \"\\\" is normalised to \"/\" by Next and answered 308 to the normalised target before proxy.ts runs, and that target is then refused 401 by the ordinary gate",
+            "says": "a malformed/noncanonical escaped target, backslash target, or escaped non-conversation target is answered 400 {\"ok\":false,\"error\":\"invalid client v1 path\"}",
+            "severity": "documentation",
+            "where": "docs/api/client-v1.md — Reaching the API at all",
+            "why": "no handler is reached and nothing is served, so the gate still holds; the doc describes an answer no client will observe"
+          },
+          {
+            "id": "admin-unauthorized-envelope-is-unreachable",
+            "measured": "the proxy's sidecar-token gate answers first, so the wire carries 401 {\"ok\":false,\"error\":\"unauthorized\"} and requireClientV1Admin's envelope is never produced on a Cave with a token configured",
+            "says": "a mismatched or absent x-coven-cave-token is 401 unauthorized from requireClientV1Admin",
+            "severity": "documentation",
+            "where": "docs/api/client-v1.md — Administrator routes, Authentication",
+            "why": "the refusal is correct and same-status; only its body differs from the documented one, which a handler-level test cannot see"
+          }
+        ],
+        "harness": "scripts/client-v1-conformance.mjs",
+        "includeTtl": true,
+        "issues": [
+          "OpenCoven/coven-cave#4832",
+          "OpenCoven/coven-cave#4838"
+        ],
+        "nodeVersion": "v24.18.1",
+        "notCovered": [
+          "The SDK and Chat halves of #4838. Both live in other repositories; this run is the Cave half only.",
+          "The production Coven daemon. /familiars is served from a loopback fixture daemon in hub mode.",
+          "A genuinely remote peer. Off-machine ingress is exercised by making the listener classify a loopback request as forwarded.",
+          "The write scopes. Nothing enforces them yet — there are no write routes on this surface.",
+          "OAuth-backed flows and the desktop consent UI. Approval is driven through the admin HTTP route.",
+          "Cross-process pairing state. The pairing store is in-memory and process-local by contract."
+        ],
+        "platform": "linux-x64",
+        "ranAt": "2026-09-26T06:20:34.007Z",
+        "scope": "cave-only",
+        "summary": {
+          "failed": 0,
+          "passed": 110,
+          "skipped": 0,
+          "status": "passed",
+          "total": 110
+        }
+      },
+      "chatAssertions": [
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.install.exact-sdk-tarballs",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.install.consumer-lock-matches",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.install.no-source-checkout",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.install.no-workspace-link",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.compatibility-before-pairing",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.pairing-secret-remains-native",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.bearer-remains-native",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.bearer-never-enters-webview",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.native-store.roundtrip",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.restart.credential-reused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.restart.no-automatic-repairing",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.replacement.stale-state-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.familiars",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.projects",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.conversations",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.conversation",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.messages",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.reconcile.reloads-query-only",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.revocation.transitions-state",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.revocation.all-reads-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.discovery.owner-local",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.executable.trusted",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.health",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.structured-errors-preserved",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.deadline.total-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.native.keychain-unavailable-fails-closed",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.native.trust-provider-unavailable-fails-closed",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.evidence.no-prompts",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.evidence.no-message-bodies",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.evidence.no-attachments",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.evidence.no-command-output",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.connected-peer-identity",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.malicious-home-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.symlink-socket-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.replaced-socket-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.wrong-owner-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.wrong-mode-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.wrong-peer-uid-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.peer-provider-failure-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.unix.executable-trust-failure-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.native.linux-keyring.isolated",
+          "result": "pass"
+        }
+      ],
+      "coverage": {
+        "cave": true,
+        "chat": true,
+        "coven": true,
+        "sdk": true
+      },
+      "environment": {
+        "arch": "x64",
+        "covenIdentity": {
+          "available": true,
+          "backend": "unix-peer-credentials"
+        },
+        "nativeCustody": {
+          "available": true,
+          "backend": "linux-keyring"
+        },
+        "nodeVersion": "v24.18.1",
+        "os": "linux",
+        "pnpmVersion": "pnpm@10.34.0",
+        "rustVersion": "1.95.0",
+        "tauriVersion": "2.11.4"
+      },
+      "harness": {
+        "commit": "399e1f199417e74db6a1b9096500d0e953fdfa6b",
+        "invocationId": "835f5a3f-0a2e-4af1-9ae7-3ce85721ea1d",
+        "name": "scripts/phase1-conformance.mjs",
+        "repository": "OpenCoven/chat",
+        "tree": "76adbce55467a6bd276a040284d7004d88e452b8",
+        "version": "2.0.0"
+      },
+      "isolation": {
+        "network": "loopback-only",
+        "operatorState": [
+          {
+            "afterSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "beforeSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "id": "cave-home"
+          },
+          {
+            "afterSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "beforeSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "id": "coven-home"
+          },
+          {
+            "afterSha256": "a13d1e5e1e02c04bfcffdef6b936e7f285d4094375cd5434d9829ffa8cf22f98",
+            "beforeSha256": "a13d1e5e1e02c04bfcffdef6b936e7f285d4094375cd5434d9829ffa8cf22f98",
+            "id": "native-credential-store"
+          },
+          {
+            "afterSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "beforeSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "id": "projects"
+          }
+        ],
+        "retainedPrivatePaths": false,
+        "retainedSocketHandles": false,
+        "roots": [
+          {
+            "id": "cave-home",
+            "opaqueId": "ebb72076d36dbb0bc89f790415a0ae7a",
+            "ownershipVerified": true,
+            "removedAfterRun": true
+          },
+          {
+            "id": "coven-home",
+            "opaqueId": "265ed8336564e6b20c829a2e51ac0457",
+            "ownershipVerified": true,
+            "removedAfterRun": true
+          },
+          {
+            "id": "consumer-home",
+            "opaqueId": "747b420e4afc1e0e1d9dfc7e56500b36",
+            "ownershipVerified": true,
+            "removedAfterRun": true
+          },
+          {
+            "id": "native-credential-store",
+            "opaqueId": "71824e2cba3a551eb1e9c65337bf2d29",
+            "ownershipVerified": true,
+            "removedAfterRun": true
+          }
+        ],
+        "sourceCheckoutDependency": false,
+        "strategy": "process-owned-temporary-roots",
+        "workspaceLinkDependency": false
+      },
+      "issue": "OpenCoven/sdk#38",
+      "notCovered": [
+        {
+          "diagnosticId": "phase1.scope.cross-process-pairing.not-covered",
+          "scopeId": "cross-process-pairing"
+        },
+        {
+          "diagnosticId": "phase1.scope.oauth-ui.not-covered",
+          "scopeId": "oauth-ui"
+        },
+        {
+          "diagnosticId": "phase1.scope.remote-peer.not-covered",
+          "scopeId": "remote-peer"
+        },
+        {
+          "diagnosticId": "phase1.scope.write-apis.not-covered",
+          "scopeId": "write-apis"
+        }
+      ],
+      "platform": "linux-x64",
+      "provenance": {
+        "candidate": {
+          "commit": "cd10a3fa1d9900e0dbcb04bbb2477140854fba1d",
+          "repository": "OpenCoven/sdk",
+          "tree": "6977092046b4cd5c3a3ce4a720141b1a97cfed39"
+        },
+        "cave": {
+          "commit": "ecdcdcf8a75b62bb912ec48215ae20ab0809a181",
+          "repository": "OpenCoven/coven-cave",
+          "tree": "1634a8eb0a391419bf28af4be0020cfd8c4df472"
+        },
+        "chat": {
+          "commit": "dabcdd47e7509880f26e9895ffb63d42d9070ca8",
+          "repository": "OpenCoven/chat",
+          "tree": "48e9387d2f3727e944a82376652fdc0c1dd02732"
+        },
+        "coven": {
+          "commit": "8c3735f374d6bc95e5b6fd107f7e7308fa26a2f8",
+          "repository": "OpenCoven/coven",
+          "tree": "163ea5b3fb89c741679dce0e121a2c1d9391472f"
+        },
+        "validator": {
+          "commit": "67fd5d8af73283348782de185efe77f24af6e391",
+          "contract": {
+            "path": "scripts/conformance-contract.mjs",
+            "sha256": "d59c416006f605e02eadacb456b42cfdf7a64ecf81812254e22580d9a1918f74",
+            "size": 135669
+          },
+          "repository": "OpenCoven/sdk",
+          "schema": {
+            "path": "conformance/client-v1-cross-repository-evidence.schema.json",
+            "sha256": "5691ee1fae34e867c706565fa79a9763edbbdd3cdbb53fcb4e39832f911ad644",
+            "size": 23176
+          },
+          "tree": "52a30cc0909c2f043f6be5d7a206e3f22fb70fa8"
+        }
+      },
+      "releases": {
+        "cave": "0.4.2",
+        "coven": "0.1.0"
+      },
+      "scans": {
+        "redaction": {
+          "scanner": "chat-phase1-redaction",
+          "status": "passed",
+          "version": "1"
+        },
+        "retainedEvidence": {
+          "scanner": "phase1-artifact-secret-scan",
+          "status": "passed",
+          "version": "1"
+        }
+      },
+      "schemaVersion": 2,
+      "sdkAssertions": [
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.install.packed-tarballs",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.install.public-exports",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.install.no-source-checkout",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.install.no-workspace-link",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.provenance.fixture-bytes-match",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.provenance.hpke-vectors-match",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.discovery.release-mode",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.discovery.stale-record-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.discovery.replaced-instance-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.health.compatible",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.create",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.pending",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.exchange-once",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.denied",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.expired",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.wrong-secret-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.replay-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.shared-failure-budget",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.rate-limit",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.exchange.missing-content-length-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.exchange.content-length-zero-accepted",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.proxy-rejection.distinct-envelope",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.credential.native-store-required",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.credential.restart-reused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.familiars",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.projects",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.conversations",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.conversation",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.messages",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.cursor.malformed-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.cursor.noncanonical-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.cursor.reconcile-required",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.familiars-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.projects-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.conversations-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.conversation-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.messages-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.coven.discovery.owner-local",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.coven.health",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.coven.structured-errors",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.deadline.connect-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.deadline.read-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.deadline.body-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.deadline.frame-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.native.keychain-missing-fails-closed",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.native.trust-binding-missing-fails-closed",
+          "result": "pass"
+        }
+      ],
+      "timing": {
+        "completedAt": "2026-09-26T06:20:56.622Z",
+        "durationMs": 951607,
+        "startedAt": "2026-09-26T06:05:05.015Z"
+      }
+    },
+    {
+      "artifacts": {
+        "assertionRegistry": {
+          "path": "conformance/client-v1-cross-repository-assertions.json",
+          "sha256": "1d336071ae46862aec387558e1540b9aeaaacf75675b77724d04c1ac5d2cdda6",
+          "size": 10715
+        },
+        "candidateCaveFiles": [
+          {
+            "path": "packages/cave/fixtures/contract-fixture.json",
+            "sha256": "0c03baea9c21f0985df41eef3c5ae5223497b9081c665b53ddecab36598f5ede",
+            "size": 18280
+          },
+          {
+            "path": "packages/cave/fixtures/contract-fixture.sha256",
+            "sha256": "e0c526d05cb0ba0fde6d3002fdf091b1686e9363656501bc57c5ece99d11af81",
+            "size": 65
+          },
+          {
+            "path": "packages/cave/fixtures/contract-fixture.provenance.json",
+            "sha256": "a2600544f609137df465c0350ee38e7ff56c2eb649556440714c2e0ba3b96010",
+            "size": 333
+          },
+          {
+            "path": "packages/cave/fixtures/hpke-bound-v1-vectors.json",
+            "sha256": "f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797",
+            "size": 4041
+          },
+          {
+            "path": "packages/cave/fixtures/hpke-bound-v1-vectors.sha256",
+            "sha256": "20a0e7737d940fd661cb95ba1d1b9fda01eac840fbdff667c64659966ca3d544",
+            "size": 65
+          }
+        ],
+        "caveAuthorityFiles": [
+          {
+            "path": "scripts/client-v1-conformance.mjs",
+            "sha256": "e2742e3041648082e1087313f005a6e9407e2b8d2180881c42e109257804ec7b",
+            "size": 153390
+          },
+          {
+            "path": "src/lib/server/client-v1/contract-fixture.json",
+            "sha256": "0c03baea9c21f0985df41eef3c5ae5223497b9081c665b53ddecab36598f5ede",
+            "size": 18280
+          },
+          {
+            "path": "src/lib/server/client-v1/contract-fixture.sha256",
+            "sha256": "e0c526d05cb0ba0fde6d3002fdf091b1686e9363656501bc57c5ece99d11af81",
+            "size": 65
+          },
+          {
+            "path": "src/lib/server/client-v1/hpke-bound-v1-vectors.json",
+            "sha256": "f806967291de12175277b6b24ac3c7bba912ae760fd8227fb21b1a4d5f5e6797",
+            "size": 4041
+          },
+          {
+            "path": "src/lib/server/client-v1/hpke-bound-v1-vectors.sha256",
+            "sha256": "20a0e7737d940fd661cb95ba1d1b9fda01eac840fbdff667c64659966ca3d544",
+            "size": 65
+          }
+        ],
+        "chatVendorFiles": [
+          {
+            "packageName": "@opencoven/sdk-core",
+            "path": "vendor/opencoven-sdk/sdk-core-0.0.1.tgz",
+            "sha256": "5f41291d303cf25e5ff4a3c40d0169f025f7e218da8637fc905935524b5e4e2b",
+            "size": 33308
+          },
+          {
+            "packageName": "@opencoven/cave-client",
+            "path": "vendor/opencoven-sdk/cave-client-0.0.1.tgz",
+            "sha256": "7389376ebc40ff59d942957339769d4dbdb566e25adef9a9deb372581b39a245",
+            "size": 89873
+          },
+          {
+            "packageName": "@opencoven/coven-client",
+            "path": "vendor/opencoven-sdk/coven-client-0.0.1.tgz",
+            "sha256": "4162dd685f78c8703497cba65f68a2f0c28fc640bb7da64b0dc9462c74f357dc",
+            "size": 102172
+          },
+          {
+            "packageName": "@opencoven/sdk",
+            "path": "vendor/opencoven-sdk/sdk-0.0.1.tgz",
+            "sha256": "68b258d21eb61360588c41db528d4b37e4594ddd82dac04cdf6477728161e43a",
+            "size": 16783
+          }
+        ],
+        "consumerLock": {
+          "path": "pnpm-lock.yaml",
+          "sha256": "1721be3c4ac1c8d0e31690e0a6d4a8f77b59db1bb4b5ae31bf288eaadc652719",
+          "size": 56222
+        },
+        "frozenLock": {
+          "path": "conformance/client-v1-cross-repository-lock.json",
+          "sha256": "7fddaaaec14a0e1a8165fae0ac77133be5bdc2dc50cd8ed9f64b51bf60ff5181",
+          "size": 11367
+        },
+        "releaseManifest": {
+          "file": "release-manifest.json",
+          "sha256": "72041bfe9a236d709ea3fe26d32b871f17c7c5183e2991cd0229063ade730cb4",
+          "size": 1032,
+          "version": "0.0.1"
+        },
+        "sdkPackages": [
+          {
+            "packageName": "@opencoven/sdk-core",
+            "releaseFile": "tarballs/core/opencoven-sdk-core-0.0.1.tgz",
+            "sha256": "5f41291d303cf25e5ff4a3c40d0169f025f7e218da8637fc905935524b5e4e2b",
+            "size": 33308,
+            "vendorPath": "vendor/opencoven-sdk/sdk-core-0.0.1.tgz",
+            "version": "0.0.1"
+          },
+          {
+            "packageName": "@opencoven/cave-client",
+            "releaseFile": "tarballs/cave/opencoven-cave-client-0.0.1.tgz",
+            "sha256": "7389376ebc40ff59d942957339769d4dbdb566e25adef9a9deb372581b39a245",
+            "size": 89873,
+            "vendorPath": "vendor/opencoven-sdk/cave-client-0.0.1.tgz",
+            "version": "0.0.1"
+          },
+          {
+            "packageName": "@opencoven/coven-client",
+            "releaseFile": "tarballs/coven/opencoven-coven-client-0.0.1.tgz",
+            "sha256": "4162dd685f78c8703497cba65f68a2f0c28fc640bb7da64b0dc9462c74f357dc",
+            "size": 102172,
+            "vendorPath": "vendor/opencoven-sdk/coven-client-0.0.1.tgz",
+            "version": "0.0.1"
+          },
+          {
+            "packageName": "@opencoven/sdk",
+            "releaseFile": "tarballs/sdk/opencoven-sdk-0.0.1.tgz",
+            "sha256": "68b258d21eb61360588c41db528d4b37e4594ddd82dac04cdf6477728161e43a",
+            "size": 16783,
+            "vendorPath": "vendor/opencoven-sdk/sdk-0.0.1.tgz",
+            "version": "0.0.1"
+          }
+        ]
+      },
+      "caveRecord": {
+        "assertions": [
+          {
+            "detail": "",
+            "id": "admin.unconfigured/admin/pairing-requests.GET",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured/admin/credentials.GET",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured/admin/pairing-requests/:id/decision.POST",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured/admin/credentials/:id.DELETE",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured.pairing-still-opens",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.unconfigured.exchange-stays-pending",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "health.envelope",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "health.live-inventory",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "health.instance-stable",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "health.discovery-record",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.escaped-path.percent",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.escaped-path.percent-encoded-separator",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.backslash-path-reaches-no-handler",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.forwarded.public",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.forwarded.authenticated",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.forwarded.admin",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.exchange-requires-content-length",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.refuses-transfer-encoding",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.body-cap",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "ingress.pairing-content-type",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.wrong-token",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.no-token",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "admin.mutation-requires-source",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.create",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.poll-pending",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.admin-queue",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.admin-approve",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.poll-approved",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.admin-approve-idempotent",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.admin-decision-conflict",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.exchange",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.bearer-works",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.replay-refused",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.poll-after-exchange",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.poll-denied",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.exchange-denied",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.unknown-id",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.wrong-secret",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.correct-secret-polling-is-free",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.budget-charges-wrong-secret-on-poll",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.budget-locks-out-the-holder",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.budget-is-shared-across-routes",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.budget-is-per-pairing",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.empty-first-page/projects",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.empty-first-page/conversations",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.no-bearer",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.unknown-bearer",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.bearer-not-accepted-in-query",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.scope-denied",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.familiars",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.familiars-paging",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.projects-shape",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.projects-paging-partial-final-page",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.cursor-replay-is-stable",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.cursor-current-echoes-the-token",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.cursor-survives-deletion",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.projects-paging-exact-multiple",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-zero",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-over-ceiling",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-leading-zero",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-exponent",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-signed",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.limit-repeated",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.unsupported-parameter",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.offset",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.cursor-outside-alphabet",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.refuses.cursor-not-canonical",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.limit-ceiling-is-served",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.default-page-size",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-shape",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-paging",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversation-by-id",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversation-by-id-refuses-limit",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversation-by-id-refuses-cursor",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversation-by-id-not-found",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-touch-unserved-row-is-still-served",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-touch-served-row-is-not-repeated",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-touch-cursor-row-keeps-the-position",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-row-created-mid-walk-is-not-served",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-row-deleted-mid-walk-does-not-strand",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-tied-sort-key-breaks-on-id",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-without-created-at-are-served-last",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-keyless-row-written-mid-walk-is-still-served",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-keyless-rows-tie-on-the-id-tiebreak",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-keyless-row-keyed-between-walks-moves-once",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-unreadable-row-keeps-its-position-mid-walk",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.conversations-recovering-row-keeps-its-position-mid-walk",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-active-branch",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-values",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-paging",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-counts-not-contents",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-reconcile-required",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-restart-after-reconcile",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-not-found",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "reads.messages-canonical-conversation-id",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.bearer-works-before",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.admin-listing",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.revoke",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.bearer-refused-after",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.is-idempotent",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.unknown-credential",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "revocation.tombstone-persists",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.ttl-poll-expired",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "pairing.ttl-exchange-expired",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.legacy.exposes-pairing-secret",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.bound.exposes-ciphertext-only",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.bound.replacement-cannot-open",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.bound.plaintext-response-rejected",
+            "result": "pass"
+          },
+          {
+            "detail": "",
+            "id": "takeover.bound.forged-auth-response-rejected",
+            "result": "pass"
+          },
+          {
+            "detail": "complete",
+            "id": "harness.assertion-coverage",
+            "result": "pass"
+          }
+        ],
+        "authorityTakeover": {
+          "authorityMode": "enforce",
+          "discoveryVersion": 2,
+          "mechanism": "hpke-bound-v1"
+        },
+        "caveVersion": "0.4.2",
+        "commit": "ecdcdcf8a75b62bb912ec48215ae20ab0809a181",
+        "findings": [
+          {
+            "id": "backslash-refusal-is-unreachable",
+            "measured": "the \"%\" half holds; a \"\\\" is normalised to \"/\" by Next and answered 308 to the normalised target before proxy.ts runs, and that target is then refused 401 by the ordinary gate",
+            "says": "a malformed/noncanonical escaped target, backslash target, or escaped non-conversation target is answered 400 {\"ok\":false,\"error\":\"invalid client v1 path\"}",
+            "severity": "documentation",
+            "where": "docs/api/client-v1.md — Reaching the API at all",
+            "why": "no handler is reached and nothing is served, so the gate still holds; the doc describes an answer no client will observe"
+          },
+          {
+            "id": "admin-unauthorized-envelope-is-unreachable",
+            "measured": "the proxy's sidecar-token gate answers first, so the wire carries 401 {\"ok\":false,\"error\":\"unauthorized\"} and requireClientV1Admin's envelope is never produced on a Cave with a token configured",
+            "says": "a mismatched or absent x-coven-cave-token is 401 unauthorized from requireClientV1Admin",
+            "severity": "documentation",
+            "where": "docs/api/client-v1.md — Administrator routes, Authentication",
+            "why": "the refusal is correct and same-status; only its body differs from the documented one, which a handler-level test cannot see"
+          }
+        ],
+        "harness": "scripts/client-v1-conformance.mjs",
+        "includeTtl": true,
+        "issues": [
+          "OpenCoven/coven-cave#4832",
+          "OpenCoven/coven-cave#4838"
+        ],
+        "nodeVersion": "v24.18.1",
+        "notCovered": [
+          "The SDK and Chat halves of #4838. Both live in other repositories; this run is the Cave half only.",
+          "The production Coven daemon. /familiars is served from a loopback fixture daemon in hub mode.",
+          "A genuinely remote peer. Off-machine ingress is exercised by making the listener classify a loopback request as forwarded.",
+          "The write scopes. Nothing enforces them yet — there are no write routes on this surface.",
+          "OAuth-backed flows and the desktop consent UI. Approval is driven through the admin HTTP route.",
+          "Cross-process pairing state. The pairing store is in-memory and process-local by contract."
+        ],
+        "platform": "win32-x64",
+        "ranAt": "2026-09-26T06:26:52.262Z",
+        "scope": "cave-only",
+        "summary": {
+          "failed": 0,
+          "passed": 110,
+          "skipped": 0,
+          "status": "passed",
+          "total": 110
+        }
+      },
+      "chatAssertions": [
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.install.exact-sdk-tarballs",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.install.consumer-lock-matches",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.install.no-source-checkout",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.install.no-workspace-link",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.compatibility-before-pairing",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.pairing-secret-remains-native",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.bearer-remains-native",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.bearer-never-enters-webview",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.native-store.roundtrip",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.restart.credential-reused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.restart.no-automatic-repairing",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.replacement.stale-state-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.familiars",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.projects",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.conversations",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.conversation",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.read.messages",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.reconcile.reloads-query-only",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.revocation.transitions-state",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.cave.revocation.all-reads-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.discovery.owner-local",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.executable.trusted",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.health",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.structured-errors-preserved",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.deadline.total-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.native.keychain-unavailable-fails-closed",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.native.trust-provider-unavailable-fails-closed",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.evidence.no-prompts",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.evidence.no-message-bodies",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.evidence.no-attachments",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.evidence.no-command-output",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.windows.pipe-owner",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.windows.connected-pipe-identity",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.windows.malicious-home-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.windows.constructed-pipe-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.windows.foreign-pipe-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.windows.ownership-provider-failure-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.windows.executable-trust-failure-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.coven.windows.reparse-endpoint-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "chat.native.windows-credential-manager.isolated",
+          "result": "pass"
+        }
+      ],
+      "coverage": {
+        "cave": true,
+        "chat": true,
+        "coven": true,
+        "sdk": true
+      },
+      "environment": {
+        "arch": "x64",
+        "covenIdentity": {
+          "available": true,
+          "backend": "windows-named-pipe-client-identity"
+        },
+        "nativeCustody": {
+          "available": true,
+          "backend": "windows-credential-manager"
+        },
+        "nodeVersion": "v24.18.1",
+        "os": "win32",
+        "pnpmVersion": "pnpm@10.34.0",
+        "rustVersion": "1.95.0",
+        "tauriVersion": "2.11.4"
+      },
+      "harness": {
+        "commit": "399e1f199417e74db6a1b9096500d0e953fdfa6b",
+        "invocationId": "82496992-529b-40ec-ad49-189a8d8ad882",
+        "name": "scripts/phase1-conformance.mjs",
+        "repository": "OpenCoven/chat",
+        "tree": "76adbce55467a6bd276a040284d7004d88e452b8",
+        "version": "2.0.0"
+      },
+      "isolation": {
+        "network": "loopback-only",
+        "operatorState": [
+          {
+            "afterSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "beforeSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "id": "cave-home"
+          },
+          {
+            "afterSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "beforeSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "id": "coven-home"
+          },
+          {
+            "afterSha256": "a13d1e5e1e02c04bfcffdef6b936e7f285d4094375cd5434d9829ffa8cf22f98",
+            "beforeSha256": "a13d1e5e1e02c04bfcffdef6b936e7f285d4094375cd5434d9829ffa8cf22f98",
+            "id": "native-credential-store"
+          },
+          {
+            "afterSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "beforeSha256": "b7b3aede84b3cb0edbea85abfb62dab3e0d8e43975e68b80a5a411cf67c32ff4",
+            "id": "projects"
+          }
+        ],
+        "retainedPrivatePaths": false,
+        "retainedSocketHandles": false,
+        "roots": [
+          {
+            "id": "cave-home",
+            "opaqueId": "001b783de30627116add58368a7776a3",
+            "ownershipVerified": true,
+            "removedAfterRun": true
+          },
+          {
+            "id": "coven-home",
+            "opaqueId": "b5de740b8e6292aa994fe2178f3625ca",
+            "ownershipVerified": true,
+            "removedAfterRun": true
+          },
+          {
+            "id": "consumer-home",
+            "opaqueId": "ffb582ded47a0fa010a79eb3aa22886e",
+            "ownershipVerified": true,
+            "removedAfterRun": true
+          },
+          {
+            "id": "native-credential-store",
+            "opaqueId": "eb488d6f59bc0dfbb90604b5228eaaa3",
+            "ownershipVerified": true,
+            "removedAfterRun": true
+          }
+        ],
+        "sourceCheckoutDependency": false,
+        "strategy": "process-owned-temporary-roots",
+        "workspaceLinkDependency": false
+      },
+      "issue": "OpenCoven/sdk#38",
+      "notCovered": [
+        {
+          "diagnosticId": "phase1.scope.cross-process-pairing.not-covered",
+          "scopeId": "cross-process-pairing"
+        },
+        {
+          "diagnosticId": "phase1.scope.oauth-ui.not-covered",
+          "scopeId": "oauth-ui"
+        },
+        {
+          "diagnosticId": "phase1.scope.remote-peer.not-covered",
+          "scopeId": "remote-peer"
+        },
+        {
+          "diagnosticId": "phase1.scope.write-apis.not-covered",
+          "scopeId": "write-apis"
+        }
+      ],
+      "platform": "win32-x64",
+      "provenance": {
+        "candidate": {
+          "commit": "cd10a3fa1d9900e0dbcb04bbb2477140854fba1d",
+          "repository": "OpenCoven/sdk",
+          "tree": "6977092046b4cd5c3a3ce4a720141b1a97cfed39"
+        },
+        "cave": {
+          "commit": "ecdcdcf8a75b62bb912ec48215ae20ab0809a181",
+          "repository": "OpenCoven/coven-cave",
+          "tree": "1634a8eb0a391419bf28af4be0020cfd8c4df472"
+        },
+        "chat": {
+          "commit": "dabcdd47e7509880f26e9895ffb63d42d9070ca8",
+          "repository": "OpenCoven/chat",
+          "tree": "48e9387d2f3727e944a82376652fdc0c1dd02732"
+        },
+        "coven": {
+          "commit": "8c3735f374d6bc95e5b6fd107f7e7308fa26a2f8",
+          "repository": "OpenCoven/coven",
+          "tree": "163ea5b3fb89c741679dce0e121a2c1d9391472f"
+        },
+        "validator": {
+          "commit": "67fd5d8af73283348782de185efe77f24af6e391",
+          "contract": {
+            "path": "scripts/conformance-contract.mjs",
+            "sha256": "d59c416006f605e02eadacb456b42cfdf7a64ecf81812254e22580d9a1918f74",
+            "size": 135669
+          },
+          "repository": "OpenCoven/sdk",
+          "schema": {
+            "path": "conformance/client-v1-cross-repository-evidence.schema.json",
+            "sha256": "5691ee1fae34e867c706565fa79a9763edbbdd3cdbb53fcb4e39832f911ad644",
+            "size": 23176
+          },
+          "tree": "52a30cc0909c2f043f6be5d7a206e3f22fb70fa8"
+        }
+      },
+      "releases": {
+        "cave": "0.4.2",
+        "coven": "0.1.0"
+      },
+      "scans": {
+        "redaction": {
+          "scanner": "chat-phase1-redaction",
+          "status": "passed",
+          "version": "1"
+        },
+        "retainedEvidence": {
+          "scanner": "phase1-artifact-secret-scan",
+          "status": "passed",
+          "version": "1"
+        }
+      },
+      "schemaVersion": 2,
+      "sdkAssertions": [
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.install.packed-tarballs",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.install.public-exports",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.install.no-source-checkout",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.install.no-workspace-link",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.provenance.fixture-bytes-match",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.provenance.hpke-vectors-match",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.discovery.release-mode",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.discovery.stale-record-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.discovery.replaced-instance-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.health.compatible",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.create",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.pending",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.exchange-once",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.denied",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.expired",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.wrong-secret-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.replay-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.shared-failure-budget",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.pairing.rate-limit",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.exchange.missing-content-length-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.exchange.content-length-zero-accepted",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.proxy-rejection.distinct-envelope",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.credential.native-store-required",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.credential.restart-reused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.familiars",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.projects",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.conversations",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.conversation",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.read.messages",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.cursor.malformed-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.cursor.noncanonical-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.cursor.reconcile-required",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.familiars-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.projects-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.conversations-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.conversation-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.cave.revocation.messages-refused",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.coven.discovery.owner-local",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.coven.health",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.coven.structured-errors",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.deadline.connect-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.deadline.read-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.deadline.body-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.deadline.frame-bounded",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.native.keychain-missing-fails-closed",
+          "result": "pass"
+        },
+        {
+          "diagnosticId": "phase1.assertion.passed",
+          "id": "sdk.native.trust-binding-missing-fails-closed",
+          "result": "pass"
+        }
+      ],
+      "timing": {
+        "completedAt": "2026-09-26T06:27:47.780Z",
+        "durationMs": 1376135,
+        "startedAt": "2026-09-26T06:04:51.645Z"
+      }
+    }
+  ],
+  "schemaVersion": 2,
+  "summary": {
+    "caveAssertions": 330,
+    "chatAssertions": 122,
+    "failed": 0,
+    "platforms": 3,
+    "sdkAssertions": 138,
+    "skipped": 0,
+    "status": "passed"
+  },
+  "validator": {
+    "commit": "67fd5d8af73283348782de185efe77f24af6e391",
+    "contract": {
+      "path": "scripts/conformance-contract.mjs",
+      "sha256": "d59c416006f605e02eadacb456b42cfdf7a64ecf81812254e22580d9a1918f74",
+      "size": 135669
+    },
+    "repository": "OpenCoven/sdk",
+    "schema": {
+      "path": "conformance/client-v1-cross-repository-evidence.schema.json",
+      "sha256": "5691ee1fae34e867c706565fa79a9763edbbdd3cdbb53fcb4e39832f911ad644",
+      "size": 23176
+    },
+    "tree": "52a30cc0909c2f043f6be5d7a206e3f22fb70fa8"
+  }
+}

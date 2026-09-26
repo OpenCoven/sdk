@@ -27,8 +27,10 @@ publication primitives needed to support the aggregator safely on Windows.
 The first passing aggregate, committed at
 [`96804bc4….json`](../client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json)
 (2026-09-25), is for the previous candidate `96804bc4`, which #40 then blocked.
-It is historical: `release.config.json` names no aggregate for the current
-candidate, so `aggregateRecord` is `null` until a fresh protected run passes.
+It is historical. The current candidate's aggregate is
+[`cd10a3fa….json`](../client-v1-cross-repository-results/cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json)
+(2026-09-26), from protected run 36222464391, and `release.config.json` names
+it.
 The 0.0.1 SDK candidate is `cd10a3fa1d9900e0dbcb04bbb2477140854fba1d`, tree
 `6977092046b4cd5c3a3ce4a720141b1a97cfed39`, with normalized runtime SHA-256
 `05bc8cc66bf07f9d2eef2015fdcd4e297a0ecb719fc2c92bca010d21c9045167`.

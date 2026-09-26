@@ -8,6 +8,15 @@ A result is added only after the exact same candidate has produced complete
 `darwin-arm64`, `linux-x64`, and `win32-x64` platform records and the SDK-side
 aggregator accepts all three.
 
+The current record is
+[`cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json`](cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json), for the replacement
+0.0.1 candidate `cd10a3f`, which `release.config.json` names. Protected Chat
+run [36222464391](https://github.com/OpenCoven/chat/actions/runs/36222464391)
+produced its three platform records at producer
+`399e1f199417e74db6a1b9096500d0e953fdfa6b` (Chat #390, tip-only), and
+validator `67fd5d8af73283348782de185efe77f24af6e391` accepted and attested
+them. Its platform artifacts expire on 2026-10-26 (UTC).
+
 The first passing record is
 [`96804bc483a063e41e9a9738a4ace61970f6c0a4.json`](96804bc483a063e41e9a9738a4ace61970f6c0a4.json),
 for the first frozen 0.0.1 candidate `96804bc4`. The #40 re-review then blocked
