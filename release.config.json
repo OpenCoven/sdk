@@ -31,9 +31,9 @@
   "conformanceEvidence": {
     "issue": "OpenCoven/sdk#38",
     "artifactSet": "conformance-candidate",
-    "candidateCommit": "96804bc483a063e41e9a9738a4ace61970f6c0a4",
-    "runtimeManifestSha256": "8c46276b5698d32d570ad4a89998b412cb0efde5641313b0c71ae41519e64ae7",
-    "aggregateRecord": "docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json"
+    "candidateCommit": "cd10a3fa1d9900e0dbcb04bbb2477140854fba1d",
+    "runtimeManifestSha256": "05bc8cc66bf07f9d2eef2015fdcd4e297a0ecb719fc2c92bca010d21c9045167",
+    "aggregateRecord": null
   },
   "publicationCandidate": {
     "artifactSet": "publication-candidate",

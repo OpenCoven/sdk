@@ -10,7 +10,9 @@ aggregator accepts all three.
 
 The first passing record is
 [`96804bc483a063e41e9a9738a4ace61970f6c0a4.json`](96804bc483a063e41e9a9738a4ace61970f6c0a4.json),
-for the frozen 0.0.1 candidate. Protected Chat run
+for the first frozen 0.0.1 candidate `96804bc4`. The #40 re-review then blocked
+that candidate, so this record is historical: `release.config.json` binds the
+replacement candidate `cd10a3f`, which needs its own record. Protected Chat run
 [36113801474](https://github.com/OpenCoven/chat/actions/runs/36113801474)
 produced its three platform records. The run was dispatched from Chat `main` at
 `f4fbb423c811cc33ddbbc9a388933aa4089560df`, which the lock binds by its descent

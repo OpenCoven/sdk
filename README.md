@@ -29,19 +29,20 @@ between Node runtime support and this release gate.
 The four release manifests and initial changelogs are prepared at **0.0.1**,
 with the merged Cave authority contract advertising a `0.0.1` client minimum.
 Strict version checks remain unchanged. The source lock now freezes the
-private **0.0.1** candidate at
-`96804bc483a063e41e9a9738a4ace61970f6c0a4` and its exact tarball bytes.
-Earlier 0.1.0 artifacts and evidence remain historical, not relabeled.
-The #40 re-review blocks that candidate because it predates High-severity
-Cave fixes; a replacement 0.0.1 candidate is being prepared from main (see
-[Second candidate source preparation](RELEASING.md#second-candidate-source-preparation-2026-09-25)).
-This candidate includes the merged Coven Automations APIs. Candidate77
-records remain historical evidence. This binding selects the merged [Chat #375](https://github.com/OpenCoven/chat/pull/375)
-producer `b10910545b14133a619e56641e5692a4335c83c4`, tree `7220622280415441646a3f6aef74113a98cc5bd2`.
-Its reviewed head `27b41082d60f9acaaad2935e5a2b42005ee9e7fb` has the same complete tree
+replacement private **0.0.1** candidate at
+`cd10a3fa1d9900e0dbcb04bbb2477140854fba1d` and its exact tarball bytes. The
+#40 re-review blocked the previous candidate `96804bc4` because it predates
+High-severity Cave fixes (see
+[Second candidate source preparation](RELEASING.md#second-candidate-source-preparation-2026-09-25));
+its aggregate and evidence remain historical, as do earlier 0.1.0 artifacts.
+This candidate includes the merged Coven Automations APIs and those fixes. Candidate77
+records remain historical evidence. This binding selects the merged [Chat #385](https://github.com/OpenCoven/chat/pull/385)
+producer `ce151728a309f8f5532d1426d7503c2c4efe38be`, tree `9bd0afb9e0bca14252052946494ee0af1ae92a8c`.
+Its reviewed head `2fa7dd8437e596b399668d841297dcffa75e4c87` has the same complete tree
 and has executable harness authority
-`6a95b93d3eeb73a01f4a1882ea94ae9aa466345f`, tree `fd814b80ae2dd7bf59429672d9758be2f438085c`,
-as its sole parent.
+`1c80212e3aca79c2800d703abaedc080b1cf9ef8`, tree `26f64bf54aef11ec784f8e2d370c288a1161cc5c`
+([Chat #383](https://github.com/OpenCoven/chat/pull/383), which adopts the
+replacement candidate), as its sole parent.
 The merge parents are that harness authority and the reviewed head. The validator
 checks the merge-to-reviewed-source edge, the source-to-harness edge, and complete
 reviewed/delivery tree equality. The intermediate source-authority path is empty

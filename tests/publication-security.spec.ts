@@ -326,7 +326,7 @@ function createReleaseFixture({
     'fetch',
     '--quiet',
     workspaceRoot,
-    '96804bc483a063e41e9a9738a4ace61970f6c0a4',
+    'cd10a3fa1d9900e0dbcb04bbb2477140854fba1d',
   ]);
   git(root, ['checkout', '--quiet', '-b', 'main', 'FETCH_HEAD']);
   git(root, ['config', 'user.name', 'Publication Security Test']);

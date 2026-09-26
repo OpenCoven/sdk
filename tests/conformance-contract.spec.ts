@@ -75,23 +75,8 @@ function sourceAuthority(previous = false, chain = false) {
     phase1LockText: sourceBytes(
       previous ? 'previousProducer' : chain ? 'chainProducer' : 'producer', 'phase1-conformance.lock.json',
     ).toString('utf8'),
-    ...(previous || chain ? {} : { sourceDescentCommits: [
-      ...currentDescent.map(([sha, tree, parents]) => ({
-        sha, tree: { sha: tree }, parents: parents.map((parent) => ({ sha: parent })),
-      })),
-      commit('producer'),
-    ] }),
   };
 }
-// Chat main from the dispatch revision down to the producer's first child,
-// read from real Git; `producer` closes the walk from the source fixture.
-const currentDescent: readonly [string, string, readonly string[]][] = [
-  ['f4fbb423c811cc33ddbbc9a388933aa4089560df', 'b5fd7984787aba7f13097138320fa0b4111aa88e', ['813ddde5f2478ac831da784e51cea61a0cb436b1', '636cb958664cf376bd9c2c7861792f18a42441a8']],
-  ['813ddde5f2478ac831da784e51cea61a0cb436b1', '9058182c5414dcc1ff5aaddda60157e9657f0d0c', ['e1d9c64391f4f8369d33f5178f73531ecde8530d', '169b61507aa7069eb94b9d6e50d2804de0596d86']],
-  ['e1d9c64391f4f8369d33f5178f73531ecde8530d', 'f3aa0cc99d1609c7d34d7a4891a55500dea39049', ['cab1cace4cf8b38349794af069363936fa7269f1', 'd9c5d6a90d84f24117139c13f232445ac98bb3db']],
-  ['cab1cace4cf8b38349794af069363936fa7269f1', 'c11325f1bb2a7cbb57378c2a0ed09f66c544b400', ['dbe11775eb63ab321f0bf2b925335397117b0180', '3874b5928eb7d1f6bada6a0c5ddaee66e24d4c8d']],
-  ['dbe11775eb63ab321f0bf2b925335397117b0180', 'c110fd771dfcba22bf9dc4c6f50fdeee0dc85aec', ['b10910545b14133a619e56641e5692a4335c83c4', 'df5bdf56459d55c798ce1ce4b8025ff4359bf06d']],
-];
 const currentLock = () => readFrozenConformanceLock(resolve(
   workspaceRoot, 'conformance/client-v1-cross-repository-lock.json',
 ));
@@ -213,9 +198,9 @@ describe('local producer ancestry inspection', () => {
 
 describe('reviewed Chat Cave build home isolation', () => {
   test('retains complete Git source bytes, governance files, and combined native deltas', () => {
-    expect(sourceFixtureBytes.length).toBe(20_231_016);
+    expect(sourceFixtureBytes.length).toBe(20_479_124);
     expect(digest(sourceFixtureBytes)).toBe(
-      'a6db812f5e758ce6c50a656233f558a0140ba4524f3f8888c5156925d767c0f4',
+      '5da37042febac473ca3a998c7476d81c3ba5b60f5adc4d63aefc8fe95839acb1',
     );
     for (const source of Object.values(sourceFixture.sources)) {
       const rawCommit = objectBytes(source.commit);
@@ -251,19 +236,21 @@ describe('reviewed Chat Cave build home isolation', () => {
 
   test('accepts the exact delivered merge and its reviewed source and binding ancestry', () => {
     const lock = currentLock();
-    expect(lock.evidenceProducer.commit).toBe('b10910545b14133a619e56641e5692a4335c83c4');
+    expect(lock.evidenceProducer.commit).toBe('ce151728a309f8f5532d1426d7503c2c4efe38be');
     expect(lock.sources.cave).toMatchObject({
       commit: 'ecdcdcf8a75b62bb912ec48215ae20ab0809a181',
       tree: '1634a8eb0a391419bf28af4be0020cfd8c4df472',
       releaseVersion: '0.4.2',
     });
     expect(sourceAuthority().sourceCommit.parents).toEqual([
-      { sha: '6a95b93d3eeb73a01f4a1882ea94ae9aa466345f' },
+      { sha: '1c80212e3aca79c2800d703abaedc080b1cf9ef8' },
     ]);
     expect(() => validateChatProducerAuthorityBinding(lock, sourceAuthority())).not.toThrow();
     expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([]);
-    expect(lock.candidate).toEqual(sourceFixture.previousLock.candidate);
-    expect(lock.sources.chat).toEqual(sourceFixture.previousLock.sources.chat);
+    // The previous generation bound candidate 96804bc and consumer ef8c747;
+    // this binding adopts the replacement candidate and consumer.
+    expect(lock.candidate.commit).not.toBe(sourceFixture.previousLock.candidate.commit);
+    expect(lock.sources.chat.commit).not.toBe(sourceFixture.previousLock.sources.chat.commit);
     expect(lock.sources.coven).toEqual(sourceFixture.previousLock.sources.coven);
   });
 
@@ -415,7 +402,7 @@ describe('reviewed Chat Cave build home isolation', () => {
         assert.equal(phase1.release.caveVersion, '0.4.2');
         assert.doesNotThrow(() => assertSdkContractMatchesPhase1Lock(sdk, phase1));
         assert.throws(() => readPhase1ConformanceLock('previous-lock.json'), /release authority versions/);
-        assert.throws(() => assertSdkContractMatchesPhase1Lock(previousSdk, phase1), /Phase 1 cave pin/);
+        assert.throws(() => assertSdkContractMatchesPhase1Lock(previousSdk, phase1), /Phase 1 sdk pin/);
         const registry = JSON.parse(readFileSync('sdk-registry.json', 'utf8'));
         assert.deepEqual(registry.assertions.cave, [...expectedAssertionIds(true, true), COVERAGE_ASSERTION_ID]);
       `], { cwd: root, stdio: 'pipe' });
@@ -628,7 +615,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      'b10910545b14133a619e56641e5692a4335c83c4',
+      'ce151728a309f8f5532d1426d7503c2c4efe38be',
     );
     expect(workflowDocument).not.toContain(
       'f6eba8af1f71d4251583cf39d4e5fb5b4797d209',
@@ -643,10 +630,10 @@ describe('cross-repository conformance contract entrypoints', () => {
       '9f073f05241c2d3241b23ed9d73b26c6cd55ce7e',
     );
     expect(workflowDocument).toContain(
-      '27b41082d60f9acaaad2935e5a2b42005ee9e7fb',
+      '2fa7dd8437e596b399668d841297dcffa75e4c87',
     );
     expect(workflowDocument).toContain(
-      '6a95b93d3eeb73a01f4a1882ea94ae9aa466345f',
+      '1c80212e3aca79c2800d703abaedc080b1cf9ef8',
     );
     expect(workflowDocument).toContain('validator_revision');
     expect(workflowDocument).toContain('20863036831');
