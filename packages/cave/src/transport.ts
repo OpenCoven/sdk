@@ -100,6 +100,8 @@ export interface CaveManagedCredentialTransport extends CaveTransport {
   managedHpkeListConversations?(options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
   managedHpkeGetConversation?(conversationId: string, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
   managedHpkeListConversationMessages?(conversationId: string, options: PageOptions, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+  managedHpkeFamiliarContract?(familiarId: string, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
+  managedHpkeFamiliarAnalytics?(familiarId: string, options: CaveFamiliarAnalyticsTransportOptions | undefined, discovered: Extract<CaveManagedDiscoveredEndpoint, { version: 2 }>, context?: OperationContext): Promise<CaveManagedHpkeResult>;
 
   managedPairingCreate(
     request: CavePairingRequest,

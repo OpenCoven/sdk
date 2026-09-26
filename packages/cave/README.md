@@ -402,7 +402,13 @@ snapshot, and the operation context. Return
 `{ authentication: { mechanism: 'hpke-bound-v1', keyId }, value }` only after
 native code opens the authenticated response. `value` has the same shape as
 the corresponding existing transport result. The legacy `familiars()` roster
-has a separate `managedHpkeFamiliars` method.
+has a separate `managedHpkeFamiliars` method, and `familiarContract()` and
+`familiarAnalytics()` use `managedHpkeFamiliarContract` and
+`managedHpkeFamiliarAnalytics`. Like the other reads, those two refuse a v1
+authority once the client has observed v2, and a v2 authority without the
+adapter method fails with `unsupported_operation`; they never fall back to the
+plain method. The staged-native root factory does not expose familiar contract or
+analytics reads, and reports both as `unsupported_operation`.
 
 The root factory uses the corresponding `listFamiliarsHpke`,
 `listProjectsHpke`, `listConversationsHpke`, `getConversationHpke`,

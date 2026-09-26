@@ -17,7 +17,7 @@
   "entrypoints": {
     ".": {
       "declarationFiles": [
-        "dist/client-KVVQ5ct5.d.ts",
+        "dist/client-IsafYSlt.d.ts",
         "dist/index.d.ts"
       ],
       "runtimeExports": {
@@ -47,7 +47,7 @@
     },
     "./managed": {
       "declarationFiles": [
-        "dist/client-KVVQ5ct5.d.ts",
+        "dist/client-IsafYSlt.d.ts",
         "dist/managed.d.ts"
       ],
       "runtimeExports": {

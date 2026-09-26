@@ -402,3 +402,87 @@ describe.each(['browser', 'native'] as const)('%s managed HPKE read continuity',
     expect(new Set(nonces).size).toBe(2);
   });
 });
+
+describe('browser managed familiar contract and analytics authority', () => {
+  const report = { specVersion: '0.1.0', pass: true, properties: [{ property: 'Named Identity', pass: true }],
+    violations: [], warnings: [] };
+  const contract = { ok: true, id: 'cody', present: true, report };
+  const analytics = { ok: true, analytics: { generatedAt: '2026-08-19T07:00:00Z', windows: {
+    '7d': { attempts: 0, completed: 0, failed: 0, cancelled: 0, successRate: null, toolCalls: 0, toolFailures: 0,
+      models: [], harnesses: [], coverage: {} } }, recentAttempts: [],
+    backfill: { state: 'partial', imported: 12, remaining: 4 } } };
+  const legacyV1 = (f: Awaited<ReturnType<typeof fixture>>): Authority => ({ version: 1, endpoint: f.a.endpoint,
+    record: f.a.record, freshness: { ...f.a.freshness, nonce: 'legacy' } });
+
+  test.each(['familiarContract', 'familiarAnalytics'] as const)(
+    'authenticates %s through its dedicated adapter and never the plain method', async (method) => {
+      const f = await fixture('browser');
+      const plain = vi.fn(unused);
+      const adapter = vi.fn((...args: unknown[]) => {
+        const authority = args.at(-2) as V2;
+        expect(Object.isFrozen(authority)).toBe(true);
+        expect(args[0]).toBe('cody');
+        return Promise.resolve({ authentication: { mechanism: 'hpke-bound-v1', keyId: authority.authority.keyId },
+          value: method === 'familiarContract' ? contract : analytics });
+      });
+      Object.assign(f.transport, { [method]: plain,
+        [method === 'familiarContract' ? 'managedHpkeFamiliarContract' : 'managedHpkeFamiliarAnalytics']: adapter });
+      if (method === 'familiarContract') await expect(f.client.familiarContract('cody')).resolves.toMatchObject({ present: true });
+      else await expect(f.client.familiarAnalytics('cody')).resolves.toMatchObject({ generatedAt: '2026-08-19T07:00:00Z' });
+      expect(adapter).toHaveBeenCalledOnce();
+      expect(plain).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(['familiarContract', 'familiarAnalytics'] as const)(
+    'refuses %s from a v1 authority once the client has observed v2', async (method) => {
+      const f = await fixture('browser');
+      const plain = vi.fn(() => Promise.resolve(method === 'familiarContract' ? contract : analytics));
+      Object.assign(f.transport, { [method]: plain });
+      await f.client.listProjects();
+      f.set(legacyV1(f));
+      const call = method === 'familiarContract' ? f.client.familiarContract('cody') : f.client.familiarAnalytics('cody');
+      await expect(call).rejects.toMatchObject({ code: 'reconcile_required', retryable: false });
+      expect(plain).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(['familiarContract', 'familiarAnalytics'] as const)(
+    'fails %s closed on v2 without an adapter instead of using the plain method', async (method) => {
+      const f = await fixture('browser');
+      const plain = vi.fn(() => Promise.resolve(method === 'familiarContract' ? contract : analytics));
+      Object.assign(f.transport, { [method]: plain });
+      const call = method === 'familiarContract' ? f.client.familiarContract('cody') : f.client.familiarAnalytics('cody');
+      await expect(call).rejects.toMatchObject({ code: 'unsupported_operation', retryable: false });
+      expect(plain).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(['familiarContract', 'familiarAnalytics'] as const)(
+    'keeps using the plain %s method while discovery is v1', async (method) => {
+      const f = await fixture('browser');
+      f.set(legacyV1(f));
+      const plain = vi.fn(() => Promise.resolve(method === 'familiarContract' ? contract : analytics));
+      Object.assign(f.transport, { [method]: plain });
+      if (method === 'familiarContract') await expect(f.client.familiarContract('cody')).resolves.toMatchObject({ present: true });
+      else await expect(f.client.familiarAnalytics('cody')).resolves.toMatchObject({ generatedAt: '2026-08-19T07:00:00Z' });
+      expect(plain).toHaveBeenCalledOnce();
+    },
+  );
+});
+
+describe('staged-native managed familiar contract and analytics', () => {
+  // The staged-native factory exposes no familiar contract or analytics read,
+  // so there is no plain method that could bypass the authority resolver.
+  test.each(['familiarContract', 'familiarAnalytics'] as const)(
+    'reports %s as unsupported without touching discovery or the native transport', async (method) => {
+      const f = await fixture('native');
+      const native = vi.fn(unused);
+      Object.assign(f.transport, { [method]: native, [`${method}Hpke`]: native });
+      const call = method === 'familiarContract' ? f.client.familiarContract('cody') : f.client.familiarAnalytics('cody');
+      await expect(call).rejects.toMatchObject({ code: 'unsupported_operation', retryable: false });
+      expect(native).not.toHaveBeenCalled();
+      expect(f.read).not.toHaveBeenCalled();
+    },
+  );
+});

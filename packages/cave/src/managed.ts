@@ -141,8 +141,8 @@ function wrapManagedReads(transport: CaveManagedCredentialTransport, discovery: 
     listConversations: (options, context) => read('listConversations', 'managedHpkeListConversations', [options], context),
     getConversation: (id, context) => read('getConversation', 'managedHpkeGetConversation', [id], context),
     listConversationMessages: (id, options, context) => read('listConversationMessages', 'managedHpkeListConversationMessages', [id, options], context),
-    familiarContract: (id, context) => invoke('familiarContract', [id, context]) as ReturnType<NonNullable<CaveManagedCredentialTransport['familiarContract']>>,
-    familiarAnalytics: (id, options, context) => invoke('familiarAnalytics', [id, options, context]) as ReturnType<NonNullable<CaveManagedCredentialTransport['familiarAnalytics']>>,
+    familiarContract: (id, context) => read('familiarContract', 'managedHpkeFamiliarContract', [id], context) as ReturnType<NonNullable<CaveManagedCredentialTransport['familiarContract']>>,
+    familiarAnalytics: (id, options, context) => read('familiarAnalytics', 'managedHpkeFamiliarAnalytics', [id, options], context) as ReturnType<NonNullable<CaveManagedCredentialTransport['familiarAnalytics']>>,
   };
 }
 
