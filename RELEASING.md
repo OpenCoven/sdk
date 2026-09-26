@@ -62,6 +62,10 @@ identities in Chat, rebinding the conformance lock, fresh protected evidence
 and a new #40 disposition follow separately. `96804bc4` remains the bound
 candidate until then.
 
+### Fresh candidate source preparation (2026-09-14)
+
+*Historical: the first candidate's preparation, superseded by the
+[second preparation](#second-candidate-source-preparation-2026-09-25) above.*
 
 The release owner has selected a fresh private **0.0.1** candidate that
 includes the Coven Automations capability-discovery APIs merged in #251.
@@ -78,7 +82,7 @@ create a `0.0.2` or `0.1.0` release for this preparation. The unrelated
 session-policy feature, private CLI patch, and empty maintenance Changesets
 remain unchanged.
 
-The captured private candidate is now
+The captured private candidate was
 `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 `aa9eb8e924735419a9afdbcc80a5b087504ccc9d`. Its canonical runtime manifest
 and exact package bytes are frozen by the current release configuration and
