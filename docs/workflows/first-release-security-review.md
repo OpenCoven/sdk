@@ -2,7 +2,7 @@
 
 Tracking issue: [#40](https://github.com/OpenCoven/sdk/issues/40). Program issue: [#31](https://github.com/OpenCoven/sdk/issues/31).
 
-**Disposition: BLOCK.** The frozen 0.0.1 candidate `96804bc4` predates two High-severity Cave fixes, so its packed bytes must not ship. See [Candidate re-review](#candidate-re-review-2026-09-25) and [Disposition](#disposition).
+**Disposition: SHIP (recommended) for replacement candidate `cd10a3f`.** It has a passing, attested, live-verified three-platform aggregate. Its packed bytes contain the F4, F5 and F1 fixes. No Critical, High or Medium finding is open; one Low finding (R1) is accepted with an owner and a dated follow-up. See [Replacement candidate review](#replacement-candidate-review-2026-09-26) and [Disposition](#disposition). The earlier candidate `96804bc4` remains blocked.
 
 This document is the durable record required by #40. It does not authorize publication, create credentials, change branch protection, or waive a finding.
 
@@ -10,10 +10,10 @@ This document is the durable record required by #40. It does not authorize publi
 
 | Field | Value |
 |---|---|
-| Reviewed revision | `aec069089` (main) |
-| Prior checkpoint revisions | `3459dcaad`, `50e017578` |
-| Frozen conformance candidate | `96804bc483a063e41e9a9738a4ace61970f6c0a4` |
-| Runtime manifest SHA-256 | `8c46276b5698d32d570ad4a89998b412cb0efde5641313b0c71ae41519e64ae7` |
+| Reviewed revision | `cd10a3f` (candidate), plus runtime delta from `aec069089` |
+| Prior checkpoint revisions | `3459dcaad`, `50e017578`, `aec069089`, `96804bc4` |
+| Frozen conformance candidate | `cd10a3fa1d9900e0dbcb04bbb2477140854fba1d` (replaces `96804bc4`, blocked) |
+| Runtime manifest SHA-256 | `05bc8cc66bf07f9d2eef2015fdcd4e297a0ecb719fc2c92bca010d21c9045167` |
 | Version under review | 0.0.1 |
 | Minimum Node | 24.18.0 (major 24) |
 
@@ -168,13 +168,120 @@ candidate does not contain #294.
 `main` at `185d6264` contains all three fixes. The findings concern the frozen
 candidate's bytes, not current source.
 
+## Replacement candidate review, 2026-09-26
+
+The replacement candidate is `cd10a3fa1d9900e0dbcb04bbb2477140854fba1d` (tree
+`6977092`), prepared by #321 from `main`. It descends from the reviewed
+`aec069089` and contains #277, #285 and #294. This review covers its exact
+packed bytes and the runtime code that entered the four release packages
+since `aec069089`.
+
+### Evidence
+
+- **Packed bytes.** The candidate was packed twice from fresh clones with
+  byte-identical output: release manifest `72041bfe…`, `sdk-core` `5f41291d…`
+  (unchanged), `cave-client` `7389376e…`, `coven-client` `4162dd68…`, `sdk`
+  `68b258d2…`. These match the conformance lock and the archives vendored by
+  Chat consumer `dabcdd4`. All four are `private: true`. The packed manifests
+  declare only `build` and `typecheck`: no install, prepare or other lifecycle
+  script reaches a consumer. The source manifests additionally declare
+  `prepublishOnly: node ../../scripts/require-release-authorization.mjs`, the
+  release-authorization gate that refuses `npm publish` without the protected
+  authorization. It is a publication control, not an install hook, and the
+  packing transform leaves it out of the shipped manifests.
+- **Fixes in the shipped bytes.** The packed `cave-client` `dist/` contains the
+  F4 downgrade latch (`observedV2`), the F5 cause redaction
+  (`...(hpkeRequest === undefined ? { cause: error } : {})`) and the F1
+  single-use `retryable` rule.
+- **Conformance.** [Aggregate `cd10a3fa….json`](../client-v1-cross-repository-results/cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json)
+  ([#325](https://github.com/OpenCoven/sdk/pull/325)) comes from protected Chat
+  [run 36222464391](https://github.com/OpenCoven/chat/actions/runs/36222464391),
+  producer `399e1f19`, validator `67fd5d8a`. All three platforms passed. The
+  committed-evidence verifier reproduced it byte for byte against GitHub, and
+  strict release readiness passes with it named.
+- **Automated checks at `cd10a3f`.** `verify` on Node 24.18.1 and 24.x, the
+  native keyring jobs on macOS, Linux and Windows, and CodeQL (actions,
+  javascript-typescript) all pass on the candidate commit. `pnpm audit --audit-level low` reports
+  no known vulnerabilities. Every `uses:` in `release.yml` is pinned to a
+  40-character SHA, and `release.yml` references no `NPM_TOKEN`,
+  `NODE_AUTH_TOKEN` or `secrets.*`. A token-pattern scan of tracked files found
+  nothing.
+- **Independent manual review.** A separate reviewer statically read the diff
+  `aec069089..cd10a3f` for `packages/{core,cave,coven,sdk}` (#300, #301, #304,
+  #305, #308: 20 files, +1,118/−85). They reviewed it against every threat boundary above,
+  including a byte comparison of `canonicalize` 5.0.0 and 5.1.0 (library code
+  identical; no install or prepare script). No Critical, High or Medium issue
+  was found. `packages/core/src`, `packages/sdk/src`, `cave/src/pairing.ts` and
+  `cave/src/hpke-bound-v1.ts` are unchanged in that range. The one
+  response-body `cause` still retained in `pairing.ts` is a UTF-8 decode error
+  that carries no body content; the JSON parse failure drops its cause.
+
+### Findings against `cd10a3f`
+
+| ID | Severity | Area | Owner | Disposition | Follow-up due |
+|---|---|---|---|---|---|
+| F4 | High | Discovery-v2 downgrade latch | SDK maintainer (@BunsDev) | **Fixed and verified** in the packed bytes (#277) | None |
+| F5 | High | Protected fetch error cause | SDK maintainer (@BunsDev) | **Fixed and verified** in the packed bytes (#285) | None |
+| F1 | Low | Single-use timeout retry | SDK maintainer (@BunsDev) | **Fixed and verified** in the packed bytes (#294) | None |
+| R1 | Low | `cave/src/managed.ts:144-145` | SDK maintainer (@BunsDev) | **Accepted** | 2026-10-24 |
+| I1 | Informational | `cave/src/managed-hpke.ts` latch scope | SDK maintainer (@BunsDev) | Accepted, by design | None |
+| I2 | Informational | Managed HPKE proof claimed by the host | SDK maintainer (@BunsDev) | Accepted, documented | None |
+| I3 | Informational | `coven/src/automations-events.ts` abandoned iterator | SDK maintainer (@BunsDev) | Accepted | None |
+| F3 | Informational | Checkout-state suite timing | SDK maintainer (@BunsDev) | **Accepted**, carried forward | 2026-10-17 |
+
+**R1.** In the managed client, `wrapManagedReads` routes the six canonical reads
+through the HPKE authority resolver. `familiarContract` and `familiarAnalytics`
+call the host transport's plain methods, so they skip the JavaScript
+`observedV2` guard and iterator authority pin. After a v2 authority has been
+observed, a host transport that sends those two reads to whatever endpoint is
+current could serve them from a downgraded v1 endpoint, and the SDK would not
+refuse. In managed mode the host owns discovery and holds the bearer, so the
+exposure depends on the host rather than on SDK-held secrets. Nothing is
+persisted and no pairing secret is involved. **Rationale for acceptance:** the
+two reads are non-mutating, the credential stays in host custody, and the JS
+guard here is defence in depth over the host's own endpoint resolution. The
+fix needs new managed HPKE adapter methods for both reads, which a later
+release can add without breaking this API. **Follow-up:** by 2026-10-24 the owner
+routes both reads through the resolver, or records why the host guarantee is
+sufficient. Accepted by the release owner on 2026-09-26.
+
+**I1–I3.** The managed `observedV2` latch is per client instance: a new client
+that first discovers v1 accepts it, which matches the pairing design. The HPKE
+proof `{mechanism, keyId}` is asserted by the native or host transport, and
+JavaScript checks only the key identity, as its documentation states. An
+automation-event iterator abandoned without `return()` leaves one abort
+listener on the caller's signal until that signal is collected; no request
+activity continues.
+
+**F3 recurrence.** During this cycle, local full `verify` runs twice hit the
+five-second default on conformance suites under heavy machine load
+(`conformance-gaps.spec.ts`, and once `release-environment-policy.spec.ts`
+before #319 set its budget). Both passed when run alone and in hosted CI. That
+is the same timing class, not an assertion failure; F3's follow-up stands.
+
 ## Disposition
 
-**BLOCK.**
+**SHIP (recommended) for `cd10a3fa1d9900e0dbcb04bbb2477140854fba1d`.**
 
-The earlier structural block is lifted: a passing, attested, live-verified
-three-platform aggregate now exists for the frozen candidate. The block now
-rests on F4 and F5. Publishing `96804bc4` would ship a known downgrade path and
+The candidate has a passing, attested, live-verified three-platform aggregate.
+Its exact packed bytes contain the fixes for both High findings that blocked
+`96804bc4`. The automated checks pass, and the manual review of every runtime
+change since the last reviewed revision found nothing above Low. R1 is
+accepted by the release owner with a rationale and a dated follow-up. F3 and
+I1–I3 are accepted and carry no publication risk.
+
+This recommendation does not authorize publication. It creates no
+credential, changes no branch protection, and waives no finding.
+`publishingEnabled` is still `false` and all four packages are still private.
+Publication belongs to #41, which requires its own fresh authorization, the
+protected approval chain, the npm trusted-publisher binding confirmed against
+the registry, and registry byte and provenance verification. If the candidate
+changes, this disposition does not carry over.
+
+### History
+
+The previous candidate `96804bc4` was blocked on 2026-09-25. It had a
+passing, attested, live-verified aggregate, but it rested on F4 and F5. Publishing `96804bc4` would ship a known downgrade path and
 a known credential-disclosure path whose fixes are on `main`. No critical or
 high finding may remain unresolved in shipped bytes, so this candidate cannot
 be the 0.0.1 release.
@@ -210,9 +317,7 @@ assembly and uploaded no record. Validation, attestation and aggregation were
 skipped. This checkpoint is not a new security review; no accepted aggregate
 or publication approval is established.
 
-Items 1 and 2 of the previous sequence are complete: the Windows evidence path
-was repaired in Chat, and the aggregate above exists. Sequence to SHIP, in
-order:
+The 2026-09-25 sequence to SHIP, now complete through step 4:
 
 1. Freeze a new publication candidate from `main` that contains #277, #285 and
    #294. Regenerate its tarballs and runtime manifest.
@@ -223,9 +328,7 @@ order:
 4. Record a fresh ship-or-block disposition here and link it from #31.
 5. Only then does #41 begin, and it requires its own fresh authorization.
 
-"Probably safe" and silent deferral are not valid dispositions. This
-disposition stands until a candidate without unresolved High findings has its
-own passing aggregate.
+"Probably safe" and silent deferral are not valid dispositions.
 
 ## Revision history
 
@@ -235,3 +338,4 @@ own passing aggregate.
 | 2026-09-19 | `50e017578` | BLOCK | F1 fixed and verified via #294. F2 fix open as #297. F3 first observed. |
 | 2026-09-19 | `aec069089` | BLOCK | #297 merged, so F2 is now fixed and verified in the reviewed source. F3 dispositioned as accepted with owner and dated follow-up after review feedback. Blocking condition unchanged. |
 | 2026-09-25 | `96804bc4` (candidate), validator `185d6264` | BLOCK | First passing aggregate for the frozen candidate lifts the structural block. Re-review of the candidate's packed bytes finds F4 and F5 (High), both fixed on `main` but absent from the candidate. A new candidate is required. |
+| 2026-09-26 | `cd10a3f` (candidate), validator `67fd5d8a` | SHIP (recommended) | Replacement candidate from #321 with its own aggregate (#325, run 36222464391). F4, F5 and F1 fixed and verified in the packed bytes. Independent review of the new runtime code finds R1 (Low, accepted by the owner, due 2026-10-24) and I1–I3. Publication remains gated by #41. |
