@@ -37,7 +37,35 @@ tarball identities. This is not accepted #38 evidence or a #40 SHIP disposition.
 `conformanceEvidence.aggregateRecord` remains unset. The private CLI retains
 its independent 0.1.0 version while consuming exact 0.0.1 workspace dependencies.
 
+### Second candidate source preparation (2026-09-25)
+
+The [#40 re-review](docs/workflows/first-release-security-review.md#candidate-re-review-2026-09-25)
+blocks candidate `96804bc4`, which predates the High-severity Cave fixes #277
+and #285 and the single-use timeout fix #294. The release owner has directed
+a replacement private **0.0.1** candidate cut from reviewed main
+`82fcd56de1abfec82eb581190dab6e90a7218a5a`.
+
+The applicable Cave, Coven and SDK Changesets merged since `96804bc4` are
+folded into each package's existing unpublished `0.0.1` changelog and consumed.
+#285 carried no Changeset; its entry is written directly. Several folded
+Changesets were `minor`; folding them into the initial release is not an
+instruction to run automatic versioning, and no `0.0.2` or `0.1.0` release is
+created. As in the first preparation, the session-policy Changeset, the private
+CLI patch and the empty maintenance Changeset remain unchanged. No runtime
+code, package version, dependency pin, conformance lock or privacy flag
+changes here.
+
+Do not capture the replacement candidate from this pre-merge head. After the
+reviewed merge, pack that exact commit twice with the local-verification
+tooling and record its real source and package identities. Adopting those
+identities in Chat, rebinding the conformance lock, fresh protected evidence
+and a new #40 disposition follow separately. `96804bc4` remains the bound
+candidate until then.
+
 ### Fresh candidate source preparation (2026-09-14)
+
+*Historical: the first candidate's preparation, superseded by the
+[second preparation](#second-candidate-source-preparation-2026-09-25) above.*
 
 The release owner has selected a fresh private **0.0.1** candidate that
 includes the Coven Automations capability-discovery APIs merged in #251.
@@ -54,7 +82,7 @@ create a `0.0.2` or `0.1.0` release for this preparation. The unrelated
 session-policy feature, private CLI patch, and empty maintenance Changesets
 remain unchanged.
 
-The captured private candidate is now
+The captured private candidate was
 `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 `aa9eb8e924735419a9afdbcc80a5b087504ccc9d`. Its canonical runtime manifest
 and exact package bytes are frozen by the current release configuration and
