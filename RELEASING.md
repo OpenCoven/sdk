@@ -167,10 +167,12 @@ the Coven daemon fixtures are byte-for-byte unchanged.
 Any changed source or fixture requires fresh candidate identity and conformance
 evidence under the existing release rules. Do not use the old source freeze to
 claim verification of this preparation.
-`conformance/client-v1-cross-repository-lock.json` now binds the new 0.0.1
+`conformance/client-v1-cross-repository-lock.json` then bound the 0.0.1
 candidate `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
 `aa9eb8e924735419a9afdbcc80a5b087504ccc9d`, including its 18,280-byte Cave
-fixture. Package fixture provenance remains the reviewed
+fixture. It now binds the replacement candidate
+`cd10a3fa1d9900e0dbcb04bbb2477140854fba1d`, whose Cave fixture files are
+byte-identical. Package fixture provenance remains the reviewed
 `e806655a7100e9d589662a6f3817c3fd8cde48ad`; production Cave authority is
 separately pinned to `ecdcdcf8a75b62bb912ec48215ae20ab0809a181`.
 The historical 0.1.0 candidate
@@ -915,11 +917,14 @@ both validator scopes were rotated. The remaining gates are the complete
 platform-record set, reviewed attestations, and canonical aggregate, as documented in
 [`docs/workflows/client-v1-cross-repository-conformance.md`](docs/workflows/client-v1-cross-repository-conformance.md).
 
-Before advancing this candidate after that blocker is resolved, copy the
-canonical aggregate to
-`docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json`,
-and add the sibling reviewed evidence index
-`docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.index.json`.
+Before advancing the bound candidate, copy the canonical aggregate to
+`docs/client-v1-cross-repository-results/<candidate-commit>.json`, and add the
+sibling reviewed evidence index
+`docs/client-v1-cross-repository-results/<candidate-commit>.index.json`, where
+`<candidate-commit>` is `release.config.json`
+`conformanceEvidence.candidateCommit` (currently
+`cd10a3fa1d9900e0dbcb04bbb2477140854fba1d`). Readiness derives the required
+path from that value.
 The index is a reviewed locator and expected-value record, not an
 authentication oracle. Release readiness uses the standard GitHub workflow
 token to fetch the exact Chat workflow bytes, run, job, and artifact records

@@ -440,9 +440,9 @@ protected validation after both scopes rotate.
 is the single machine-readable artifact and source lock. It freezes:
 
 - SDK package candidate
-  `96804bc483a063e41e9a9738a4ace61970f6c0a4` and its committed tree;
+  `cd10a3fa1d9900e0dbcb04bbb2477140854fba1d` and its committed tree;
 - the private-source **conformance artifact** `release-manifest.json`,
-  including its exact 1,031-byte canonical JSON representation and SHA-256;
+  including its exact 1,032-byte canonical JSON representation and SHA-256;
 - the four package names, versions, release filenames, Chat vendor paths,
   sizes, SHA-256 values, and order;
 - the SDK candidate's Cave contract fixture, fixture digest file, provenance
