@@ -1,6 +1,16 @@
 # OpenCoven SDK Roadmap
 
-Conformance checkpoint, 2026-09-26: the #40 re-review blocked candidate
+Conformance checkpoint, 2026-09-26 (later): protected run 36213255383 on the
+replacement candidate failed Windows at
+`phase1.stage.execution-root-cleanup.root-rename` with every check passing. A
+scratch probe showed a transient `0x80070005` that clears within 3 s;
+[Chat #389](https://github.com/OpenCoven/chat/pull/389) retries it, and this
+binding selects the [Chat #390](https://github.com/OpenCoven/chat/pull/390)
+repin producer `399e1f199417e74db6a1b9096500d0e953fdfa6b` with harness authority
+`2f72ecedd225759a11889ec4b7dd112b71361d56`. The candidate and consumer are
+unchanged.
+
+Earlier checkpoint, 2026-09-26: the #40 re-review blocked candidate
 `96804bc4`. The replacement candidate `cd10a3fa1d9900e0dbcb04bbb2477140854fba1d`
 (SDK #321) is adopted by [Chat #383](https://github.com/OpenCoven/chat/pull/383)
 and bound here to [Chat #385](https://github.com/OpenCoven/chat/pull/385)
