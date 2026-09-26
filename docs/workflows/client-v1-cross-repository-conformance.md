@@ -516,9 +516,10 @@ deployments, artifacts, and certificates must identify the dispatch revision;
 platform records must still identify the selected producer.
 
 Both revisions must contain the same reviewed workflow bytes. The current
-binding is tip-only: its empty descent selects producer `ce151728` itself, so
-the protected run must dispatch while Chat `main` is still at that commit. The
-previous binding dispatched from `f4fbb423` ([Chat #380](https://github.com/OpenCoven/chat/pull/380))
+binding dispatches from Chat `main` at
+`f6e99b49507f3f27305232383f22bf2acf1a5305` ([Chat #386](https://github.com/OpenCoven/chat/pull/386)),
+a first-parent merge directly on producer `ce151728` that changes neither the
+workflow nor a governed harness file. The previous binding dispatched from `f4fbb423` ([Chat #380](https://github.com/OpenCoven/chat/pull/380))
 through a five-link descent to producer `b1091054`. Any other dispatch revision
 needs its own reviewed descent binding before its evidence can be accepted. Historical
 locks and indexes that omit the field retain that same tip-only meaning.

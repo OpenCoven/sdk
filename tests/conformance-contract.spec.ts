@@ -75,8 +75,19 @@ function sourceAuthority(previous = false, chain = false) {
     phase1LockText: sourceBytes(
       previous ? 'previousProducer' : chain ? 'chainProducer' : 'producer', 'phase1-conformance.lock.json',
     ).toString('utf8'),
+    ...(previous || chain ? {} : { sourceDescentCommits: [
+      ...currentDescent.map(([sha, tree, parents]) => ({
+        sha, tree: { sha: tree }, parents: parents.map((parent) => ({ sha: parent })),
+      })),
+      commit('producer'),
+    ] }),
   };
 }
+// Chat main from the dispatch revision down to the producer's first child,
+// read from real Git; `producer` closes the walk from the source fixture.
+const currentDescent: readonly [string, string, readonly string[]][] = [
+  ['f6e99b49507f3f27305232383f22bf2acf1a5305', 'd4f3d4c96bed1554814c7b260b06ef4249c2dad3', ['ce151728a309f8f5532d1426d7503c2c4efe38be', 'd8c0b32fbf10d001d4d4b8788714701490e88259']],
+];
 const currentLock = () => readFrozenConformanceLock(resolve(
   workspaceRoot, 'conformance/client-v1-cross-repository-lock.json',
 ));
