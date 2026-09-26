@@ -9,16 +9,18 @@ publication lock remains closed.
 `@opencoven/dev-cli` is not part of the 0.0.1 release group. Release tooling must
 not pack, publish, attest, or configure a trusted publisher for it.
 
-## Current conformance evidence state (2026-09-25)
+## Current conformance evidence state (2026-09-26)
+
+`release.config.json` `conformanceEvidence.aggregateRecord` names
+[`cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json`](docs/client-v1-cross-repository-results/cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json),
+the accepted SDK #38 aggregate for the replacement candidate `cd10a3f`, from
+protected Chat run 36222464391 (producer `399e1f19`, validator `67fd5d8a`).
 
 The first accepted SDK #38 aggregate,
 [`96804bc483a063e41e9a9738a4ace61970f6c0a4.json`](docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json),
 is for the previous candidate `96804bc4`, which #40 blocked; it remains
-historical evidence. `release.config.json` now binds the replacement candidate
-`cd10a3fa1d9900e0dbcb04bbb2477140854fba1d`, so
-`conformanceEvidence.aggregateRecord` is `null` again until a fresh protected
-run produces its aggregate. Dated checkpoints below describe the state at
-their own dates.
+historical evidence. Dated checkpoints below describe the state at their own
+dates.
 `publishingEnabled` remains `false`, all packages remain private, and the #40
 disposition in
 [`docs/workflows/first-release-security-review.md`](docs/workflows/first-release-security-review.md)

@@ -33,7 +33,7 @@
     "artifactSet": "conformance-candidate",
     "candidateCommit": "cd10a3fa1d9900e0dbcb04bbb2477140854fba1d",
     "runtimeManifestSha256": "05bc8cc66bf07f9d2eef2015fdcd4e297a0ecb719fc2c92bca010d21c9045167",
-    "aggregateRecord": null
+    "aggregateRecord": "docs/client-v1-cross-repository-results/cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json"
   },
   "publicationCandidate": {
     "artifactSet": "publication-candidate",
