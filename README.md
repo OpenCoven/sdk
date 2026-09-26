@@ -32,6 +32,9 @@ Strict version checks remain unchanged. The source lock now freezes the
 private **0.0.1** candidate at
 `96804bc483a063e41e9a9738a4ace61970f6c0a4` and its exact tarball bytes.
 Earlier 0.1.0 artifacts and evidence remain historical, not relabeled.
+The #40 re-review blocks that candidate because it predates High-severity
+Cave fixes; a replacement 0.0.1 candidate is being prepared from main (see
+[Second candidate source preparation](RELEASING.md#second-candidate-source-preparation-2026-09-25)).
 This candidate includes the merged Coven Automations APIs. Candidate77
 records remain historical evidence. This binding selects the merged [Chat #375](https://github.com/OpenCoven/chat/pull/375)
 producer `b10910545b14133a619e56641e5692a4335c83c4`, tree `7220622280415441646a3f6aef74113a98cc5bd2`.

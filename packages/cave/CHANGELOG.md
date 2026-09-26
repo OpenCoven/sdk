@@ -64,3 +64,28 @@
   exposing strict HPKE discovery v2 authority metadata with browser Web Crypto.
 - Freeze the packed declaration, runtime exports, and package export map in the
   repository API baseline.
+- Preserve client-v1 familiar contract presence, identity and ward fields and
+  daily analytics. Add validated managed-envelope adapters and bounded analytics
+  window options. Retain the legacy boolean presence form as an explicit union
+  for existing transports.
+- Keep discovery v2 authority requirements for the lifetime of each discovered
+  client. Reject later protected v1 requests before credential access or secret
+  dispatch, preserve current stored credentials across concurrent downgrade
+  checks, and snapshot discovered endpoints before pinning pairing authority.
+  Public health and pairing creation remain available, and independent clients
+  that have only observed v1 retain legacy behavior.
+- Omit the untrusted fetch exception from the public error cause chain once an
+  HPKE-protected request has been constructed, and replace fetch-supplied
+  timeout and abort errors with fixed, cause-free errors that keep their codes
+  and retryability.
+- Stop advising retry when the fetch implementation reports a timeout during a
+  single-use pairing exchange. Both v1 and HPKE-bound v2 exchanges now report
+  `retryable: false` while the operation context is still active, because the
+  authority may already have received the one-time secret. Operation deadline
+  and abort handling, reusable pairing polls, and bearer-protected reads keep
+  their existing semantics.
+- Add optional managed HPKE read adapters with strict authentication receipts
+  and independent iterator authority continuity. Refuse authority changes before
+  forwarding cursors, preserve cancellation, and perform no automatic page
+  retry. Pairing and single-use credential behavior remain unchanged.
+- Update the pinned `canonicalize` dependency from 4.0.0 to 5.1.0.
