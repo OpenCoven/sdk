@@ -705,9 +705,9 @@ function validateConfigValues(config) {
     config.conformanceEvidence.issue !== 'OpenCoven/sdk#38'
     || config.conformanceEvidence.artifactSet !== 'conformance-candidate'
     || config.conformanceEvidence.candidateCommit
-      !== '96804bc483a063e41e9a9738a4ace61970f6c0a4'
+      !== 'cd10a3fa1d9900e0dbcb04bbb2477140854fba1d'
     || config.conformanceEvidence.runtimeManifestSha256
-      !== '8c46276b5698d32d570ad4a89998b412cb0efde5641313b0c71ae41519e64ae7'
+      !== '05bc8cc66bf07f9d2eef2015fdcd4e297a0ecb719fc2c92bca010d21c9045167'
     || (
       config.conformanceEvidence.aggregateRecord !== null
       && typeof config.conformanceEvidence.aggregateRecord !== 'string'

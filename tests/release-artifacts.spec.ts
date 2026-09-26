@@ -310,7 +310,7 @@ describe('release artifacts', { timeout: 30_000 }, () => {
     );
   });
 
-  test('does not create canonical conformance artifacts without verified evidence', () => {
+  test('does not create canonical conformance artifacts without named evidence', () => {
     const outputRoot = createOutputRoot();
 
     expect(() =>
@@ -320,7 +320,7 @@ describe('release artifacts', { timeout: 30_000 }, () => {
         build: false,
       }),
     ).toThrow(
-      'release.config.json conformance evidence record is not a complete canonical aggregate',
+      'release.config.json must name a passing SDK #38 aggregate record',
     );
     expect(existsSync(resolve(outputRoot, 'release-manifest.json'))).toBe(false);
   });

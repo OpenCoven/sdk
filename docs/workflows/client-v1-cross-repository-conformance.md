@@ -24,23 +24,24 @@ verification on those hosts authenticates the root-owned, non-writable
 a required record platform, but Node does not expose the directory-relative
 publication primitives needed to support the aggregator safely on Windows.
 
-The first passing aggregate is committed at
+The first passing aggregate, committed at
 [`96804bc4….json`](../client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json)
-(2026-09-25), and `release.config.json` names it. Dated checkpoints below that
-say `aggregateRecord` remains `null`, or that no passing aggregate exists,
-describe the state at their own dates. The 0.0.1 SDK candidate
-is `96804bc483a063e41e9a9738a4ace61970f6c0a4`, tree
-`aa9eb8e924735419a9afdbcc80a5b087504ccc9d`, with normalized runtime SHA-256
-`8c46276b5698d32d570ad4a89998b412cb0efde5641313b0c71ae41519e64ae7`.
-The frozen Chat consumer is `ef8c747f1dbae0fd2bc9fcb24d3a0914f9f1cc49`,
-tree `ffd1963ef9539c7a679909200175fb11a9305c95`; its four committed vendor
-archives exactly match the preserved candidate tarballs and raw release manifest.
-This binding selects the merged [Chat #375](https://github.com/OpenCoven/chat/pull/375)
-producer `b10910545b14133a619e56641e5692a4335c83c4`, tree `7220622280415441646a3f6aef74113a98cc5bd2`.
-Its reviewed head `27b41082d60f9acaaad2935e5a2b42005ee9e7fb` has the same complete tree
+(2026-09-25), is for the previous candidate `96804bc4`, which #40 then blocked.
+It is historical: `release.config.json` names no aggregate for the current
+candidate, so `aggregateRecord` is `null` until a fresh protected run passes.
+The 0.0.1 SDK candidate is `cd10a3fa1d9900e0dbcb04bbb2477140854fba1d`, tree
+`6977092046b4cd5c3a3ce4a720141b1a97cfed39`, with normalized runtime SHA-256
+`05bc8cc66bf07f9d2eef2015fdcd4e297a0ecb719fc2c92bca010d21c9045167`.
+The frozen Chat consumer is `dabcdd47e7509880f26e9895ffb63d42d9070ca8`,
+tree `48e9387d2f3727e944a82376652fdc0c1dd02732`; its four committed vendor
+archives exactly match the candidate tarballs and raw release manifest.
+This binding selects the merged [Chat #385](https://github.com/OpenCoven/chat/pull/385)
+producer `ce151728a309f8f5532d1426d7503c2c4efe38be`, tree `9bd0afb9e0bca14252052946494ee0af1ae92a8c`.
+Its reviewed head `2fa7dd8437e596b399668d841297dcffa75e4c87` has the same complete tree
 and has executable harness authority
-`6a95b93d3eeb73a01f4a1882ea94ae9aa466345f`, tree `fd814b80ae2dd7bf59429672d9758be2f438085c`,
-as its sole parent.
+`1c80212e3aca79c2800d703abaedc080b1cf9ef8`, tree `26f64bf54aef11ec784f8e2d370c288a1161cc5c`
+([Chat #383](https://github.com/OpenCoven/chat/pull/383), which adopts the
+replacement candidate), as its sole parent.
 The merge parents are that harness authority and the reviewed head. The validator
 checks the merge-to-reviewed-source edge, the source-to-harness edge, and complete
 reviewed/delivery tree equality. The intermediate source-authority path is empty
@@ -439,9 +440,9 @@ protected validation after both scopes rotate.
 is the single machine-readable artifact and source lock. It freezes:
 
 - SDK package candidate
-  `96804bc483a063e41e9a9738a4ace61970f6c0a4` and its committed tree;
+  `cd10a3fa1d9900e0dbcb04bbb2477140854fba1d` and its committed tree;
 - the private-source **conformance artifact** `release-manifest.json`,
-  including its exact 1,031-byte canonical JSON representation and SHA-256;
+  including its exact 1,032-byte canonical JSON representation and SHA-256;
 - the four package names, versions, release filenames, Chat vendor paths,
   sizes, SHA-256 values, and order;
 - the SDK candidate's Cave contract fixture, fixture digest file, provenance
@@ -515,12 +516,11 @@ deployments, artifacts, and certificates must identify the dispatch revision;
 platform records must still identify the selected producer.
 
 Both revisions must contain the same reviewed workflow bytes. The current
-binding dispatches from Chat `main` at
-`f4fbb423c811cc33ddbbc9a388933aa4089560df` ([Chat #380](https://github.com/OpenCoven/chat/pull/380)),
-which descends from the producer through `813ddde5`, `e1d9c643`, `cab1cace`
-and `dbe11775`. None of those commits changes the workflow or a governed harness
-file. Any other dispatch revision needs its own reviewed descent binding
-before its evidence can be accepted. Historical
+binding is tip-only: its empty descent selects producer `ce151728` itself, so
+the protected run must dispatch while Chat `main` is still at that commit. The
+previous binding dispatched from `f4fbb423` ([Chat #380](https://github.com/OpenCoven/chat/pull/380))
+through a five-link descent to producer `b1091054`. Any other dispatch revision
+needs its own reviewed descent binding before its evidence can be accepted. Historical
 locks and indexes that omit the field retain that same tip-only meaning.
 Supporting the resolver does not supply the missing three-platform evidence
 or change the release's BLOCK disposition.
@@ -628,14 +628,17 @@ After the protected jobs complete, the SDK verifier downloads and authenticates
 the records before producing the exact aggregate bytes. Copy those bytes into:
 
 ```text
-docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json
+docs/client-v1-cross-repository-results/<candidate-commit>.json
 ```
 
 Create the sibling reviewed evidence index:
 
 ```text
-docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.index.json
+docs/client-v1-cross-repository-results/<candidate-commit>.index.json
 ```
+
+For the current candidate `<candidate-commit>` is
+`cd10a3fa1d9900e0dbcb04bbb2477140854fba1d`.
 
 The index records the expected aggregate and primary-record digests, exact
 producer commit/harness/workflow/source-ref identity, workflow byte

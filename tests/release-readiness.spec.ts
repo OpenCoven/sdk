@@ -497,7 +497,7 @@ describe('release readiness contract', () => {
     expect(publishJob).not.toContain('pnpm pack');
   });
 
-  test('blocks candidate advancement until the named aggregate verifies live', () => {
+  test('blocks candidate advancement until a named passing aggregate exists', () => {
     const config = readReleaseConfig(workspaceRoot);
     const workspaceManifest = JSON.parse(
       readFileSync(resolve(workspaceRoot, 'package.json'), 'utf8'),
@@ -519,11 +519,10 @@ describe('release readiness contract', () => {
     expect(config.conformanceEvidence).toEqual({
       issue: 'OpenCoven/sdk#38',
       artifactSet: 'conformance-candidate',
-      candidateCommit: '96804bc483a063e41e9a9738a4ace61970f6c0a4',
+      candidateCommit: 'cd10a3fa1d9900e0dbcb04bbb2477140854fba1d',
       runtimeManifestSha256:
-        '8c46276b5698d32d570ad4a89998b412cb0efde5641313b0c71ae41519e64ae7',
-      aggregateRecord:
-        'docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json',
+        '05bc8cc66bf07f9d2eef2015fdcd4e297a0ecb719fc2c92bca010d21c9045167',
+      aggregateRecord: null,
     });
     expect(config.publicationCandidate).toEqual({
       artifactSet: 'publication-candidate',
@@ -559,15 +558,13 @@ describe('release readiness contract', () => {
         root: workspaceRoot,
         requireConformanceEvidence: true,
       }),
-    ).toThrow(
-      'release.config.json conformance evidence record is not a complete canonical aggregate',
-    );
+    ).toThrow('release.config.json must name a passing SDK #38 aggregate record');
    }, 30_000);
 
   test('rejects a fabricated untracked aggregate at the configured path', () => {
     const fixture = createReleaseFixture();
     const recordPath =
-      'docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json';
+      'docs/client-v1-cross-repository-results/cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json';
     updateJson<MutableReleaseConfig>(
       resolve(fixture, 'release.config.json'),
       (config) => {
@@ -594,7 +591,7 @@ describe('release readiness contract', () => {
   test('rejects working-tree drift in a configured committed aggregate', () => {
     const fixture = createReleaseFixture();
     const recordPath =
-      'docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json';
+      'docs/client-v1-cross-repository-results/cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json';
     mkdirSync(resolve(fixture, dirname(recordPath)), { recursive: true });
     writeFileSync(resolve(fixture, recordPath), '{}\n');
     updateJson<MutableReleaseConfig>(
@@ -622,7 +619,7 @@ describe('release readiness contract', () => {
   test('keeps explicit non-release verification usable after evidence is configured', () => {
     const fixture = createReleaseFixture();
     const recordPath =
-      'docs/client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json';
+      'docs/client-v1-cross-repository-results/cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json';
     updateJson<MutableReleaseConfig>(
       resolve(fixture, 'release.config.json'),
       (config) => {
@@ -811,9 +808,7 @@ describe('release readiness contract', () => {
         version: '0.0.1',
         tag: 'sdk-v0.0.1',
       }),
-    ).toThrow(
-      'release.config.json conformance evidence record is not a complete canonical aggregate',
-    );
+    ).toThrow('release.config.json must name a passing SDK #38 aggregate record');
    }, 30_000);
 
   test('requires fixed versions and exact internal ranges', () => {

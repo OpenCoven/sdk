@@ -1,6 +1,14 @@
 # OpenCoven SDK Roadmap
 
-Conformance checkpoint, 2026-09-25: this binding selects Chat #375 producer
+Conformance checkpoint, 2026-09-26: the #40 re-review blocked candidate
+`96804bc4`. The replacement candidate `cd10a3fa1d9900e0dbcb04bbb2477140854fba1d`
+(SDK #321) is adopted by [Chat #383](https://github.com/OpenCoven/chat/pull/383)
+and bound here to [Chat #385](https://github.com/OpenCoven/chat/pull/385)
+producer `ce151728a309f8f5532d1426d7503c2c4efe38be`, whose reviewed head has
+harness authority `1c80212e3aca79c2800d703abaedc080b1cf9ef8` as its sole
+parent. A fresh protected run and a new #40 disposition are required.
+
+Previous checkpoint, 2026-09-25: that binding selected Chat #375 producer
 `b10910545b14133a619e56641e5692a4335c83c4`, the merge that repins Chat's harness
 authority to `6a95b93d3eeb73a01f4a1882ea94ae9aa466345f` after
 [Chat #374](https://github.com/OpenCoven/chat/pull/374). That change reports a
@@ -105,7 +113,8 @@ the first named packed real-authority record for `darwin-arm64`. That historical
 record does not qualify the new 0.0.1 candidate.
 
 The private 0.0.1 candidate is frozen at
-`96804bc483a063e41e9a9738a4ace61970f6c0a4`. The source lock above is authoritative
+`cd10a3fa1d9900e0dbcb04bbb2477140854fba1d`, replacing `96804bc4`, which #40
+blocked. The source lock above is authoritative
 for the current producer and counterpart identities. On 2026-09-15, SDK [#276](https://github.com/OpenCoven/sdk/pull/276)
 landed as `6b4e0d04e168c7ccd99df492a0494e223150e2ab` with the verified
 Chat #293 binding. Both validator scopes were rotated and read back at that

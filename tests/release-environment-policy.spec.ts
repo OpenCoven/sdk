@@ -317,7 +317,7 @@ describe('authoritative release environment policy', () => {
           new Date('2026-08-29T21:00:00Z'),
       }),
     ).toThrow(
-      'release.config.json conformance evidence record is not a complete canonical aggregate',
+      'release.config.json must name a passing SDK #38 aggregate record',
     );
     expect(calls).toContain('repos/OpenCoven/sdk/environments/npm-publish');
   }, 30_000);
