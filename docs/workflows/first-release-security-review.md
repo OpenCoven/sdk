@@ -182,8 +182,13 @@ since `aec069089`.
   byte-identical output: release manifest `72041bfe…`, `sdk-core` `5f41291d…`
   (unchanged), `cave-client` `7389376e…`, `coven-client` `4162dd68…`, `sdk`
   `68b258d2…`. These match the conformance lock and the archives vendored by
-  Chat consumer `dabcdd4`. All four are `private: true` and declare only
-  `build` and `typecheck` scripts.
+  Chat consumer `dabcdd4`. All four are `private: true`. The packed manifests
+  declare only `build` and `typecheck`: no install, prepare or other lifecycle
+  script reaches a consumer. The source manifests additionally declare
+  `prepublishOnly: node ../../scripts/require-release-authorization.mjs`, the
+  release-authorization gate that refuses `npm publish` without the protected
+  authorization. It is a publication control, not an install hook, and the
+  packing transform leaves it out of the shipped manifests.
 - **Fixes in the shipped bytes.** The packed `cave-client` `dist/` contains the
   F4 downgrade latch (`observedV2`), the F5 cause redaction
   (`...(hpkeRequest === undefined ? { cause: error } : {})`) and the F1
