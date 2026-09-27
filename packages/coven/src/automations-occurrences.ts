@@ -124,9 +124,20 @@ export function historyCursor(value: unknown): value is string {
   }
 }
 
+/**
+ * The producer's history sort key: the timestamp with its fraction padded to
+ * nine digits, so millisecond scheduled rows and nanosecond manual rows order
+ * by instant. Mirrors the SQL expression character for character.
+ */
+function historySortKey(scheduledFor: string): Buffer {
+  const characters = Array.from(scheduledFor);
+  const fraction = characters.slice(20).join('').replace(/Z+$/u, '');
+  return Buffer.from(`${characters.slice(0, 19).join('')}.${Array.from(`${fraction}000000000`).slice(0, 9).join('')}Z`);
+}
+
 function newerThan(left: CovenAutomationOccurrence, right: CovenAutomationOccurrence): boolean {
-  // The producer orders by SQLite's byte comparison, not UTF-16 code units.
-  const order = Buffer.compare(Buffer.from(left.scheduledFor), Buffer.from(right.scheduledFor));
+  // The producer compares keys and ids as SQLite does, by bytes, not UTF-16 code units.
+  const order = Buffer.compare(historySortKey(left.scheduledFor), historySortKey(right.scheduledFor));
   return order > 0 || (order === 0 && Buffer.compare(Buffer.from(left.id), Buffer.from(right.id)) > 0);
 }
 
