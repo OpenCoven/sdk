@@ -75,7 +75,7 @@ Automation does not cover these, so each was read directly.
 | F2 | Informational | `tests/windows-supervisor-source.spec.ts` | SDK maintainer (@BunsDev) | **Fixed and verified** | None |
 | F3 | Informational | `tests/conformance-checkouts-publication.spec.ts` | SDK maintainer (@BunsDev) | **Fixed and verified** (2026-09-27); previously accepted | None |
 
-No critical or high findings. Both fixed findings are verified present in the reviewed source at `aec069089`. The one accepted finding carries an owner, a rationale, and a dated follow-up below; no finding is silently deferred.
+No critical or high findings. Both fixed findings are verified present in the reviewed source at `aec069089`. At that review F3 was accepted with an owner, a rationale and a dated follow-up; it was fixed on 2026-09-27 (see [F3 resolution](#f3-resolution)). No finding is silently deferred.
 
 ### F1 — timed-out single-use pairing exchange advised retry
 
@@ -99,7 +99,7 @@ Repaired in [#297](https://github.com/OpenCoven/sdk/pull/297), merged at `aec069
 
 ### F3 — checkout-state suite failed once under full-suite load
 
-**Severity: Informational. Disposition: accepted. Owner: SDK maintainer (@BunsDev). Follow-up due 2026-10-17, or the next occurrence, whichever comes first.**
+**Severity: Informational. Disposition: fixed and verified on 2026-09-27; see [F3 resolution](#f3-resolution). Owner: SDK maintainer (@BunsDev).** The narrative below records the original acceptance and its follow-up, and is superseded by that resolution.
 
 During this review, `tests/conformance-checkouts-publication.spec.ts > rejects staged, unstaged, hidden-index, and wrong-remote states` failed once in a full `npm test` run at 7168ms against the default five-second budget. It passed in isolation and passed in four subsequent full runs, including three at 2,678 passed with zero failures.
 
@@ -259,7 +259,7 @@ five-second default on conformance suites under heavy machine load
 before #319 set its budget). Both passed when run alone and in hosted CI. That
 is the same timing class, not an assertion failure; F3's follow-up stands.
 
-**F3 resolution, 2026-09-27.** Every recurrence captured was the same failure,
+<a id="f3-resolution"></a>**F3 resolution, 2026-09-27.** Every recurrence captured was the same failure,
 `Error: Test timed out in 5000ms`, never an assertion. They came from the
 original checkout-state test and from
 `conformance-gaps.spec.ts › authenticates downloaded GitHub records instead of
