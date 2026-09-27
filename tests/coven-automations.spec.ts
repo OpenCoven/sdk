@@ -13,6 +13,7 @@ import {
   type CovenAutomationListOptions,
   type CovenAutomationRunsOptions,
   type CovenAutomationRunsResult,
+  type CovenAutomationOccurrenceHistoryPage,
   type CovenAutomationOccurrencesOptions,
   type CovenAutomationOccurrencesResult,
   type CovenAutomationOccurrenceResult,
@@ -31,7 +32,7 @@ function advertisement() {
       adapter: 'coven-daemon', status: 'available', policy: 'allow',
       actions: ['coven.automations.definition.get.v1', 'coven.automations.definition.list.v1', 'coven.automations.health', 'coven.automations.runs',
         'coven.automations.occurrence.list.v1', 'coven.automations.occurrence.get.v1', 'coven.automations.run.get.v1',
-        'coven.automations.receipt.get.v1'],
+        'coven.automations.receipt.get.v1', 'coven.automations.occurrence.history.v1'],
       variantNegotiation: {
         version: 1, contractProfile: 'coven.automations.v1', description: 'Variant negotiation',
         supported: {
@@ -1076,5 +1077,136 @@ test('does not read a run when the producer does not advertise the action', asyn
   advertised.capabilities[0]!.actions = advertised.capabilities[0]!.actions.filter((action) => action !== runAction);
   transport.capabilities.mockResolvedValue({ status: 200, body: Buffer.from(JSON.stringify(advertised)) });
   await expect(client.getRun('run-1')).rejects.toMatchObject({ code: 'capability_unsupported' });
+  expect(transport.readDefinitions).not.toHaveBeenCalled();
+});
+
+const historyAction = 'coven.automations.occurrence.history.v1';
+
+function historyRow(day: number, state = 'planned') {
+  return {
+    ...occurrenceSnapshot(), id: `morning-${day}`, state,
+    scheduledFor: `2026-09-${String(day).padStart(2, '0')}T09:00:00.000Z`,
+  };
+}
+
+function historyCursorFor(row: { scheduledFor: string; id: string }): string {
+  return Buffer.from(JSON.stringify([row.scheduledFor, row.id])).toString('base64url');
+}
+
+function historyPage(rows: readonly unknown[], cursor: Record<string, unknown>) {
+  return { automationId: 'morning', occurrences: rows, cursor };
+}
+
+test('reads one page of an automation\'s history and sends the trimmed id', async () => {
+  const rows = [historyRow(5), historyRow(4, 'succeeded')];
+  const next = historyCursorFor(rows[1]!);
+  const { client, transport } = readSetup(historyPage(rows, { hasMore: true, next }), historyAction);
+  const result = await client.occurrenceHistory(' morning ', { limit: 2 });
+  expectTypeOf(result).toEqualTypeOf<CovenAutomationOccurrenceHistoryPage>();
+  expect(result).toEqual({ automationId: 'morning', data: rows, cursor: { hasMore: true, next } });
+  expect(transport.readDefinitions.mock.calls[0]?.[0]).toEqual({ action: historyAction, automationId: ' morning ', limit: 2 });
+  expect(Object.isFrozen(transport.readDefinitions.mock.calls[0]?.[0])).toBe(true);
+});
+
+test('reads a later page by cursor and requires the producer to echo it', async () => {
+  const cursor = historyCursorFor(historyRow(4));
+  const rows = [historyRow(3, 'failed')];
+  const { client, transport } = readSetup(historyPage(rows, { hasMore: false, current: cursor }), historyAction);
+  expect(await client.occurrenceHistory('morning', { cursor })).toEqual({
+    automationId: 'morning', data: rows, cursor: { hasMore: false, current: cursor },
+  });
+  expect(transport.readDefinitions.mock.calls[0]?.[0]).toEqual({ action: historyAction, automationId: 'morning', limit: 20, cursor });
+});
+
+test('iterates every page newest first within maxPages', async () => {
+  const rows = [5, 4, 3, 2, 1].map((day) => historyRow(day));
+  const { client, transport } = readSetup();
+  transport.readDefinitions.mockImplementation((request) => {
+    const read = request as { cursor?: string; limit: number };
+    const start = read.cursor === undefined ? 0 : rows.findIndex((row) => historyCursorFor(row) === read.cursor) + 1;
+    const slice = rows.slice(start, start + read.limit);
+    const more = start + read.limit < rows.length;
+    const cursor = {
+      hasMore: more,
+      ...(read.cursor === undefined ? {} : { current: read.cursor }),
+      ...(more ? { next: historyCursorFor(slice.at(-1)!) } : {}),
+    };
+    return Promise.resolve({
+      status: 200, body: Buffer.from(JSON.stringify(readEnvelope(historyAction, historyPage(slice, cursor)))),
+    });
+  });
+  const seen: string[] = [];
+  for await (const occurrence of client.iterateOccurrenceHistory('morning', { limit: 2, maxPages: 5 })) {
+    seen.push(occurrence.id);
+  }
+  expect(seen).toEqual(['morning-5', 'morning-4', 'morning-3', 'morning-2', 'morning-1']);
+  expect(transport.readDefinitions).toHaveBeenCalledTimes(3);
+
+  const bounded: string[] = [];
+  for await (const occurrence of client.iterateOccurrenceHistory('morning', { limit: 2, maxPages: 1 })) {
+    bounded.push(occurrence.id);
+  }
+  expect(bounded).toEqual(['morning-5', 'morning-4']);
+  expect(() => client.iterateOccurrenceHistory('morning', { limit: 2 } as never)).toThrow(/maxPages or a caller-owned signal/u);
+});
+
+test('accepts a full history page above the 16 KiB read cap', async () => {
+  const rows = Array.from({ length: 100 }, (_, index) => ({
+    ...historyRow(1), id: `morning-${String(999 - index).padStart(3, '0')}`, failureReason: 'x'.repeat(200),
+  }));
+  const page = historyPage(rows, { hasMore: false });
+  expect(Buffer.byteLength(JSON.stringify(readEnvelope(historyAction, page)))).toBeGreaterThan(16_384);
+  const { client } = readSetup(page, historyAction);
+  expect((await client.occurrenceHistory('morning', { limit: 100 })).data).toHaveLength(100);
+  const { client: oversized, transport } = readSetup();
+  transport.readDefinitions.mockResolvedValue({ status: 200, body: Buffer.alloc(262_145, 32) });
+  await expect(oversized.occurrenceHistory('morning')).rejects.toMatchObject({ code: 'invalid_response' });
+});
+
+const historyCursor = historyCursorFor(historyRow(9));
+test.each([
+  ['another automation id', { automationId: 'evening' }, undefined],
+  ['a row from another automation', { occurrences: [{ ...historyRow(5), automationId: 'evening' }] }, undefined],
+  ['rows oldest first', { occurrences: [historyRow(4), historyRow(5)] }, undefined],
+  ['a repeated row', { occurrences: [historyRow(5), historyRow(5)] }, undefined],
+  ['more rows than the limit', { occurrences: [historyRow(5), historyRow(4), historyRow(3)] }, undefined],
+  ['no cursor', { cursor: undefined }, undefined],
+  ['hasMore without next', { cursor: { hasMore: true } }, undefined],
+  ['next without hasMore', { cursor: { hasMore: false, next: historyCursor } }, undefined],
+  ['a malformed next', { cursor: { hasMore: true, next: 'not a cursor' } }, undefined],
+  ['a short page claiming more', { occurrences: [historyRow(5)], cursor: { hasMore: true, next: historyCursor } }, undefined],
+  ['an unknown cursor field', { cursor: { hasMore: false, previous: historyCursor } }, undefined],
+  ['a current on the first page', { cursor: { hasMore: false, current: historyCursor } }, undefined],
+  ['no current echo', { cursor: { hasMore: false } }, historyCursor],
+  ['a different current', { cursor: { hasMore: false, current: historyCursorFor(historyRow(8)) } }, historyCursor],
+  ['a next equal to the cursor', { cursor: { hasMore: true, current: historyCursor, next: historyCursor } }, historyCursor],
+])('rejects a history page with %s', async (_label, change, cursor) => {
+  const page = { ...historyPage([historyRow(5), historyRow(4)], { hasMore: false }), ...change };
+  const { client } = readSetup(page, historyAction);
+  await expect(client.occurrenceHistory('morning', { limit: 2, ...(cursor === undefined ? {} : { cursor }) }))
+    .rejects.toMatchObject({ code: 'invalid_response' });
+});
+
+test.each([
+  ['an empty id', '', {}],
+  ['a blank id', '   ', {}],
+  ['a zero limit', 'morning', { limit: 0 }],
+  ['an extra field', 'morning', { view: 'due' }],
+  ['a padded cursor', 'morning', { cursor: `${historyCursor}=` }],
+  ['a non-string cursor', 'morning', { cursor: 7 }],
+  ['a cursor over 512 characters', 'morning', { cursor: 'A'.repeat(516) }],
+  ['a non-canonical cursor', 'morning', { cursor: 'AB' }],
+])('rejects history with %s before transport', async (_label, automationId, query) => {
+  const { client, transport } = readSetup();
+  await expect(client.occurrenceHistory(automationId, query as never)).rejects.toMatchObject({ code: 'invalid_options' });
+  expect(transport.readDefinitions).not.toHaveBeenCalled();
+});
+
+test('does not read history when the producer does not advertise the action', async () => {
+  const { client, transport } = readSetup(historyPage([], { hasMore: false }), historyAction);
+  const advertised = advertisement();
+  advertised.capabilities[0]!.actions = advertised.capabilities[0]!.actions.filter((action) => action !== historyAction);
+  transport.capabilities.mockResolvedValue({ status: 200, body: Buffer.from(JSON.stringify(advertised)) });
+  await expect(client.occurrenceHistory('morning')).rejects.toMatchObject({ code: 'capability_unsupported' });
   expect(transport.readDefinitions).not.toHaveBeenCalled();
 });

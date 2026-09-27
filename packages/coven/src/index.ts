@@ -33,6 +33,8 @@ export type {
 export type {
   CovenAutomationOccurrence,
   CovenAutomationOccurrenceDetail,
+  CovenAutomationOccurrenceHistoryOptions,
+  CovenAutomationOccurrenceHistoryPage,
   CovenAutomationOccurrenceResult,
   CovenAutomationRunResult,
   CovenAutomationOccurrenceRun,

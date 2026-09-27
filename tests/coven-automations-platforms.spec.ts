@@ -211,6 +211,33 @@ describe.each(['unix', 'windows'] as const)('%s Automations parity', (platform) 
     expect(sockets.every((socket) => socket.destroyed)).toBe(true);
   });
 
+  test.skipIf(platform === 'unix' && process.platform === 'win32')('reads a 100-row history page with a history-only 256 KiB bound', async () => {
+    const { client, configure, sockets } = setup(platform);
+    const action = 'coven.automations.occurrence.history.v1';
+    const occurrences = Array.from({ length: 100 }, (_, index) => ({
+      id: `occurrence-${String(999 - index).padStart(3, '0')}`, automationId: 'morning', automationRevision: 1,
+      definitionDigest: 'a'.repeat(64), scheduledFor: '2026-09-14T00:00:00.000Z', kind: 'schedule', state: 'succeeded',
+      leaseOwner: null, leaseExpiresAt: null, schedulerGeneration: 3, fenceGeneration: 1, failureReason: null,
+      createdAt: '2026-09-14T00:00:00.000Z', updatedAt: '2026-09-14T00:01:00.000Z',
+    }));
+    const payload = { automationId: 'morning', occurrences, cursor: { hasMore: false } };
+    const body = Buffer.from(JSON.stringify({
+      ok: true, accepted: true, action, status: 'completed', event: { kind: 'automations.changed', action, payload },
+    }));
+    expect(body.length).toBeGreaterThan(16_384);
+    configure.mockImplementation((socket, index) => {
+      socket.response = index === 0 ? Buffer.from(JSON.stringify(advertisement([action]))) : body;
+    });
+    expect((await client.occurrenceHistory('morning', { limit: 100 })).data).toEqual(occurrences);
+    expect(sockets[1]?.writes[0]?.split('\r\n\r\n')[1]).toBe(JSON.stringify({ action, automationId: 'morning', limit: 100 }));
+    configure.mockImplementation((socket, index) => {
+      if (index === 2) socket.response = Buffer.from(JSON.stringify(advertisement([action])));
+      else socket.rawResponse = Buffer.from('HTTP/1.1 200 OK\r\nContent-Length: 262145\r\n\r\n');
+    });
+    await expect(client.occurrenceHistory('morning')).rejects.toMatchObject({ code: 'body_limit' });
+    expect(sockets.every((socket) => socket.destroyed)).toBe(true);
+  });
+
   test.skipIf(platform === 'unix' && process.platform === 'win32')('return closes a pending subscription socket before any late response', async () => {
     const { client, configure, sockets } = setup(platform);
     configure.mockImplementation((socket, index) => {
