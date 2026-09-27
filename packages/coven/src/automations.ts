@@ -1,5 +1,7 @@
 import {
+  iteratePages,
   runOperation,
+  type BoundedPageOptions,
   type OperationContext,
   type OperationDefaults,
   type OperationOptions,
@@ -18,7 +20,10 @@ import {
   eventsOptions, eventsRequest, subscribeEvents, type CovenAutomationEventPage, type CovenAutomationEventsOptions,
 } from './automations-events.js';
 import {
+  historyCursor,
   occurrenceView,
+  type CovenAutomationOccurrence,
+  type CovenAutomationOccurrenceHistoryOptions, type CovenAutomationOccurrenceHistoryPage,
   type CovenAutomationOccurrencesOptions, type CovenAutomationOccurrencesResult, type CovenAutomationOccurrenceResult,
   type CovenAutomationRunResult,
 } from './automations-occurrences.js';
@@ -204,6 +209,42 @@ export class CovenAutomationsClient {
     }, options) as CovenAutomationOccurrencesResult;
   }
 
+  /** One page of one automation's occurrences in every state, newest first. */
+  async occurrenceHistory(
+    automationId: string,
+    query: CovenAutomationOccurrenceHistoryOptions = {},
+    options: OperationOptions = {},
+  ): Promise<CovenAutomationOccurrenceHistoryPage> {
+    if (!object(query) || (query.limit !== undefined && !integer(query.limit, 1, 100)) ||
+      Reflect.ownKeys(query).some((key) => key !== 'limit' && key !== 'cursor') ||
+      (Object.hasOwn(query, 'cursor') && !historyCursor(query.cursor))) {
+      return definitionReadFailure('invalid_options', 'automations.occurrenceHistory');
+    }
+    return await this.#read({
+      action: 'coven.automations.occurrence.history.v1', automationId, limit: query.limit ?? 20,
+      ...(Object.hasOwn(query, 'cursor') ? { cursor: query.cursor as string } : {}),
+    }, options) as CovenAutomationOccurrenceHistoryPage;
+  }
+
+  /**
+   * Every occurrence of one automation, newest first, across pages. Requires
+   * `maxPages` or a caller-owned `signal`; `timeoutMs` bounds the whole walk.
+   */
+  iterateOccurrenceHistory(automationId: string, options: BoundedPageOptions): AsyncGenerator<CovenAutomationOccurrence> {
+    const defaults = this.#options.operation;
+    const timeoutMs = object(options) ? options.timeoutMs ?? defaults?.timeoutMs : undefined;
+    const observer = object(options) ? options.observer ?? defaults?.observer : undefined;
+    return iteratePages(
+      ({ limit, cursor, signal }) =>
+        this.occurrenceHistory(automationId, cursor === undefined ? { limit } : { limit, cursor }, { signal }),
+      object(options) ? {
+        ...options,
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        ...(observer === undefined ? {} : { observer }),
+      } : options,
+    );
+  }
+
   /** One run and its attempts by run id, read from one producer snapshot. */
   async getRun(runId: string, options: OperationOptions = {}): Promise<CovenAutomationRunResult> {
     return await this.#read({ action: 'coven.automations.run.get.v1', id: runId }, options) as CovenAutomationRunResult;
@@ -234,11 +275,12 @@ export class CovenAutomationsClient {
     request: CovenAutomationDefinitionReadRequest,
     options: OperationOptions,
   ): Promise<CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult | CovenAutomationRunsResult |
-    CovenAutomationOccurrencesResult | CovenAutomationOccurrenceResult | CovenAutomationRunResult |
-    CovenAutomationReceiptResult | CovenAutomationEventPage> {
+    CovenAutomationOccurrencesResult | CovenAutomationOccurrenceHistoryPage | CovenAutomationOccurrenceResult |
+    CovenAutomationRunResult | CovenAutomationReceiptResult | CovenAutomationEventPage> {
     const operation = request.action === 'coven.automations.definition.list.v1' ? 'automations.list'
       : request.action === 'coven.automations.health' ? 'automations.health'
       : request.action === 'coven.automations.occurrence.list.v1' ? 'automations.occurrences'
+      : request.action === 'coven.automations.occurrence.history.v1' ? 'automations.occurrenceHistory'
       : request.action === 'coven.automations.occurrence.get.v1' ? 'automations.getOccurrence'
       : request.action === 'coven.automations.run.get.v1' ? 'automations.getRun'
       : request.action === 'coven.automations.receipt.get.v1' ? 'automations.getReceipt'

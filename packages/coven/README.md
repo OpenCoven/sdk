@@ -85,7 +85,8 @@ Discovery runs once. Health and Automations reuse that exact endpoint, security
 provider, and platform dependencies. Construction sends no health, capability,
 or action request. Each later request authenticates its own connection.
 The `unix`/`windows` health response-limit options still apply only to health;
-Automations keeps its fixed 16 KiB body limit.
+Automations keeps its fixed 16 KiB body limit, except for the event (1 MiB) and
+occurrence-history (256 KiB) reads described below.
 
 `client.automations` is `CovenAutomationsClient | undefined`.
 `client.requireAutomations()` returns that same namespace or throws
@@ -133,6 +134,7 @@ does not poll or activate Automations.
 | `capabilities()` | Authenticated GET | Authenticated GET |
 | `list()`, `get()`, `health()` | Allowlisted reads | Same actions and decoders |
 | `runs()`, `occurrences()`, `getOccurrence()`, `getRun()` | Bounded diagnostic reads | Same actions and decoders |
+| `occurrenceHistory()`, `iterateOccurrenceHistory()` | Keyset-paged diagnostic reads | Same actions and decoders |
 | `getReceipt()` | Public/operational receipt result | Same result and privacy checks |
 | `events()`, `subscribe()` | Bounded domain event pages | Same pages and cancellation |
 | Normal/discovered client and `sdk.coven` | Explicit opt-in | Explicit opt-in |
@@ -207,7 +209,7 @@ missing action names fail with `capability_unsupported` without posting an actio
 Custom capability-only transports remain compatible; reads without the optional
 `readDefinitions` hook fail with `unsupported_operation`.
 
-The built-in Unix and Windows transports send only these eight allowlisted JSON actions to
+The built-in Unix and Windows transports send only these nine allowlisted JSON actions to
 `POST /api/v1/actions`. It authenticates each connection, including the separate
 capability request, under one client deadline/cancellation scope. It cannot send
 mutations through this hook. IDs are trimmed as the producer does; the SDK
@@ -233,7 +235,7 @@ with `event.kind: "automations.changed"` even for reads, and defines
 owns the compatibility routine fields. No GET definition routes, normative
 command-envelope adaptation, pagination, changefeed emission, or certification
 are inferred from the schemas in `spec/coven-automations/v1`. Existing artifact
-pins are unchanged. Individual run reads, per-automation occurrence history, receipt authentication,
+pins are unchanged. Receipt authentication,
 global feed subscriptions and authority-bearing phases remain separate #80 work.
 
 ### Routine health
@@ -252,7 +254,7 @@ Failure/exhaustion counters are nonnegative safe integers and `maxAttempts` is
 Missing routines produce sanitized `action_rejected`, not an invented null result.
 Health is store-derived diagnostic data, not execution or receipt authority.
 Custom transports use the existing optional `readDefinitions` hook, whose
-historical name now covers all eight explicitly allowlisted read actions.
+historical name now covers all nine explicitly allowlisted read actions.
 
 Health source authority was independently read from Coven
 [`b3b2d043a4ee586ccbf25ef6aad21db8a1171a54`](https://github.com/OpenCoven/coven/tree/b3b2d043a4ee586ccbf25ef6aad21db8a1171a54):
@@ -575,7 +577,8 @@ exact advertised `coven.automations.occurrence.list.v1` action. Without
 producer restricts the view to that automation inside its query, so `limit`
 bounds that automation's rows; the SDK refuses a filtered page that names any
 other automation. An empty or non-string `automationId` is rejected before any
-transport I/O. There is still no cursor in this producer contract.
+transport I/O. This action has no cursor; page one automation's full history
+with `occurrenceHistory()` below.
 The required view is `due`, `eligible`, `claimed`, `running`, or
 `recovery_required`; limits are integers 1–100 (default 20). Unsupported query
 fields are rejected rather than silently suggesting filtering or pagination.
@@ -591,6 +594,45 @@ nullable digest, authority profile and timeout, at most ten attempts, and no
 cancellation projection. Both reads need a Coven producer that advertises them
 ([coven#1155](https://github.com/OpenCoven/coven/issues/1155)); an older producer
 yields `capability_unsupported`, never a fallback.
+
+### Occurrence history
+
+```ts
+const page = await automations.occurrenceHistory('morning', { limit: 50 });
+for await (const occurrence of automations.iterateOccurrenceHistory('morning', {
+  limit: 50,
+  maxPages: 10,
+})) {
+  console.log(occurrence.scheduledFor, occurrence.state);
+}
+```
+
+`occurrenceHistory(automationId, { limit?, cursor? }, operationOptions?)` calls
+`coven.automations.occurrence.history.v1` and returns one sdk-core `Page`:
+`{ automationId, data, cursor: { hasMore, current?, next? } }`. It covers every
+state, terminal ones included, newest first by `scheduledFor` then `id`, and
+reflects whatever the producer's history retention has kept. `limit` is 1–100
+(default 20). `cursor` is the opaque `next` of an earlier page for the same
+automation; the SDK accepts only canonical unpadded base64url of at most 512
+characters and rejects anything else, and any other query field, before
+transport I/O. The producer pages by keyset, so occurrences planned while a
+caller pages never shift a later page.
+
+The SDK refuses a page that names another automation, holds more than `limit`
+rows, is not strictly newest first, repeats a row, claims `hasMore` without a
+fresh `next` or on a short page, carries `next` without `hasMore`, or does not
+echo the requested cursor as `current`. History responses are capped at
+**256 KiB**, enough for 100 records; a larger page fails closed, and a smaller
+`limit` reads it.
+
+`iterateOccurrenceHistory(automationId, { limit?, cursor?, maxPages?, signal?,
+timeoutMs?, observer? })` walks pages with sdk-core `iteratePages`: it needs
+`maxPages` or a caller-owned `signal`, stops at `hasMore: false`, and refuses a
+cursor that does not advance. Its `limit` defaults to sdk-core's 50, and
+`timeoutMs` bounds the whole walk, while each page read keeps the client's
+per-call timeout. Both need a Coven producer that advertises the action
+([coven#1157](https://github.com/OpenCoven/coven/issues/1157)); an older
+producer yields `capability_unsupported`.
 
 `getOccurrence(id, operationOptions?)` calls
 `coven.automations.occurrence.get.v1` and returns `{ occurrence: null } for
@@ -690,7 +732,7 @@ events on reconnect.
 Event responses are capped at 1 MiB and 100 wire events, with the existing
 16-level JSON depth limit. Oversized or malformed pages fail closed without
 yielding partial events. All other Automations and policy response limits
-remain 16 KiB. A producer page larger than the event byte cap cannot be
+remain 16 KiB, except occurrence history (256 KiB). A producer page larger than the event byte cap cannot be
 retried with a smaller subscription limit because the producer forbids that
 field. The SDK does not silently truncate it.
 

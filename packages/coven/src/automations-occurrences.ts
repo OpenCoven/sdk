@@ -1,3 +1,5 @@
+import { normalizePageOptions } from '@opencoven/sdk-core';
+
 import { integer, object } from './automations-read-validation.js';
 import { runsPayload, type CovenAutomationRun } from './automations-runs.js';
 
@@ -51,6 +53,31 @@ export interface CovenAutomationOccurrencesResult {
   readonly occurrences: readonly CovenAutomationOccurrence[];
 }
 
+/** Largest history response accepted: room for 100 records, far above the 16 KiB read cap. */
+export const AUTOMATION_HISTORY_MAX_BYTES = 262_144;
+
+export interface CovenAutomationOccurrenceHistoryOptions {
+  /** 1–100, default 20. */
+  readonly limit?: number;
+  /** An opaque `cursor.next` from an earlier page of the same automation. */
+  readonly cursor?: string;
+}
+
+/**
+ * One page of an automation's occurrences in every state, newest first by
+ * `scheduledFor` then `id`. Shaped as an sdk-core `Page`.
+ */
+export interface CovenAutomationOccurrenceHistoryPage {
+  readonly automationId: string;
+  readonly data: readonly CovenAutomationOccurrence[];
+  readonly cursor: {
+    readonly hasMore: boolean;
+    /** The cursor this page was read from; absent on the first page. */
+    readonly current?: string;
+    readonly next?: string;
+  };
+}
+
 export interface CovenAutomationOccurrenceResult {
   readonly occurrence: CovenAutomationOccurrenceDetail | null;
 }
@@ -84,6 +111,50 @@ export function occurrencesPayload(
     (automationId !== undefined && !value.occurrences.every((entry) => entry.automationId === automationId)) ||
     new Set(value.occurrences.map((entry) => entry.id)).size !== value.occurrences.length) return undefined;
   return { occurrences: value.occurrences };
+}
+
+/** A cursor sdk-core would accept: canonical unpadded base64url, at most 512 characters. */
+export function historyCursor(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    normalizePageOptions({ cursor: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function newerThan(left: CovenAutomationOccurrence, right: CovenAutomationOccurrence): boolean {
+  // The producer orders by SQLite's byte comparison, not UTF-16 code units.
+  const order = Buffer.compare(Buffer.from(left.scheduledFor), Buffer.from(right.scheduledFor));
+  return order > 0 || (order === 0 && Buffer.compare(Buffer.from(left.id), Buffer.from(right.id)) > 0);
+}
+
+export function occurrenceHistoryPayload(
+  value: Record<string, unknown>,
+  automationId: string,
+  limit: number,
+  cursor: string | undefined,
+): CovenAutomationOccurrenceHistoryPage | undefined {
+  const page = value.automationId === automationId ? occurrencesPayload(value, limit, automationId) : undefined;
+  const position = value.cursor;
+  if (page === undefined || !object(position) || typeof position.hasMore !== 'boolean' ||
+    Reflect.ownKeys(position).some((key) => key !== 'hasMore' && key !== 'current' && key !== 'next') ||
+    (cursor === undefined ? Object.hasOwn(position, 'current') : position.current !== cursor)) return undefined;
+  const rows = page.occurrences;
+  if (position.hasMore
+    ? !historyCursor(position.next) || position.next === cursor || rows.length !== limit
+    : Object.hasOwn(position, 'next')) return undefined;
+  if (rows.some((row, index) => index > 0 && !newerThan(rows[index - 1]!, row))) return undefined;
+  return {
+    automationId,
+    data: rows,
+    cursor: {
+      hasMore: position.hasMore,
+      ...(cursor === undefined ? {} : { current: cursor }),
+      ...(position.hasMore ? { next: position.next as string } : {}),
+    },
+  };
 }
 
 function occurrenceRunFields(record: Record<string, unknown>): boolean {

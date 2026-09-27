@@ -3,6 +3,7 @@ import { runOperation, type OperationContext } from '@opencoven/sdk-core';
 import type { CovenAutomationsTransport } from './automations.js';
 import { definitionReadBytes } from './automations-definitions.js';
 import { AUTOMATION_EVENTS_MAX_BYTES } from './automations-events.js';
+import { AUTOMATION_HISTORY_MAX_BYTES } from './automations-occurrences.js';
 import { CovenClientError, normalizeCovenError } from './client-errors.js';
 import {
   requestCovenPolicyOverSocket,
@@ -49,7 +50,8 @@ export function createCovenAutomationsSocketTransport(
           `Content-Length: ${body.byteLength}\r\n\r\n`,
         ),
         body,
-      ]), context, 'automations.read', action === 'coven.automations.events.subscribe.v1' ? AUTOMATION_EVENTS_MAX_BYTES : 16_384);
+      ]), context, 'automations.read', action === 'coven.automations.events.subscribe.v1' ? AUTOMATION_EVENTS_MAX_BYTES
+        : action === 'coven.automations.occurrence.history.v1' ? AUTOMATION_HISTORY_MAX_BYTES : 16_384);
     },
   };
 }
