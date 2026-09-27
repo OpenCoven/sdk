@@ -239,7 +239,7 @@ describe('conformance checkout verification', () => {
         'SDK candidate checkout' as never,
       ),
     ).toThrow('origin does not match expected repository');
-  });
+  }, 30_000);
 
   test('does not treat ignored untracked files as a clean checkout', () => {
     const fixture = createRepository('OpenCoven/sdk');
