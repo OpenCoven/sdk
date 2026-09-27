@@ -73,7 +73,7 @@ Automation does not cover these, so each was read directly.
 |---|---|---|---|---|---|
 | F1 | Low | `packages/cave/src/pairing.ts` | SDK maintainer (@BunsDev) | **Fixed and verified** | None |
 | F2 | Informational | `tests/windows-supervisor-source.spec.ts` | SDK maintainer (@BunsDev) | **Fixed and verified** | None |
-| F3 | Informational | `tests/conformance-checkouts-publication.spec.ts` | SDK maintainer (@BunsDev) | **Accepted** | 2026-10-17, or the next occurrence, whichever comes first |
+| F3 | Informational | `tests/conformance-checkouts-publication.spec.ts` | SDK maintainer (@BunsDev) | **Fixed and verified** (2026-09-27); previously accepted | None |
 
 No critical or high findings. Both fixed findings are verified present in the reviewed source at `aec069089`. The one accepted finding carries an owner, a rationale, and a dated follow-up below; no finding is silently deferred.
 
@@ -223,11 +223,11 @@ since `aec069089`.
 | F4 | High | Discovery-v2 downgrade latch | SDK maintainer (@BunsDev) | **Fixed and verified** in the packed bytes (#277) | None |
 | F5 | High | Protected fetch error cause | SDK maintainer (@BunsDev) | **Fixed and verified** in the packed bytes (#285) | None |
 | F1 | Low | Single-use timeout retry | SDK maintainer (@BunsDev) | **Fixed and verified** in the packed bytes (#294) | None |
-| R1 | Low | `cave/src/managed.ts:144-145` | SDK maintainer (@BunsDev) | **Accepted** | 2026-10-24 |
+| R1 | Low | `cave/src/managed.ts:144-145` | SDK maintainer (@BunsDev) | **Accepted** for `cd10a3f`; fixed on `main` by #328 | Done (#327) |
 | I1 | Informational | `cave/src/managed-hpke.ts` latch scope | SDK maintainer (@BunsDev) | Accepted, by design | None |
 | I2 | Informational | Managed HPKE proof claimed by the host | SDK maintainer (@BunsDev) | Accepted, documented | None |
 | I3 | Informational | `coven/src/automations-events.ts` abandoned iterator | SDK maintainer (@BunsDev) | Accepted | None |
-| F3 | Informational | Checkout-state suite timing | SDK maintainer (@BunsDev) | **Accepted**, carried forward | 2026-10-17 |
+| F3 | Informational | Conformance suite timing under load | SDK maintainer (@BunsDev) | **Fixed and verified** on `main` (2026-09-27); test-only, not in shipped bytes | None |
 
 **R1.** In the managed client, `wrapManagedReads` routes the six canonical reads
 through the HPKE authority resolver. `familiarContract` and `familiarAnalytics`
@@ -259,6 +259,20 @@ five-second default on conformance suites under heavy machine load
 before #319 set its budget). Both passed when run alone and in hosted CI. That
 is the same timing class, not an assertion failure; F3's follow-up stands.
 
+**F3 resolution, 2026-09-27.** Every recurrence captured was the same failure,
+`Error: Test timed out in 5000ms`, never an assertion. They came from the
+original checkout-state test and from
+`conformance-gaps.spec.ts › authenticates downloaded GitHub records instead of
+committed aggregate claims`. At load average 11, the second is the only test
+over 0.7 s in either file (1,797 ms), because it is a single 2,600-line
+fixture-heavy test. The checkout-state test takes 532 ms alone. Both finish
+well inside five seconds on an idle machine and stretch past it only when the
+full suite contends for the CPU, which is the pattern the follow-up asked to
+confirm or rule out. The fix is the one F2 used: an explicit 30-second budget
+on exactly those two tests. No assertion or checkout guard changes, and every
+other test keeps the default. This is test infrastructure and does not affect
+any packed artifact, so the `cd10a3f` disposition is unchanged.
+
 ## Disposition
 
 **SHIP (recommended) for `cd10a3fa1d9900e0dbcb04bbb2477140854fba1d`.**
@@ -267,8 +281,9 @@ The candidate has a passing, attested, live-verified three-platform aggregate.
 Its exact packed bytes contain the fixes for both High findings that blocked
 `96804bc4`. The automated checks pass, and the manual review of every runtime
 change since the last reviewed revision found nothing above Low. R1 is
-accepted by the release owner with a rationale and a dated follow-up. F3 and
-I1–I3 are accepted and carry no publication risk.
+accepted by the release owner with a rationale and a dated follow-up. I1–I3 are
+accepted and carry no publication risk; F3 is fixed on `main` (test
+budgets only).
 
 This recommendation does not authorize publication. It creates no
 credential, changes no branch protection, and waives no finding.
@@ -339,3 +354,4 @@ The 2026-09-25 sequence to SHIP, now complete through step 4:
 | 2026-09-19 | `aec069089` | BLOCK | #297 merged, so F2 is now fixed and verified in the reviewed source. F3 dispositioned as accepted with owner and dated follow-up after review feedback. Blocking condition unchanged. |
 | 2026-09-25 | `96804bc4` (candidate), validator `185d6264` | BLOCK | First passing aggregate for the frozen candidate lifts the structural block. Re-review of the candidate's packed bytes finds F4 and F5 (High), both fixed on `main` but absent from the candidate. A new candidate is required. |
 | 2026-09-26 | `cd10a3f` (candidate), validator `67fd5d8a` | SHIP (recommended) | Replacement candidate from #321 with its own aggregate (#325, run 36222464391). F4, F5 and F1 fixed and verified in the packed bytes. Independent review of the new runtime code finds R1 (Low, accepted by the owner, due 2026-10-24) and I1–I3. Publication remains gated by #41. |
+| 2026-09-27 | `main` | SHIP (recommended), unchanged | F3 fixed: explicit 30-second budgets on the two load-sensitive conformance tests. Every recurrence was a five-second timeout, never an assertion. Test-only; the candidate bytes are unchanged. R1 fixed on `main` by #328 (#327). |

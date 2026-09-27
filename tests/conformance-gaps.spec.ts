@@ -5373,7 +5373,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
       }, toolchain)).toThrow();
     }
 
-  });
+  }, 30_000);
 
   test.each([
     'Pairing_Secrets',
