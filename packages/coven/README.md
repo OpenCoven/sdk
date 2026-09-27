@@ -619,7 +619,8 @@ transport I/O. The producer pages by keyset, so occurrences planned while a
 caller pages never shift a later page.
 
 The SDK refuses a page that names another automation, holds more than `limit`
-rows, is not strictly newest first, repeats a row, claims `hasMore` without a
+rows, is not strictly newest first by instant (a millisecond `.123Z` and a
+nanosecond `.123000000Z` are the same instant, ordered by `id`), repeats a row, claims `hasMore` without a
 fresh `next` or on a short page, carries `next` without `hasMore`, or does not
 echo the requested cursor as `current`. History responses are capped at
 **256 KiB**, enough for 100 records; a larger page fails closed, and a smaller

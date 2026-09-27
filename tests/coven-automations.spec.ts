@@ -1150,6 +1150,23 @@ test('iterates every page newest first within maxPages', async () => {
   expect(() => client.iterateOccurrenceHistory('morning', { limit: 2 } as never)).toThrow(/maxPages or a caller-owned signal/u);
 });
 
+test('orders mixed-precision history by instant, not text', async () => {
+  // Manual rows carry nanoseconds, scheduled rows milliseconds.
+  const rows = [
+    { ...historyRow(1), id: 'manual-ns', scheduledFor: '2026-09-10T09:00:00.123100000Z' },
+    { ...historyRow(1), id: 'scheduled-ms', scheduledFor: '2026-09-10T09:00:00.123Z' },
+    { ...historyRow(1), id: 'tie-b', scheduledFor: '2026-09-09T09:00:00.500000000Z' },
+    { ...historyRow(1), id: 'tie-a', scheduledFor: '2026-09-09T09:00:00.500Z' },
+    { ...historyRow(1), id: 'whole-second', scheduledFor: '2026-09-08T09:00:00Z' },
+  ];
+  expect((await readSetup(historyPage(rows, { hasMore: false }), historyAction).client.occurrenceHistory('morning'))
+    .data.map((row) => row.id)).toEqual(['manual-ns', 'scheduled-ms', 'tie-b', 'tie-a', 'whole-second']);
+  await expect(readSetup(historyPage([rows[1], rows[0]], { hasMore: false }), historyAction).client
+    .occurrenceHistory('morning')).rejects.toMatchObject({ code: 'invalid_response' });
+  await expect(readSetup(historyPage([rows[3], rows[2]], { hasMore: false }), historyAction).client
+    .occurrenceHistory('morning')).rejects.toMatchObject({ code: 'invalid_response' });
+});
+
 test('accepts a full history page above the 16 KiB read cap', async () => {
   const rows = Array.from({ length: 100 }, (_, index) => ({
     ...historyRow(1), id: `morning-${String(999 - index).padStart(3, '0')}`, failureReason: 'x'.repeat(200),
