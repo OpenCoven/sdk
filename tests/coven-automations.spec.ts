@@ -17,6 +17,7 @@ import {
   type CovenAutomationOccurrencesResult,
   type CovenAutomationOccurrenceResult,
   type CovenAutomationOccurrenceRun,
+  type CovenAutomationRunResult,
   type CovenConnectedSocket,
   type CovenDiscoveredEndpoint,
 } from '@opencoven/coven-client';
@@ -29,7 +30,8 @@ function advertisement() {
       id: 'coven.automations', label: 'Coven-native routine automations',
       adapter: 'coven-daemon', status: 'available', policy: 'allow',
       actions: ['coven.automations.definition.get.v1', 'coven.automations.definition.list.v1', 'coven.automations.health', 'coven.automations.runs',
-        'coven.automations.occurrence.list.v1', 'coven.automations.occurrence.get.v1', 'coven.automations.receipt.get.v1'],
+        'coven.automations.occurrence.list.v1', 'coven.automations.occurrence.get.v1', 'coven.automations.run.get.v1',
+        'coven.automations.receipt.get.v1'],
       variantNegotiation: {
         version: 1, contractProfile: 'coven.automations.v1', description: 'Variant negotiation',
         supported: {
@@ -1012,4 +1014,67 @@ test('Unix factory rejects Unix endpoints on Windows before I/O', () => {
   } finally {
     Object.defineProperty(process, 'platform', { value: platform });
   }
+});
+
+const runAction = 'coven.automations.run.get.v1';
+
+function runDetail() {
+  return { ...runSnapshot(), automationRevision: 1, definitionDigest: null, authorityProfile: null, timeoutAt: null };
+}
+
+test('filters an occurrence view by automation and sends the trimmed id', async () => {
+  const payload = { occurrences: [occurrenceSnapshot()] };
+  const { client, transport } = readSetup(payload, occurrencesAction);
+  expect(await client.occurrences({ view: 'due', automationId: ' morning ', limit: 5 })).toEqual(payload);
+  expect(transport.readDefinitions.mock.calls[0]?.[0]).toEqual({
+    action: occurrencesAction, view: 'due', limit: 5, automationId: ' morning ',
+  });
+});
+
+test('refuses a filtered occurrence page that names another automation', async () => {
+  const payload = { occurrences: [occurrenceSnapshot(), { ...occurrenceSnapshot(), id: 'occurrence-2', automationId: 'evening' }] };
+  await expect(readSetup(payload, occurrencesAction).client.occurrences({ view: 'claimed', automationId: 'morning' }))
+    .rejects.toMatchObject({ code: 'invalid_response' });
+  // The unfiltered view accepts the same mixed page.
+  expect(await readSetup(payload, occurrencesAction).client.occurrences({ view: 'claimed' })).toEqual(payload);
+});
+
+test.each(['', '   ', 5, null, ['morning']])('rejects automationId %j before transport', async (automationId) => {
+  const { client, transport } = readSetup();
+  await expect(client.occurrences({ view: 'due', automationId } as unknown as CovenAutomationOccurrencesOptions))
+    .rejects.toMatchObject({ code: 'invalid_options' });
+  expect(transport.readDefinitions).not.toHaveBeenCalled();
+});
+
+test('reads one run by id with its attempts, and absence explicitly', async () => {
+  const payload = { run: runDetail() };
+  const { client, transport } = readSetup(payload, runAction);
+  const result = await client.getRun(' run-1 ');
+  expectTypeOf(result).toEqualTypeOf<CovenAutomationRunResult>();
+  expect(result).toEqual(payload);
+  expect(transport.readDefinitions.mock.calls[0]?.[0]).toEqual({ action: runAction, id: ' run-1 ' });
+  expect(await readSetup({ run: null }, runAction).client.getRun('missing')).toEqual({ run: null });
+});
+
+test.each([
+  ['another run', { id: 'run-2' }],
+  ['no automation', { automationId: '' }],
+  ['no occurrence', { occurrenceId: '' }],
+  ['a bad revision', { automationRevision: 0 }],
+  ['a non-string digest', { definitionDigest: 5 }],
+  ['a non-string authority profile', { authorityProfile: 7 }],
+  ['a cancellation projection', { cancellation: null }],
+  ['too many attempts', { attempts: Array.from({ length: 11 }, () => runSnapshot().attempts[0]) }],
+])('rejects a run read with %s', async (_label, change) => {
+  await expect(readSetup({ run: { ...runDetail(), ...change } }, runAction).client.getRun('run-1'))
+    .rejects.toMatchObject({ code: 'invalid_response' });
+});
+
+test('does not read a run when the producer does not advertise the action', async () => {
+  const { client, transport } = readSetup({ run: runDetail() }, runAction);
+  const advertised = advertisement();
+  advertised.capabilities[0]!.actions = advertised.capabilities[0]!.actions.filter((action) => action !== runAction);
+  transport.capabilities.mockResolvedValue({ status: 200, body: Buffer.from(JSON.stringify(advertised)) });
+  await expect(client.getRun('run-1')).rejects.toMatchObject({ code: 'capability_unsupported' });
+  expect(transport.readDefinitions).not.toHaveBeenCalled();
 });

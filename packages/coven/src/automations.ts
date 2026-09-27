@@ -20,6 +20,7 @@ import {
 import {
   occurrenceView,
   type CovenAutomationOccurrencesOptions, type CovenAutomationOccurrencesResult, type CovenAutomationOccurrenceResult,
+  type CovenAutomationRunResult,
 } from './automations-occurrences.js';
 import {
   decodeDefinitionRead,
@@ -192,12 +193,20 @@ export class CovenAutomationsClient {
   async occurrences(query: CovenAutomationOccurrencesOptions, options: OperationOptions = {}): Promise<CovenAutomationOccurrencesResult> {
     if (!object(query) || !occurrenceView(query.view) ||
       (query.limit !== undefined && !integer(query.limit, 1, 100)) ||
-      Reflect.ownKeys(query).some((key) => key !== 'view' && key !== 'limit')) {
+      Reflect.ownKeys(query).some((key) => key !== 'view' && key !== 'limit' && key !== 'automationId') ||
+      (Object.hasOwn(query, 'automationId') &&
+        (typeof query.automationId !== 'string' || query.automationId.trim().length === 0))) {
       return definitionReadFailure('invalid_options', 'automations.occurrences');
     }
     return await this.#read({
       action: 'coven.automations.occurrence.list.v1', view: query.view, limit: query.limit ?? 20,
+      ...(Object.hasOwn(query, 'automationId') ? { automationId: query.automationId as string } : {}),
     }, options) as CovenAutomationOccurrencesResult;
+  }
+
+  /** One run and its attempts by run id, read from one producer snapshot. */
+  async getRun(runId: string, options: OperationOptions = {}): Promise<CovenAutomationRunResult> {
+    return await this.#read({ action: 'coven.automations.run.get.v1', id: runId }, options) as CovenAutomationRunResult;
   }
 
   async getOccurrence(id: string, options: OperationOptions = {}): Promise<CovenAutomationOccurrenceResult> {
@@ -225,11 +234,13 @@ export class CovenAutomationsClient {
     request: CovenAutomationDefinitionReadRequest,
     options: OperationOptions,
   ): Promise<CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult | CovenAutomationRunsResult |
-    CovenAutomationOccurrencesResult | CovenAutomationOccurrenceResult | CovenAutomationReceiptResult | CovenAutomationEventPage> {
+    CovenAutomationOccurrencesResult | CovenAutomationOccurrenceResult | CovenAutomationRunResult |
+    CovenAutomationReceiptResult | CovenAutomationEventPage> {
     const operation = request.action === 'coven.automations.definition.list.v1' ? 'automations.list'
       : request.action === 'coven.automations.health' ? 'automations.health'
       : request.action === 'coven.automations.occurrence.list.v1' ? 'automations.occurrences'
       : request.action === 'coven.automations.occurrence.get.v1' ? 'automations.getOccurrence'
+      : request.action === 'coven.automations.run.get.v1' ? 'automations.getRun'
       : request.action === 'coven.automations.receipt.get.v1' ? 'automations.getReceipt'
       : request.action === 'coven.automations.events.subscribe.v1' ? 'automations.events'
       : request.action === 'coven.automations.runs' ? 'automations.runs' : 'automations.get';

@@ -132,7 +132,7 @@ does not poll or activate Automations.
 | --- | --- | --- |
 | `capabilities()` | Authenticated GET | Authenticated GET |
 | `list()`, `get()`, `health()` | Allowlisted reads | Same actions and decoders |
-| `runs()`, `occurrences()`, `getOccurrence()` | Bounded diagnostic reads | Same actions and decoders |
+| `runs()`, `occurrences()`, `getOccurrence()`, `getRun()` | Bounded diagnostic reads | Same actions and decoders |
 | `getReceipt()` | Public/operational receipt result | Same result and privacy checks |
 | `events()`, `subscribe()` | Bounded domain event pages | Same pages and cancellation |
 | Normal/discovered client and `sdk.coven` | Explicit opt-in | Explicit opt-in |
@@ -556,7 +556,7 @@ variants, and execute the producer's valid and tampered receipt vectors.
 This increment leaves authentication, authority verification, and the remaining
 [SDK #80 phases](https://github.com/OpenCoven/sdk/issues/80) open.
 
-### Global occurrence inspection
+### Occurrence and run inspection
 
 ```ts
 const { occurrences } = await automations.occurrences(
@@ -569,16 +569,28 @@ for (const occurrence of occurrences) {
 }
 ```
 
-`occurrences({ view, limit? }, operationOptions?)` calls the exact advertised
-`coven.automations.occurrence.list.v1` action. This is **global scheduler
-inspection**, not the roadmap's per-automation occurrence history:
-there is no automation-ID filter or cursor in this executable producer contract.
+`occurrences({ view, limit?, automationId? }, operationOptions?)` calls the
+exact advertised `coven.automations.occurrence.list.v1` action. Without
+`automationId` it is **global scheduler inspection**. With `automationId`, the
+producer restricts the view to that automation inside its query, so `limit`
+bounds that automation's rows; the SDK refuses a filtered page that names any
+other automation. An empty or non-string `automationId` is rejected before any
+transport I/O. There is still no cursor in this producer contract.
 The required view is `due`, `eligible`, `claimed`, `running`, or
 `recovery_required`; limits are integers 1–100 (default 20). Unsupported query
 fields are rejected rather than silently suggesting filtering or pagination.
 Due means planned and scheduled by the producer's current time; eligible is
 the producer's scheduling decision, not a client authorization decision.
 The producer returns bounded oldest-scheduled-first records (ID tie-breaker).
+
+`getRun(runId, operationOptions?)` calls `coven.automations.run.get.v1` and
+returns `{ run: null }` for absence, or one run with its attempts, read from one
+producer snapshot. The run has the same projection and validation as an
+occurrence detail's nested runs (below): exact run ID, occurrence, revision,
+nullable digest, authority profile and timeout, at most ten attempts, and no
+cancellation projection. Both reads need a Coven producer that advertises them
+([coven#1155](https://github.com/OpenCoven/coven/issues/1155)); an older producer
+yields `capability_unsupported`, never a fallback.
 
 `getOccurrence(id, operationOptions?)` calls
 `coven.automations.occurrence.get.v1` and returns `{ occurrence: null } for

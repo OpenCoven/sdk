@@ -34,6 +34,7 @@ export type {
   CovenAutomationOccurrence,
   CovenAutomationOccurrenceDetail,
   CovenAutomationOccurrenceResult,
+  CovenAutomationRunResult,
   CovenAutomationOccurrenceRun,
   CovenAutomationOccurrencesOptions,
   CovenAutomationOccurrencesResult,

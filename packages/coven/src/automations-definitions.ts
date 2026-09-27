@@ -7,8 +7,9 @@ import {
 import { decodeReceiptRead, receiptId, type CovenAutomationReceiptResult } from './automations-receipts.js';
 import { runsPayload, type CovenAutomationRunsResult } from './automations-runs.js';
 import {
-  occurrencePayload, occurrencesPayload, occurrenceView,
+  occurrencePayload, occurrencesPayload, occurrenceView, runPayload,
   type CovenAutomationOccurrenceResult, type CovenAutomationOccurrencesResult, type CovenAutomationOccurrenceView,
+  type CovenAutomationRunResult,
 } from './automations-occurrences.js';
 
 /** Executable compatibility shape, not the normative rich AutomationDefinition. */
@@ -84,8 +85,14 @@ export type CovenAutomationDefinitionReadRequest =
   | { readonly action: 'coven.automations.definition.get.v1'; readonly id: string }
   | { readonly action: 'coven.automations.health'; readonly id: string }
   | { readonly action: 'coven.automations.runs'; readonly id: string; readonly limit: number }
-  | { readonly action: 'coven.automations.occurrence.list.v1'; readonly view: CovenAutomationOccurrenceView; readonly limit: number }
+  | {
+    readonly action: 'coven.automations.occurrence.list.v1';
+    readonly view: CovenAutomationOccurrenceView;
+    readonly limit: number;
+    readonly automationId?: string;
+  }
   | { readonly action: 'coven.automations.occurrence.get.v1'; readonly id: string }
+  | { readonly action: 'coven.automations.run.get.v1'; readonly id: string }
   | { readonly action: 'coven.automations.receipt.get.v1'; readonly id: string }
   | CovenAutomationEventsRequest;
 
@@ -130,20 +137,25 @@ export function definitionReadBytes(request: CovenAutomationDefinitionReadReques
   const action = own('action');
   if (action === 'coven.automations.events.subscribe.v1') return eventsRequestBytes(request);
   const keys = Reflect.ownKeys(descriptors);
-  if (keys.length !== (action === 'coven.automations.runs' || action === 'coven.automations.occurrence.list.v1' ? 3 : 2)) return invalid();
   if (action === 'coven.automations.occurrence.list.v1') {
     const view = own('view');
     const limit = own('limit');
-    if (!occurrenceView(view) || !integer(limit, 1, 100)) return invalid();
-    return Buffer.from(JSON.stringify({ action, view, limit }));
+    const filtered = Object.hasOwn(descriptors, 'automationId');
+    const automationId = own('automationId');
+    if (keys.length !== (filtered ? 4 : 3) || !occurrenceView(view) || !integer(limit, 1, 100)) return invalid();
+    if (!filtered) return Buffer.from(JSON.stringify({ action, view, limit }));
+    if (typeof automationId !== 'string' || automationId.trim().length === 0 ||
+      Buffer.byteLength(automationId) > 4_096 || !automationId.isWellFormed()) return invalid();
+    return Buffer.from(JSON.stringify({ action, view, limit, automationId: automationId.trim() }));
   }
+  if (keys.length !== (action === 'coven.automations.runs' ? 3 : 2)) return invalid();
   if (action === 'coven.automations.definition.list.v1' && typeof own('includeTombstoned') === 'boolean') {
     return Buffer.from(JSON.stringify({ action, includeTombstoned: own('includeTombstoned') }));
   }
   const id = own('id');
   if ((action !== 'coven.automations.definition.get.v1' && action !== 'coven.automations.health' &&
     action !== 'coven.automations.runs' && action !== 'coven.automations.occurrence.get.v1' &&
-    action !== 'coven.automations.receipt.get.v1') || typeof id !== 'string' ||
+    action !== 'coven.automations.run.get.v1' && action !== 'coven.automations.receipt.get.v1') || typeof id !== 'string' ||
     id.trim().length === 0 || Buffer.byteLength(id) > 4_096 || !id.isWellFormed()) return invalid();
   if (action === 'coven.automations.receipt.get.v1' && !receiptId(id.trim())) return invalid();
   if (action === 'coven.automations.runs') {
@@ -160,7 +172,8 @@ export function decodeDefinitionRead(
   request: CovenAutomationDefinitionReadRequest,
   operation: string,
 ): CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult | CovenAutomationRunsResult |
-  CovenAutomationOccurrencesResult | CovenAutomationOccurrenceResult | CovenAutomationReceiptResult | CovenAutomationEventPage {
+  CovenAutomationOccurrencesResult | CovenAutomationOccurrenceResult | CovenAutomationRunResult | CovenAutomationReceiptResult |
+  CovenAutomationEventPage {
   const invalid = (): never => definitionReadFailure('invalid_response', operation);
   let value: unknown;
   try {
@@ -184,10 +197,13 @@ export function decodeDefinitionRead(
     !object(value.event.payload)) return invalid();
   const payload = value.event.payload;
   if (request.action === 'coven.automations.occurrence.list.v1') {
-    return occurrencesPayload(payload, request.limit) ?? invalid();
+    return occurrencesPayload(payload, request.limit, request.automationId?.trim()) ?? invalid();
   }
   if (request.action === 'coven.automations.occurrence.get.v1') {
     return occurrencePayload(payload, request.id.trim()) ?? invalid();
+  }
+  if (request.action === 'coven.automations.run.get.v1') {
+    return runPayload(payload, request.id.trim()) ?? invalid();
   }
   if (request.action === 'coven.automations.runs') {
     return runsPayload(payload, request.id.trim(), request.limit) ?? invalid();
