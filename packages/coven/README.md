@@ -201,13 +201,13 @@ Each read refreshes the capability advertisement and requires its exact action:
 `coven.automations.definition.list.v1` or
 `coven.automations.definition.get.v1`, `coven.automations.health`, `coven.automations.runs`,
 `coven.automations.occurrence.list.v1`, `coven.automations.occurrence.get.v1`,
-or `coven.automations.receipt.get.v1`.
+`coven.automations.run.get.v1`, or `coven.automations.receipt.get.v1`.
 Missing/planned/unnegotiated profiles or
 missing action names fail with `capability_unsupported` without posting an action.
 Custom capability-only transports remain compatible; reads without the optional
 `readDefinitions` hook fail with `unsupported_operation`.
 
-The built-in Unix and Windows transports send only these seven allowlisted JSON actions to
+The built-in Unix and Windows transports send only these eight allowlisted JSON actions to
 `POST /api/v1/actions`. It authenticates each connection, including the separate
 capability request, under one client deadline/cancellation scope. It cannot send
 mutations through this hook. IDs are trimmed as the producer does; the SDK
@@ -252,7 +252,7 @@ Failure/exhaustion counters are nonnegative safe integers and `maxAttempts` is
 Missing routines produce sanitized `action_rejected`, not an invented null result.
 Health is store-derived diagnostic data, not execution or receipt authority.
 Custom transports use the existing optional `readDefinitions` hook, whose
-historical name now covers all seven explicitly allowlisted read actions.
+historical name now covers all eight explicitly allowlisted read actions.
 
 Health source authority was independently read from Coven
 [`b3b2d043a4ee586ccbf25ef6aad21db8a1171a54`](https://github.com/OpenCoven/coven/tree/b3b2d043a4ee586ccbf25ef6aad21db8a1171a54):
