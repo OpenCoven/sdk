@@ -3,11 +3,16 @@ import { runsPayload, type CovenAutomationRun } from './automations-runs.js';
 
 export type CovenAutomationOccurrenceView = 'due' | 'eligible' | 'claimed' | 'running' | 'recovery_required';
 
-/** Global scheduler inspection, not per-automation history or cursor pagination. */
+/** Scheduler inspection, optionally for one automation; not cursor pagination. */
 export interface CovenAutomationOccurrencesOptions {
   readonly view: CovenAutomationOccurrenceView;
   /** 1–100, default 20. */
   readonly limit?: number;
+  /**
+   * Restricts the view to one automation. The producer applies it inside the
+   * view's query, so `limit` bounds that automation's rows.
+   */
+  readonly automationId?: string;
 }
 
 /** Producer diagnostics; digests, leases and states do not establish authority. */
@@ -50,6 +55,11 @@ export interface CovenAutomationOccurrenceResult {
   readonly occurrence: CovenAutomationOccurrenceDetail | null;
 }
 
+export interface CovenAutomationRunResult {
+  /** The same projection as an occurrence detail's runs, or null when absent. */
+  readonly run: CovenAutomationOccurrenceRun | null;
+}
+
 export function occurrenceView(value: unknown): value is CovenAutomationOccurrenceView {
   return typeof value === 'string' && ['due', 'eligible', 'claimed', 'running', 'recovery_required'].includes(value);
 }
@@ -64,11 +74,36 @@ function occurrence(value: unknown): value is CovenAutomationOccurrence {
     (value.schedulerGeneration === null || integer(value.schedulerGeneration, 0));
 }
 
-export function occurrencesPayload(value: Record<string, unknown>, limit: number): CovenAutomationOccurrencesResult | undefined {
+export function occurrencesPayload(
+  value: Record<string, unknown>,
+  limit: number,
+  automationId?: string,
+): CovenAutomationOccurrencesResult | undefined {
   if (!Array.isArray(value.occurrences) || value.occurrences.length > limit ||
     !value.occurrences.every(occurrence) ||
+    (automationId !== undefined && !value.occurrences.every((entry) => entry.automationId === automationId)) ||
     new Set(value.occurrences.map((entry) => entry.id)).size !== value.occurrences.length) return undefined;
   return { occurrences: value.occurrences };
+}
+
+function occurrenceRunFields(record: Record<string, unknown>): boolean {
+  return typeof record.occurrenceId === 'string' && record.occurrenceId.length > 0 &&
+    integer(record.automationRevision, 1) &&
+    (record.definitionDigest === null || typeof record.definitionDigest === 'string') &&
+    ['authorityProfile', 'timeoutAt'].every((key) => record[key] === null || typeof record[key] === 'string') &&
+    !Object.hasOwn(record, 'cancellation');
+}
+
+/** One run read by id, validated with the same rules as an occurrence detail's runs. */
+export function runPayload(value: Record<string, unknown>, id: string): CovenAutomationRunResult | undefined {
+  const run = value.run;
+  if (run === null) return { run: null };
+  if (!object(run) || run.id !== id || typeof run.automationId !== 'string' || run.automationId.length === 0) {
+    return undefined;
+  }
+  const runs = runsPayload({ runs: [run] }, run.automationId, 1);
+  if (runs === undefined || !occurrenceRunFields(run)) return undefined;
+  return { run: run as unknown as CovenAutomationOccurrenceRun };
 }
 
 export function occurrencePayload(value: Record<string, unknown>, id: string): CovenAutomationOccurrenceResult | undefined {
@@ -81,9 +116,7 @@ export function occurrencePayload(value: Record<string, unknown>, id: string): C
   for (const run of runs.runs) {
     const record = run as unknown as Record<string, unknown>;
     if (run.occurrenceId !== id || record.automationRevision !== detail.automationRevision ||
-      record.definitionDigest !== detail.definitionDigest ||
-      !['authorityProfile', 'timeoutAt'].every((key) => record[key] === null || typeof record[key] === 'string') ||
-      Object.hasOwn(record, 'cancellation')) return undefined;
+      record.definitionDigest !== detail.definitionDigest || !occurrenceRunFields(record)) return undefined;
   }
   return { occurrence: detail as unknown as CovenAutomationOccurrenceDetail };
 }
