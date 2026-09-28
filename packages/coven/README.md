@@ -139,7 +139,8 @@ does not poll or activate Automations.
 | `getReceipt()` | Public/operational receipt result | Same result and privacy checks |
 | `events()`, `subscribe()` | Bounded domain event pages | Same pages and cancellation |
 | Normal/discovered client and `sdk.coven` | Explicit opt-in | Explicit opt-in |
-| TCP fallback, mutations, independent receipt authentication | Not supported | Not supported |
+| `activate()`, `pause()`, `disable()`, `tombstone()` | Lifecycle command envelopes | Same envelope and decoder |
+| TCP fallback, create/revise, run/cancel/retry commands, independent receipt authentication | Not supported | Not supported |
 
 Windows requires a current-user SID, owner-only ACL, nonempty pipe identity,
 positive server PID, and process creation time before connecting. Before any
@@ -213,7 +214,8 @@ Custom capability-only transports remain compatible; reads without the optional
 The built-in Unix and Windows transports send only these ten allowlisted JSON actions to
 `POST /api/v1/actions`. It authenticates each connection, including the separate
 capability request, under one client deadline/cancellation scope. It cannot send
-mutations through this hook. IDs are trimmed as the producer does; the SDK
+mutations through this hook; lifecycle commands use the separate `sendCommand`
+hook described under [Lifecycle commands](#lifecycle-commands). IDs are trimmed as the producer does; the SDK
 additionally rejects malformed Unicode and IDs over 4,096 UTF-8 bytes. Responses
 use the existing strict 16 KiB / 16-level JSON bound (including duplicate-key and
 malformed-Unicode rejection). Larger catalogs fail closed, not partially; this
@@ -595,6 +597,47 @@ nullable digest, authority profile and timeout, at most ten attempts, and no
 cancellation projection. Both reads need a Coven producer that advertises them
 ([coven#1155](https://github.com/OpenCoven/coven/issues/1155)); an older producer
 yields `capability_unsupported`, never a fallback.
+
+### Lifecycle commands
+
+```ts
+const outcome = await automations.pause('morning', 4, {
+  adoptionKey: 'adopt:pause:morning:2026-09-28',
+  intent: 'Pause the morning routine for the holiday.',
+  principalId: 'principal:owner',
+}, { reason: 'Holiday freeze.', timeoutMs: 5_000 });
+
+if (outcome.outcome === 'rejected' && outcome.error.code === 'REVISION_CONFLICT') {
+  console.log('stored revision is', outcome.error.currentRevision);
+}
+```
+
+`activate`, `pause`, `disable` and `tombstone` take `(automationId, expectedRevision, context, options?)`. Each sends one spec command envelope as `coven.automations.command.v1` through the transport's optional `sendCommand` hook.
+
+**The context.** It carries:
+
+- `adoptionKey`: the idempotency key, 8 to 200 characters of `[A-Za-z0-9._:-]`;
+- `intent`: 1 to 1000 characters;
+- `principalId`;
+- an optional `correlationId`.
+
+`options` may carry a `reason` of up to 500 characters (not for `tombstone`) and the usual `signal`, `timeoutMs` and `observer`. Every field is validated before any I/O, and a bad value fails with `invalid_options`.
+
+**The send gate.** A command is sent only when the producer advertises both `coven.automations.command.v1` and the command's own action, such as `coven.automations.definition.pause.v1`. Otherwise it fails with `capability_unsupported`, and nothing is sent. The built-in Unix and Windows transports serialize a freshly rebuilt, exactly keyed envelope for these four commands and refuse anything else. A transport without `sendCommand` cannot mutate: the call fails with `unsupported_operation`.
+
+**The outcome.** The result is a typed discriminated union:
+
+- `committed`, with `revision`, `result` and `eventRef`;
+- `replayed`, where the same key was already applied; it carries the first commit's `replay.firstCommittedAt`;
+- `rejected`, with a typed `error.code` such as `REVISION_CONFLICT` (with `currentRevision`), `ILLEGAL_TRANSITION`, `GONE_TOMBSTONED`, `ADOPTION_REPLAY_MISMATCH` or `AUTHORITY_REQUIRED`, and nothing committed. Producer messages are not copied.
+
+**An unknown outcome.** If anything fails after the request is handed to the transport, the call throws `outcome_unknown` (`retryable: true`). That covers a dropped connection, the deadline passing mid-flight, and a response that does not prove what happened. **Resend with the same `adoptionKey`** to learn the outcome: the producer replays a committed command instead of applying it twice. A fresh key could apply it again. Cancellation or refusal before the send never reports `outcome_unknown`.
+
+**Authority.** `principalId` is recorded with the command; it is not an authority grant. The producer accepts automation mutations only over owner-local IPC, which is the only place the built-in transports connect.
+
+**Not available.** `createDraft` and `revise` wait on producer rich-definition persistence; run, cancel, retry and approval wait on OpenCoven/coven#857.
+
+These commands need a producer with the command envelope ([coven#1176](https://github.com/OpenCoven/coven/pull/1176)).
 
 ### Occurrence history
 

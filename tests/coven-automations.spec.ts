@@ -8,6 +8,7 @@ import {
   type CovenAutomationCapabilities,
   type CovenAutomationDefinition,
   type CovenAutomationDefinitionList,
+  type CovenAutomationCommandRequest,
   type CovenAutomationDefinitionReadRequest,
   type CovenAutomationHealthResult,
   type CovenAutomationListOptions,
@@ -879,6 +880,37 @@ test.skipIf(process.platform === 'win32').each([
 ])('direct read transport rejects malformed requests and mutations before I/O %#', async (request) => {
   const { transport, socket, inspectConnected } = unixSetup();
   await expect(transport.readDefinitions!(request as CovenAutomationDefinitionReadRequest, {
+    signal: new AbortController().signal, deadline: undefined,
+  })).rejects.toMatchObject({ code: 'invalid_options' });
+  expect(socket.writes).toEqual([]);
+  expect(inspectConnected).not.toHaveBeenCalled();
+});
+
+const lifecycleEnvelope = () => ({
+  action: 'coven.automations.command.v1',
+  envelope: {
+    schemaVersion: 'coven.automations.v1', command: 'definition.pause.v1', adoptionKey: 'adopt:pause:morning',
+    expectedRevision: 2, origin: { principal: { principalId: 'principal:owner' }, channel: 'sdk' },
+    intent: { statement: 'Pause it.' }, payload: { automationId: 'morning' },
+  },
+});
+
+test.skipIf(process.platform === 'win32').each([
+  ['another envelope command', (value: ReturnType<typeof lifecycleEnvelope>) => { value.envelope.command = 'legacy.import.v1'; }],
+  ['a create envelope', (value: ReturnType<typeof lifecycleEnvelope>) => { value.envelope.command = 'definition.create.v1'; }],
+  ['an extra request field', (value: ReturnType<typeof lifecycleEnvelope>) => { (value as Record<string, unknown>).origin = 'x'; }],
+  ['an extra envelope field', (value: ReturnType<typeof lifecycleEnvelope>) => { (value.envelope as Record<string, unknown>).extra = 1; }],
+  ['a flat action', (value: ReturnType<typeof lifecycleEnvelope>) => { value.action = 'coven.automations.definition.pause.v1'; }],
+  ['a non-sdk channel', (value: ReturnType<typeof lifecycleEnvelope>) => { (value.envelope.origin as Record<string, unknown>).channel = 'cli'; }],
+  ['a tombstone reason', (value: ReturnType<typeof lifecycleEnvelope>) => {
+    value.envelope.command = 'definition.tombstone.v1';
+    (value.envelope.payload as Record<string, unknown>).reason = 'Gone.';
+  }],
+])('direct command transport refuses %s before I/O', async (_label, change) => {
+  const { transport, socket, inspectConnected } = unixSetup();
+  const request = lifecycleEnvelope();
+  change(request);
+  await expect(transport.sendCommand!(request as unknown as CovenAutomationCommandRequest, {
     signal: new AbortController().signal, deadline: undefined,
   })).rejects.toMatchObject({ code: 'invalid_options' });
   expect(socket.writes).toEqual([]);
