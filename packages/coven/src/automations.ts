@@ -17,6 +17,11 @@ import {
 } from './automations-receipt-verification.js';
 import { historyCursor } from './automations-history.js';
 import {
+  COMMAND_ENVELOPE_ACTION, decodeCommand, lifecycleRequest,
+  type CovenAutomationCommandContext, type CovenAutomationCommandRequest, type CovenAutomationCommandResult,
+  type CovenAutomationLifecycleCommand, type CovenAutomationLifecycleOptions,
+} from './automations-commands.js';
+import {
   RUN_HISTORY_CURSOR_MAX_LENGTH,
   type CovenAutomationRun, type CovenAutomationRunHistoryOptions, type CovenAutomationRunHistoryPage,
   type CovenAutomationRunsOptions, type CovenAutomationRunsResult,
@@ -75,6 +80,14 @@ export type CovenAutomationCapabilities =
   };
 
 export interface CovenAutomationsTransport {
+  /**
+   * Sends one lifecycle command envelope. Optional: a transport without it
+   * cannot mutate, and commands fail with `unsupported_operation`.
+   */
+  sendCommand?(request: CovenAutomationCommandRequest, context: OperationContext): Promise<{
+    readonly status: number;
+    readonly body: Uint8Array;
+  }>;
   readDefinitions?(request: CovenAutomationDefinitionReadRequest, context: OperationContext): Promise<{
     readonly status: number;
     readonly body: Uint8Array;
@@ -294,6 +307,119 @@ export class CovenAutomationsClient {
         ...(observer === undefined ? {} : { observer }),
       } : options,
     );
+  }
+
+  /**
+   * `paused -> active` at `expectedRevision`. Returns the typed outcome; a
+   * domain refusal is `outcome: 'rejected'`, not an exception. Throws
+   * `outcome_unknown` when the request may have reached the producer but no
+   * trustworthy answer came back: resend with the same `adoptionKey`.
+   */
+  async activate(
+    automationId: string,
+    expectedRevision: number,
+    context: CovenAutomationCommandContext,
+    options: CovenAutomationLifecycleOptions & OperationOptions = {},
+  ): Promise<CovenAutomationCommandResult> {
+    return await this.#lifecycle('definition.activate.v1', 'automations.activate', automationId, expectedRevision, context, options);
+  }
+
+  /** `active -> paused` at `expectedRevision`. Outcomes as for `activate`. */
+  async pause(
+    automationId: string,
+    expectedRevision: number,
+    context: CovenAutomationCommandContext,
+    options: CovenAutomationLifecycleOptions & OperationOptions = {},
+  ): Promise<CovenAutomationCommandResult> {
+    return await this.#lifecycle('definition.pause.v1', 'automations.pause', automationId, expectedRevision, context, options);
+  }
+
+  /** Disables at `expectedRevision`; a disabled definition never reactivates directly. */
+  async disable(
+    automationId: string,
+    expectedRevision: number,
+    context: CovenAutomationCommandContext,
+    options: CovenAutomationLifecycleOptions & OperationOptions = {},
+  ): Promise<CovenAutomationCommandResult> {
+    return await this.#lifecycle('definition.disable.v1', 'automations.disable', automationId, expectedRevision, context, options);
+  }
+
+  /** Tombstones at `expectedRevision`, retaining history. Takes no `reason`. */
+  async tombstone(
+    automationId: string,
+    expectedRevision: number,
+    context: CovenAutomationCommandContext,
+    options: OperationOptions = {},
+  ): Promise<CovenAutomationCommandResult> {
+    return await this.#lifecycle('definition.tombstone.v1', 'automations.tombstone', automationId, expectedRevision, context, options);
+  }
+
+  async #lifecycle(
+    command: CovenAutomationLifecycleCommand,
+    operation: string,
+    automationId: string,
+    expectedRevision: number,
+    context: CovenAutomationCommandContext,
+    options: CovenAutomationLifecycleOptions & OperationOptions,
+  ): Promise<CovenAutomationCommandResult> {
+    let request: CovenAutomationCommandRequest;
+    let operationOptions: OperationOptions;
+    try {
+      if (!object(options)) return definitionReadFailure('invalid_options', operation);
+      const { reason, ...rest } = options as CovenAutomationLifecycleOptions & OperationOptions;
+      operationOptions = rest;
+      request = lifecycleRequest(
+        command, automationId, expectedRevision, context,
+        Object.hasOwn(options, 'reason') ? { reason } : {}, operation,
+      );
+    } catch (error) {
+      throw new CovenClientError(normalizeCovenError(error, operation));
+    }
+    return await this.#command(request, operation, operationOptions);
+  }
+
+  async #command(
+    request: CovenAutomationCommandRequest,
+    operation: string,
+    options: OperationOptions,
+  ): Promise<CovenAutomationCommandResult> {
+    const observer = options.observer ?? this.#options.operation?.observer;
+    // Once the request is handed to the transport, a failure cannot prove the
+    // command was not applied, so it surfaces as `outcome_unknown`.
+    let sent = false;
+    const unknown = (): never => {
+      throw new CovenClientError(normalizeCovenError({ code: 'outcome_unknown', retryable: true }, operation));
+    };
+    try {
+      return await runOperation(
+        { system: 'coven', operation },
+        {
+          ...this.#options.operation,
+          ...options,
+          timeoutMs: options.timeoutMs ?? this.#options.operation?.timeoutMs ?? 5_000,
+          ...(observer === undefined ? {} : { observer }),
+        },
+        async (context) => {
+          const send = this.#options.transport.sendCommand?.bind(this.#options.transport);
+          if (send === undefined) return definitionReadFailure('unsupported_operation', operation);
+          const response = await this.#options.transport.capabilities(context);
+          checkReadContext(context, operation);
+          const advertised = decode(response.status, response.body);
+          if (advertised.status !== 'available' || !advertised.actions.includes(COMMAND_ENVELOPE_ACTION) ||
+            !advertised.actions.includes(`coven.automations.${request.envelope.command}`)) {
+            return definitionReadFailure('capability_unsupported', operation);
+          }
+          checkReadContext(context, operation);
+          sent = true;
+          const result = await send(request, context);
+          // A decoded answer is the producer's truth even if the caller aborts now.
+          return decodeCommand(result.status, result.body, request) ?? unknown();
+        },
+      );
+    } catch (error) {
+      if (sent) unknown();
+      throw new CovenClientError(normalizeCovenError(error, operation));
+    }
   }
 
   /** One run and its attempts by run id, read from one producer snapshot. */

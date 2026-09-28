@@ -264,6 +264,47 @@ describe.each(['unix', 'windows'] as const)('%s Automations parity', (platform) 
     expect(sockets.every((socket) => socket.destroyed)).toBe(true);
   });
 
+  test.skipIf(platform === 'unix' && process.platform === 'win32')('sends a lifecycle envelope and decodes a typed rejection', async () => {
+    const { client, configure, sockets } = setup(platform);
+    const action = 'coven.automations.command.v1';
+    const error = { code: 'ILLEGAL_TRANSITION', httpStatus: 409, message: 'not paused', retryable: false, currentRevision: 2 };
+    const body = {
+      ok: false, accepted: false, action, status: 'rejected', reason: error.message, error,
+      result: {
+        schemaVersion: 'coven.automations.v1', command: 'definition.activate.v1',
+        adoptionKey: 'adopt:activate:wire', outcome: 'rejected', error,
+      },
+    };
+    configure.mockImplementation((socket, index) => {
+      if (index === 0) {
+        socket.response = Buffer.from(JSON.stringify(advertisement([action, 'coven.automations.definition.activate.v1'] as never)));
+      } else {
+        socket.rawResponse = Buffer.concat([
+          Buffer.from(`HTTP/1.1 409 Conflict\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(JSON.stringify(body))}\r\n\r\n`),
+          Buffer.from(JSON.stringify(body)),
+        ]);
+      }
+    });
+    const result = await client.activate('morning', 2, {
+      adoptionKey: 'adopt:activate:wire', intent: 'Turn it on.', principalId: 'principal:owner',
+    });
+    expect(result).toEqual({
+      outcome: 'rejected', command: 'definition.activate.v1', adoptionKey: 'adopt:activate:wire',
+      error: { code: 'ILLEGAL_TRANSITION', retryable: false, currentRevision: 2 },
+    });
+    const wire = sockets[1]?.writes[0] ?? '';
+    expect(wire.startsWith('POST /api/v1/actions HTTP/1.1\r\n')).toBe(true);
+    expect(JSON.parse(wire.split('\r\n\r\n')[1]!)).toEqual({
+      action,
+      envelope: {
+        schemaVersion: 'coven.automations.v1', command: 'definition.activate.v1', adoptionKey: 'adopt:activate:wire',
+        expectedRevision: 2, origin: { principal: { principalId: 'principal:owner' }, channel: 'sdk' },
+        intent: { statement: 'Turn it on.' }, payload: { automationId: 'morning' },
+      },
+    });
+    expect(sockets.every((socket) => socket.destroyed)).toBe(true);
+  });
+
   test.skipIf(platform === 'unix' && process.platform === 'win32')('return closes a pending subscription socket before any late response', async () => {
     const { client, configure, sockets } = setup(platform);
     configure.mockImplementation((socket, index) => {

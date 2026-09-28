@@ -1,0 +1,221 @@
+import {
+  createCovenAutomationsClient,
+  type CovenAutomationCommandContext,
+  type CovenAutomationCommandRequest,
+  type CovenAutomationCommandResult,
+} from '@opencoven/coven-client';
+import type { OperationContext } from '@opencoven/sdk-core';
+import { expect, expectTypeOf, test, vi } from 'vitest';
+
+const ACTION = 'coven.automations.command.v1';
+const LIFECYCLE = [
+  'coven.automations.definition.activate.v1', 'coven.automations.definition.pause.v1',
+  'coven.automations.definition.disable.v1', 'coven.automations.definition.tombstone.v1',
+];
+
+function advertisement(actions: readonly string[] = [ACTION, ...LIFECYCLE]) {
+  return {
+    capabilities: [{
+      id: 'coven.automations', label: 'Automations', adapter: 'coven-daemon', status: 'available',
+      policy: 'allow', actions, variantNegotiation: {
+        version: 1, contractProfile: 'coven.automations.v1', description: 'Negotiation',
+        supported: { triggers: [], conditions: [], actions: [], triggerPolicies: [], deliveryPolicies: [], retentionPolicies: [] },
+        experimental: [], refused: [], negotiationRules: [],
+      },
+    }],
+  };
+}
+
+const context: CovenAutomationCommandContext = {
+  adoptionKey: 'adopt:activate:morning:0001',
+  intent: 'Turn the morning routine back on.',
+  principalId: 'principal:owner',
+  correlationId: 'corr-0001',
+};
+
+function committed(command: string, adoptionKey: string, outcome: 'committed' | 'replayed' = 'committed') {
+  return {
+    ok: true, accepted: true, action: ACTION, status: 'completed',
+    result: {
+      schemaVersion: 'coven.automations.v1', command, adoptionKey, outcome, revision: 2,
+      result: { id: 'morning', status: 'ACTIVE', revision: 2, reason: null },
+      ...(outcome === 'committed'
+        ? { eventRef: { stream: 'automation:morning', sequence: 1 } }
+        : { replay: { firstCommittedAt: '2026-09-28T09:00:00.000Z' } }),
+    },
+  };
+}
+
+function rejected(command: string, adoptionKey: string) {
+  const error = {
+    code: 'REVISION_CONFLICT', httpStatus: 409, message: 'stale revision for secret-id', retryable: false,
+    currentRevision: 3,
+  };
+  return {
+    ok: false, accepted: false, action: ACTION, status: 'rejected', reason: error.message, error,
+    result: { schemaVersion: 'coven.automations.v1', command, adoptionKey, outcome: 'rejected', error },
+  };
+}
+
+function setup(body: unknown = committed('definition.activate.v1', context.adoptionKey), status = 200) {
+  const transport = {
+    capabilities: vi.fn<(context: OperationContext) => Promise<{ status: number; body: Buffer }>>()
+      .mockResolvedValue({ status: 200, body: Buffer.from(JSON.stringify(advertisement())) }),
+    sendCommand: vi.fn<(request: CovenAutomationCommandRequest, context: OperationContext) =>
+      Promise<{ status: number; body: Buffer }>>()
+      .mockResolvedValue({ status, body: Buffer.from(JSON.stringify(body)) }),
+  };
+  return { transport, client: createCovenAutomationsClient({ transport }) };
+}
+
+test('activate sends one exact spec envelope and returns the committed outcome', async () => {
+  const { client, transport } = setup();
+  const result = await client.activate('morning', 1, context, { reason: ' Back from holiday. ' });
+  expectTypeOf(result).toEqualTypeOf<CovenAutomationCommandResult>();
+  expect(result).toEqual({
+    outcome: 'committed', command: 'definition.activate.v1', adoptionKey: context.adoptionKey, revision: 2,
+    result: { id: 'morning', status: 'ACTIVE', revision: 2, reason: null },
+    eventRef: { stream: 'automation:morning', sequence: 1 },
+  });
+  const [request, operation] = transport.sendCommand.mock.calls[0]!;
+  expect(request).toEqual({
+    action: ACTION,
+    envelope: {
+      schemaVersion: 'coven.automations.v1', command: 'definition.activate.v1',
+      adoptionKey: context.adoptionKey, expectedRevision: 1,
+      origin: { principal: { principalId: 'principal:owner' }, channel: 'sdk', correlationId: 'corr-0001' },
+      intent: { statement: context.intent },
+      payload: { automationId: 'morning', reason: 'Back from holiday.' },
+    },
+  });
+  expect(Object.isFrozen(request) && Object.isFrozen(request.envelope) && Object.isFrozen(request.envelope.payload)).toBe(true);
+  expect(transport.capabilities.mock.calls[0]?.[0]).toBe(operation);
+});
+
+test.each([
+  ['pause', 'definition.pause.v1'],
+  ['disable', 'definition.disable.v1'],
+  ['tombstone', 'definition.tombstone.v1'],
+] as const)('%s sends its own command', async (method, command) => {
+  const { client, transport } = setup(committed(command, context.adoptionKey));
+  const result = await client[method]('morning', 4, context);
+  expect(result.outcome).toBe('committed');
+  expect(transport.sendCommand.mock.calls[0]?.[0].envelope.command).toBe(command);
+  expect(transport.sendCommand.mock.calls[0]?.[0].envelope.expectedRevision).toBe(4);
+});
+
+test('returns replays and typed rejections without copying the producer message', async () => {
+  const replay = await setup(committed('definition.activate.v1', context.adoptionKey, 'replayed')).client
+    .activate('morning', 1, context);
+  expect(replay).toMatchObject({ outcome: 'replayed', replay: { firstCommittedAt: '2026-09-28T09:00:00.000Z' } });
+  expect(replay).not.toHaveProperty('eventRef');
+
+  const refused = await setup(rejected('definition.activate.v1', context.adoptionKey), 409).client
+    .activate('morning', 1, context);
+  expect(refused).toEqual({
+    outcome: 'rejected', command: 'definition.activate.v1', adoptionKey: context.adoptionKey,
+    error: { code: 'REVISION_CONFLICT', retryable: false, currentRevision: 3 },
+  });
+  expect(JSON.stringify(refused)).not.toContain('secret-id');
+});
+
+test('treats a transport-authority refusal before the envelope as a typed rejection', async () => {
+  const body = {
+    ok: false, accepted: false, action: ACTION, status: 'rejected',
+    error: { code: 'AUTHORITY_REQUIRED', httpStatus: 403, message: 'owner IPC', retryable: false },
+  };
+  expect(await setup(body, 403).client.activate('morning', 1, context)).toEqual({
+    outcome: 'rejected', command: 'definition.activate.v1', adoptionKey: context.adoptionKey,
+    error: { code: 'AUTHORITY_REQUIRED', retryable: false },
+  });
+});
+
+test.each([
+  ['a blank id', () => ['', 1, context, {}]],
+  ['an id outside the automation charset', () => ['morning routine', 1, context, {}]],
+  ['a zero revision', () => ['morning', 0, context, {}]],
+  ['an unsafe revision', () => ['morning', Number.MAX_SAFE_INTEGER + 1, context, {}]],
+  ['a short adoption key', () => ['morning', 1, { ...context, adoptionKey: 'short' }, {}]],
+  ['an adoption key with spaces', () => ['morning', 1, { ...context, adoptionKey: 'adopt key 0001' }, {}]],
+  ['an empty intent', () => ['morning', 1, { ...context, intent: '   ' }, {}]],
+  ['an intent over 1000 characters', () => ['morning', 1, { ...context, intent: 'x'.repeat(1_001) }, {}]],
+  ['a principal outside the charset', () => ['morning', 1, { ...context, principalId: 'owner name' }, {}]],
+  ['an unknown context field', () => ['morning', 1, { ...context, authority: 'owner' }, {}]],
+  ['an empty reason', () => ['morning', 1, context, { reason: ' ' }]],
+  ['a reason over 500 characters', () => ['morning', 1, context, { reason: 'x'.repeat(501) }]],
+])('rejects %s before any I/O', async (_label, args) => {
+  const { client, transport } = setup();
+  await expect((client.activate as (...values: unknown[]) => Promise<unknown>)(...args()))
+    .rejects.toMatchObject({ code: 'invalid_options' });
+  expect(transport.capabilities).not.toHaveBeenCalled();
+  expect(transport.sendCommand).not.toHaveBeenCalled();
+});
+
+test('refuses a tombstone reason before any I/O', async () => {
+  const { client, transport } = setup();
+  await expect((client.tombstone as (...values: unknown[]) => Promise<unknown>)('morning', 1, context, { reason: 'Gone.' }))
+    .rejects.toMatchObject({ code: 'invalid_options' });
+  expect(transport.sendCommand).not.toHaveBeenCalled();
+});
+
+test.each([
+  ['the envelope action', LIFECYCLE],
+  ['the specific command', [ACTION, ...LIFECYCLE.filter((action) => !action.endsWith('activate.v1'))]],
+])('does not send when the producer does not advertise %s', async (_label, actions) => {
+  const { client, transport } = setup();
+  transport.capabilities.mockResolvedValue({ status: 200, body: Buffer.from(JSON.stringify(advertisement(actions))) });
+  await expect(client.activate('morning', 1, context)).rejects.toMatchObject({ code: 'capability_unsupported' });
+  expect(transport.sendCommand).not.toHaveBeenCalled();
+});
+
+test('a transport without sendCommand cannot mutate', async () => {
+  const transport = {
+    capabilities: () => Promise.resolve({ status: 200, body: Buffer.from(JSON.stringify(advertisement())) }),
+  };
+  await expect(createCovenAutomationsClient({ transport }).activate('morning', 1, context))
+    .rejects.toMatchObject({ code: 'unsupported_operation' });
+});
+
+test.each([
+  ['a transport failure', (transport: ReturnType<typeof setup>['transport']) =>
+    transport.sendCommand.mockRejectedValue(new Error('socket reset'))],
+  ['an answer for another key', (transport: ReturnType<typeof setup>['transport']) =>
+    transport.sendCommand.mockResolvedValue({
+      status: 200, body: Buffer.from(JSON.stringify(committed('definition.activate.v1', 'adopt:someone-else'))),
+    })],
+  ['a 200 carrying a rejection', (transport: ReturnType<typeof setup>['transport']) =>
+    transport.sendCommand.mockResolvedValue({
+      status: 200, body: Buffer.from(JSON.stringify(rejected('definition.activate.v1', context.adoptionKey))),
+    })],
+  ['malformed JSON', (transport: ReturnType<typeof setup>['transport']) =>
+    transport.sendCommand.mockResolvedValue({ status: 200, body: Buffer.from('{') })],
+  ['a commit without a revision', (transport: ReturnType<typeof setup>['transport']) => {
+    const body = committed('definition.activate.v1', context.adoptionKey);
+    delete (body.result as Record<string, unknown>).revision;
+    transport.sendCommand.mockResolvedValue({ status: 200, body: Buffer.from(JSON.stringify(body)) });
+  }],
+])('reports an unknown outcome after %s', async (_label, arrange) => {
+  const { client, transport } = setup();
+  arrange(transport);
+  await expect(client.activate('morning', 1, context)).rejects.toMatchObject({
+    code: 'outcome_unknown', retryable: true,
+  });
+});
+
+test('a deadline that expires while the command is in flight is an unknown outcome', async () => {
+  const { client, transport } = setup();
+  transport.sendCommand.mockImplementation(() => new Promise(() => {}));
+  await expect(client.activate('morning', 1, context, { timeoutMs: 20 })).rejects.toMatchObject({
+    code: 'outcome_unknown',
+  });
+});
+
+test('cancellation before the command is sent is not an unknown outcome', async () => {
+  const { client, transport } = setup();
+  const controller = new AbortController();
+  controller.abort();
+  await expect(client.activate('morning', 1, context, { signal: controller.signal })).rejects.not.toMatchObject({
+    code: 'outcome_unknown',
+  });
+  expect(transport.sendCommand).not.toHaveBeenCalled();
+});
