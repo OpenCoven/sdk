@@ -14,6 +14,7 @@ import {
   type CovenAutomationRunsOptions,
   type CovenAutomationRunsResult,
   type CovenAutomationOccurrenceHistoryPage,
+  type CovenAutomationRunHistoryPage,
   type CovenAutomationOccurrencesOptions,
   type CovenAutomationOccurrencesResult,
   type CovenAutomationOccurrenceResult,
@@ -32,7 +33,8 @@ function advertisement() {
       adapter: 'coven-daemon', status: 'available', policy: 'allow',
       actions: ['coven.automations.definition.get.v1', 'coven.automations.definition.list.v1', 'coven.automations.health', 'coven.automations.runs',
         'coven.automations.occurrence.list.v1', 'coven.automations.occurrence.get.v1', 'coven.automations.run.get.v1',
-        'coven.automations.receipt.get.v1', 'coven.automations.occurrence.history.v1'],
+        'coven.automations.receipt.get.v1', 'coven.automations.occurrence.history.v1',
+        'coven.automations.run.history.v1'],
       variantNegotiation: {
         version: 1, contractProfile: 'coven.automations.v1', description: 'Variant negotiation',
         supported: {
@@ -1225,5 +1227,110 @@ test('does not read history when the producer does not advertise the action', as
   advertised.capabilities[0]!.actions = advertised.capabilities[0]!.actions.filter((action) => action !== historyAction);
   transport.capabilities.mockResolvedValue({ status: 200, body: Buffer.from(JSON.stringify(advertised)) });
   await expect(client.occurrenceHistory('morning')).rejects.toMatchObject({ code: 'capability_unsupported' });
+  expect(transport.readDefinitions).not.toHaveBeenCalled();
+});
+
+const runHistoryAction = 'coven.automations.run.history.v1';
+
+function runRow(id: string, startedAt: string, occurrenceId: string | null = 'occurrence-1') {
+  return { ...runSnapshot(), id, occurrenceId, startedAt, attempts: [] };
+}
+
+function runPage(runs: readonly unknown[], cursor: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+  return { automationId: 'morning', ...extra, runs, cursor };
+}
+
+test('reads a page of run history, optionally for one occurrence', async () => {
+  const rows = [runRow('run-3', '2026-09-14T00:00:03.000Z'), runRow('run-2', '2026-09-14T00:00:02.000Z')];
+  const next = historyCursorFor({ scheduledFor: rows[1]!.startedAt, id: rows[1]!.id });
+  const { client, transport } = readSetup(runPage(rows, { hasMore: true, next }), runHistoryAction);
+  const result = await client.runHistory(' morning ', { limit: 2 });
+  expectTypeOf(result).toEqualTypeOf<CovenAutomationRunHistoryPage>();
+  expect(result).toEqual({ automationId: 'morning', data: rows, cursor: { hasMore: true, next } });
+  expect(transport.readDefinitions.mock.calls[0]?.[0]).toEqual({ action: runHistoryAction, automationId: ' morning ', limit: 2 });
+
+  const filtered = readSetup(runPage(rows, { hasMore: false, current: next }, { occurrenceId: 'occurrence-1' }), runHistoryAction);
+  expect(await filtered.client.runHistory('morning', { occurrenceId: ' occurrence-1 ', cursor: next })).toEqual({
+    automationId: 'morning', occurrenceId: 'occurrence-1', data: rows, cursor: { hasMore: false, current: next },
+  });
+  expect(filtered.transport.readDefinitions.mock.calls[0]?.[0]).toEqual({
+    action: runHistoryAction, automationId: 'morning', limit: 20, occurrenceId: ' occurrence-1 ', cursor: next,
+  });
+});
+
+test('orders mixed-precision run history by instant and iterates within maxPages', async () => {
+  const rows = [
+    runRow('run-e', '2026-09-03T09:00:00Z', null),
+    runRow('run-d', '2026-09-02T09:00:00.000000000Z'),
+    runRow('run-c', '2026-09-02T09:00:00.000Z'),
+    runRow('run-b', '2026-09-01T09:00:00.100500000Z'),
+    runRow('run-a', '2026-09-01T09:00:00.100Z'),
+  ];
+  expect((await readSetup(runPage(rows, { hasMore: false }), runHistoryAction).client.runHistory('morning'))
+    .data.map((run) => run.id)).toEqual(['run-e', 'run-d', 'run-c', 'run-b', 'run-a']);
+  await expect(readSetup(runPage([rows[4], rows[3]], { hasMore: false }), runHistoryAction).client.runHistory('morning'))
+    .rejects.toMatchObject({ code: 'invalid_response' });
+
+  const { client, transport } = readSetup();
+  transport.readDefinitions.mockImplementation((request) => {
+    const read = request as { cursor?: string; limit: number };
+    const start = read.cursor === undefined ? 0
+      : rows.findIndex((row) => historyCursorFor({ scheduledFor: row.startedAt, id: row.id }) === read.cursor) + 1;
+    const slice = rows.slice(start, start + read.limit);
+    const more = start + read.limit < rows.length;
+    const last = slice.at(-1)!;
+    const cursor = {
+      hasMore: more,
+      ...(read.cursor === undefined ? {} : { current: read.cursor }),
+      ...(more ? { next: historyCursorFor({ scheduledFor: last.startedAt, id: last.id }) } : {}),
+    };
+    return Promise.resolve({
+      status: 200, body: Buffer.from(JSON.stringify(readEnvelope(runHistoryAction, runPage(slice, cursor)))),
+    });
+  });
+  const seen: string[] = [];
+  for await (const run of client.iterateRunHistory('morning', { limit: 2, maxPages: 5 })) seen.push(run.id);
+  expect(seen).toEqual(['run-e', 'run-d', 'run-c', 'run-b', 'run-a']);
+  expect(transport.readDefinitions).toHaveBeenCalledTimes(3);
+});
+
+const runHistoryCursor = historyCursorFor({ scheduledFor: '2026-09-09T00:00:00Z', id: 'run-9' });
+test.each([
+  ['another automation id', { automationId: 'evening' }, {}],
+  ['an unrequested occurrence echo', { occurrenceId: 'occurrence-1' }, {}],
+  ['no occurrence echo when filtered', {}, { occurrenceId: 'occurrence-1' }],
+  ['a run of another occurrence', { occurrenceId: 'occurrence-1', runs: [runRow('run-2', '2026-09-14T00:00:02Z', 'occurrence-2')] },
+    { occurrenceId: 'occurrence-1' }],
+  ['a run of another automation', { runs: [{ ...runRow('run-2', '2026-09-14T00:00:02Z'), automationId: 'evening' }] }, {}],
+  ['more runs than the limit', { runs: [runRow('run-3', '2026-09-14T00:00:03Z'), runRow('run-2', '2026-09-14T00:00:02Z'),
+    runRow('run-1', '2026-09-14T00:00:01Z')] }, {}],
+  ['hasMore without next', { cursor: { hasMore: true } }, {}],
+  ['a next over 256 characters', { cursor: { hasMore: true, next: 'A'.repeat(300) } }, {}],
+  ['no current echo', { cursor: { hasMore: false } }, { cursor: runHistoryCursor }],
+])('rejects a run history page with %s', async (_label, change, query) => {
+  const page = { ...runPage([runRow('run-2', '2026-09-14T00:00:02Z'), runRow('run-1', '2026-09-14T00:00:01Z')], { hasMore: false }), ...change };
+  await expect(readSetup(page, runHistoryAction).client.runHistory('morning', { limit: 2, ...query }))
+    .rejects.toMatchObject({ code: 'invalid_response' });
+});
+
+test.each([
+  ['an empty id', '', {}],
+  ['a blank occurrence', 'morning', { occurrenceId: '  ' }],
+  ['a non-string occurrence', 'morning', { occurrenceId: 7 }],
+  ['an extra field', 'morning', { view: 'due' }],
+  ['a cursor over 256 characters', 'morning', { cursor: 'A'.repeat(300) }],
+  ['a non-canonical cursor', 'morning', { cursor: 'AB' }],
+])('rejects run history with %s before transport', async (_label, automationId, query) => {
+  const { client, transport } = readSetup();
+  await expect(client.runHistory(automationId, query as never)).rejects.toMatchObject({ code: 'invalid_options' });
+  expect(transport.readDefinitions).not.toHaveBeenCalled();
+});
+
+test('does not read run history when the producer does not advertise the action', async () => {
+  const { client, transport } = readSetup(runPage([], { hasMore: false }), runHistoryAction);
+  const advertised = advertisement();
+  advertised.capabilities[0]!.actions = advertised.capabilities[0]!.actions.filter((action) => action !== runHistoryAction);
+  transport.capabilities.mockResolvedValue({ status: 200, body: Buffer.from(JSON.stringify(advertised)) });
+  await expect(client.runHistory('morning')).rejects.toMatchObject({ code: 'capability_unsupported' });
   expect(transport.readDefinitions).not.toHaveBeenCalled();
 });
