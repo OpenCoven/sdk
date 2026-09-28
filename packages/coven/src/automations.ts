@@ -365,7 +365,10 @@ export class CovenAutomationsClient {
     let request: CovenAutomationCommandRequest;
     let operationOptions: OperationOptions;
     try {
-      if (!object(options)) return definitionReadFailure('invalid_options', operation);
+      if (!object(options) || Reflect.ownKeys(options).some((key) =>
+        typeof key !== 'string' || !['reason', 'signal', 'timeoutMs', 'observer'].includes(key))) {
+        return definitionReadFailure('invalid_options', operation);
+      }
       const { reason, ...rest } = options as CovenAutomationLifecycleOptions & OperationOptions;
       operationOptions = rest;
       request = lifecycleRequest(

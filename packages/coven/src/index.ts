@@ -47,6 +47,7 @@ export type {
   CovenAutomationCommandCommitted,
   CovenAutomationCommandContext,
   CovenAutomationCommandRejected,
+  CovenAutomationCommandReplayed,
   CovenAutomationCommandRequest,
   CovenAutomationCommandResult,
   CovenAutomationLifecycleCommand,

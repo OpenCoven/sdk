@@ -44,9 +44,9 @@ export interface CovenAutomationLifecycleOptions {
   readonly reason?: string;
 }
 
-/** A command the producer committed now or had already committed under this key. */
+/** A command the producer committed now. */
 export interface CovenAutomationCommandCommitted {
-  readonly outcome: 'committed' | 'replayed';
+  readonly outcome: 'committed';
   readonly command: CovenAutomationLifecycleCommand;
   readonly adoptionKey: string;
   /** Definition revision after the command. */
@@ -55,8 +55,13 @@ export interface CovenAutomationCommandCommitted {
   readonly result: Readonly<Record<string, unknown>>;
   /** Where the committed event landed, when the producer reports it. */
   readonly eventRef?: { readonly stream: string; readonly sequence: number };
-  /** Present only on a replay. */
-  readonly replay?: { readonly firstCommittedAt: string };
+}
+
+/** A command already committed under this adoption key, returned unchanged. */
+export interface CovenAutomationCommandReplayed extends Omit<CovenAutomationCommandCommitted, 'outcome'> {
+  readonly outcome: 'replayed';
+  /** When the key first committed. */
+  readonly replay: { readonly firstCommittedAt: string };
 }
 
 /**
@@ -76,7 +81,10 @@ export interface CovenAutomationCommandRejected {
   };
 }
 
-export type CovenAutomationCommandResult = CovenAutomationCommandCommitted | CovenAutomationCommandRejected;
+export type CovenAutomationCommandResult =
+  | CovenAutomationCommandCommitted
+  | CovenAutomationCommandReplayed
+  | CovenAutomationCommandRejected;
 
 /** The envelope sent on the control-action wire. */
 export interface CovenAutomationCommandRequest {
@@ -105,8 +113,10 @@ function patterned(value: unknown, pattern: RegExp, min: number, max: number): v
   return typeof value === 'string' && value.length >= min && value.length <= max && pattern.test(value);
 }
 
+/** Bounds count code points, as JSON Schema does, not UTF-16 code units. */
 function text(value: unknown, max: number): value is string {
-  return typeof value === 'string' && value.trim().length > 0 && value.length <= max && value.isWellFormed();
+  return typeof value === 'string' && value.isWellFormed() && value.trim().length > 0 &&
+    Array.from(value).length <= max;
 }
 
 function commandFailure(code: string, operation: string): never {
@@ -234,19 +244,20 @@ export function decodeCommand(
   if (response === undefined || response === null) {
     // Refused before the envelope was read (for example by the transport
     // authority gate): a typed refusal, and nothing was adopted.
-    const error = value.ok === false && status >= 400 ? typedError(value.error) : undefined;
+    const error = refused(value) && status >= 400 ? typedError(value.error) : undefined;
     return error === undefined ? undefined : { outcome: 'rejected', command, adoptionKey, error };
   }
   if (!object(response) || response.schemaVersion !== 'coven.automations.v1' || response.command !== command ||
     response.adoptionKey !== adoptionKey) return undefined;
   if (response.outcome === 'rejected') {
     const error = typedError(response.error);
-    if (error === undefined || value.ok !== false || status < 400 ||
+    if (error === undefined || !refused(value) || status < 400 ||
       (object(response.error) && response.error.httpStatus !== status)) return undefined;
     return { outcome: 'rejected', command, adoptionKey, error };
   }
   if ((response.outcome !== 'committed' && response.outcome !== 'replayed') || status !== 200 ||
-    value.ok !== true || Object.hasOwn(response, 'error') || !integer(response.revision, 1) ||
+    value.ok !== true || value.accepted !== true || value.status !== 'completed' ||
+    Object.hasOwn(response, 'error') || !integer(response.revision, 1) ||
     !object(response.result)) return undefined;
   const replayed = response.outcome === 'replayed';
   const replay = response.replay;
@@ -255,8 +266,7 @@ export function decodeCommand(
   const eventRef = response.eventRef;
   if (Object.hasOwn(response, 'eventRef') &&
     (!object(eventRef) || typeof eventRef.stream !== 'string' || !integer(eventRef.sequence, 0))) return undefined;
-  return {
-    outcome: response.outcome,
+  const committed = {
     command,
     adoptionKey,
     revision: response.revision,
@@ -264,6 +274,13 @@ export function decodeCommand(
     ...(Object.hasOwn(response, 'eventRef')
       ? { eventRef: { stream: (eventRef as { stream: string }).stream, sequence: (eventRef as { sequence: number }).sequence } }
       : {}),
-    ...(replayed ? { replay: { firstCommittedAt: (replay as { firstCommittedAt: string }).firstCommittedAt } } : {}),
   };
+  return replayed
+    ? { outcome: 'replayed', ...committed, replay: { firstCommittedAt: (replay as { firstCommittedAt: string }).firstCommittedAt } }
+    : { outcome: 'committed', ...committed };
+}
+
+/** The control-action wrapper of a refusal: nothing accepted or committed. */
+function refused(value: Record<string, unknown>): boolean {
+  return value.ok === false && value.accepted === false && value.status === 'rejected';
 }

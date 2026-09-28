@@ -143,6 +143,8 @@ test.each([
   ['an unknown context field', () => ['morning', 1, { ...context, authority: 'owner' }, {}]],
   ['an empty reason', () => ['morning', 1, context, { reason: ' ' }]],
   ['a reason over 500 characters', () => ['morning', 1, context, { reason: 'x'.repeat(501) }]],
+  ['an unknown option', () => ['morning', 1, context, { unexpected: true }]],
+  ['an intent over 1000 code points', () => ['morning', 1, { ...context, intent: '🌙'.repeat(1_001) }, {}]],
 ])('rejects %s before any I/O', async (_label, args) => {
   const { client, transport } = setup();
   await expect((client.activate as (...values: unknown[]) => Promise<unknown>)(...args()))
@@ -218,4 +220,34 @@ test('cancellation before the command is sent is not an unknown outcome', async 
     code: 'outcome_unknown',
   });
   expect(transport.sendCommand).not.toHaveBeenCalled();
+});
+
+test('bounds count code points, not UTF-16 units', async () => {
+  // 600 astral characters are 1200 UTF-16 units but within the 1000 code-point limit.
+  const { client, transport } = setup();
+  await client.activate('morning', 1, { ...context, intent: '🌙'.repeat(600) }, { reason: '🌙'.repeat(400) });
+  expect(transport.sendCommand).toHaveBeenCalledTimes(1);
+});
+
+test('replays narrow to a required replay timestamp', async () => {
+  const result = await setup(committed('definition.activate.v1', context.adoptionKey, 'replayed')).client
+    .activate('morning', 1, context);
+  if (result.outcome === 'replayed') {
+    expectTypeOf(result.replay.firstCommittedAt).toEqualTypeOf<string>();
+  }
+  expect(result.outcome).toBe('replayed');
+});
+
+test.each([
+  ['a commit whose wrapper was not accepted', () => ({ ...committed('definition.activate.v1', context.adoptionKey), accepted: false }), 200],
+  ['a commit whose wrapper is rejected', () => ({ ...committed('definition.activate.v1', context.adoptionKey), status: 'rejected' }), 200],
+  ['a refusal whose wrapper was accepted', () => ({ ...rejected('definition.activate.v1', context.adoptionKey), accepted: true }), 409],
+  ['a resultless refusal marked completed', () => ({
+    ok: false, accepted: false, action: ACTION, status: 'completed',
+    error: { code: 'AUTHORITY_REQUIRED', httpStatus: 403, message: 'owner IPC', retryable: false },
+  }), 403],
+])('reports an unknown outcome for %s', async (_label, body, status) => {
+  await expect(setup(body(), status).client.activate('morning', 1, context)).rejects.toMatchObject({
+    code: 'outcome_unknown',
+  });
 });
