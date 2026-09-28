@@ -5,9 +5,13 @@ import {
   AUTOMATION_EVENTS_MAX_BYTES, decodeEvents, eventsRequestBytes, type CovenAutomationEventPage, type CovenAutomationEventsRequest,
 } from './automations-events.js';
 import { decodeReceiptRead, receiptId, type CovenAutomationReceiptResult } from './automations-receipts.js';
-import { runsPayload, type CovenAutomationRunsResult } from './automations-runs.js';
+import { AUTOMATION_HISTORY_MAX_BYTES, historyCursor } from './automations-history.js';
 import {
-  AUTOMATION_HISTORY_MAX_BYTES, historyCursor, occurrenceHistoryPayload, occurrencePayload, occurrencesPayload,
+  RUN_HISTORY_CURSOR_MAX_LENGTH, runHistoryPayload, runsPayload,
+  type CovenAutomationRunHistoryPage, type CovenAutomationRunsResult,
+} from './automations-runs.js';
+import {
+  occurrenceHistoryPayload, occurrencePayload, occurrencesPayload,
   occurrenceView, runPayload,
   type CovenAutomationOccurrenceHistoryPage, type CovenAutomationOccurrenceResult, type CovenAutomationOccurrencesResult, type CovenAutomationOccurrenceView,
   type CovenAutomationRunResult,
@@ -99,6 +103,13 @@ export type CovenAutomationDefinitionReadRequest =
     readonly cursor?: string;
   }
   | { readonly action: 'coven.automations.occurrence.get.v1'; readonly id: string }
+  | {
+    readonly action: 'coven.automations.run.history.v1';
+    readonly automationId: string;
+    readonly limit: number;
+    readonly occurrenceId?: string;
+    readonly cursor?: string;
+  }
   | { readonly action: 'coven.automations.run.get.v1'; readonly id: string }
   | { readonly action: 'coven.automations.receipt.get.v1'; readonly id: string }
   | CovenAutomationEventsRequest;
@@ -167,6 +178,24 @@ export function definitionReadBytes(request: CovenAutomationDefinitionReadReques
       action, automationId: automationId.trim(), limit, ...(paged ? { cursor } : {}),
     }));
   }
+  if (action === 'coven.automations.run.history.v1') {
+    const identifier = (value: unknown): value is string => typeof value === 'string' &&
+      value.trim().length > 0 && Buffer.byteLength(value) <= 4_096 && value.isWellFormed();
+    const automationId = own('automationId');
+    const limit = own('limit');
+    const filtered = Object.hasOwn(descriptors, 'occurrenceId');
+    const occurrenceId = own('occurrenceId');
+    const paged = Object.hasOwn(descriptors, 'cursor');
+    const cursor = own('cursor');
+    if (keys.length !== 3 + (filtered ? 1 : 0) + (paged ? 1 : 0) || !identifier(automationId) ||
+      !integer(limit, 1, 100) || (filtered && !identifier(occurrenceId)) ||
+      (paged && !historyCursor(cursor, RUN_HISTORY_CURSOR_MAX_LENGTH))) return invalid();
+    return Buffer.from(JSON.stringify({
+      action, automationId: automationId.trim(), limit,
+      ...(filtered ? { occurrenceId: (occurrenceId as string).trim() } : {}),
+      ...(paged ? { cursor } : {}),
+    }));
+  }
   if (keys.length !== (action === 'coven.automations.runs' ? 3 : 2)) return invalid();
   if (action === 'coven.automations.definition.list.v1' && typeof own('includeTombstoned') === 'boolean') {
     return Buffer.from(JSON.stringify({ action, includeTombstoned: own('includeTombstoned') }));
@@ -192,12 +221,13 @@ export function decodeDefinitionRead(
   operation: string,
 ): CovenAutomationDefinitionList | CovenAutomationDefinition | CovenAutomationHealthResult | CovenAutomationRunsResult |
   CovenAutomationOccurrencesResult | CovenAutomationOccurrenceHistoryPage | CovenAutomationOccurrenceResult |
-  CovenAutomationRunResult | CovenAutomationReceiptResult | CovenAutomationEventPage {
+  CovenAutomationRunResult | CovenAutomationRunHistoryPage | CovenAutomationReceiptResult | CovenAutomationEventPage {
   const invalid = (): never => definitionReadFailure('invalid_response', operation);
   let value: unknown;
   try {
     value = parsePolicyJson(bytes, request.action === 'coven.automations.events.subscribe.v1' ? AUTOMATION_EVENTS_MAX_BYTES
-      : request.action === 'coven.automations.occurrence.history.v1' ? AUTOMATION_HISTORY_MAX_BYTES : 16_384);
+      : request.action === 'coven.automations.occurrence.history.v1' || request.action === 'coven.automations.run.history.v1'
+        ? AUTOMATION_HISTORY_MAX_BYTES : 16_384);
   } catch {
     return invalid();
   }
@@ -221,6 +251,10 @@ export function decodeDefinitionRead(
   }
   if (request.action === 'coven.automations.occurrence.history.v1') {
     return occurrenceHistoryPayload(payload, request.automationId.trim(), request.limit, request.cursor) ?? invalid();
+  }
+  if (request.action === 'coven.automations.run.history.v1') {
+    return runHistoryPayload(payload, request.automationId.trim(), request.occurrenceId?.trim(), request.limit,
+      request.cursor) ?? invalid();
   }
   if (request.action === 'coven.automations.occurrence.get.v1') {
     return occurrencePayload(payload, request.id.trim()) ?? invalid();

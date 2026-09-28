@@ -1,3 +1,4 @@
+import { historyPageCursor, newestFirst, type CovenAutomationHistoryCursor } from './automations-history.js';
 import { integer, object } from './automations-read-validation.js';
 
 export interface CovenAutomationRunsOptions {
@@ -127,4 +128,48 @@ export function runsPayload(value: Record<string, unknown>, id: string, limit: n
     }
   }
   return { runs: value.runs as CovenAutomationRun[] };
+}
+
+/** `run.history.v1` cursors are bounded tighter than sdk-core's 512 characters. */
+export const RUN_HISTORY_CURSOR_MAX_LENGTH = 256;
+
+export interface CovenAutomationRunHistoryOptions {
+  /** 1–100, default 20. */
+  readonly limit?: number;
+  /** An opaque `cursor.next` from an earlier page of the same query. */
+  readonly cursor?: string;
+  /** Restricts the history to one occurrence's runs. */
+  readonly occurrenceId?: string;
+}
+
+/**
+ * One page of an automation's runs, newest first by start instant then
+ * `id`, each with its attempts. Shaped as an sdk-core `Page`.
+ */
+export interface CovenAutomationRunHistoryPage {
+  readonly automationId: string;
+  readonly occurrenceId?: string;
+  readonly data: readonly CovenAutomationRun[];
+  readonly cursor: CovenAutomationHistoryCursor;
+}
+
+export function runHistoryPayload(
+  value: Record<string, unknown>,
+  automationId: string,
+  occurrenceId: string | undefined,
+  limit: number,
+  cursor: string | undefined,
+): CovenAutomationRunHistoryPage | undefined {
+  if (value.automationId !== automationId ||
+    (occurrenceId === undefined ? Object.hasOwn(value, 'occurrenceId') : value.occurrenceId !== occurrenceId)) {
+    return undefined;
+  }
+  const page = runsPayload(value, automationId, limit);
+  if (page === undefined) return undefined;
+  const rows = page.runs;
+  const position = historyPageCursor(value.cursor, cursor, rows.length, limit, RUN_HISTORY_CURSOR_MAX_LENGTH);
+  if (position === undefined ||
+    (occurrenceId !== undefined && !rows.every((run) => run.occurrenceId === occurrenceId)) ||
+    !newestFirst(rows, (run) => run.startedAt, (run) => run.id)) return undefined;
+  return { automationId, ...(occurrenceId === undefined ? {} : { occurrenceId }), data: rows, cursor: position };
 }

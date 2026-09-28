@@ -42,10 +42,13 @@ export type {
   CovenAutomationOccurrencesResult,
   CovenAutomationOccurrenceView,
 } from './automations-occurrences.js';
+export type { CovenAutomationHistoryCursor } from './automations-history.js';
 export type {
   CovenAutomationAttempt,
   CovenAutomationRun,
   CovenAutomationRunCancellation,
+  CovenAutomationRunHistoryOptions,
+  CovenAutomationRunHistoryPage,
   CovenAutomationRunsOptions,
   CovenAutomationRunsResult,
 } from './automations-runs.js';

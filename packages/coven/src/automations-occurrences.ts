@@ -1,5 +1,4 @@
-import { normalizePageOptions } from '@opencoven/sdk-core';
-
+import { historyPageCursor, newestFirst, type CovenAutomationHistoryCursor } from './automations-history.js';
 import { integer, object } from './automations-read-validation.js';
 import { runsPayload, type CovenAutomationRun } from './automations-runs.js';
 
@@ -53,9 +52,6 @@ export interface CovenAutomationOccurrencesResult {
   readonly occurrences: readonly CovenAutomationOccurrence[];
 }
 
-/** Largest history response accepted: room for 100 records, far above the 16 KiB read cap. */
-export const AUTOMATION_HISTORY_MAX_BYTES = 262_144;
-
 export interface CovenAutomationOccurrenceHistoryOptions {
   /** 1–100, default 20. */
   readonly limit?: number;
@@ -70,12 +66,7 @@ export interface CovenAutomationOccurrenceHistoryOptions {
 export interface CovenAutomationOccurrenceHistoryPage {
   readonly automationId: string;
   readonly data: readonly CovenAutomationOccurrence[];
-  readonly cursor: {
-    readonly hasMore: boolean;
-    /** The cursor this page was read from; absent on the first page. */
-    readonly current?: string;
-    readonly next?: string;
-  };
+  readonly cursor: CovenAutomationHistoryCursor;
 }
 
 export interface CovenAutomationOccurrenceResult {
@@ -113,34 +104,6 @@ export function occurrencesPayload(
   return { occurrences: value.occurrences };
 }
 
-/** A cursor sdk-core would accept: canonical unpadded base64url, at most 512 characters. */
-export function historyCursor(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  try {
-    normalizePageOptions({ cursor: value });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * The producer's history sort key: the timestamp with its fraction padded to
- * nine digits, so millisecond scheduled rows and nanosecond manual rows order
- * by instant. Mirrors the SQL expression character for character.
- */
-function historySortKey(scheduledFor: string): Buffer {
-  const characters = Array.from(scheduledFor);
-  const fraction = characters.slice(20).join('').replace(/Z+$/u, '');
-  return Buffer.from(`${characters.slice(0, 19).join('')}.${Array.from(`${fraction}000000000`).slice(0, 9).join('')}Z`);
-}
-
-function newerThan(left: CovenAutomationOccurrence, right: CovenAutomationOccurrence): boolean {
-  // The producer compares keys and ids as SQLite does, by bytes, not UTF-16 code units.
-  const order = Buffer.compare(historySortKey(left.scheduledFor), historySortKey(right.scheduledFor));
-  return order > 0 || (order === 0 && Buffer.compare(Buffer.from(left.id), Buffer.from(right.id)) > 0);
-}
-
 export function occurrenceHistoryPayload(
   value: Record<string, unknown>,
   automationId: string,
@@ -148,24 +111,11 @@ export function occurrenceHistoryPayload(
   cursor: string | undefined,
 ): CovenAutomationOccurrenceHistoryPage | undefined {
   const page = value.automationId === automationId ? occurrencesPayload(value, limit, automationId) : undefined;
-  const position = value.cursor;
-  if (page === undefined || !object(position) || typeof position.hasMore !== 'boolean' ||
-    Reflect.ownKeys(position).some((key) => key !== 'hasMore' && key !== 'current' && key !== 'next') ||
-    (cursor === undefined ? Object.hasOwn(position, 'current') : position.current !== cursor)) return undefined;
+  if (page === undefined) return undefined;
   const rows = page.occurrences;
-  if (position.hasMore
-    ? !historyCursor(position.next) || position.next === cursor || rows.length !== limit
-    : Object.hasOwn(position, 'next')) return undefined;
-  if (rows.some((row, index) => index > 0 && !newerThan(rows[index - 1]!, row))) return undefined;
-  return {
-    automationId,
-    data: rows,
-    cursor: {
-      hasMore: position.hasMore,
-      ...(cursor === undefined ? {} : { current: cursor }),
-      ...(position.hasMore ? { next: position.next as string } : {}),
-    },
-  };
+  const position = historyPageCursor(value.cursor, cursor, rows.length, limit);
+  if (position === undefined || !newestFirst(rows, (row) => row.scheduledFor, (row) => row.id)) return undefined;
+  return { automationId, data: rows, cursor: position };
 }
 
 function occurrenceRunFields(record: Record<string, unknown>): boolean {
