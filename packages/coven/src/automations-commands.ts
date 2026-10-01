@@ -5,7 +5,7 @@ import { snapshotAutomationJson } from './automations-canonical-json.js';
 import {
   isAutomationDefinitionDocument, type CovenAutomationDefinitionDocument,
 } from './automations-definition-document.js';
-import { AUTOMATION_HISTORY_MAX_BYTES } from './automations-history.js';
+import { AUTOMATION_EVENTS_MAX_BYTES } from './automations-events.js';
 import { computeDefinitionDigest } from './automations-integrity.js';
 
 /** The producer's spec command-envelope action (OpenCoven/coven#1176). */
@@ -190,9 +190,33 @@ function deepFreeze<T>(value: T): T {
 }
 
 /**
+ * Largest definition sent, as serialized UTF-8. A committed answer carries
+ * the definition up to four times (routine and rich form, in both the result
+ * and the event), so this keeps every committed answer within the 1 MiB
+ * response cap: a commit is never reported as `outcome_unknown`.
+ */
+export const DEFINITION_MAX_BYTES = 192 * 1024;
+
+/** Deepest definition sent: it sits four levels down in an answer parsed to depth 16. */
+const DEFINITION_MAX_DEPTH = 10;
+
+function depth(value: unknown): number {
+  return typeof value === 'object' && value !== null
+    ? 1 + Math.max(0, ...Object.values(value).map(depth))
+    : 0;
+}
+
+/** Whether a committed answer carrying `definition` is guaranteed to decode. */
+function fitsCommittedAnswer(definition: unknown): boolean {
+  return Buffer.byteLength(JSON.stringify(definition)) <= DEFINITION_MAX_BYTES &&
+    depth(definition) <= DEFINITION_MAX_DEPTH;
+}
+
+/**
  * A complete, digest-bearing definition for `command`, or `undefined` when
- * `input` cannot become one. The input is snapshotted first, so accessors run
- * once and cannot change what is hashed and sent.
+ * `input` cannot become one. The input is snapshotted first: accessor-backed
+ * properties are refused without being invoked, so what is hashed is what is
+ * sent.
  */
 function completeDefinition(
   command: CovenAutomationDefinitionCommand,
@@ -203,8 +227,8 @@ function completeDefinition(
   if (!object(owned) || Object.hasOwn(owned, 'revision') || Object.hasOwn(owned, 'integrity') ||
     (command === 'definition.create.v1') === Object.hasOwn(owned, 'lifecycleState')) return undefined;
   const document: Record<string, unknown> = {
+    // The caller's schemaVersion is kept, so a missing or unknown version fails validation.
     ...owned,
-    schemaVersion: 'coven.automations.v1',
     revision,
     ...(command === 'definition.create.v1' ? { lifecycleState: 'draft' } : {}),
     // Placeholder so the structural check passes; the digest excludes it.
@@ -213,7 +237,9 @@ function completeDefinition(
   const digest = computeDefinitionDigest(document);
   if (digest.status !== 'computed') return undefined;
   document.integrity = { ...digest.digest };
-  return isAutomationDefinitionDocument(document) ? deepFreeze(document as unknown as CovenAutomationDefinitionDocument) : undefined;
+  return isAutomationDefinitionDocument(document) && fitsCommittedAnswer(document)
+    ? deepFreeze(document as unknown as CovenAutomationDefinitionDocument)
+    : undefined;
 }
 
 /** A validated create or revise request, or `invalid_options` before any I/O. */
@@ -284,9 +310,29 @@ export function lifecycleRequest(
   } as const);
 }
 
-/** Largest command response accepted: definition answers carry a rich body with a long prompt. */
+/** Largest command response accepted: definition answers can carry four copies of the definition. */
 export function commandResponseLimit(command: string): number {
-  return command === 'definition.create.v1' || command === 'definition.revise.v1' ? AUTOMATION_HISTORY_MAX_BYTES : 16_384;
+  return command === 'definition.create.v1' || command === 'definition.revise.v1' ? AUTOMATION_EVENTS_MAX_BYTES : 16_384;
+}
+
+/**
+ * Own data properties of `options` limited to `allowed`, copied without
+ * invoking accessors; `undefined` for anything else.
+ */
+export function commandOptions(options: unknown, allowed: readonly string[]): Record<string, unknown> | undefined {
+  try {
+    if (!object(options)) return undefined;
+    const copy: Record<string, unknown> = {};
+    for (const key of Reflect.ownKeys(options)) {
+      const descriptor = Object.getOwnPropertyDescriptor(options, key);
+      if (typeof key !== 'string' || !allowed.includes(key) || descriptor === undefined ||
+        !Object.hasOwn(descriptor, 'value')) return undefined;
+      copy[key] = descriptor.value;
+    }
+    return copy;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -333,6 +379,7 @@ export function commandBytes(request: CovenAutomationCommandRequest): Buffer {
       if (!isAutomationDefinitionDocument(definition)) return invalid();
       const digest = computeDefinitionDigest(definition);
       if (digest.status !== 'computed' || digest.digest.value !== definition.integrity.value ||
+        !fitsCommittedAnswer(definition) ||
         definition.revision !== (revise ? Number(envelope.expectedRevision) + 1 : 1) ||
         (revise ? !['paused', 'active'].includes(definition.lifecycleState) : definition.lifecycleState !== 'draft')) {
         return invalid();

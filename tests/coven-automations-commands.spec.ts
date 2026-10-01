@@ -384,3 +384,47 @@ test.each([
     signal: new AbortController().signal, deadline: undefined,
   })).rejects.toMatchObject({ code: 'invalid_options' });
 });
+
+test.each([
+  ['a missing schemaVersion', () => {
+    const input: Record<string, unknown> = { ...draft() };
+    delete input.schemaVersion;
+    return input;
+  }],
+  ['an unknown schemaVersion', () => ({ ...draft(), schemaVersion: 'coven.automations.v2' })],
+  ['a definition too large for a committed answer', () => ({
+    ...draft(), action: { variant: 'familiarInvocation', version: 1, prompt: '€'.repeat(100_000) },
+  })],
+  ['a definition nested too deeply', () => {
+    let nested: Record<string, unknown> = { leaf: true };
+    for (let level = 0; level < 10; level += 1) nested = { level: nested };
+    return { ...draft(), extensions: { 'x-deep': nested } };
+  }],
+])('createDraft refuses %s before any I/O', async (_label, input) => {
+  const { client, transport } = setup();
+  await expect(client.createDraft(input() as never, draftContext)).rejects.toMatchObject({ code: 'invalid_options' });
+  expect(transport.capabilities).not.toHaveBeenCalled();
+});
+
+test('a definition at the size bound is still sent', async () => {
+  const { client, transport } = setup(definitionCommitted('definition.create.v1', draftContext.adoptionKey, 1));
+  // 100,000 ASCII characters: the longest prompt the schema allows, well inside the bound.
+  await client.createDraft({ ...draft(), action: { ...draft().action, prompt: 'x'.repeat(100_000) } }, draftContext);
+  expect(transport.sendCommand).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  ['createDraft', (client: ReturnType<typeof setup>['client'], options: object) =>
+    client.createDraft(draft(), draftContext, options as never)],
+  ['activate', (client: ReturnType<typeof setup>['client'], options: object) =>
+    client.activate('morning', 1, context, options as never)],
+])('%s refuses accessor-backed options without invoking them', async (_label, call) => {
+  const { client, transport } = setup();
+  const getter = vi.fn(() => { throw new Error('getter secret'); });
+  const options = Object.defineProperty({}, 'timeoutMs', { get: getter, enumerable: true });
+  const failure = await call(client, options).catch((error: unknown) => error);
+  expect(failure).toMatchObject({ code: 'invalid_options' });
+  expect(String(failure)).not.toContain('getter secret');
+  expect(getter).not.toHaveBeenCalled();
+  expect(transport.capabilities).not.toHaveBeenCalled();
+});

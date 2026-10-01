@@ -17,7 +17,7 @@ import {
 } from './automations-receipt-verification.js';
 import { historyCursor } from './automations-history.js';
 import {
-  COMMAND_ENVELOPE_ACTION, decodeCommand, definitionRequest, lifecycleRequest,
+  COMMAND_ENVELOPE_ACTION, commandOptions, decodeCommand, definitionRequest, lifecycleRequest,
   type CovenAutomationCommandContext, type CovenAutomationCommandRequest, type CovenAutomationCommandResult,
   type CovenAutomationDraftInput, type CovenAutomationLifecycleCommand, type CovenAutomationLifecycleOptions,
   type CovenAutomationRevisionInput,
@@ -366,11 +366,9 @@ export class CovenAutomationsClient {
     options: OperationOptions = {},
   ): Promise<CovenAutomationCommandResult> {
     const operation = 'automations.createDraft';
-    return await this.#command(
-      this.#definitionRequest('definition.create.v1', operation, undefined, undefined, definition, context, options),
-      operation,
-      options,
-    );
+    const [request, operationOptions] =
+      this.#definitionRequest('definition.create.v1', operation, undefined, undefined, definition, context, options);
+    return await this.#command(request, operation, operationOptions);
   }
 
   /**
@@ -386,11 +384,9 @@ export class CovenAutomationsClient {
     options: OperationOptions = {},
   ): Promise<CovenAutomationCommandResult> {
     const operation = 'automations.revise';
-    return await this.#command(
-      this.#definitionRequest('definition.revise.v1', operation, automationId, expectedRevision, definition, context, options),
-      operation,
-      options,
-    );
+    const [request, operationOptions] =
+      this.#definitionRequest('definition.revise.v1', operation, automationId, expectedRevision, definition, context, options);
+    return await this.#command(request, operation, operationOptions);
   }
 
   #definitionRequest(
@@ -401,13 +397,14 @@ export class CovenAutomationsClient {
     definition: unknown,
     context: unknown,
     options: unknown,
-  ): CovenAutomationCommandRequest {
+  ): [CovenAutomationCommandRequest, OperationOptions] {
     try {
-      if (!object(options) || Reflect.ownKeys(options).some((key) =>
-        typeof key !== 'string' || !['signal', 'timeoutMs', 'observer'].includes(key))) {
-        return definitionReadFailure('invalid_options', operation);
-      }
-      return definitionRequest(command, automationId, expectedRevision, definition, context, operation);
+      const operationOptions = commandOptions(options, ['signal', 'timeoutMs', 'observer']);
+      if (operationOptions === undefined) return definitionReadFailure('invalid_options', operation);
+      return [
+        definitionRequest(command, automationId, expectedRevision, definition, context, operation),
+        operationOptions,
+      ];
     } catch (error) {
       throw new CovenClientError(normalizeCovenError(error, operation));
     }
@@ -424,15 +421,13 @@ export class CovenAutomationsClient {
     let request: CovenAutomationCommandRequest;
     let operationOptions: OperationOptions;
     try {
-      if (!object(options) || Reflect.ownKeys(options).some((key) =>
-        typeof key !== 'string' || !['reason', 'signal', 'timeoutMs', 'observer'].includes(key))) {
-        return definitionReadFailure('invalid_options', operation);
-      }
-      const { reason, ...rest } = options as CovenAutomationLifecycleOptions & OperationOptions;
+      const owned = commandOptions(options, ['reason', 'signal', 'timeoutMs', 'observer']);
+      if (owned === undefined) return definitionReadFailure('invalid_options', operation);
+      const { reason, ...rest } = owned;
       operationOptions = rest;
       request = lifecycleRequest(
         command, automationId, expectedRevision, context,
-        Object.hasOwn(options, 'reason') ? { reason } : {}, operation,
+        Object.hasOwn(owned, 'reason') ? { reason } : {}, operation,
       );
     } catch (error) {
       throw new CovenClientError(normalizeCovenError(error, operation));

@@ -305,6 +305,50 @@ describe.each(['unix', 'windows'] as const)('%s Automations parity', (platform) 
     expect(sockets.every((socket) => socket.destroyed)).toBe(true);
   });
 
+  test.skipIf(platform === 'unix' && process.platform === 'win32')('decodes a committed definition answer above 256 KiB', async () => {
+    const { client, configure } = setup(platform);
+    const action = 'coven.automations.command.v1';
+    const prompt = 'x'.repeat(100_000);
+    const definition = { automationId: 'daily-notes', revision: 1, action: { prompt } };
+    const committed = {
+      outcome: 'committed', revision: 1,
+      result: { routine: { id: 'daily-notes', prompt }, revision: 1, definition },
+      eventRef: { stream: 'automation:daily-notes', sequence: 0 },
+    };
+    const body = Buffer.from(JSON.stringify({
+      ok: true, accepted: true, action, status: 'completed',
+      result: {
+        schemaVersion: 'coven.automations.v1', command: 'definition.create.v1',
+        adoptionKey: 'adopt:create:large', ...committed,
+      },
+      event: { kind: 'automations.changed', action: 'coven.automations.definition.create.v1', payload: committed },
+    }));
+    expect(body.length).toBeGreaterThan(256 * 1024);
+    configure.mockImplementation((socket, index) => {
+      if (index === 0) {
+        socket.response = Buffer.from(JSON.stringify(advertisement([action, 'coven.automations.definition.create.v1'] as never)));
+      } else {
+        socket.rawResponse = Buffer.concat([
+          Buffer.from(`HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\n\r\n`),
+          body,
+        ]);
+      }
+    });
+    const result = await client.createDraft({
+      schemaVersion: 'coven.automations.v1', automationId: 'daily-notes', display: { name: 'Daily notes' },
+      trigger: { variant: 'schedule', version: 1, schedule: { rrule: 'FREQ=DAILY;BYHOUR=9', timezone: 'utc' } },
+      action: { variant: 'familiarInvocation', version: 1, prompt },
+      binding: { familiarBindingPolicy: 'exact', familiarId: 'charm', authority: { approvalPolicyRef: 'policy://charm' } },
+      runtimeRequirements: { runtimeId: 'coven-code', capabilities: ['sessions.launch'] },
+      policies: {
+        timeout: { perRunMinutes: 30 }, retry: { maxAttempts: 1, backoffPolicy: 'none' },
+        concurrency: { overlap: 'forbid' }, misfire: { disposition: 'latest' },
+        retention: { occurrenceHistory: { classification: 'standard' } },
+      },
+    }, { adoptionKey: 'adopt:create:large', intent: 'Add a long routine.', principalId: 'principal:owner' });
+    expect(result).toMatchObject({ outcome: 'committed', revision: 1 });
+  });
+
   test.skipIf(platform === 'unix' && process.platform === 'win32')('return closes a pending subscription socket before any late response', async () => {
     const { client, configure, sockets } = setup(platform);
     configure.mockImplementation((socket, index) => {

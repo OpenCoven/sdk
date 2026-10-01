@@ -656,10 +656,10 @@ const created = await automations.createDraft({
 }, { adoptionKey: 'adopt:create:daily-notes', intent: 'Add the daily notes routine.', principalId: 'principal:owner' });
 ```
 
-- **The SDK sets the bookkeeping fields.** For `createDraft` it sets `revision: 1`, `lifecycleState: "draft"` and the JCS `integrity`; for `revise` it sets `revision: expectedRevision + 1` and `integrity`. Passing any of these yourself is `invalid_options`, as is a body that fails the structural `coven.automations.v1` check.
+- **The SDK sets the bookkeeping fields.** For `createDraft` it sets `revision: 1`, `lifecycleState: "draft"` and the JCS `integrity`; for `revise` it sets `revision: expectedRevision + 1` and `integrity`. Passing any of these yourself is `invalid_options`, as is a body that fails the structural `coven.automations.v1` check, including a missing or unknown `schemaVersion`. Accessor-backed properties are refused without being invoked.
 - **Lifecycle on revise.** You choose `lifecycleState`, and it must be one a revise can write: `paused` for a draft, invalid or paused definition, `active` for an active one. The producer refuses anything else with `ILLEGAL_TRANSITION`. A new definition runs nothing until `activate`.
 - **Producer limits.** The producer refuses variants it cannot execute with `CAPABILITY_UNSUPPORTED`, rather than dropping them: delivery policies, activation windows, and retention classes other than `standard`.
-- **Larger answers.** A committed definition answer includes the stored rich definition, so these two commands accept responses up to 256 KiB.
+- **Size and depth bounds.** A committed answer carries the definition up to four times, so the SDK refuses, before sending, a definition over 192 KiB of serialized JSON or nested deeper than 10 levels, and accepts answers up to 1 MiB. Any definition the SDK sends therefore has a committed answer it can decode, so a commit is never reported as `outcome_unknown` for size. The longest schema-valid ASCII prompt (100,000 characters) fits.
 
 **Not available.** Run, cancel, retry and approval wait on OpenCoven/coven#857.
 
