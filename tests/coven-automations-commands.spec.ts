@@ -1,5 +1,9 @@
 import {
+  computeDefinitionDigest,
   createCovenAutomationsClient,
+  createCovenAutomationsUnixTransport,
+  COVEN_DAEMON_PROTOCOL,
+  type CovenAutomationDraftInput,
   type CovenAutomationCommandContext,
   type CovenAutomationCommandRequest,
   type CovenAutomationCommandResult,
@@ -9,6 +13,7 @@ import { expect, expectTypeOf, test, vi } from 'vitest';
 
 const ACTION = 'coven.automations.command.v1';
 const LIFECYCLE = [
+  'coven.automations.definition.create.v1', 'coven.automations.definition.revise.v1',
   'coven.automations.definition.activate.v1', 'coven.automations.definition.pause.v1',
   'coven.automations.definition.disable.v1', 'coven.automations.definition.tombstone.v1',
 ];
@@ -101,7 +106,7 @@ test.each([
   const result = await client[method]('morning', 4, context);
   expect(result.outcome).toBe('committed');
   expect(transport.sendCommand.mock.calls[0]?.[0].envelope.command).toBe(command);
-  expect(transport.sendCommand.mock.calls[0]?.[0].envelope.expectedRevision).toBe(4);
+  expect((transport.sendCommand.mock.calls[0]?.[0].envelope as { expectedRevision?: number }).expectedRevision).toBe(4);
 });
 
 test('returns replays and typed rejections without copying the producer message', async () => {
@@ -250,4 +255,176 @@ test.each([
   await expect(setup(body(), status).client.activate('morning', 1, context)).rejects.toMatchObject({
     code: 'outcome_unknown',
   });
+});
+
+function draft(): CovenAutomationDraftInput {
+  return {
+    schemaVersion: 'coven.automations.v1',
+    automationId: 'daily-notes',
+    display: { name: 'Daily notes', tags: ['notes'] },
+    trigger: { variant: 'schedule', version: 1, schedule: { rrule: 'FREQ=DAILY;BYHOUR=9', timezone: 'utc' } },
+    action: { variant: 'familiarInvocation', version: 1, prompt: 'Write the daily reflection.', cwd: '~/notes' },
+    binding: {
+      familiarBindingPolicy: 'exact', familiarId: 'charm',
+      authority: { approvalPolicyRef: 'policy://authority/familiars/charm' },
+    },
+    runtimeRequirements: { runtimeId: 'coven-code', capabilities: ['sessions.launch'] },
+    policies: {
+      timeout: { perRunMinutes: 30 },
+      retry: { maxAttempts: 3, backoffPolicy: 'exponential', retryableClasses: ['transient_dispatch'] },
+      concurrency: { overlap: 'forbid' },
+      misfire: { disposition: 'latest' },
+      retention: { occurrenceHistory: { classification: 'standard' } },
+    },
+  };
+}
+
+const draftContext: CovenAutomationCommandContext = { ...context, adoptionKey: 'adopt:create:daily-notes' };
+
+function definitionCommitted(command: string, adoptionKey: string, revision: number) {
+  return {
+    ok: true, accepted: true, action: ACTION, status: 'completed',
+    result: {
+      schemaVersion: 'coven.automations.v1', command, adoptionKey, outcome: 'committed', revision,
+      result: { routine: { id: 'daily-notes' }, revision, definition: { automationId: 'daily-notes', revision } },
+      eventRef: { stream: 'automation:daily-notes', sequence: 0 },
+    },
+  };
+}
+
+test('createDraft sends a draft at revision 1 with a computed integrity', async () => {
+  const { client, transport } = setup(definitionCommitted('definition.create.v1', draftContext.adoptionKey, 1));
+  const result = await client.createDraft(draft(), draftContext);
+  expect(result).toMatchObject({ outcome: 'committed', command: 'definition.create.v1', revision: 1 });
+  const request = transport.sendCommand.mock.calls[0]![0];
+  expect(request.envelope.command).toBe('definition.create.v1');
+  expect(request.envelope).not.toHaveProperty('expectedRevision');
+  const sent = (request.envelope.payload as unknown as { definition: Record<string, unknown> }).definition;
+  expect(sent).toMatchObject({ ...draft(), revision: 1, lifecycleState: 'draft' });
+  const recomputed = computeDefinitionDigest(sent);
+  expect(recomputed.status).toBe('computed');
+  expect((sent.integrity as { value: string }).value).toBe(recomputed.status === 'computed' ? recomputed.digest.value : '');
+  expect(Object.isFrozen(sent) && Object.isFrozen(sent.policies)).toBe(true);
+});
+
+test('revise sends the next revision with the caller-chosen lifecycle state', async () => {
+  const { client, transport } = setup(definitionCommitted('definition.revise.v1', 'adopt:revise:daily-notes', 3));
+  const next = { ...draft(), lifecycleState: 'paused' as const, action: { ...draft().action, prompt: 'Reflect briefly.' } };
+  const result = await client.revise('daily-notes', 2, next, { ...context, adoptionKey: 'adopt:revise:daily-notes' });
+  expect(result).toMatchObject({ outcome: 'committed', revision: 3 });
+  const envelope = transport.sendCommand.mock.calls[0]![0].envelope as unknown as {
+    expectedRevision: number; payload: { definition: Record<string, unknown> };
+  };
+  expect(envelope.expectedRevision).toBe(2);
+  expect(envelope.payload.definition).toMatchObject({ revision: 3, lifecycleState: 'paused' });
+});
+
+test.each([
+  ['a caller-set revision', () => ({ ...draft(), revision: 1 })],
+  ['a caller-set integrity', () => ({ ...draft(), integrity: { algorithm: 'sha256', canonicalization: 'jcs-rfc8785', value: 'a'.repeat(64) } })],
+  ['a caller-set lifecycle state', () => ({ ...draft(), lifecycleState: 'draft' })],
+  ['an invalid document', () => ({ ...draft(), action: { variant: 'familiarInvocation', version: 1, prompt: '' } })],
+])('createDraft refuses %s before any I/O', async (_label, input) => {
+  const { client, transport } = setup();
+  await expect(client.createDraft(input() as never, draftContext)).rejects.toMatchObject({ code: 'invalid_options' });
+  expect(transport.sendCommand).not.toHaveBeenCalled();
+});
+
+test.each([
+  ['a different automation id', () => ['other-notes', 2, { ...draft(), lifecycleState: 'paused' }]],
+  ['a draft lifecycle state', () => ['daily-notes', 2, { ...draft(), lifecycleState: 'draft' }]],
+  ['no lifecycle state', () => ['daily-notes', 2, draft()]],
+  ['a zero expected revision', () => ['daily-notes', 0, { ...draft(), lifecycleState: 'paused' }]],
+])('revise refuses %s before any I/O', async (_label, args) => {
+  const { client, transport } = setup();
+  const [id, revision, input] = args() as [string, number, unknown];
+  await expect(client.revise(id, revision, input as never, draftContext)).rejects.toMatchObject({ code: 'invalid_options' });
+  expect(transport.sendCommand).not.toHaveBeenCalled();
+});
+
+test('createDraft refuses an unknown option before any I/O', async () => {
+  const { client, transport } = setup();
+  await expect(client.createDraft(draft(), draftContext, { reason: 'x' } as never)).rejects.toMatchObject({ code: 'invalid_options' });
+  expect(transport.capabilities).not.toHaveBeenCalled();
+});
+
+function unixTransport() {
+  const connect = vi.fn(() => { throw new Error('must not connect'); });
+  return createCovenAutomationsUnixTransport({
+    version: 1, protocol: COVEN_DAEMON_PROTOCOL, source: 'coven_home',
+    endpoint: { kind: 'unix', path: '/example/coven.sock' },
+  }, {
+    security: { platform: 'unix', peerIdentity: { inspectConnected: () => Promise.resolve({ uid: 501 }) } },
+    dependencies: {
+      connect, getEffectiveUid: () => 501,
+      lstat: () => Promise.resolve({ device: 1, inode: 2, ownerUid: 501, mode: 0o140600, symbolicLink: false, socket: true }),
+    },
+  });
+}
+
+interface TamperableEnvelope {
+  expectedRevision?: number;
+  payload: { extra?: boolean; definition: { revision: number; action: { prompt: string } } };
+}
+
+test.each([
+  ['a digest that does not match the body', (envelope: TamperableEnvelope) => {
+    envelope.payload.definition.action.prompt = 'Changed after hashing.';
+  }],
+  ['a create at revision 2', (envelope: TamperableEnvelope) => { envelope.payload.definition.revision = 2; }],
+  ['a create carrying expectedRevision', (envelope: TamperableEnvelope) => { envelope.expectedRevision = 1; }],
+  ['an extra payload field', (envelope: TamperableEnvelope) => { envelope.payload.extra = true; }],
+])('the built-in transport refuses a definition command with %s before I/O', async (_label, change) => {
+  const { client, transport } = setup(definitionCommitted('definition.create.v1', draftContext.adoptionKey, 1));
+  await client.createDraft(draft(), draftContext);
+  const valid = transport.sendCommand.mock.calls[0]![0];
+  const tampered = JSON.parse(JSON.stringify(valid)) as { envelope: TamperableEnvelope };
+  change(tampered.envelope);
+  await expect(unixTransport().sendCommand!(tampered as never, {
+    signal: new AbortController().signal, deadline: undefined,
+  })).rejects.toMatchObject({ code: 'invalid_options' });
+});
+
+test.each([
+  ['a missing schemaVersion', () => {
+    const input: Record<string, unknown> = { ...draft() };
+    delete input.schemaVersion;
+    return input;
+  }],
+  ['an unknown schemaVersion', () => ({ ...draft(), schemaVersion: 'coven.automations.v2' })],
+  ['a definition too large for a committed answer', () => ({
+    ...draft(), action: { variant: 'familiarInvocation', version: 1, prompt: '€'.repeat(100_000) },
+  })],
+  ['a definition nested too deeply', () => {
+    let nested: Record<string, unknown> = { leaf: true };
+    for (let level = 0; level < 10; level += 1) nested = { level: nested };
+    return { ...draft(), extensions: { 'x-deep': nested } };
+  }],
+])('createDraft refuses %s before any I/O', async (_label, input) => {
+  const { client, transport } = setup();
+  await expect(client.createDraft(input() as never, draftContext)).rejects.toMatchObject({ code: 'invalid_options' });
+  expect(transport.capabilities).not.toHaveBeenCalled();
+});
+
+test('a definition at the size bound is still sent', async () => {
+  const { client, transport } = setup(definitionCommitted('definition.create.v1', draftContext.adoptionKey, 1));
+  // 100,000 ASCII characters: the longest prompt the schema allows, well inside the bound.
+  await client.createDraft({ ...draft(), action: { ...draft().action, prompt: 'x'.repeat(100_000) } }, draftContext);
+  expect(transport.sendCommand).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  ['createDraft', (client: ReturnType<typeof setup>['client'], options: object) =>
+    client.createDraft(draft(), draftContext, options as never)],
+  ['activate', (client: ReturnType<typeof setup>['client'], options: object) =>
+    client.activate('morning', 1, context, options as never)],
+])('%s refuses accessor-backed options without invoking them', async (_label, call) => {
+  const { client, transport } = setup();
+  const getter = vi.fn(() => { throw new Error('getter secret'); });
+  const options = Object.defineProperty({}, 'timeoutMs', { get: getter, enumerable: true });
+  const failure = await call(client, options).catch((error: unknown) => error);
+  expect(failure).toMatchObject({ code: 'invalid_options' });
+  expect(String(failure)).not.toContain('getter secret');
+  expect(getter).not.toHaveBeenCalled();
+  expect(transport.capabilities).not.toHaveBeenCalled();
 });

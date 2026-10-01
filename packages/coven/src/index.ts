@@ -46,6 +46,10 @@ export type { CovenAutomationHistoryCursor } from './automations-history.js';
 export type {
   CovenAutomationCommandCommitted,
   CovenAutomationCommandContext,
+  CovenAutomationCommandName,
+  CovenAutomationDefinitionCommand,
+  CovenAutomationDraftInput,
+  CovenAutomationRevisionInput,
   CovenAutomationCommandRejected,
   CovenAutomationCommandReplayed,
   CovenAutomationCommandRequest,

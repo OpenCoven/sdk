@@ -17,9 +17,10 @@ import {
 } from './automations-receipt-verification.js';
 import { historyCursor } from './automations-history.js';
 import {
-  COMMAND_ENVELOPE_ACTION, decodeCommand, lifecycleRequest,
+  COMMAND_ENVELOPE_ACTION, commandOptions, decodeCommand, definitionRequest, lifecycleRequest,
   type CovenAutomationCommandContext, type CovenAutomationCommandRequest, type CovenAutomationCommandResult,
-  type CovenAutomationLifecycleCommand, type CovenAutomationLifecycleOptions,
+  type CovenAutomationDraftInput, type CovenAutomationLifecycleCommand, type CovenAutomationLifecycleOptions,
+  type CovenAutomationRevisionInput,
 } from './automations-commands.js';
 import {
   RUN_HISTORY_CURSOR_MAX_LENGTH,
@@ -354,6 +355,61 @@ export class CovenAutomationsClient {
     return await this.#lifecycle('definition.tombstone.v1', 'automations.tombstone', automationId, expectedRevision, context, options);
   }
 
+  /**
+   * Creates a definition in `draft` from a rich body. The SDK sets
+   * `revision: 1`, `lifecycleState` and the JCS `integrity`; nothing runs
+   * until `activate`. Outcomes as for `activate`.
+   */
+  async createDraft(
+    definition: CovenAutomationDraftInput,
+    context: CovenAutomationCommandContext,
+    options: OperationOptions = {},
+  ): Promise<CovenAutomationCommandResult> {
+    const operation = 'automations.createDraft';
+    const [request, operationOptions] =
+      this.#definitionRequest('definition.create.v1', operation, undefined, undefined, definition, context, options);
+    return await this.#command(request, operation, operationOptions);
+  }
+
+  /**
+   * Replaces the definition with the full next revision at `expectedRevision`.
+   * The SDK sets `revision` and `integrity`; `lifecycleState` must be `paused`
+   * (for a draft, invalid or paused definition) or `active` (for an active one).
+   */
+  async revise(
+    automationId: string,
+    expectedRevision: number,
+    definition: CovenAutomationRevisionInput,
+    context: CovenAutomationCommandContext,
+    options: OperationOptions = {},
+  ): Promise<CovenAutomationCommandResult> {
+    const operation = 'automations.revise';
+    const [request, operationOptions] =
+      this.#definitionRequest('definition.revise.v1', operation, automationId, expectedRevision, definition, context, options);
+    return await this.#command(request, operation, operationOptions);
+  }
+
+  #definitionRequest(
+    command: 'definition.create.v1' | 'definition.revise.v1',
+    operation: string,
+    automationId: unknown,
+    expectedRevision: unknown,
+    definition: unknown,
+    context: unknown,
+    options: unknown,
+  ): [CovenAutomationCommandRequest, OperationOptions] {
+    try {
+      const operationOptions = commandOptions(options, ['signal', 'timeoutMs', 'observer']);
+      if (operationOptions === undefined) return definitionReadFailure('invalid_options', operation);
+      return [
+        definitionRequest(command, automationId, expectedRevision, definition, context, operation),
+        operationOptions,
+      ];
+    } catch (error) {
+      throw new CovenClientError(normalizeCovenError(error, operation));
+    }
+  }
+
   async #lifecycle(
     command: CovenAutomationLifecycleCommand,
     operation: string,
@@ -365,15 +421,13 @@ export class CovenAutomationsClient {
     let request: CovenAutomationCommandRequest;
     let operationOptions: OperationOptions;
     try {
-      if (!object(options) || Reflect.ownKeys(options).some((key) =>
-        typeof key !== 'string' || !['reason', 'signal', 'timeoutMs', 'observer'].includes(key))) {
-        return definitionReadFailure('invalid_options', operation);
-      }
-      const { reason, ...rest } = options as CovenAutomationLifecycleOptions & OperationOptions;
+      const owned = commandOptions(options, ['reason', 'signal', 'timeoutMs', 'observer']);
+      if (owned === undefined) return definitionReadFailure('invalid_options', operation);
+      const { reason, ...rest } = owned;
       operationOptions = rest;
       request = lifecycleRequest(
         command, automationId, expectedRevision, context,
-        Object.hasOwn(options, 'reason') ? { reason } : {}, operation,
+        Object.hasOwn(owned, 'reason') ? { reason } : {}, operation,
       );
     } catch (error) {
       throw new CovenClientError(normalizeCovenError(error, operation));

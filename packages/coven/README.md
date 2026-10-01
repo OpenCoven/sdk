@@ -139,8 +139,8 @@ does not poll or activate Automations.
 | `getReceipt()` | Public/operational receipt result | Same result and privacy checks |
 | `events()`, `subscribe()` | Bounded domain event pages | Same pages and cancellation |
 | Normal/discovered client and `sdk.coven` | Explicit opt-in | Explicit opt-in |
-| `activate()`, `pause()`, `disable()`, `tombstone()` | Lifecycle command envelopes | Same envelope and decoder |
-| TCP fallback, create/revise, run/cancel/retry commands, independent receipt authentication | Not supported | Not supported |
+| `createDraft()`, `revise()`, `activate()`, `pause()`, `disable()`, `tombstone()` | Definition and lifecycle command envelopes | Same envelope and decoder |
+| TCP fallback, run/cancel/retry commands, independent receipt authentication | Not supported | Not supported |
 
 Windows requires a current-user SID, owner-only ACL, nonempty pipe identity,
 positive server PID, and process creation time before connecting. Before any
@@ -623,7 +623,7 @@ if (outcome.outcome === 'rejected' && outcome.error.code === 'REVISION_CONFLICT'
 
 `options` may carry a `reason` of up to 500 characters (not for `tombstone`) and the usual `signal`, `timeoutMs` and `observer`. Every field is validated before any I/O, and a bad value fails with `invalid_options`.
 
-**The send gate.** A command is sent only when the producer advertises both `coven.automations.command.v1` and the command's own action, such as `coven.automations.definition.pause.v1`. Otherwise it fails with `capability_unsupported`, and nothing is sent. The built-in Unix and Windows transports serialize a freshly rebuilt, exactly keyed envelope for these four commands and refuse anything else. A transport without `sendCommand` cannot mutate: the call fails with `unsupported_operation`.
+**The send gate.** A command is sent only when the producer advertises both `coven.automations.command.v1` and the command's own action, such as `coven.automations.definition.pause.v1`. Otherwise it fails with `capability_unsupported`, and nothing is sent. The built-in Unix and Windows transports serialize a freshly rebuilt, exactly keyed envelope for these commands and refuse anything else. For `createDraft` and `revise` they also recompute the definition's digest and refuse a body that does not match its `integrity`, a create that is not `revision: 1` in `draft`, or a revise that is not `expectedRevision + 1`. A transport without `sendCommand` cannot mutate: the call fails with `unsupported_operation`.
 
 **The outcome.** The result is a typed discriminated union:
 
@@ -635,9 +635,35 @@ if (outcome.outcome === 'rejected' && outcome.error.code === 'REVISION_CONFLICT'
 
 **Authority.** `principalId` is recorded with the command; it is not an authority grant. The producer accepts automation mutations only over owner-local IPC, which is the only place the built-in transports connect.
 
-**Not available.** `createDraft` and `revise` wait on producer rich-definition persistence; run, cancel, retry and approval wait on OpenCoven/coven#857.
+**Definitions.** `createDraft(definition, context, options?)` and `revise(automationId, expectedRevision, definition, context, options?)` send a rich `coven.automations.v1` definition:
 
-These commands need a producer with the command envelope ([coven#1176](https://github.com/OpenCoven/coven/pull/1176)).
+```ts
+const created = await automations.createDraft({
+  schemaVersion: 'coven.automations.v1',
+  automationId: 'daily-notes',
+  display: { name: 'Daily notes' },
+  trigger: { variant: 'schedule', version: 1, schedule: { rrule: 'FREQ=DAILY;BYHOUR=9', timezone: 'utc' } },
+  action: { variant: 'familiarInvocation', version: 1, prompt: 'Write the daily reflection.' },
+  binding: { familiarBindingPolicy: 'exact', familiarId: 'charm', authority: { approvalPolicyRef: 'policy://authority/familiars/charm' } },
+  runtimeRequirements: { runtimeId: 'coven-code', capabilities: ['sessions.launch'] },
+  policies: {
+    timeout: { perRunMinutes: 30 },
+    retry: { maxAttempts: 1, backoffPolicy: 'none' },
+    concurrency: { overlap: 'forbid' },
+    misfire: { disposition: 'latest' },
+    retention: { occurrenceHistory: { classification: 'standard' } },
+  },
+}, { adoptionKey: 'adopt:create:daily-notes', intent: 'Add the daily notes routine.', principalId: 'principal:owner' });
+```
+
+- **The SDK sets the bookkeeping fields.** For `createDraft` it sets `revision: 1`, `lifecycleState: "draft"` and the JCS `integrity`; for `revise` it sets `revision: expectedRevision + 1` and `integrity`. Passing any of these yourself is `invalid_options`, as is a body that fails the structural `coven.automations.v1` check, including a missing or unknown `schemaVersion`. Accessor-backed properties are refused without being invoked.
+- **Lifecycle on revise.** You choose `lifecycleState`, and it must be one a revise can write: `paused` for a draft, invalid or paused definition, `active` for an active one. The producer refuses anything else with `ILLEGAL_TRANSITION`. A new definition runs nothing until `activate`.
+- **Producer limits.** The producer refuses variants it cannot execute with `CAPABILITY_UNSUPPORTED`, rather than dropping them: delivery policies, activation windows, and retention classes other than `standard`.
+- **Size and depth bounds.** A committed answer carries the definition up to four times, so the SDK refuses, before sending, a definition over 192 KiB of serialized JSON or nested deeper than 10 levels, and accepts answers up to 1 MiB. Any definition the SDK sends therefore has a committed answer it can decode, so a commit is never reported as `outcome_unknown` for size. The longest schema-valid ASCII prompt (100,000 characters) fits.
+
+**Not available.** Run, cancel, retry and approval wait on OpenCoven/coven#857.
+
+These commands need a producer with the command envelope ([coven#1176](https://github.com/OpenCoven/coven/pull/1176)); `createDraft` and `revise` also need rich-definition support ([coven#1185](https://github.com/OpenCoven/coven/pull/1185)).
 
 ### Occurrence history
 
