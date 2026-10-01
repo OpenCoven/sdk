@@ -17,9 +17,10 @@ import {
 } from './automations-receipt-verification.js';
 import { historyCursor } from './automations-history.js';
 import {
-  COMMAND_ENVELOPE_ACTION, decodeCommand, lifecycleRequest,
+  COMMAND_ENVELOPE_ACTION, decodeCommand, definitionRequest, lifecycleRequest,
   type CovenAutomationCommandContext, type CovenAutomationCommandRequest, type CovenAutomationCommandResult,
-  type CovenAutomationLifecycleCommand, type CovenAutomationLifecycleOptions,
+  type CovenAutomationDraftInput, type CovenAutomationLifecycleCommand, type CovenAutomationLifecycleOptions,
+  type CovenAutomationRevisionInput,
 } from './automations-commands.js';
 import {
   RUN_HISTORY_CURSOR_MAX_LENGTH,
@@ -352,6 +353,64 @@ export class CovenAutomationsClient {
     options: OperationOptions = {},
   ): Promise<CovenAutomationCommandResult> {
     return await this.#lifecycle('definition.tombstone.v1', 'automations.tombstone', automationId, expectedRevision, context, options);
+  }
+
+  /**
+   * Creates a definition in `draft` from a rich body. The SDK sets
+   * `revision: 1`, `lifecycleState` and the JCS `integrity`; nothing runs
+   * until `activate`. Outcomes as for `activate`.
+   */
+  async createDraft(
+    definition: CovenAutomationDraftInput,
+    context: CovenAutomationCommandContext,
+    options: OperationOptions = {},
+  ): Promise<CovenAutomationCommandResult> {
+    const operation = 'automations.createDraft';
+    return await this.#command(
+      this.#definitionRequest('definition.create.v1', operation, undefined, undefined, definition, context, options),
+      operation,
+      options,
+    );
+  }
+
+  /**
+   * Replaces the definition with the full next revision at `expectedRevision`.
+   * The SDK sets `revision` and `integrity`; `lifecycleState` must be `paused`
+   * (for a draft, invalid or paused definition) or `active` (for an active one).
+   */
+  async revise(
+    automationId: string,
+    expectedRevision: number,
+    definition: CovenAutomationRevisionInput,
+    context: CovenAutomationCommandContext,
+    options: OperationOptions = {},
+  ): Promise<CovenAutomationCommandResult> {
+    const operation = 'automations.revise';
+    return await this.#command(
+      this.#definitionRequest('definition.revise.v1', operation, automationId, expectedRevision, definition, context, options),
+      operation,
+      options,
+    );
+  }
+
+  #definitionRequest(
+    command: 'definition.create.v1' | 'definition.revise.v1',
+    operation: string,
+    automationId: unknown,
+    expectedRevision: unknown,
+    definition: unknown,
+    context: unknown,
+    options: unknown,
+  ): CovenAutomationCommandRequest {
+    try {
+      if (!object(options) || Reflect.ownKeys(options).some((key) =>
+        typeof key !== 'string' || !['signal', 'timeoutMs', 'observer'].includes(key))) {
+        return definitionReadFailure('invalid_options', operation);
+      }
+      return definitionRequest(command, automationId, expectedRevision, definition, context, operation);
+    } catch (error) {
+      throw new CovenClientError(normalizeCovenError(error, operation));
+    }
   }
 
   async #lifecycle(

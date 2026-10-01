@@ -1,7 +1,7 @@
 import { runOperation, type OperationContext } from '@opencoven/sdk-core';
 
 import type { CovenAutomationsTransport } from './automations.js';
-import { commandBytes } from './automations-commands.js';
+import { commandBytes, commandResponseLimit } from './automations-commands.js';
 import { definitionReadBytes } from './automations-definitions.js';
 import { AUTOMATION_EVENTS_MAX_BYTES } from './automations-events.js';
 import { AUTOMATION_HISTORY_MAX_BYTES } from './automations-history.js';
@@ -49,7 +49,7 @@ export function createCovenAutomationsSocketTransport(
           `Content-Length: ${body.byteLength}\r\n\r\n`,
         ),
         body,
-      ]), context, 'automations.command');
+      ]), context, 'automations.command', commandResponseLimit(input.envelope.command));
     },
     async readDefinitions(input, context) {
       const body = definitionReadBytes(input);
