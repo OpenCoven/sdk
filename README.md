@@ -249,8 +249,8 @@ extensions, unknown files, and inconsistent schema/object/vector references are
 rejected. The added result-vector inventory is checked structurally;
 `conformanceResultEnvelopeVerification=not-performed` explicitly records that
 this canary does not execute result-envelope authentication or release-policy
-verification. Supporting the layout does not promote it into the historical
-CI artifact lock below.
+verification. The CI artifact lock below binds this 19-file layout as released
+in Coven v0.4.7.
 Before trusting the golden fixtures, it independently recomputes each embedded
 `integrity` SHA-256 using the producer's recursive removal of `integrity`
 members and canonical key ordering. It requires the golden definition, receipt,
@@ -271,9 +271,9 @@ and no trust root, principal authorization, runtime evidence, or production
 lifecycle certification is inferred. Negative schema cases are not treated as
 valid integrity fixtures.
 
-The historical base-artifact pin remains unchanged; it does not certify the
-later capability-negotiation changes from OpenCoven/coven#991 and
-OpenCoven/coven#999. See the
+The base-artifact pin names the producer of the released Coven v0.4.7 bundle
+(`c93a8a93`), whose contract includes the capability-negotiation changes from
+OpenCoven/coven#991 and OpenCoven/coven#999. See the
 [Automations roadmap](docs/ROADMAP.md#coven-automations) for the current
 producer status and remaining SDK phases.
 

@@ -308,18 +308,23 @@ remains unreconciled.
 An optional global-feed API remains deferred. The producer supports `feed/all`
 with a separate page cursor; domain event sequences do not establish feed-wide
 ordering. This is separate SDK API design, not a missing producer route.
-Individual-run lookup and per-automation occurrence history still lack
-supported producer read actions.
+Individual-run lookup and per-automation occurrence and run history have since
+landed (SDK #330, #331 and #333).
 
 [SDK #303](https://github.com/OpenCoven/sdk/pull/303) separately added exact
 17-file and released 19-file Automations artifact inventories at `d4cf105df`.
 The actual Coven v0.4.4 bundle passed its integrity checks; result-envelope
 authentication remains explicitly unperformed.
+[SDK #337](https://github.com/OpenCoven/sdk/pull/337) rebinds the base-artifact
+lock and the exact-runtime CI reproduction from the pre-release `8a796807`
+artifact to the producer of the released Coven v0.4.7 bundle: `c93a8a93`,
+19 files, contract content `ef266d16`.
 
 OpenCoven/coven#991 (`d277ade3`) and OpenCoven/coven#999 (`735e2f05`) publish packaged base capability
 negotiation, durable `CAPABILITY_UNSUPPORTED` outcomes, and exact wire request
-fingerprinting. The rich normative `AutomationDefinition` remains
-negotiation-only. [Coven #1054](https://github.com/OpenCoven/coven/issues/1054)
+fingerprinting. Coven now persists rich `AutomationDefinition` bodies
+(OpenCoven/coven#1185), which `createDraft()` and `revise()` send (SDK #336).
+[Coven #1054](https://github.com/OpenCoven/coven/issues/1054)
 tracks executable rich persistence, command-catalog parity, and production
 lifecycle emission. Current packed cross-repository certification remains
 separate from these SDK development increments.
