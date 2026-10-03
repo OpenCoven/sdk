@@ -1,5 +1,5 @@
-import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
@@ -60,6 +60,7 @@ interface Flaws {
   integrityDrift?: boolean;
   forgetsAdoptionsOnRestart?: boolean;
   checkpointRewinds?: boolean;
+  subscribeOmitsFinalPage?: boolean;
   missingAction?: string;
   historyNonEmpty?: boolean;
   eventDigestMatches?: boolean;
@@ -199,6 +200,9 @@ function fakeDaemon(flaws: Flaws = {}) {
           next() {
             if (next === undefined) return Promise.resolve({ done: true as const, value: undefined });
             const current = read(next);
+            if (current.events.length === 0 && flaws.subscribeOmitsFinalPage === true) {
+              return Promise.resolve({ done: true as const, value: undefined });
+            }
             next = current.events.length === 0 ? undefined : { stream: query.stream, checkpoint: current.checkpoint };
             return Promise.resolve({ done: false as const, value: current });
           },
@@ -298,6 +302,7 @@ describe('daemon canary scenario', () => {
     ['a stale revision accepted', { acceptsStale: true }, /stale revise: expected rejection REVISION_CONFLICT/u],
     ['adoption records lost on restart', { forgetsAdoptionsOnRestart: true }, /activate replay after restart/u],
     ['a checkpoint that rewinds to the start', { checkpointRewinds: true }, /subscribe: the checkpoint resumed after null, expected 0/u],
+    ['a subscription that ends without its empty page', { subscribeOmitsFinalPage: true }, /subscribe: expected a final empty page after sequence 4 with a checkpoint/u],
     ['history for a routine that never fired', { historyNonEmpty: true }, /occurrenceHistory: expected an empty final page/u],
   ])('fails closed on %s', async (_label, flaws, message) => {
     await expect(scenario(flaws)).rejects.toThrow(message);
@@ -336,7 +341,7 @@ describe.skipIf(process.platform === 'win32')('harness-asserted peer identity', 
 });
 
 describe.skipIf(process.platform === 'win32')('daemon canary process handling', () => {
-  function fakeCoven(directory: string, mode: 'serve' | 'exit') {
+  function fakeCoven(directory: string, mode: 'serve' | 'hang' | 'exit') {
     writeFileSync(resolve(directory, 'mode'), mode);
     const path = resolve(directory, 'coven.mjs');
     writeFileSync(path, `
@@ -357,6 +362,7 @@ const socket = home + '/coven.sock';
 writeFileSync(new URL('./pid', import.meta.url), String(process.pid));
 const body = JSON.stringify({ capabilities: [] });
 const server = createServer((request, response) => {
+  if (mode === 'hang') return;
   response.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
   response.end(body);
 });
@@ -398,6 +404,28 @@ process.on('SIGTERM', () => {
     expect(() => process.kill(pid, 0)).toThrow(/ESRCH/u);
     expect(readdirSync(temp)).toEqual([]);
   });
+
+  test.each([['SIGTERM', 143], ['SIGINT', 130]] as const)(
+    'stops the daemon and removes its home when %s interrupts a request', async (signal, code) => {
+      const directory = scratch();
+      const temp = scratch();
+      const canary = spawn(process.execPath, [scriptPath, '--coven', fakeCoven(directory, 'hang'), '--expect-version', '0.4.7'], {
+        env: { ...process.env, TMPDIR: temp }, stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      let stderr = '';
+      canary.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+      const exited = new Promise<number | null>((done) => canary.once('exit', (status) => done(status)));
+      const pidPath = resolve(directory, 'pid');
+      const deadline = Date.now() + 30_000;
+      while (!existsSync(pidPath) && Date.now() < deadline) await new Promise((wait) => setTimeout(wait, 50));
+      const pid = Number(readFileSync(pidPath, 'utf8'));
+      canary.kill(signal);
+      expect(await exited).toBe(code);
+      expect(stderr).toContain(`Interrupted by ${signal}.`);
+      expect(() => process.kill(pid, 0)).toThrow(/ESRCH/u);
+      expect(readdirSync(temp)).toEqual([]);
+    },
+  );
 
   test('reports a daemon that exits before it is ready', () => {
     const temp = scratch();

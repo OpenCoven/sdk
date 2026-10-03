@@ -324,15 +324,17 @@ environment and no harness, and discovers it the way a consumer would. Then it:
   `daemon.json`, starts it again over the same home, and requires the earlier
   activation to come back `replayed` under its adoption key;
 - disables the routine, resumes `subscribe()` from a checkpoint taken before the
-  restart, and requires exactly the four later lifecycle events, then the same
-  tail from a concrete `after` cursor;
+  restart, and requires exactly the four later lifecycle events followed by the
+  final empty page and its checkpoint, then the same tail from a concrete
+  `after` cursor;
 - requires empty occurrence and run history. The schedule is set twelve hours
   away from the activation, so nothing fires.
 
 It prints one line, for example
 `Automations v1 daemon verified: covenVersion=0.4.7 daemonStarts=2 commands=9 … peerIdentity=harness-asserted`.
-A failure prints the daemon's own output, and the daemon and its home are
-removed either way. Unix only.
+A failure prints the daemon's own output. On success, failure, `SIGINT`, or
+`SIGTERM` (exit 130 or 143), the daemon is stopped and its home removed. Unix
+only.
 
 What it does not establish:
 

@@ -204,15 +204,23 @@ export async function runDaemonScenario({ sdk, connect, restartDaemon, scheduleH
 
   const resumed = [];
   let pages = 0;
+  let last;
   for await (const page of client.subscribe({ stream, checkpoint: beforeRevise.checkpoint })) {
     pages += 1;
     if (pages === 1 && page.after !== 0) {
       fail(`subscribe: the checkpoint resumed after ${page.after}, expected 0.`);
     }
     resumed.push(...page.events);
+    last = page;
     if (pages > 10) fail('subscribe: no end of stream after 10 pages.');
   }
   expectSequences('subscribe from the pre-restart checkpoint', resumed, lifecycleKinds.slice(1));
+  // The iterator yields one empty page so its checkpoint can be saved, then ends.
+  if (last?.events?.length !== 0 || last.after !== 4 || last.nextAfter !== 4 ||
+    typeof last.checkpoint !== 'string' || last.checkpoint.length === 0) {
+    fail(`subscribe: expected a final empty page after sequence 4 with a checkpoint, received ${
+      describe(last === undefined ? undefined : { ...last, events: last.events?.length })}.`);
+  }
   const cursor = await client.events({ stream, after: 2 });
   expectSequences('events after sequence 2', cursor.events, lifecycleKinds.slice(3));
 
@@ -305,11 +313,12 @@ function startDaemon(coven, home, log) {
   return { child, exited };
 }
 
-async function waitForDaemon(daemon, home) {
+async function waitForDaemon(daemon, home, signal) {
   const deadline = Date.now() + readinessTimeoutMs;
   let exit;
   void daemon.exited.then((value) => { exit = value; });
   while (Date.now() < deadline) {
+    if (signal?.aborted === true) fail('Interrupted while the daemon was starting.');
     if (exit !== undefined) {
       fail(`coven daemon serve exited before it was ready (${exit.error?.message ?? `code ${exit.code}, signal ${exit.signal}`}).`);
     }
@@ -388,13 +397,33 @@ async function loadSdk() {
   return import(pathToFileURL(entry).href);
 }
 
-export async function verifyAutomationsDaemon({ coven, expectVersion }) {
+/**
+ * Rejects once `signal` aborts. Every step races against it, so an interrupted
+ * canary reaches the single cleanup path in `verifyAutomationsDaemon` instead
+ * of waiting for an in-flight request or a restart to finish.
+ */
+function interruption(signal) {
+  const interrupted = new Promise((_resolve, reject) => {
+    if (signal === undefined) return;
+    const abort = () => reject(new Error(`Interrupted by ${String(signal.reason)}.`));
+    if (signal.aborted) abort();
+    else signal.addEventListener('abort', abort, { once: true });
+  });
+  return (promise) => {
+    // The losing step still settles later; nothing may observe it as unhandled.
+    promise.catch(() => {});
+    return Promise.race([promise, interrupted]);
+  };
+}
+
+export async function verifyAutomationsDaemon({ coven, expectVersion, signal }) {
   if (process.platform === 'win32') fail('The daemon canary drives the Unix socket transport only.');
   if (!existsSync(coven)) fail(`${coven} does not exist.`);
   const sdk = await loadSdk();
   const temp = createOwnedTempDirectory({ prefix: 'cvn', childSegments: ['h'] });
   const home = temp.path;
   const log = { chunks: [], bytes: 0 };
+  const guarded = interruption(signal);
   let daemon;
   try {
     if (Buffer.byteLength(resolve(home, 'coven.sock')) > maxSocketPathBytes) {
@@ -404,11 +433,13 @@ export async function verifyAutomationsDaemon({ coven, expectVersion }) {
     let starts = 0;
     let previousPid;
     const start = async () => {
+      // A restart already under way must not outlive an interruption.
+      if (signal?.aborted === true) fail('Interrupted; the daemon was not restarted.');
       daemon = startDaemon(coven, home, log);
       starts += 1;
-      await waitForDaemon(daemon, home);
+      await waitForDaemon(daemon, home, signal);
     };
-    await start();
+    await guarded(start());
     const connect = async () => {
       const discovered = await sdk.discoverCovenEndpoint({ env: { COVEN_HOME: home } });
       if (discovered.freshness?.daemonPid === previousPid) {
@@ -425,10 +456,10 @@ export async function verifyAutomationsDaemon({ coven, expectVersion }) {
       daemon = undefined;
       await start();
     };
-    const result = await runDaemonScenario({
+    const result = await guarded(runDaemonScenario({
       sdk, connect, restartDaemon, scheduleHour: quietScheduleHour(),
-    });
-    await stopDaemon(daemon, home);
+    }));
+    await guarded(stopDaemon(daemon, home));
     daemon = undefined;
     return { ...result, covenVersion: expectVersion, daemonStarts: starts };
   } catch (error) {
@@ -443,8 +474,10 @@ export async function verifyAutomationsDaemon({ coven, expectVersion }) {
   }
 }
 
-async function main() {
-  const result = await verifyAutomationsDaemon(parseDaemonCanaryArguments(process.argv.slice(2)));
+const exitSignals = { SIGINT: 2, SIGTERM: 15 };
+
+async function main(signal) {
+  const result = await verifyAutomationsDaemon({ ...parseDaemonCanaryArguments(process.argv.slice(2)), signal });
   process.stdout.write(
     [
       'Automations v1 daemon verified:',
@@ -468,8 +501,15 @@ if (
   process.argv[1] !== undefined &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
+  // Without handlers Node exits on these signals before any cleanup runs.
+  const controller = new AbortController();
+  for (const name of Object.keys(exitSignals)) {
+    process.on(name, () => {
+      if (!controller.signal.aborted) controller.abort(name);
+    });
+  }
   try {
-    await main();
+    await main(controller.signal);
   } catch (error) {
     process.stderr.write(
       `Automations v1 daemon canary failed: ${
@@ -477,5 +517,9 @@ if (
       }\n`,
     );
     process.exitCode = 1;
+  }
+  if (controller.signal.aborted) {
+    // Cleanup is done; do not wait out the interrupted request's own timeout.
+    process.exit(128 + exitSignals[controller.signal.reason]);
   }
 }

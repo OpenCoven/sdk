@@ -63,5 +63,5 @@ export function harnessAssertedSecurity(
   home: string,
 ): { platform: 'unix'; peerIdentity: { inspectConnected(socket: unknown): Promise<{ uid: number }> } };
 export function verifyAutomationsDaemon(
-  options: DaemonCanaryArguments,
+  options: DaemonCanaryArguments & { signal?: AbortSignal },
 ): Promise<DaemonCanarySummary & { covenVersion: string; daemonStarts: number }>;
