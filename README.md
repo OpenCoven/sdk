@@ -328,10 +328,12 @@ environment and no harness, and discovers it the way a consumer would. Then it:
   restart, and requires exactly the four later lifecycle events followed by the
   final empty page and its checkpoint, then the same tail from a concrete
   `after` cursor;
-- requires each lifecycle event to name its revision by the definition's
+- requires every lifecycle event to carry its revision's definition
   `integrity`. The created and revised events must carry exactly what create
-  and revise returned, and the paused revisions 2 and 4, which share a body,
-  must publish different digests;
+  and revise returned. The activated, paused and disabled events must carry the
+  revised document regenerated at revisions 3–5, as Coven's stored view
+  regenerates it. Revisions 2 and 4 share a body, so a digest that ignored the
+  revision could not match both;
 - requires empty occurrence and run history. The schedule is set twelve hours
   away from the activation, so nothing fires.
 

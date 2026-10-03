@@ -67,13 +67,17 @@ interface Flaws {
   eventDigestIsRoutine?: boolean;
   /** Revision 4's event repeats revision 2's digest. */
   pausedRevisionsCollide?: boolean;
+  /** The activation event omits its digest. */
+  activatedDigestMissing?: boolean;
+  /** The disable event publishes an unrelated digest. */
+  disabledDigestUnrelated?: boolean;
 }
 
 interface FakeEvent {
   sequence: number;
   kind: string;
   causation: { adoptionKey: string };
-  payload: { revision: number; definitionDigest: { algorithm: string; canonicalization: string; value: string } };
+  payload: { revision: number; definitionDigest?: { algorithm: string; canonicalization: string; value: string } };
 }
 
 type Result = Record<string, unknown>;
@@ -107,13 +111,14 @@ function fakeDaemon(flaws: Flaws = {}) {
     const routine = { draft: 'c', paused: 'a', active: 'b', disabled: 'd' }[lifecycle()] ?? 'e';
     const value = flaws.eventDigestIsRoutine === true ? routine.repeat(64)
       : flaws.pausedRevisionsCollide === true && kind === 'definition.paused' ? digests.get(2) ?? ''
+      : flaws.disabledDigestUnrelated === true && kind === 'definition.disabled' ? 'f'.repeat(64)
       : digests.get(revision) ?? '';
+    const definitionDigest = { algorithm: 'sha256', canonicalization: 'jcs-rfc8785', value };
     events.push({
       sequence: events.length, kind, causation: { adoptionKey },
-      payload: {
-        revision,
-        definitionDigest: { algorithm: 'sha256', canonicalization: 'jcs-rfc8785', value },
-      },
+      payload: flaws.activatedDigestMissing === true && kind === 'definition.activated'
+        ? { revision }
+        : { revision, definitionDigest },
     });
   };
   const rejected = (command: string, adoptionKey: string, error: Result): Result =>
@@ -307,7 +312,9 @@ describe('daemon canary scenario', () => {
     ['a missing advertised action', { missingAction: 'coven.automations.run.history.v1' }, /capabilities: missing coven\.automations\.run\.history\.v1/u],
     ['a stored digest the SDK cannot reproduce', { integrityDrift: true }, /integrity does not match the SDK digest/u],
     ['events that publish the routine digest, as v0.4.7 did', { eventDigestIsRoutine: true }, /events: definition\.created publishes c{64}, not the created definition's integrity/u],
-    ['paused revisions that share a digest', { pausedRevisionsCollide: true }, /events: paused revisions 2 and 4 publish/u],
+    ['paused revisions that share a digest', { pausedRevisionsCollide: true }, /events: definition\.paused at revision 4 publishes [0-9a-f]{64}, not that revision's definition integrity/u],
+    ['an activation event without a digest', { activatedDigestMissing: true }, /events: definition\.activated at revision 3 publishes no digest/u],
+    ['a disable event with an unrelated digest', { disabledDigestUnrelated: true }, /events: definition\.disabled at revision 5 publishes f{64}/u],
     ['a replay that commits again', { replayCommits: true }, /createDraft replay: expected definition\.create\.v1 replayed/u],
     ['a changed body accepted under a used key', { acceptsMismatch: true }, /createDraft mismatch: expected rejection ADOPTION_REPLAY_MISMATCH/u],
     ['a stale revision accepted', { acceptsStale: true }, /stale revise: expected rejection REVISION_CONFLICT/u],
