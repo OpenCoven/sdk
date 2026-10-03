@@ -1,0 +1,9 @@
+{
+  "name": "opencoven-automations-v1-daemon-canary",
+  "private": true,
+  "description": "Pins the released Coven CLI that scripts/verify-automations-v1-daemon.mjs drives.",
+  "license": "MIT",
+  "dependencies": {
+    "@opencoven/cli": "0.4.7"
+  }
+}

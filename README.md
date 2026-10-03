@@ -295,6 +295,64 @@ tarball remains an external immutable artifact rather than a committed binary:
 corepack pnpm@10.34.0 verify:automations-v1-evidence
 ```
 
+## Automations v1 daemon canary
+
+The artifact canary checks the contract a release ships. The daemon canary
+checks that the released daemon behaves that way when this SDK's built client
+drives it. CI installs `@opencoven/cli` from npm at the version and integrity
+locked in
+[`conformance/automations-v1-daemon/package-lock.json`](conformance/automations-v1-daemon/package-lock.json),
+runs `npm audit signatures` over it, and then runs:
+
+```bash
+corepack pnpm@10.34.0 build
+corepack pnpm@10.34.0 canary:automations-v1-daemon -- \
+  --coven /path/to/node_modules/@opencoven/cli/bin/coven.js \
+  --expect-version 0.4.7
+```
+
+The canary refuses any binary that does not report the expected version. It
+starts `coven daemon serve` in an owned temporary `COVEN_HOME`, with a minimal
+environment and no harness, and discovers it the way a consumer would. Then it:
+
+- creates a draft and requires the daemon's stored `integrity` to equal
+  `computeDefinitionDigest()`, then resends it under the same adoption key
+  (`replayed`) and with a changed body (`ADOPTION_REPLAY_MISMATCH`);
+- revises it, has a stale revision refused with `REVISION_CONFLICT` and the
+  current revision, activates and pauses it, and reads it back with `get()`;
+- stops the daemon with `SIGTERM`, requires it to remove its socket and
+  `daemon.json`, starts it again over the same home, and requires the earlier
+  activation to come back `replayed` under its adoption key;
+- disables the routine, resumes `subscribe()` from a checkpoint taken before the
+  restart, and requires exactly the four later lifecycle events followed by the
+  final empty page and its checkpoint, then the same tail from a concrete
+  `after` cursor;
+- requires empty occurrence and run history. The schedule is set twelve hours
+  away from the activation, so nothing fires.
+
+It prints one line, for example
+`Automations v1 daemon verified: covenVersion=0.4.7 daemonStarts=2 commands=9 … peerIdentity=harness-asserted`.
+A failure prints the daemon's own output. On success, failure, `SIGINT`, or
+`SIGTERM` (exit 130 or 143), the daemon is stopped and its home removed. Unix
+only.
+
+What it does not establish:
+
+- **Peer identity is asserted, not inspected.** Node has no peer-credential API.
+  The canary launched the daemon under its own uid in a `0700` home, and checks
+  that the home and socket belong to that uid before asserting it. Production
+  callers still need a reviewed provider.
+- **No run executes.** Runs, receipts, and runtime authority are out of scope.
+- **`get()` is v0.4.7's legacy routine projection**, not the stored rich
+  definition.
+- **`eventDefinitionDigest=differs-from-definition-integrity`** records that
+  v0.4.7's lifecycle events carry the digest of that routine projection, not
+  the definition document's `integrity`. Coven's occurrences, runs, and receipts
+  pin the same projection digest, so passing a definition's `integrity` to
+  `verifyReceipt()` as the expected `definitionDigest` will not match a v0.4.7
+  receipt. [Coven #1054](https://github.com/OpenCoven/coven/issues/1054) tracks
+  this.
+
 ## Choosing a package
 
 | Need | Package |
