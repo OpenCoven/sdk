@@ -63,14 +63,21 @@ interface Flaws {
   subscribeOmitsFinalPage?: boolean;
   missingAction?: string;
   historyNonEmpty?: boolean;
-  eventDigestMatches?: boolean;
+  /** Events publish a digest of the routine projection, as v0.4.7 did. */
+  eventDigestIsRoutine?: boolean;
+  /** Revision 4's event repeats revision 2's digest. */
+  pausedRevisionsCollide?: boolean;
+  /** The activation event omits its digest. */
+  activatedDigestMissing?: boolean;
+  /** The disable event publishes an unrelated digest. */
+  disabledDigestUnrelated?: boolean;
 }
 
 interface FakeEvent {
   sequence: number;
   kind: string;
   causation: { adoptionKey: string };
-  payload: { revision: number; definitionDigest: { algorithm: string; canonicalization: string; value: string } };
+  payload: { revision: number; definitionDigest?: { algorithm: string; canonicalization: string; value: string } };
 }
 
 type Result = Record<string, unknown>;
@@ -82,20 +89,36 @@ function fakeDaemon(flaws: Flaws = {}) {
   let revision = 0;
   let status = 'DRAFT';
   let tags: unknown = [];
-  let integrity = '';
+  let document: Result = {};
   let adoptions = new Map<string, { fingerprint: string; result: Result }>();
   const events: FakeEvent[] = [];
+  const digests = new Map<number, string>();
+  const lifecycle = () => status === 'DRAFT' ? 'draft' : status.toLowerCase();
+  // The current revision as a stored v1 document, with its JCS integrity.
+  const stored = () => {
+    const body = { ...document, revision, lifecycleState: lifecycle() };
+    // The digest recipe removes `integrity`, but a document must carry one.
+    const digest = computeDefinitionDigest({
+      ...body, integrity: { algorithm: 'sha256', canonicalization: 'jcs-rfc8785', value: '0'.repeat(64) },
+    });
+    const value = digest.status === 'computed' ? digest.digest.value : '';
+    return { ...body, integrity: { algorithm: 'sha256', canonicalization: 'jcs-rfc8785', value } };
+  };
 
   const record = (kind: string, adoptionKey: string) => {
+    digests.set(revision, stored().integrity.value);
+    // v0.4.7 digested the routine, which carries the status but no revision.
+    const routine = { draft: 'c', paused: 'a', active: 'b', disabled: 'd' }[lifecycle()] ?? 'e';
+    const value = flaws.eventDigestIsRoutine === true ? routine.repeat(64)
+      : flaws.pausedRevisionsCollide === true && kind === 'definition.paused' ? digests.get(2) ?? ''
+      : flaws.disabledDigestUnrelated === true && kind === 'definition.disabled' ? 'f'.repeat(64)
+      : digests.get(revision) ?? '';
+    const definitionDigest = { algorithm: 'sha256', canonicalization: 'jcs-rfc8785', value };
     events.push({
       sequence: events.length, kind, causation: { adoptionKey },
-      payload: {
-        revision,
-        definitionDigest: {
-          algorithm: 'sha256', canonicalization: 'jcs-rfc8785',
-          value: flaws.eventDigestMatches === true ? integrity : 'a'.repeat(64),
-        },
-      },
+      payload: flaws.activatedDigestMissing === true && kind === 'definition.activated'
+        ? { revision }
+        : { revision, definitionDigest },
     });
   };
   const rejected = (command: string, adoptionKey: string, error: Result): Result =>
@@ -151,26 +174,15 @@ function fakeDaemon(flaws: Flaws = {}) {
     }),
     createDraft: (definition, context) => command('definition.create.v1', context, JSON.stringify(definition), () => {
       revision = 1;
+      status = 'DRAFT';
+      document = { ...definition };
       tags = (definition.display as { tags: unknown }).tags;
-      const stored = { ...definition, revision: 1, lifecycleState: 'draft' };
-      // The digest recipe removes `integrity`, but a document must carry one.
-      const digest = computeDefinitionDigest({
-        ...stored, integrity: { algorithm: 'sha256', canonicalization: 'jcs-rfc8785', value: '0'.repeat(64) },
-      });
-      integrity = digest.status === 'computed' ? digest.digest.value : '';
       record('definition.created', context.adoptionKey);
+      const definitionValue = stored();
+      if (flaws.integrityDrift === true) definitionValue.integrity.value = 'b'.repeat(64);
       return {
         outcome: 'committed', command: 'definition.create.v1', adoptionKey: context.adoptionKey, revision,
-        result: {
-          revision,
-          definition: {
-            ...stored,
-            integrity: {
-              algorithm: 'sha256', canonicalization: 'jcs-rfc8785',
-              value: flaws.integrityDrift === true ? 'b'.repeat(64) : integrity,
-            },
-          },
-        },
+        result: { revision, definition: definitionValue },
       };
     }),
     revise: (_id, expected, definition, context) =>
@@ -180,9 +192,15 @@ function fakeDaemon(flaws: Flaws = {}) {
         }
         revision += 1;
         status = 'PAUSED';
+        // The document keeps its body; revision and lifecycle are regenerated.
+        document = { ...definition };
+        delete document.lifecycleState;
         tags = (definition.display as { tags: unknown }).tags;
         record('definition.revised', context.adoptionKey);
-        return { outcome: 'committed', command: 'definition.revise.v1', adoptionKey: context.adoptionKey, revision };
+        return {
+          outcome: 'committed', command: 'definition.revise.v1', adoptionKey: context.adoptionKey, revision,
+          result: { revision, definition: stored() },
+        };
       }),
     activate: (_id, expected, context) =>
       transition('definition.activate.v1', 'definition.activated', expected, context, 'ACTIVE'),
@@ -287,16 +305,16 @@ describe('daemon canary scenario', () => {
   test('passes against a daemon with the released command and replay semantics', async () => {
     await expect(scenario()).resolves.toEqual({
       commands: 9, replays: 2, rejections: 2, events: 5, subscribePages: 2,
-      eventDefinitionDigest: 'differs-from-definition-integrity',
-    });
-    await expect(scenario({ eventDigestMatches: true })).resolves.toMatchObject({
-      eventDefinitionDigest: 'matches-definition-integrity',
     });
   });
 
   test.each<[string, Flaws, RegExp]>([
     ['a missing advertised action', { missingAction: 'coven.automations.run.history.v1' }, /capabilities: missing coven\.automations\.run\.history\.v1/u],
     ['a stored digest the SDK cannot reproduce', { integrityDrift: true }, /integrity does not match the SDK digest/u],
+    ['events that publish the routine digest, as v0.4.7 did', { eventDigestIsRoutine: true }, /events: definition\.created publishes c{64}, not the created definition's integrity/u],
+    ['paused revisions that share a digest', { pausedRevisionsCollide: true }, /events: definition\.paused at revision 4 publishes [0-9a-f]{64}, not that revision's definition integrity/u],
+    ['an activation event without a digest', { activatedDigestMissing: true }, /events: definition\.activated at revision 3 publishes no digest/u],
+    ['a disable event with an unrelated digest', { disabledDigestUnrelated: true }, /events: definition\.disabled at revision 5 publishes f{64}/u],
     ['a replay that commits again', { replayCommits: true }, /createDraft replay: expected definition\.create\.v1 replayed/u],
     ['a changed body accepted under a used key', { acceptsMismatch: true }, /createDraft mismatch: expected rejection ADOPTION_REPLAY_MISMATCH/u],
     ['a stale revision accepted', { acceptsStale: true }, /stale revise: expected rejection REVISION_CONFLICT/u],

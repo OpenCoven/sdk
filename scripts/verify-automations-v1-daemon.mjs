@@ -177,10 +177,21 @@ export async function runDaemonScenario({ sdk, connect, restartDaemon, scheduleH
     beforeRevise.events[0].causation?.adoptionKey !== 'canary:create') {
     fail(`events: definition.created lacks a digest or its adoption key, received ${describe(beforeRevise.events[0])}.`);
   }
+  // Since coven#1200 a lifecycle event names its revision by the definition's
+  // integrity, the digest a receipt verifier is given.
+  if (createdDigest !== stored.integrity.value) {
+    fail(`events: definition.created publishes ${createdDigest}, not the created definition's integrity ${stored.integrity.value}.`);
+  }
 
   const revision = { ...draft, lifecycleState: 'paused', display: { name: 'SDK daemon canary', tags: ['canary', 'revised'] } };
-  expectCommitted('revise', await client.revise(automationId, 1, revision, context('canary:revise')),
-    'definition.revise.v1', 2);
+  const revised = await client.revise(automationId, 1, revision, context('canary:revise'));
+  expectCommitted('revise', revised, 'definition.revise.v1', 2);
+  const revisedDefinition = revised.result?.definition;
+  const revisedDigest = sdk.computeDefinitionDigest(revisedDefinition);
+  if (revisedDefinition?.revision !== 2 || revisedDefinition.lifecycleState !== 'paused' ||
+    revisedDigest.status !== 'computed' || revisedDigest.digest.value !== revisedDefinition.integrity?.value) {
+    fail(`revise: the stored definition's integrity does not match the SDK digest, received ${describe(revisedDefinition?.integrity)}.`);
+  }
   expectRejected('stale revise', await client.revise(
     automationId, 1, { ...revision, display: { name: 'Stale', tags: ['canary'] } }, context('canary:revise-stale'),
   ), 'REVISION_CONFLICT', { currentRevision: 2 });
@@ -215,6 +226,25 @@ export async function runDaemonScenario({ sdk, connect, restartDaemon, scheduleH
     if (pages > 10) fail('subscribe: no end of stream after 10 pages.');
   }
   expectSequences('subscribe from the pre-restart checkpoint', resumed, lifecycleKinds.slice(1));
+  // Every lifecycle event carries its revision's definition integrity. Create
+  // and revise returned revisions 1 and 2. Revisions 3-5 are the revised
+  // document at that revision and lifecycle state, as Coven's stored view
+  // regenerates it. Revisions 2 and 4 share a body, so a digest that ignored
+  // the revision could not match both.
+  const expectedDigests = [
+    stored.integrity.value,
+    revisedDefinition.integrity.value,
+    ...[[3, 'active'], [4, 'paused'], [5, 'disabled']].map(([revisionNumber, lifecycleState]) => {
+      const digest = sdk.computeDefinitionDigest({ ...revisedDefinition, revision: revisionNumber, lifecycleState });
+      return digest.status === 'computed' ? digest.digest.value : fail(`revision ${revisionNumber} cannot be digested.`);
+    }),
+  ];
+  [beforeRevise.events[0], ...resumed].forEach((event, index) => {
+    const published = event.payload?.definitionDigest?.value;
+    if (published !== expectedDigests[index]) {
+      fail(`events: ${event.kind} at revision ${index + 1} publishes ${published ?? 'no digest'}, not that revision's definition integrity ${expectedDigests[index]}.`);
+    }
+  });
   // The iterator yields one empty page so its checkpoint can be saved, then ends.
   if (last?.events?.length !== 0 || last.after !== 4 || last.nextAfter !== 4 ||
     typeof last.checkpoint !== 'string' || last.checkpoint.length === 0) {
@@ -242,8 +272,6 @@ export async function runDaemonScenario({ sdk, connect, restartDaemon, scheduleH
     rejections: 2,
     events: lifecycleKinds.length,
     subscribePages: pages,
-    eventDefinitionDigest: createdDigest === stored.integrity.value ? 'matches-definition-integrity'
-      : 'differs-from-definition-integrity',
   };
 }
 
@@ -491,7 +519,7 @@ async function main(signal) {
       'definitionIntegrity=matches-sdk',
       'adoptionReplayAcrossRestart=passed',
       'checkpointResumeAcrossRestart=passed',
-      `eventDefinitionDigest=${result.eventDefinitionDigest}`,
+      'eventDefinitionDigest=matches-definition-integrity',
       'peerIdentity=harness-asserted',
     ].join(' ') + '\n',
   );

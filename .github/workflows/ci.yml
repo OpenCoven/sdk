@@ -77,10 +77,10 @@ jobs:
       # Drives the released daemon, installed from npm at the locked integrity,
       # through the built client: commands, adoption replay, and event resume
       # across a daemon restart. Needs the build that the verify step produced.
-      - name: Drive the released Coven v0.4.7 daemon through the SDK
+      - name: Drive the released Coven v0.4.8 daemon through the SDK
         if: matrix.node == '24.18.1'
         env:
-          COVEN_CLI_DIR: ${{ runner.temp }}/coven-cli-0.4.7
+          COVEN_CLI_DIR: ${{ runner.temp }}/coven-cli-0.4.8
         run: |
           set -euo pipefail
           mkdir -p "$COVEN_CLI_DIR"
@@ -90,7 +90,7 @@ jobs:
           npm audit signatures --prefix "$COVEN_CLI_DIR"
           corepack pnpm@10.34.0 canary:automations-v1-daemon -- \
             --coven "$COVEN_CLI_DIR/node_modules/@opencoven/cli/bin/coven.js" \
-            --expect-version 0.4.7
+            --expect-version 0.4.8
       # The moving major validates supported package behavior without claiming
       # exact release, conformance, provenance, or environment authority.
       - name: Verify Node 24 package compatibility
