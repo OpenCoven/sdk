@@ -20,6 +20,7 @@
     "api:baseline:update": "node ./scripts/update-api-baselines.mjs",
     "build": "corepack pnpm@10.34.0 --recursive --filter './packages/*' build && corepack pnpm@10.34.0 --recursive --filter './examples/*' build",
     "canary:automations-v1": "node ./scripts/verify-automations-v1-artifact.mjs",
+    "canary:automations-v1-daemon": "node ./scripts/verify-automations-v1-daemon.mjs",
     "clean:public-dist": "node ./scripts/clean-public-package-dist.mjs",
     "changeset": "changeset",
     "cleanup:merged": "node ./scripts/cleanup-merged-branch.mjs",

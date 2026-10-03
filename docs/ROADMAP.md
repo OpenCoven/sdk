@@ -319,6 +319,13 @@ authentication remains explicitly unperformed.
 lock and the exact-runtime CI reproduction from the pre-release `8a796807`
 artifact to the producer of the released Coven v0.4.7 bundle: `c93a8a93`,
 19 files, contract content `ef266d16`.
+[SDK #338](https://github.com/OpenCoven/sdk/pull/338) adds a daemon canary.
+CI installs the published `@opencoven/cli@0.4.7` at its locked integrity and
+drives its daemon through the built client: draft, revise and lifecycle
+commands, adoption replay and refusal, and checkpoint resume across a daemon
+restart. It found that v0.4.7's lifecycle events, occurrences, runs and
+receipts pin the digest of the legacy routine projection rather than the
+definition document's `integrity` (reported on Coven #1054).
 
 OpenCoven/coven#991 (`d277ade3`) and OpenCoven/coven#999 (`735e2f05`) publish packaged base capability
 negotiation, durable `CAPABILITY_UNSUPPORTED` outcomes, and exact wire request
