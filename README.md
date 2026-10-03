@@ -286,9 +286,9 @@ While GitHub retains the original workflow artifact, the supplemental live
 verifier checks
 [`conformance/automations-v1-artifact-lock.json`](conformance/automations-v1-artifact-lock.json)
 against GitHub's live repository, producer-workflow, successful run/job, and
-artifact metadata. The lock binds Coven artifact `9909975069`, its GitHub
+artifact metadata. The lock binds Coven artifact `11257472104`, its GitHub
 archive digest, the exact source workflow bytes, the contained bundle and
-manifest sizes/digests, source commit, content digest, and 17-file count. The
+manifest sizes/digests, source commit, content digest, and 19-file count. The
 tarball remains an external immutable artifact rather than a committed binary:
 
 ```bash
