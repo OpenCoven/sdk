@@ -45,7 +45,6 @@ export interface DaemonCanarySummary {
   rejections: number;
   events: number;
   subscribePages: number;
-  eventDefinitionDigest: 'matches-definition-integrity' | 'differs-from-definition-integrity';
 }
 
 export function parseDaemonCanaryArguments(argv: string[]): DaemonCanaryArguments;

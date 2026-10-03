@@ -308,7 +308,7 @@ runs `npm audit signatures` over it, and then runs:
 corepack pnpm@10.34.0 build
 corepack pnpm@10.34.0 canary:automations-v1-daemon -- \
   --coven /path/to/node_modules/@opencoven/cli/bin/coven.js \
-  --expect-version 0.4.7
+  --expect-version 0.4.8
 ```
 
 The canary refuses any binary that does not report the expected version. It
@@ -318,8 +318,9 @@ environment and no harness, and discovers it the way a consumer would. Then it:
 - creates a draft and requires the daemon's stored `integrity` to equal
   `computeDefinitionDigest()`, then resends it under the same adoption key
   (`replayed`) and with a changed body (`ADOPTION_REPLAY_MISMATCH`);
-- revises it, has a stale revision refused with `REVISION_CONFLICT` and the
-  current revision, activates and pauses it, and reads it back with `get()`;
+- revises it, again requiring the stored `integrity` to match, has a stale
+  revision refused with `REVISION_CONFLICT` and the current revision, activates
+  and pauses it, and reads it back with `get()`;
 - stops the daemon with `SIGTERM`, requires it to remove its socket and
   `daemon.json`, starts it again over the same home, and requires the earlier
   activation to come back `replayed` under its adoption key;
@@ -327,11 +328,15 @@ environment and no harness, and discovers it the way a consumer would. Then it:
   restart, and requires exactly the four later lifecycle events followed by the
   final empty page and its checkpoint, then the same tail from a concrete
   `after` cursor;
+- requires each lifecycle event to name its revision by the definition's
+  `integrity`. The created and revised events must carry exactly what create
+  and revise returned, and the paused revisions 2 and 4, which share a body,
+  must publish different digests;
 - requires empty occurrence and run history. The schedule is set twelve hours
   away from the activation, so nothing fires.
 
 It prints one line, for example
-`Automations v1 daemon verified: covenVersion=0.4.7 daemonStarts=2 commands=9 … peerIdentity=harness-asserted`.
+`Automations v1 daemon verified: covenVersion=0.4.8 daemonStarts=2 commands=9 … peerIdentity=harness-asserted`.
 A failure prints the daemon's own output. On success, failure, `SIGINT`, or
 `SIGTERM` (exit 130 or 143), the daemon is stopped and its home removed. Unix
 only.
@@ -343,15 +348,16 @@ What it does not establish:
   that the home and socket belong to that uid before asserting it. Production
   callers still need a reviewed provider.
 - **No run executes.** Runs, receipts, and runtime authority are out of scope.
-- **`get()` is v0.4.7's legacy routine projection**, not the stored rich
+- **`get()` is v0.4.8's legacy routine projection**, not the stored rich
   definition.
-- **`eventDefinitionDigest=differs-from-definition-integrity`** records that
-  v0.4.7's lifecycle events carry the digest of that routine projection, not
-  the definition document's `integrity`. Coven's occurrences, runs, and receipts
-  pin the same projection digest, so passing a definition's `integrity` to
-  `verifyReceipt()` as the expected `definitionDigest` will not match a v0.4.7
-  receipt. [Coven #1054](https://github.com/OpenCoven/coven/issues/1054) tracks
-  this.
+- **Coven v0.4.7 published a different digest.** Its lifecycle events,
+  occurrences, runs, and receipts carried the digest of that routine projection,
+  not the definition's `integrity`. So passing a definition's `integrity` to
+  `verifyReceipt()` as the expected `definitionDigest` does not match a v0.4.7
+  receipt. Coven v0.4.8 fixed this
+  ([coven#1200](https://github.com/OpenCoven/coven/pull/1200)), and the canary
+  now fails on the old behavior. Events that v0.4.7 wrote are immutable and keep
+  the old digest.
 
 ## Choosing a package
 

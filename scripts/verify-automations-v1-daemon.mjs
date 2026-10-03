@@ -177,10 +177,21 @@ export async function runDaemonScenario({ sdk, connect, restartDaemon, scheduleH
     beforeRevise.events[0].causation?.adoptionKey !== 'canary:create') {
     fail(`events: definition.created lacks a digest or its adoption key, received ${describe(beforeRevise.events[0])}.`);
   }
+  // Since coven#1200 a lifecycle event names its revision by the definition's
+  // integrity, the digest a receipt verifier is given.
+  if (createdDigest !== stored.integrity.value) {
+    fail(`events: definition.created publishes ${createdDigest}, not the created definition's integrity ${stored.integrity.value}.`);
+  }
 
   const revision = { ...draft, lifecycleState: 'paused', display: { name: 'SDK daemon canary', tags: ['canary', 'revised'] } };
-  expectCommitted('revise', await client.revise(automationId, 1, revision, context('canary:revise')),
-    'definition.revise.v1', 2);
+  const revised = await client.revise(automationId, 1, revision, context('canary:revise'));
+  expectCommitted('revise', revised, 'definition.revise.v1', 2);
+  const revisedDefinition = revised.result?.definition;
+  const revisedDigest = sdk.computeDefinitionDigest(revisedDefinition);
+  if (revisedDefinition?.revision !== 2 || revisedDefinition.lifecycleState !== 'paused' ||
+    revisedDigest.status !== 'computed' || revisedDigest.digest.value !== revisedDefinition.integrity?.value) {
+    fail(`revise: the stored definition's integrity does not match the SDK digest, received ${describe(revisedDefinition?.integrity)}.`);
+  }
   expectRejected('stale revise', await client.revise(
     automationId, 1, { ...revision, display: { name: 'Stale', tags: ['canary'] } }, context('canary:revise-stale'),
   ), 'REVISION_CONFLICT', { currentRevision: 2 });
@@ -215,6 +226,15 @@ export async function runDaemonScenario({ sdk, connect, restartDaemon, scheduleH
     if (pages > 10) fail('subscribe: no end of stream after 10 pages.');
   }
   expectSequences('subscribe from the pre-restart checkpoint', resumed, lifecycleKinds.slice(1));
+  const published = resumed.map((event) => event.payload?.definitionDigest?.value);
+  if (published[0] !== revisedDefinition.integrity.value) {
+    fail(`events: definition.revised publishes ${published[0]}, not the revised definition's integrity ${revisedDefinition.integrity.value}.`);
+  }
+  // Revisions 2 and 4 are both paused with the same body. A digest that does
+  // not cover the revision would be shared by both.
+  if (!sha256Pattern.test(published[2] ?? '') || published[2] === published[0]) {
+    fail(`events: paused revisions 2 and 4 publish ${published[0]} and ${published[2]}, which do not identify their revisions.`);
+  }
   // The iterator yields one empty page so its checkpoint can be saved, then ends.
   if (last?.events?.length !== 0 || last.after !== 4 || last.nextAfter !== 4 ||
     typeof last.checkpoint !== 'string' || last.checkpoint.length === 0) {
@@ -242,8 +262,6 @@ export async function runDaemonScenario({ sdk, connect, restartDaemon, scheduleH
     rejections: 2,
     events: lifecycleKinds.length,
     subscribePages: pages,
-    eventDefinitionDigest: createdDigest === stored.integrity.value ? 'matches-definition-integrity'
-      : 'differs-from-definition-integrity',
   };
 }
 
@@ -491,7 +509,7 @@ async function main(signal) {
       'definitionIntegrity=matches-sdk',
       'adoptionReplayAcrossRestart=passed',
       'checkpointResumeAcrossRestart=passed',
-      `eventDefinitionDigest=${result.eventDefinitionDigest}`,
+      'eventDefinitionDigest=matches-definition-integrity',
       'peerIdentity=harness-asserted',
     ].join(' ') + '\n',
   );

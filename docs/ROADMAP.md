@@ -326,6 +326,10 @@ commands, adoption replay and refusal, and checkpoint resume across a daemon
 restart. It found that v0.4.7's lifecycle events, occurrences, runs and
 receipts pin the digest of the legacy routine projection rather than the
 definition document's `integrity` (reported on Coven #1054).
+Coven v0.4.8 fixed that (coven#1200), and
+[SDK #339](https://github.com/OpenCoven/sdk/pull/339) re-pins the canary to
+`@opencoven/cli@0.4.8`. The canary now requires every lifecycle event to carry
+its revision's definition `integrity`.
 
 OpenCoven/coven#991 (`d277ade3`) and OpenCoven/coven#999 (`735e2f05`) publish packaged base capability
 negotiation, durable `CAPABILITY_UNSUPPORTED` outcomes, and exact wire request
