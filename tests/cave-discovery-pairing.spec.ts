@@ -1146,14 +1146,16 @@ describe('discovered Cave pairing helpers', () => {
         expect(init?.method).toBe('POST');
         expect(init?.redirect).toBe('error');
         expect(header(init, 'content-type')).toBe('application/json');
-        expect(typeof init?.body).toBe('string');
-        expect(init?.body).toBe(
+        expect(init?.body).toBeInstanceOf(Uint8Array);
+        expect(new TextDecoder().decode(init?.body as Uint8Array)).toBe(
           JSON.stringify({
             appName: 'OpenCoven Chat',
             installationId: 'chat-install-1',
             scopes: ['chat:read', 'chat:write'],
           }),
         );
+        // The explicit header is the only content-type on the wire.
+        expect(new Request(url, init).headers.get('content-type')).toBe('application/json');
         return jsonResponse(
           201,
           successEnvelope({
@@ -1186,6 +1188,15 @@ describe('discovered Cave pairing helpers', () => {
         expect(init?.method).toBe('POST');
         expect(init?.redirect).toBe('error');
         expect(header(init, 'x-coven-pairing-secret')).toBe(PAIRING_SECRET);
+        // The exchange is bodyless at the proxy (`Content-Length: 0`, no
+        // content-type). A string body would make fetch add
+        // `text/plain;charset=UTF-8`, which Cave refuses with 415 before the
+        // route runs; building the Request the way fetch does pins the wire
+        // headers, not just the init we passed.
+        expect(init?.body).toBeInstanceOf(Uint8Array);
+        expect((init?.body as Uint8Array).byteLength).toBe(0);
+        const wire = new Request(url, init);
+        expect(wire.headers.get('content-type')).toBeNull();
         return jsonResponse(
           200,
           successEnvelope({
