@@ -1354,6 +1354,110 @@ describe('discovered Cave pairing helpers', () => {
     });
   });
 
+  // A real Cave spells the roster the way docs/api/client-v1.md does, in
+  // camelCase. Before this test, `credentialStatus` and `familiars()` refused
+  // that roster outright ("display_name must be a non-empty string"), so a
+  // freshly exchanged credential read as broken the moment the Cave had a
+  // single familiar. The roster here is the documented sample.
+  test('reads the roster in the contract spelling after a discovered exchange', async () => {
+    const root = createScratchRoot('pairing-credential-status-contract-roster');
+    await writeDiscoveryRecord(root, discoveryRecord());
+    const contractRoster = [
+      {
+        id: 'scribe',
+        displayName: 'Scribe',
+        role: 'Archivist',
+        description: 'Keeps the ledger.',
+        pronouns: 'they/them',
+        status: 'idle',
+        lastSeenAt: '2026-08-20T10:00:00.000Z',
+        activeSessions: 1,
+      },
+      // The contract's optional fields are optional on the wire too.
+      { id: 'astra', displayName: 'Astra', role: 'Strategy / Navigation' },
+    ];
+    const fetchImplementation = queuedFetch([
+      () =>
+        jsonResponse(
+          201,
+          successEnvelope({
+            requestId: '018f4f1a-77c2-7a31-8a15-55a25aaba001',
+            secret: PAIRING_SECRET,
+            expiresAt: 1_755_731_112_617,
+          }),
+        ),
+      () =>
+        jsonResponse(
+          200,
+          successEnvelope({
+            bearer: BEARER,
+            credential: {
+              id: '018f4f1a-77c2-7a31-8a15-55a25aaba002',
+              appName: 'OpenCoven Chat',
+              installationId: 'chat-install-1',
+              scopes: ['chat:read'],
+              createdAt: 1_755_730_812_617,
+              lastUsedAt: null,
+              revokedAt: null,
+              revocationReason: null,
+            },
+          }),
+        ),
+      (_url, init) => {
+        expect(header(init, 'authorization')).toBe(`Bearer ${BEARER}`);
+        return jsonResponse(200, successEnvelope({ familiars: contractRoster }));
+      },
+      (_url, init) => {
+        expect(header(init, 'authorization')).toBe(`Bearer ${BEARER}`);
+        return jsonResponse(200, successEnvelope({ familiars: contractRoster }));
+      },
+      (_url, init) => {
+        expect(header(init, 'authorization')).toBe(`Bearer ${BEARER}`);
+        // Neither spelling carries a name: still a malformed roster.
+        return jsonResponse(
+          200,
+          successEnvelope({ familiars: [{ id: 'nameless', role: 'Unknown' }] }),
+        );
+      },
+    ]);
+    const { client } = discoveredClient(root, fetchImplementation);
+
+    const session = await client.createPairing({
+      appName: 'OpenCoven Chat',
+      installationId: 'chat-install-1',
+      scopes: ['chat:read'],
+    });
+
+    await session.exchange();
+    await expect(client.credentialStatus()).resolves.toEqual({
+      status: 'valid',
+      access: 'chat:read',
+      health: caveHealth(),
+    });
+    const familiars = await client.familiars();
+    expect(familiars).toEqual([
+      {
+        id: 'scribe',
+        displayName: 'Scribe',
+        role: 'Archivist',
+        description: 'Keeps the ledger.',
+        pronouns: 'they/them',
+        status: 'idle',
+        lastSeen: '2026-08-20T10:00:00.000Z',
+        activeSessions: 1,
+      },
+      { id: 'astra', displayName: 'Astra', role: 'Strategy / Navigation' },
+    ]);
+    // The wire spelling, in either casing, must not survive the client.
+    for (const familiar of familiars) {
+      expect(Object.keys(familiar)).not.toContain('display_name');
+      expect(Object.keys(familiar)).not.toContain('lastSeenAt');
+    }
+    await expect(client.familiars()).rejects.toMatchObject({
+      code: 'invalid_response',
+    });
+  });
+
   describe('discovered Cave canonical reads', () => {
     const routeInventories = [
       {
