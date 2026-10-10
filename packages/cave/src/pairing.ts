@@ -421,10 +421,23 @@ function parsePairingExchange(value: unknown): CavePairingExchange {
 
 function parseFamiliar(value: unknown): CaveFamiliarWire {
   const familiar = expectObject(value, 'familiar');
+  // Cave's reviewed contract spells the roster in camelCase (`displayName`,
+  // `lastSeenAt`, `activeSessions`; docs/api/client-v1.md), and a real Cave has
+  // served it that way since its canonical read projections landed. This
+  // parser only knew the earlier snake_case spelling, so `credentialStatus`
+  // and `familiars()` refused every non-empty roster with "display_name must
+  // be a non-empty string"; the unit tests never noticed because they fed it
+  // an empty roster. Read the contract spelling first and keep the snake_case
+  // one as a fallback for an older Cave. The record still leaves here in the
+  // wire type's spelling, and `toFamiliar` stays the one place it converts.
+  const displayName = familiar.displayName ?? familiar.display_name;
+  const lastSeen = familiar.lastSeenAt ?? familiar.last_seen;
+  const activeSessions = familiar.activeSessions ?? familiar.active_sessions;
+  const memoryFreshness = familiar.memoryFreshness ?? familiar.memory_freshness;
 
   return {
     id: expectString(familiar.id, 'familiar.id'),
-    display_name: expectString(familiar.display_name, 'familiar.display_name'),
+    display_name: expectString(displayName, 'familiar.displayName'),
     role: expectString(familiar.role, 'familiar.role'),
     ...(familiar.description === undefined
       ? {}
@@ -435,24 +448,18 @@ function parseFamiliar(value: unknown): CaveFamiliarWire {
     ...(familiar.status === undefined
       ? {}
       : { status: expectString(familiar.status, 'familiar.status') }),
-    ...(familiar.last_seen === undefined
+    ...(lastSeen === undefined
       ? {}
-      : { last_seen: expectString(familiar.last_seen, 'familiar.last_seen') }),
-    ...(familiar.active_sessions === undefined
+      : { last_seen: expectString(lastSeen, 'familiar.lastSeenAt') }),
+    ...(activeSessions === undefined
       ? {}
       : {
-          active_sessions: expectTimestampNumber(
-            familiar.active_sessions,
-            'familiar.active_sessions',
-          ),
+          active_sessions: expectTimestampNumber(activeSessions, 'familiar.activeSessions'),
         }),
-    ...(familiar.memory_freshness === undefined
+    ...(memoryFreshness === undefined
       ? {}
       : {
-          memory_freshness: expectString(
-            familiar.memory_freshness,
-            'familiar.memory_freshness',
-          ),
+          memory_freshness: expectString(memoryFreshness, 'familiar.memoryFreshness'),
         }),
   };
 }
