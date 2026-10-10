@@ -942,7 +942,14 @@ async function requestJson(
       headers,
       redirect: 'error',
       ...(options.context?.signal === undefined ? {} : { signal: options.context.signal }),
-      ...(options.body === undefined ? {} : { body: options.body }),
+      // Send the body as bytes, never as a string. fetch stamps a string body
+      // with `content-type: text/plain;charset=UTF-8`, and Cave's proxy refuses
+      // that media type with 415 before any route runs. The bodyless exchange
+      // (`body: ''`) was failing exactly that way against a real Cave, in both
+      // the plaintext and HPKE modes. A BufferSource body gets no implicit
+      // content-type, so the only one on the wire is the one set explicitly
+      // above (`application/json` on the pairing create).
+      ...(options.body === undefined ? {} : { body: new TextEncoder().encode(options.body) }),
     });
   } catch (error) {
     if (isOperationTimeoutError(error) || isOperationAbortedError(error)) {
