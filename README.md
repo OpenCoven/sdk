@@ -308,13 +308,17 @@ runs `npm audit signatures` over it, and then runs:
 corepack pnpm@10.34.0 build
 corepack pnpm@10.34.0 canary:automations-v1-daemon -- \
   --coven /path/to/node_modules/@opencoven/cli/bin/coven.js \
-  --expect-version 0.4.8
+  --expect-version 0.4.9
 ```
 
 The canary refuses any binary that does not report the expected version. It
 starts `coven daemon serve` in an owned temporary `COVEN_HOME`, with a minimal
 environment and no harness, and discovers it the way a consumer would. Then it:
 
+- requires `capabilities()` to advertise every action it sends or reads, plus
+  the five run-control commands Coven v0.4.9 implements:
+  `occurrence.runNow.v1`, `occurrence.cancel.v1`, `attempt.cancel.v1`,
+  `attempt.retry.v1` and `occurrence.recover.v1`;
 - creates a draft and requires the daemon's stored `integrity` to equal
   `computeDefinitionDigest()`, then resends it under the same adoption key
   (`replayed`) and with a changed body (`ADOPTION_REPLAY_MISMATCH`);
@@ -338,7 +342,7 @@ environment and no harness, and discovers it the way a consumer would. Then it:
   away from the activation, so nothing fires.
 
 It prints one line, for example
-`Automations v1 daemon verified: covenVersion=0.4.8 daemonStarts=2 commands=9 … peerIdentity=harness-asserted`.
+`Automations v1 daemon verified: covenVersion=0.4.9 daemonStarts=2 commands=9 … peerIdentity=harness-asserted`.
 A failure prints the daemon's own output. On success, failure, `SIGINT`, or
 `SIGTERM` (exit 130 or 143), the daemon is stopped and its home removed. Unix
 only.
@@ -350,7 +354,12 @@ What it does not establish:
   that the home and socket belong to that uid before asserting it. Production
   callers still need a reviewed provider.
 - **No run executes.** Runs, receipts, and runtime authority are out of scope.
-- **`get()` is v0.4.8's legacy routine projection**, not the stored rich
+- **The run-control commands are advertised, not exercised.** This SDK does not
+  send them yet: they are [#80](https://github.com/OpenCoven/sdk/issues/80)'s
+  Phase 3, which waits for
+  [coven#857](https://github.com/OpenCoven/coven/issues/857) and
+  [coven#858](https://github.com/OpenCoven/coven/issues/858).
+- **`get()` is v0.4.9's legacy routine projection**, not the stored rich
   definition.
 - **Coven v0.4.7 published a different digest.** Its lifecycle events,
   occurrences, runs, and receipts carried the digest of that routine projection,

@@ -39,7 +39,13 @@ const actions = [
   'coven.automations.events.subscribe.v1',
   'coven.automations.occurrence.history.v1',
   'coven.automations.run.history.v1',
+  'coven.automations.occurrence.runNow.v1',
+  'coven.automations.occurrence.cancel.v1',
+  'coven.automations.attempt.cancel.v1',
+  'coven.automations.attempt.retry.v1',
+  'coven.automations.occurrence.recover.v1',
 ];
+const runControlActions = actions.slice(-5);
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise((done) => server.close(done))));
@@ -324,6 +330,13 @@ describe('daemon canary scenario', () => {
     ['history for a routine that never fired', { historyNonEmpty: true }, /occurrenceHistory: expected an empty final page/u],
   ])('fails closed on %s', async (_label, flaws, message) => {
     await expect(scenario(flaws)).rejects.toThrow(message);
+  });
+
+  // coven#1218-#1221 shipped these in v0.4.9. The published v0.4.8 daemon
+  // advertises none of them, so the canary now fails against it here.
+  test.each(runControlActions)('fails closed when the daemon does not advertise %s', async (action) => {
+    await expect(scenario({ missingAction: action }))
+      .rejects.toThrow(`capabilities: missing ${action}.`);
   });
 });
 
