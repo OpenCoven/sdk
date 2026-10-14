@@ -388,7 +388,7 @@ jobs:
               --version "$RELEASE_VERSION" \
               --github-output "$GITHUB_OUTPUT"
       - id: upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: opencoven-sdk-publication-${{ github.sha }}-${{ inputs.version }}
           path: .artifacts/publication
@@ -432,7 +432,7 @@ jobs:
             ${{ runner.temp }}/opencoven-publication-candidate/tarballs/**/*.tgz
           show-summary: false
       - id: upload-bundle
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: opencoven-sdk-publication-attestation-${{ github.sha }}-${{ inputs.version }}
           path: ${{ steps.attest.outputs.bundle-path }}
@@ -479,7 +479,7 @@ jobs:
           push-to-registry: false
           show-summary: false
       - id: upload-npm-provenance-0
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: opencoven-sdk-npm-provenance-0-${{ github.sha }}-${{ inputs.version }}
           path: ${{ steps.attest-npm-0.outputs.bundle-path }}
@@ -526,7 +526,7 @@ jobs:
           push-to-registry: false
           show-summary: false
       - id: upload-npm-provenance-1
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: opencoven-sdk-npm-provenance-1-${{ github.sha }}-${{ inputs.version }}
           path: ${{ steps.attest-npm-1.outputs.bundle-path }}
@@ -573,7 +573,7 @@ jobs:
           push-to-registry: false
           show-summary: false
       - id: upload-npm-provenance-2
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: opencoven-sdk-npm-provenance-2-${{ github.sha }}-${{ inputs.version }}
           path: ${{ steps.attest-npm-2.outputs.bundle-path }}
@@ -620,7 +620,7 @@ jobs:
           push-to-registry: false
           show-summary: false
       - id: upload-npm-provenance-3
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: opencoven-sdk-npm-provenance-3-${{ github.sha }}-${{ inputs.version }}
           path: ${{ steps.attest-npm-3.outputs.bundle-path }}
@@ -689,7 +689,7 @@ jobs:
               --mode witness \
               --output "$RUNNER_TEMP/opencoven-pending-approval"
       - id: upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: opencoven-sdk-pending-approval-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/opencoven-pending-approval
@@ -824,7 +824,7 @@ jobs:
               --security-review "$RUNNER_TEMP/opencoven-approval-input/security-review.json" \
               --output "$RUNNER_TEMP/opencoven-protected-approval"
       - id: upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: opencoven-sdk-protected-approval-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/opencoven-protected-approval
