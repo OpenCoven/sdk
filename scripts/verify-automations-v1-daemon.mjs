@@ -33,6 +33,15 @@ const requiredActions = [
   'coven.automations.events.subscribe.v1',
   'coven.automations.occurrence.history.v1',
   'coven.automations.run.history.v1',
+  // Coven v0.4.9 implements and advertises the run-control commands
+  // (coven#1218-#1221). The SDK does not send them: they are #80's Phase 3,
+  // which waits for coven#857 and #858. The canary requires only that the
+  // released daemon advertises them, not that they behave.
+  'coven.automations.occurrence.runNow.v1',
+  'coven.automations.occurrence.cancel.v1',
+  'coven.automations.attempt.cancel.v1',
+  'coven.automations.attempt.retry.v1',
+  'coven.automations.occurrence.recover.v1',
 ];
 
 function fail(message) {

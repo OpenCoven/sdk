@@ -330,6 +330,13 @@ Coven v0.4.8 fixed that (coven#1200), and
 [SDK #339](https://github.com/OpenCoven/sdk/pull/339) re-pins the canary to
 `@opencoven/cli@0.4.8`. The canary now requires every lifecycle event to carry
 its revision's definition `integrity`.
+Coven v0.4.9 implements the run-control commands `occurrence.runNow.v1`,
+`occurrence.cancel.v1`, `attempt.cancel.v1`, `attempt.retry.v1` and
+`occurrence.recover.v1` (coven#1218–#1221). The canary is re-pinned to
+`@opencoven/cli@0.4.9` and requires the daemon to advertise all five. The SDK
+still does not send them: they are Phase 3, which waits for coven#857 and #858.
+The base-artifact lock still names the v0.4.7 producer (contract `ef266d16`);
+v0.4.9 ships contract content `528b900c`.
 
 OpenCoven/coven#991 (`d277ade3`) and OpenCoven/coven#999 (`735e2f05`) publish packaged base capability
 negotiation, durable `CAPABILITY_UNSUPPORTED` outcomes, and exact wire request
