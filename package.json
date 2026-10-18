@@ -13,7 +13,9 @@
   "pnpm": {
     "overrides": {
       "@hpke/common": "1.10.0",
-      "esbuild": "0.28.2"
+      "esbuild": "0.28.2",
+      "shell-quote": "1.11.0",
+      "source-map-js": "1.2.2"
     }
   },
   "scripts": {
