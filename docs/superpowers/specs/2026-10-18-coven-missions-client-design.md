@@ -1,14 +1,18 @@
 # Coven missions client design
 
-Status: **draft for review, not implemented**. Written 2026-10-18.
+Status: **design approved with the producer contract on 2026-10-18 (Val); not implemented**.
 
 The SDK binding for the mission contract drafted in OpenCoven/coven#1314
 (issue OpenCoven/coven#1313, design doc
 `docs/architecture/coven-automations-missions.md`). Consumers: OpenCoven/chat#155,
 and any owner-local client that needs to submit, watch or cancel one familiar
 mission. This document changes no package and adds no Changeset. The client is
-built after the producer contract is approved and its spec additions land in
-`coven.automations.v1`.
+built once the producer's spec additions land in `coven.automations.v1`.
+
+The producer's decisions that shape this client: M0 missions are read-only
+diagnosis reports; `mission.submit` is one-shot only; and at most one mission
+per familiar root and project is active, so the client surfaces
+`CONCURRENCY_LIMIT` rather than queueing.
 
 ## Goal
 
