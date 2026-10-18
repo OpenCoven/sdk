@@ -332,11 +332,14 @@ Coven v0.4.8 fixed that (coven#1200), and
 its revision's definition `integrity`.
 Coven v0.4.9 implements the run-control commands `occurrence.runNow.v1`,
 `occurrence.cancel.v1`, `attempt.cancel.v1`, `attempt.retry.v1` and
-`occurrence.recover.v1` (coven#1218–#1221). The canary is re-pinned to
-`@opencoven/cli@0.4.9` and requires the daemon to advertise all five. The SDK
+`occurrence.recover.v1` (coven#1218–#1221). SDK #343 re-pinned the canary to
+`@opencoven/cli@0.4.9` and required the daemon to advertise all five. The SDK
 still does not send them: they are Phase 3, which waits for coven#857 and #858.
-The base-artifact lock still names the v0.4.7 producer (contract `ef266d16`);
-v0.4.9 ships contract content `528b900c`.
+The base-artifact lock and daemon fixture now both target v0.4.10, producer
+`d6afbffde4f815a538f65185c80da2d0ee951d2d`, contract content `528b900c`.
+The protocol bundle reproduces byte-for-byte from that source and matches the
+release asset and successful CI artifact `11868030042`. This pin reconciliation
+does not add run-control behavioral coverage or satisfy the Phase 3 gates.
 
 OpenCoven/coven#991 (`d277ade3`) and OpenCoven/coven#999 (`735e2f05`) publish packaged base capability
 negotiation, durable `CAPABILITY_UNSUPPORTED` outcomes, and exact wire request

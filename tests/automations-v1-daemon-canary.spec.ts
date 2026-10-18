@@ -377,6 +377,7 @@ describe.skipIf(process.platform === 'win32')('daemon canary process handling', 
     const path = resolve(directory, 'coven.mjs');
     writeFileSync(path, `
 import { createServer } from 'node:http';
+import { createServer as createNetServer } from 'node:net';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 const [command] = process.argv.slice(2);
 if (command === '--version') {
@@ -392,8 +393,13 @@ const home = process.env.COVEN_HOME;
 const socket = home + '/coven.sock';
 writeFileSync(new URL('./pid', import.meta.url), String(process.pid));
 const body = JSON.stringify({ capabilities: [] });
-const server = createServer((request, response) => {
-  if (mode === 'hang') return;
+// The SDK half-closes its request. An HTTP server would close the unanswered
+// connection on EOF, producing invalid_response instead of holding the read.
+const server = mode === 'hang' ? createNetServer({ allowHalfOpen: true }, (connection) => {
+  connection.once('data', () => {
+    writeFileSync(new URL('./request-received', import.meta.url), 'ready');
+  });
+}) : createServer((request, response) => {
   response.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
   response.end(body);
 });
@@ -446,16 +452,30 @@ process.on('SIGTERM', () => {
       let stderr = '';
       canary.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
       const exited = new Promise<number | null>((done) => canary.once('exit', (status) => done(status)));
-      const pidPath = resolve(directory, 'pid');
+      const requestReceived = resolve(directory, 'request-received');
+      // The PID file precedes listen/discovery. Wait for an actual request so
+      // this test interrupts in-flight I/O rather than racing daemon startup.
+      // This deadline is a hang guard, not a promptness assertion.
       const deadline = Date.now() + 30_000;
-      while (!existsSync(pidPath) && Date.now() < deadline) await new Promise((wait) => setTimeout(wait, 50));
-      const pid = Number(readFileSync(pidPath, 'utf8'));
-      canary.kill(signal);
-      expect(await exited).toBe(code);
-      expect(stderr).toContain(`Interrupted by ${signal}.`);
-      expect(() => process.kill(pid, 0)).toThrow(/ESRCH/u);
-      expect(readdirSync(temp)).toEqual([]);
+      try {
+        while (!existsSync(requestReceived)) {
+          if (canary.exitCode !== null || canary.signalCode !== null || Date.now() >= deadline) {
+            throw new Error(`Canary did not reach an in-flight request: ${stderr}`);
+          }
+          await new Promise((wait) => setTimeout(wait, 50));
+        }
+        const pid = Number(readFileSync(resolve(directory, 'pid'), 'utf8'));
+        canary.kill(signal);
+        expect(await exited, stderr).toBe(code);
+        expect(stderr).toContain(`Interrupted by ${signal}.`);
+        expect(() => process.kill(pid, 0)).toThrow(/ESRCH/u);
+        expect(readdirSync(temp)).toEqual([]);
+      } finally {
+        canary.kill('SIGTERM');
+        await exited;
+      }
     },
+    45_000,
   );
 
   test('reports a daemon that exits before it is ready', () => {

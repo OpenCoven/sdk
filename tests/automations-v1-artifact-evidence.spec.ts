@@ -255,44 +255,44 @@ describe('Automations v1 artifact evidence', () => {
       producer: {
         repository: 'OpenCoven/coven',
         repositoryId: 1222160568,
-        sourceCommit: 'c93a8a936f9b7f1bd070a1cbb608d38d4e13c92a',
-        sourceTree: 'c735abce27f7e72a797e392d7d08db43b3ee9f9e',
+        sourceCommit: 'd6afbffde4f815a538f65185c80da2d0ee951d2d',
+        sourceTree: '99654a0aa4a443f5e1e3c6b426ca66bce94353d8',
         workflow: {
           id: 267192017,
           name: 'CI',
           path: '.github/workflows/ci.yml',
-          runId: 37077748408,
+          runId: 38505518198,
           runAttempt: 1,
           event: 'push',
           headBranch: 'main',
-          size: 35497,
-          sha256: '5266844a53e02305098a8ec0cda4399f4895ab2907bb4b464dc1492bcb782c6f',
+          size: 35735,
+          sha256: '88e4f2a087511e1bb7b4bd19b19a09e770f2a8410446a66d1dac27312678a984',
         },
         job: {
-          id: 111071346442,
+          id: 115662069315,
           name: 'Automations v1 protocol bundle',
           runnerLabels: ['ubuntu-latest'],
         },
       },
       artifact: {
-        id: 11257472104,
-        name: 'coven-automations-v1-contract-c93a8a936f9b7f1bd070a1cbb608d38d4e13c92a',
-        archiveSize: 43604,
-        archiveSha256: '89d9609820fbeda97745487949d14b7aac394e851f328fbb29492f85427056d7',
+        id: 11868030042,
+        name: 'coven-automations-v1-contract-d6afbffde4f815a538f65185c80da2d0ee951d2d',
+        archiveSize: 44497,
+        archiveSha256: '5763073a12cdacca31ae70bd333dcc2c4ec3089ba14d3674c3ff10b7aae3cc90',
         bundle: {
-          path: 'coven-automations-v1-contract-c93a8a936f9b7f1bd070a1cbb608d38d4e13c92a.tar.gz',
-          size: 42034,
-          sha256: 'fcb084bd4f1755d49ccfe91c6f461e7d30be2154c9b51c0333b65fd7f59f01ca',
+          path: 'coven-automations-v1-contract-d6afbffde4f815a538f65185c80da2d0ee951d2d.tar.gz',
+          size: 42929,
+          sha256: 'bd0d97ea257d851cfd45338ca56d62d485a75c1911e4bddead53ab2fb722fa1e',
         },
         manifest: {
           path: 'manifest.json',
           size: 3296,
-          sha256: '976c9b70a28372a94ae5c39434921561da1071847a5d7716412bb88c776a26ec',
+          sha256: '76d3831e7b6591e50ee0ee38dc6fd3152433b27e8fd4346fa8e7751e1945445d',
         },
       },
       contract: {
         profile: 'coven.automations.v1',
-        contentSha256: 'ef266d16d76d7380f5cd2b30a110b2e84f1310b154b262e0ade9aa6bf60b3445',
+        contentSha256: '528b900cde6db1dda7e5ae62affa0db30cd56c440e42532d7d00c75504f86e4a',
         manifestFiles: 19,
       },
     });
@@ -306,13 +306,13 @@ describe('Automations v1 artifact evidence', () => {
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
-      'Automations v1 artifact evidence verified: artifactId=11257472104',
+      'Automations v1 artifact evidence verified: artifactId=11868030042',
     );
     expect(result.stdout).toContain(
-      'sourceCommit=c93a8a936f9b7f1bd070a1cbb608d38d4e13c92a',
+      'sourceCommit=d6afbffde4f815a538f65185c80da2d0ee951d2d',
     );
     expect(result.stdout).toContain(
-      'bundleSha256=fcb084bd4f1755d49ccfe91c6f461e7d30be2154c9b51c0333b65fd7f59f01ca',
+      'bundleSha256=bd0d97ea257d851cfd45338ca56d62d485a75c1911e4bddead53ab2fb722fa1e',
     );
   });
 
@@ -385,7 +385,7 @@ describe('Automations v1 artifact evidence', () => {
     );
     expect(workflow).toContain('repository: OpenCoven/coven');
     expect(workflow).toContain(
-      'ref: c93a8a936f9b7f1bd070a1cbb608d38d4e13c92a',
+      'ref: d6afbffde4f815a538f65185c80da2d0ee951d2d',
     );
     expect(workflow).toContain('path: .artifacts/coven-automations-authority');
     expect(workflow).toContain('- name: Reproduce and verify pinned Automations v1 artifact');
@@ -394,10 +394,10 @@ describe('Automations v1 artifact evidence', () => {
       'node ./.artifacts/coven-automations-authority/scripts/package-automations-protocol.mjs',
     );
     expect(workflow).toContain(
-      '--bundle-sha256 fcb084bd4f1755d49ccfe91c6f461e7d30be2154c9b51c0333b65fd7f59f01ca',
+      '--bundle-sha256 bd0d97ea257d851cfd45338ca56d62d485a75c1911e4bddead53ab2fb722fa1e',
     );
     expect(workflow).toContain(
-      '--content-sha256 ef266d16d76d7380f5cd2b30a110b2e84f1310b154b262e0ade9aa6bf60b3445',
+      '--content-sha256 528b900cde6db1dda7e5ae62affa0db30cd56c440e42532d7d00c75504f86e4a',
     );
     expect(workflow).not.toContain(
       'run: corepack pnpm@10.34.0 verify:automations-v1-evidence',

@@ -263,7 +263,7 @@ describe('workflow action pins', () => {
       "if: matrix.node == '24.18.1'",
     );
     expect(automationsCheckout).toContain(
-      'ref: c93a8a936f9b7f1bd070a1cbb608d38d4e13c92a',
+      'ref: d6afbffde4f815a538f65185c80da2d0ee951d2d',
     );
     expect(automationsCheckout).toContain(
       'path: .artifacts/coven-automations-authority',
