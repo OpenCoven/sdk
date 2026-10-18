@@ -271,9 +271,9 @@ and no trust root, principal authorization, runtime evidence, or production
 lifecycle certification is inferred. Negative schema cases are not treated as
 valid integrity fixtures.
 
-The base-artifact pin names the producer of the released Coven v0.4.7 bundle
-(`c93a8a93`), whose contract includes the capability-negotiation changes from
-OpenCoven/coven#991 and OpenCoven/coven#999. See the
+The base-artifact pin names the producer of the released Coven v0.4.10 bundle
+(`d6afbffd`), matching the daemon canary release. It includes the lifecycle,
+event and import-contract corrections since the historical v0.4.7 pin. See the
 [Automations roadmap](docs/ROADMAP.md#coven-automations) for the current
 producer status and remaining SDK phases.
 
@@ -286,7 +286,7 @@ While GitHub retains the original workflow artifact, the supplemental live
 verifier checks
 [`conformance/automations-v1-artifact-lock.json`](conformance/automations-v1-artifact-lock.json)
 against GitHub's live repository, producer-workflow, successful run/job, and
-artifact metadata. The lock binds Coven artifact `11257472104`, its GitHub
+artifact metadata. The lock binds Coven artifact `11868030042`, its GitHub
 archive digest, the exact source workflow bytes, the contained bundle and
 manifest sizes/digests, source commit, content digest, and 19-file count. The
 tarball remains an external immutable artifact rather than a committed binary:
@@ -308,7 +308,7 @@ runs `npm audit signatures` over it, and then runs:
 corepack pnpm@10.34.0 build
 corepack pnpm@10.34.0 canary:automations-v1-daemon -- \
   --coven /path/to/node_modules/@opencoven/cli/bin/coven.js \
-  --expect-version 0.4.9
+  --expect-version 0.4.10
 ```
 
 The canary refuses any binary that does not report the expected version. It
@@ -342,7 +342,7 @@ environment and no harness, and discovers it the way a consumer would. Then it:
   away from the activation, so nothing fires.
 
 It prints one line, for example
-`Automations v1 daemon verified: covenVersion=0.4.9 daemonStarts=2 commands=9 … peerIdentity=harness-asserted`.
+`Automations v1 daemon verified: covenVersion=0.4.10 daemonStarts=2 commands=9 … peerIdentity=harness-asserted`.
 A failure prints the daemon's own output. On success, failure, `SIGINT`, or
 `SIGTERM` (exit 130 or 143), the daemon is stopped and its home removed. Unix
 only.
@@ -359,7 +359,7 @@ What it does not establish:
   Phase 3, which waits for
   [coven#857](https://github.com/OpenCoven/coven/issues/857) and
   [coven#858](https://github.com/OpenCoven/coven/issues/858).
-- **`get()` is v0.4.9's legacy routine projection**, not the stored rich
+- **`get()` is v0.4.10's legacy routine projection**, not the stored rich
   definition.
 - **Coven v0.4.7 published a different digest.** Its lifecycle events,
   occurrences, runs, and receipts carried the digest of that routine projection,

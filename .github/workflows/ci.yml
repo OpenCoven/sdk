@@ -39,7 +39,7 @@ jobs:
         if: matrix.node == '24.18.1'
         with:
           repository: OpenCoven/coven
-          ref: c93a8a936f9b7f1bd070a1cbb608d38d4e13c92a
+          ref: d6afbffde4f815a538f65185c80da2d0ee951d2d
           path: .artifacts/coven-automations-authority
           fetch-depth: 1
           persist-credentials: false
@@ -55,21 +55,21 @@ jobs:
       - name: Reproduce and verify pinned Automations v1 artifact
         if: matrix.node == '24.18.1'
         env:
-          SOURCE_COMMIT: c93a8a936f9b7f1bd070a1cbb608d38d4e13c92a
+          SOURCE_COMMIT: d6afbffde4f815a538f65185c80da2d0ee951d2d
           AUTOMATIONS_ARTIFACT_DIR: ${{ runner.temp }}/coven-automations-v1-contract
         run: |
           set -euo pipefail
           node ./.artifacts/coven-automations-authority/scripts/package-automations-protocol.mjs \
             --output "$AUTOMATIONS_ARTIFACT_DIR"
           printf '%s  %s\n' \
-            '976c9b70a28372a94ae5c39434921561da1071847a5d7716412bb88c776a26ec' \
+            '76d3831e7b6591e50ee0ee38dc6fd3152433b27e8fd4346fa8e7751e1945445d' \
             "$AUTOMATIONS_ARTIFACT_DIR/manifest.json" | sha256sum --check --strict
           test "$(wc -c < "$AUTOMATIONS_ARTIFACT_DIR/manifest.json")" -eq 3296
           corepack pnpm@10.34.0 canary:automations-v1 -- \
             --archive "$AUTOMATIONS_ARTIFACT_DIR/coven-automations-v1-contract-${SOURCE_COMMIT}.tar.gz" \
-            --bundle-sha256 fcb084bd4f1755d49ccfe91c6f461e7d30be2154c9b51c0333b65fd7f59f01ca \
+            --bundle-sha256 bd0d97ea257d851cfd45338ca56d62d485a75c1911e4bddead53ab2fb722fa1e \
             --source-commit "$SOURCE_COMMIT" \
-            --content-sha256 ef266d16d76d7380f5cd2b30a110b2e84f1310b154b262e0ade9aa6bf60b3445
+            --content-sha256 528b900cde6db1dda7e5ae62affa0db30cd56c440e42532d7d00c75504f86e4a
       # The frozen runtime exercises the complete local verification contract.
       - name: Verify exact release runtime
         if: matrix.node == '24.18.1'
@@ -77,10 +77,10 @@ jobs:
       # Drives the released daemon, installed from npm at the locked integrity,
       # through the built client: commands, adoption replay, and event resume
       # across a daemon restart. Needs the build that the verify step produced.
-      - name: Drive the released Coven v0.4.9 daemon through the SDK
+      - name: Drive the released Coven v0.4.10 daemon through the SDK
         if: matrix.node == '24.18.1'
         env:
-          COVEN_CLI_DIR: ${{ runner.temp }}/coven-cli-0.4.9
+          COVEN_CLI_DIR: ${{ runner.temp }}/coven-cli-0.4.10
         run: |
           set -euo pipefail
           mkdir -p "$COVEN_CLI_DIR"
@@ -90,7 +90,7 @@ jobs:
           npm audit signatures --prefix "$COVEN_CLI_DIR"
           corepack pnpm@10.34.0 canary:automations-v1-daemon -- \
             --coven "$COVEN_CLI_DIR/node_modules/@opencoven/cli/bin/coven.js" \
-            --expect-version 0.4.9
+            --expect-version 0.4.10
       # The moving major validates supported package behavior without claiming
       # exact release, conformance, provenance, or environment authority.
       - name: Verify Node 24 package compatibility
