@@ -7,6 +7,9 @@ import {
 } from './automations-definition-document.js';
 import { AUTOMATION_EVENTS_MAX_BYTES } from './automations-events.js';
 import { computeDefinitionDigest } from './automations-integrity.js';
+import {
+  isMissionEnvelope, missionCommandBytes, MISSION_RESPONSE_MAX_BYTES, type CovenMissionCommandRequest,
+} from './missions-commands.js';
 
 /** The producer's spec command-envelope action (OpenCoven/coven#1176). */
 export const COMMAND_ENVELOPE_ACTION = 'coven.automations.command.v1';
@@ -312,6 +315,7 @@ export function lifecycleRequest(
 
 /** Largest command response accepted: definition answers can carry four copies of the definition. */
 export function commandResponseLimit(command: string): number {
+  if (command === 'mission.submit.v1' || command === 'mission.cancel.v1') return MISSION_RESPONSE_MAX_BYTES;
   return command === 'definition.create.v1' || command === 'definition.revise.v1' ? AUTOMATION_EVENTS_MAX_BYTES : 16_384;
 }
 
@@ -341,12 +345,14 @@ export function commandOptions(options: unknown, allowed: readonly string[]): Re
  * its body. Anything else is refused, so this hook cannot carry another
  * mutation. Only a rebuilt value is serialized, never the caller's object.
  */
-export function commandBytes(request: CovenAutomationCommandRequest): Buffer {
+export function commandBytes(request: CovenAutomationCommandRequest | CovenMissionCommandRequest): Buffer {
   const invalid = (): never => commandFailure('invalid_options', 'automations.command');
   let rebuilt: unknown;
   try {
     const envelope = object(request) && Reflect.ownKeys(request).length === 2 &&
       request.action === COMMAND_ENVELOPE_ACTION ? request.envelope : undefined;
+    // Mission commands are rebuilt by their own validator, which refuses anything else.
+    if (isMissionEnvelope(envelope)) return missionCommandBytes(request);
     const only = (value: unknown, keys: readonly string[]): value is Record<string, unknown> =>
       object(value) && Reflect.ownKeys(value).every((key) => typeof key === 'string' && keys.includes(key));
     if (!only(envelope, ['schemaVersion', 'command', 'adoptionKey', 'expectedRevision', 'origin', 'intent', 'payload']) ||

@@ -16,6 +16,8 @@ import {
   type CovenAutomationReceiptTrustContext, type CovenAutomationReceiptVerification,
 } from './automations-receipt-verification.js';
 import { historyCursor } from './automations-history.js';
+import type { CovenMissionCommandRequest } from './missions-commands.js';
+import type { CovenMissionGetRequest } from './missions-get.js';
 import {
   COMMAND_ENVELOPE_ACTION, commandOptions, decodeCommand, definitionRequest, lifecycleRequest,
   type CovenAutomationCommandContext, type CovenAutomationCommandRequest, type CovenAutomationCommandResult,
@@ -82,14 +84,15 @@ export type CovenAutomationCapabilities =
 
 export interface CovenAutomationsTransport {
   /**
-   * Sends one lifecycle command envelope. Optional: a transport without it
-   * cannot mutate, and commands fail with `unsupported_operation`.
+   * Sends one command envelope: a lifecycle command, or a mission submit or
+   * cancel. Optional: a transport without it cannot mutate, and commands fail
+   * with `unsupported_operation`.
    */
-  sendCommand?(request: CovenAutomationCommandRequest, context: OperationContext): Promise<{
+  sendCommand?(request: CovenAutomationCommandRequest | CovenMissionCommandRequest, context: OperationContext): Promise<{
     readonly status: number;
     readonly body: Uint8Array;
   }>;
-  readDefinitions?(request: CovenAutomationDefinitionReadRequest, context: OperationContext): Promise<{
+  readDefinitions?(request: CovenAutomationDefinitionReadRequest | CovenMissionGetRequest, context: OperationContext): Promise<{
     readonly status: number;
     readonly body: Uint8Array;
   }>;

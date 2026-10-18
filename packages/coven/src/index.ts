@@ -172,3 +172,32 @@ export { computeDefinitionDigest, verifyEventIntegrity } from './automations-int
 export type { CovenAutomationDefinitionDigestResult, CovenAutomationEventIntegrity } from './automations-integrity.js';
 export { reduceAutomationEvents } from './automations-event-reducer.js';
 export type { CovenAutomationEventReduction, CovenAutomationProjectionJson } from './automations-event-reducer.js';
+export {
+  CovenMissionContextMismatch,
+  CovenMissionError,
+  CovenMissionsClient,
+  CovenMissionUncertain,
+  createCovenMissionsClient,
+} from './missions.js';
+export type {
+  CovenMissionCancelResult,
+  CovenMissionCommandOptions,
+  CovenMissionsClientOptions,
+  CovenMissionSubmitResult,
+  CovenMissionWatchOptions,
+} from './missions.js';
+export type { CovenMissionCommandEnvelope, CovenMissionCommandRequest } from './missions-commands.js';
+export type { CovenMissionGetRequest } from './missions-get.js';
+export type {
+  CovenMissionArtifact,
+  CovenMissionAttempt,
+  CovenMissionCancellation,
+  CovenMissionEnvelopeRef,
+  CovenMissionFamiliarRef,
+  CovenMissionReason,
+  CovenMissionResult,
+  CovenMissionState,
+  CovenMissionSubmitInput,
+  CovenMissionUsage,
+  CovenMissionView,
+} from './missions-view.js';

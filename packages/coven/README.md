@@ -34,6 +34,9 @@ and [support policy](https://github.com/OpenCoven/sdk/blob/main/SUPPORT.md).
   capability GET and allowlisted read-action POST requests.
   Inject `automationsTransport` into `CovenClient` to share its operation defaults,
   or keep using the standalone client.
+- `createCovenMissionsClient(...)` submits, reads, watches and cancels one
+  familiar mission over the same Automations transports. See
+  [Missions](#missions).
 
 ## Automations phase 1: capability discovery and diagnostic reads
 
@@ -664,6 +667,105 @@ const created = await automations.createDraft({
 **Not available.** Run, cancel, retry and approval wait on OpenCoven/coven#857.
 
 These commands need a producer with the command envelope ([coven#1176](https://github.com/OpenCoven/coven/pull/1176)); `createDraft` and `revise` also need rich-definition support ([coven#1185](https://github.com/OpenCoven/coven/pull/1185)).
+
+### Missions
+
+A mission is one owner-submitted, one-shot run of an exact familiar revision on
+one project ([OpenCoven/coven#1313](https://github.com/OpenCoven/coven/issues/1313)).
+`CovenMissionsClient` submits, reads, watches and cancels one. It keeps no state
+and stores nothing: every state it reports is the daemon's `MissionView`.
+
+```ts
+import {
+  CovenMissionUncertain, createCovenAutomationsUnixTransport, createCovenMissionsClient,
+} from '@opencoven/coven-client';
+
+const missions = createCovenMissionsClient({
+  transport: createCovenAutomationsUnixTransport(endpoint, { security }),
+  principalId: 'principal:chat',
+});
+
+const adoptionKey = crypto.randomUUID(); // store it before you send
+try {
+  const { missionId } = await missions.submit({
+    familiar: { rootId, revisionId },
+    envelope: { id: 'r0-read.1', descriptorDigest },
+    project: { cwd: '/Users/me/project' },
+    task: { statement: 'Diagnose the failing build', prompt: 'Read the last CI log and report the cause.' },
+    limits: { timeoutMinutes: 10 },
+    validUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
+  }, { adoptionKey });
+  for await (const view of missions.watch(missionId)) render(view);
+} catch (error) {
+  if (error instanceof CovenMissionUncertain) showChecking(error.missionId);
+  else throw error;
+}
+```
+
+**Ids.** The daemon derives a mission's id from the submit's adoption key, so a
+caller that stored only the key can re-attach:
+`CovenMissionsClient.missionIdFor(adoptionKey)` is `mission-` followed by the
+first 32 hex digits of SHA-256 over the key. It is pure.
+
+**Submit.** `submit(input, options?)` binds the familiar revision, the runtime
+envelope, the project directory, the task, the timeout and `validUntil`.
+Everything is validated before any I/O: the statement is 1 to 200 characters,
+the prompt is at most 32 KiB of UTF-8, the timeout is 1 to 60 minutes, and the
+directory is absolute. A bad value fails with `invalid_options`. The adoption key
+is generated with `crypto.randomUUID()` when you don't pass one, and is returned
+on the result. The result is `committed`, or `replayed` when the key had already
+committed; a replay never launches again. The answer must carry the id derived
+from the key and bind the familiar revision, envelope, statement and expiry that
+were sent. Anything else is treated as an unknown outcome.
+
+**A lost answer.** Once a submit is handed to the transport, no failure proves
+it was not applied. The client resends the same bytes under the same key, up to
+three times within the deadline. If the outcome is still unknown, `submit`
+throws `CovenMissionUncertain` (`code: 'outcome_unknown'`), carrying
+`adoptionKey` and `missionId`. Show "checking", call `get(missionId)`, and
+resubmit with the same key and input only if it answers `NOT_FOUND`. Never show
+"nothing happened".
+
+**Refusals.** A daemon refusal throws `CovenMissionError` with the typed `code`
+and `statusCode`, and nothing was committed by the request. `CONCURRENCY_LIMIT`
+means another mission for this familiar is active in this project.
+`ADOPTION_REPLAY_MISMATCH` carries `conflictOutcome`, saying what the key
+actually committed. A familiar revision that is no longer current is
+`REVISION_CONFLICT`. An envelope the daemon does not enforce is
+`CAPABILITY_UNSUPPORTED`. Daemon messages are not copied.
+
+**Get.** `get(missionId)` returns the current view. A mission that does not
+exist, or that belongs to another principal, is `CovenMissionError` with
+`NOT_FOUND`, never an empty view. The view is checked for internal consistency:
+a terminal view carries its result, a refused or failed one carries its reason,
+and the prompt is never echoed.
+
+**Watch.** `watch(missionId, options?)` yields a view each time its `revision`
+increases, and ends after the first terminal view. It reads the mission's
+occurrence event stream and re-reads the view when the stream moves. When
+neither changed, it waits `pollIntervalMs` (100 to 60 000 ms, default 1 000)
+before reading again. An expired event cursor (`CURSOR_EXPIRED`) re-reads the
+view once and resumes from it. `afterRevision` skips views you have already
+shown. With `expect: { principalId, familiar }`, a view for another principal
+or familiar is not yielded and the iterator throws
+`CovenMissionContextMismatch`.
+
+**Cancel.** `cancel(missionId, { reason? }, options?)` carries its own adoption
+key; replaying it returns the same cancellation. The receipt's `outcome` is
+`cancelled`, `pending`, `lost_to_completion` or `recovery_required`. The client
+never infers it: `lost_to_completion` means the mission completed.
+
+**Authority.** `principalId` is recorded with each command; it is not an
+authority grant. The daemon takes the mission's principal from the owner-only
+socket or pipe, which is the only place the built-in transports connect, and
+refuses mission commands over TCP. Commands are sent only when the daemon
+advertises `coven.automations.command.v1` and the command's own
+`coven.automations.mission.*.v1` action; otherwise they fail with
+`capability_unsupported` and nothing is sent.
+
+Missions need a Coven daemon that implements the mission commands. Until
+Runtime Authority exists (OpenCoven/coven#857), a submitted mission settles
+`unavailable` with reason `authority_unavailable` and launches nothing.
 
 ### Occurrence history
 

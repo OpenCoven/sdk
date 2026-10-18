@@ -1,6 +1,7 @@
 # Coven missions client design
 
-Status: **design approved with the producer contract on 2026-10-18 (Val); not implemented**.
+Status: **design approved with the producer contract on 2026-10-18 (Val); implemented in
+`packages/coven/src/missions*.ts`**. See *As built* for where the code differs.
 
 The SDK binding for the mission contract drafted in OpenCoven/coven#1314
 (issue OpenCoven/coven#1313, design doc
@@ -128,9 +129,25 @@ None now. The client ships in a later minor of `@opencoven/coven`, after the
 producer contract is approved and released. The packages are still unpublished
 (#41).
 
-## Open questions
+## As built
 
-1. Should `watch` also poll with `get` on an interval as a heartbeat, or rely on
-   the subscription's own liveness?
-2. Is three retries within the deadline the right default for an uncertain
-   submit, or should the caller choose?
+- **The package is `@opencoven/coven-client`**, and the factory is
+  `createCovenMissionsClient`, beside `createCovenAutomationsClient`.
+- **The recorded principal is a client option.** Every command envelope needs
+  `origin.principal`, so `CovenMissionsClientOptions` takes a `principalId`,
+  recorded with each command and never an authority grant. Binding it once means
+  a resend under the same key cannot change it.
+- **No new error codes.** The producer kept the frozen v1 vocabulary: a stale
+  revision is `REVISION_CONFLICT`, an envelope it does not enforce is
+  `CAPABILITY_UNSUPPORTED`, and a past `validUntil` is `VALIDATION_FAILED`.
+- **The transports carry missions.** `sendCommand` and `readDefinitions` accept
+  mission requests, and the built-in Unix and Windows transports rebuild each one
+  from its own data fields before sending, as they do for lifecycle commands.
+
+## Open questions, resolved
+
+1. **`watch` polls.** An `events.subscribe.v1` read returns one page and ends on
+   an empty one, so the subscription has no liveness of its own. `watch` re-reads
+   the view when the occurrence stream moves, and waits `pollIntervalMs` (default
+   1 000 ms) between reads that saw no change.
+2. **Three resends is fixed.** The caller bounds the total with its deadline.
