@@ -26,7 +26,8 @@ One small client, `CovenMissionsClient`, in `@opencoven/coven`, beside
   mission.
 
 It invents no state. Every state and reason it exposes is the daemon's
-`MissionView`.
+`MissionView`. The daemon's flat actions are `coven.automations.mission.*.v1`,
+behind the same owner-only gate as the other automations actions.
 
 ## Non-goals
 
@@ -46,7 +47,7 @@ export class CovenMissionsClient {
   constructor(options: CovenMissionsClientOptions);      // same transport options as CovenAutomationsClient
 
   /** Derives the mission id the daemon will assign to this adoption key. Pure. */
-  static missionIdFor(adoptionKey: string): string;      // "mission:" + first 32 hex of sha256(key)
+  static missionIdFor(adoptionKey: string): string;      // "mission-" + first 32 hex of sha256(key)
 
   submit(input: MissionSubmitInput, options?: MissionCommandOptions): Promise<MissionSubmitResult>;
   get(missionId: string, options?: OperationOptions): Promise<MissionView>;
