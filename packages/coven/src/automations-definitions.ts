@@ -16,6 +16,7 @@ import {
   type CovenAutomationOccurrenceHistoryPage, type CovenAutomationOccurrenceResult, type CovenAutomationOccurrencesResult, type CovenAutomationOccurrenceView,
   type CovenAutomationRunResult,
 } from './automations-occurrences.js';
+import { missionGetBytes, type CovenMissionGetRequest } from './missions-get.js';
 
 /** Executable compatibility shape, not the normative rich AutomationDefinition. */
 export interface CovenAutomationRoutine {
@@ -139,7 +140,7 @@ function routine(value: unknown): value is CovenAutomationRoutine {
         ['transient_dispatch', 'lease_expired', 'runtime_unavailable'].includes(entry))));
 }
 
-export function definitionReadBytes(request: CovenAutomationDefinitionReadRequest): Buffer {
+export function definitionReadBytes(request: CovenAutomationDefinitionReadRequest | CovenMissionGetRequest): Buffer {
   const invalid = (): never => definitionReadFailure('invalid_options', 'automations.read');
   // Snapshot own data fields so an accessor cannot switch a read into a mutation.
   let descriptors: PropertyDescriptorMap;
@@ -154,6 +155,7 @@ export function definitionReadBytes(request: CovenAutomationDefinitionReadReques
   };
   const action = own('action');
   if (action === 'coven.automations.events.subscribe.v1') return eventsRequestBytes(request);
+  if (action === 'coven.automations.mission.get.v1') return missionGetBytes(request);
   const keys = Reflect.ownKeys(descriptors);
   if (action === 'coven.automations.occurrence.list.v1') {
     const view = own('view');

@@ -1,0 +1,29 @@
+{
+  "repository": "OpenCoven/coven",
+  "commit": "b2ad03b2318d90757097fe7a5ca751ac022f29a2",
+  "issue": "OpenCoven/coven#1313",
+  "files": {
+    "command-envelope.schema.json": {
+      "path": "spec/coven-automations/v1/command-envelope.schema.json",
+      "sha256": "4a3f593b1a7fce59d7df31549c11979dd55da821d02e529a1281ca20f7223af3"
+    },
+    "common.schema.json": {
+      "path": "spec/coven-automations/v1/common.schema.json",
+      "sha256": "d0fade0d2f3960381921f95703c4f666f72515175e66b66a8b50f8e3f55b6f25"
+    },
+    "coven.automations.v1.d.ts": {
+      "path": "spec/coven-automations/v1/coven.automations.v1.d.ts",
+      "sha256": "95c7de2c577c0104a839850602ff77dc34297d569bb043ea0cf8469001207a6f"
+    }
+  },
+  "sources": {
+    "types.rs": {
+      "path": "crates/coven-cli/src/automations/contract/types.rs",
+      "sha256": "560589cac7fe77f327f4d06297bb9d1205f8625c8149167c80cf8a338972ebb6"
+    },
+    "command_matrix.rs": {
+      "path": "crates/coven-cli/src/automations/command_matrix.rs",
+      "sha256": "14b6d373971d4ed04ca8900a177af76da1008dc1e8b7ef7bbe4b04987b937efa"
+    }
+  }
+}

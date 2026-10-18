@@ -144,6 +144,168 @@ interface CovenAutomationReceiptVerification {
 /** Pure local verification. Unknown or malformed host values produce fixed, non-secret reasons. */
 declare function verifyReceipt(receipt: unknown, trustContext: CovenAutomationReceiptTrustContext): CovenAutomationReceiptVerification;
 
+/**
+ * The daemon's projection of a mission (OpenCoven/coven#1313). `submitted`
+ * and `acknowledged` are client states and never appear here.
+ */
+type CovenMissionState = 'queued' | 'running' | 'needs_approval' | 'cancelling' | 'reconciling' | 'completed' | 'failed' | 'cancelled' | 'rejected' | 'revoked' | 'unavailable';
+type CovenMissionReason = 'timeout' | 'harness_failed' | 'familiar_revision_stale' | 'familiar_revision_revoked' | 'grant_revoked' | 'envelope_unsupported' | 'expired_before_dispatch' | 'authority_unavailable' | 'runtime_unavailable' | 'ambiguous_execution';
+/** The exact familiar revision the caller showed the user. */
+interface CovenMissionFamiliarRef {
+    /** `familiar:` followed by 32 lowercase hex digits. */
+    readonly rootId: string;
+    /** `familiar-revision:<32 hex>:<position>`. */
+    readonly revisionId: string;
+}
+/** A runtime envelope the daemon advertises and enforces, such as `r0-read.1`. */
+interface CovenMissionEnvelopeRef {
+    readonly id: string;
+    readonly descriptorDigest: CovenAutomationReceiptDigest;
+}
+/** Everything a submit binds. The principal comes from the transport, never from here. */
+interface CovenMissionSubmitInput {
+    readonly familiar: CovenMissionFamiliarRef;
+    readonly envelope: CovenMissionEnvelopeRef;
+    /** An absolute directory; the daemon canonicalizes it and refuses one inside `COVEN_HOME`. */
+    readonly project: {
+        readonly cwd: string;
+    };
+    /** `statement`: 1–200 characters. `prompt`: 1 byte to 32 KiB of UTF-8, never echoed back. */
+    readonly task: {
+        readonly statement: string;
+        readonly prompt: string;
+    };
+    /** `timeoutMinutes`: 1–60. */
+    readonly limits: {
+        readonly timeoutMinutes: number;
+    };
+    /** Dispatch must begin before this instant, at most 15 minutes after the request. */
+    readonly validUntil: string;
+}
+interface CovenMissionCancellation {
+    readonly cancellationId: string;
+    readonly requestedAt: string;
+    /** `lost_to_completion` means the mission completed; the cancel did not stop it. */
+    readonly outcome: 'cancelled' | 'pending' | 'lost_to_completion' | 'recovery_required';
+}
+interface CovenMissionAttempt {
+    readonly attemptId: string;
+    readonly attemptNumber: number;
+    readonly state: 'adopted' | 'dispatching' | 'started' | 'observing' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out' | 'ambiguous';
+    readonly failureClass?: string;
+}
+/** The owner-only report a mission produced. Its bytes are not part of the view. */
+interface CovenMissionArtifact {
+    readonly kind: 'report';
+    readonly ref: string;
+    readonly mediaType: 'text/markdown';
+    readonly bytes: number;
+    readonly digest: CovenAutomationReceiptDigest;
+}
+/** Reported by the harness's result event, never estimated. */
+interface CovenMissionUsage {
+    readonly source: 'harness_result_event';
+    readonly inputTokens?: number;
+    readonly outputTokens?: number;
+    readonly cacheReadTokens?: number;
+    readonly cacheWriteTokens?: number;
+    readonly costUsd?: number;
+}
+interface CovenMissionResult {
+    readonly outcome: 'completed' | 'failed' | 'cancelled' | 'rejected' | 'revoked' | 'unavailable';
+    readonly settledAt: string;
+    readonly resultDigest?: CovenAutomationReceiptDigest;
+    readonly artifacts: readonly CovenMissionArtifact[];
+    /** `null` when the harness reported no usage. */
+    readonly usage: CovenMissionUsage | null;
+    readonly observation: 'complete' | 'partial' | 'unknown';
+}
+/**
+ * The daemon's authoritative mission view. The SDK checks its shape and its
+ * internal consistency; it does not authenticate it or derive any state.
+ */
+interface CovenMissionView {
+    readonly missionId: string;
+    readonly occurrenceId: string;
+    /** Increases on every state change and stops at the terminal state. */
+    readonly revision: number;
+    readonly state: CovenMissionState;
+    readonly terminal: boolean;
+    readonly reason?: CovenMissionReason;
+    readonly principal: {
+        readonly principalId: string;
+        readonly displayName?: string;
+    };
+    readonly familiar: CovenMissionFamiliarRef;
+    readonly envelope: CovenMissionEnvelopeRef;
+    readonly project: {
+        readonly cwd: string;
+    };
+    /** The prompt is never echoed. */
+    readonly task: {
+        readonly statement: string;
+    };
+    readonly submittedAt: string;
+    readonly validUntil: string;
+    readonly attempts: readonly CovenMissionAttempt[];
+    readonly cancellation?: CovenMissionCancellation;
+    /** Present exactly when the mission is terminal. */
+    readonly result?: CovenMissionResult;
+}
+
+/** The producer's spec command-envelope action; mission commands use it like every other command. */
+declare const ENVELOPE_ACTION = "coven.automations.command.v1";
+interface MissionEnvelopeBase {
+    readonly schemaVersion: 'coven.automations.v1';
+    readonly adoptionKey: string;
+    readonly origin: {
+        readonly principal: {
+            readonly principalId: string;
+        };
+        readonly channel: 'sdk';
+        readonly correlationId?: string;
+    };
+    readonly intent: {
+        readonly statement: string;
+    };
+}
+/** A mission command envelope, as sent on the control-action wire. */
+type CovenMissionCommandEnvelope = (MissionEnvelopeBase & {
+    readonly command: 'mission.submit.v1';
+    readonly payload: CovenMissionSubmitInput;
+}) | (MissionEnvelopeBase & {
+    readonly command: 'mission.cancel.v1';
+    readonly payload: {
+        readonly missionId: string;
+        readonly reason?: string;
+    };
+});
+interface CovenMissionCommandRequest {
+    readonly action: typeof ENVELOPE_ACTION;
+    readonly envelope: CovenMissionCommandEnvelope;
+}
+/** The daemon's typed refusal. Its message is not copied, only its typed fields. */
+interface CovenMissionRefusal {
+    readonly code: string;
+    readonly retryable: boolean;
+    readonly httpStatus: number;
+    /** For `ADOPTION_REPLAY_MISMATCH`: what the key actually committed. */
+    readonly conflictOutcome?: 'committed' | 'rejected';
+    /** For `REVISION_CONFLICT`, as the daemon reports it. */
+    readonly currentRevision?: number;
+    /** For a mission's `REVISION_CONFLICT`: the familiar's current active revision. */
+    readonly currentRevisionId?: string;
+    /** For `ILLEGAL_TRANSITION` on a settled mission: its terminal view. */
+    readonly mission?: CovenMissionView;
+}
+
+declare const ACTION = "coven.automations.mission.get.v1";
+/** A mission read. It needs no adoption key: it changes nothing. */
+interface CovenMissionGetRequest {
+    readonly action: typeof ACTION;
+    readonly missionId: string;
+}
+
 interface Principal {
     readonly principalId: string;
     readonly displayName?: string;
@@ -759,14 +921,15 @@ type CovenAutomationCapabilities = {
 };
 interface CovenAutomationsTransport {
     /**
-     * Sends one lifecycle command envelope. Optional: a transport without it
-     * cannot mutate, and commands fail with `unsupported_operation`.
+     * Sends one command envelope: a lifecycle command, or a mission submit or
+     * cancel. Optional: a transport without it cannot mutate, and commands fail
+     * with `unsupported_operation`.
      */
-    sendCommand?(request: CovenAutomationCommandRequest, context: OperationContext): Promise<{
+    sendCommand?(request: CovenAutomationCommandRequest | CovenMissionCommandRequest, context: OperationContext): Promise<{
         readonly status: number;
         readonly body: Uint8Array;
     }>;
-    readDefinitions?(request: CovenAutomationDefinitionReadRequest, context: OperationContext): Promise<{
+    readDefinitions?(request: CovenAutomationDefinitionReadRequest | CovenMissionGetRequest, context: OperationContext): Promise<{
         readonly status: number;
         readonly body: Uint8Array;
     }>;
@@ -1246,4 +1409,105 @@ type CovenAutomationEventReduction = {
 /** Bounded supplied-batch reference projection; no persistence, transport or execution authority. */
 declare function reduceAutomationEvents(events: unknown): CovenAutomationEventReduction;
 
-export { COVEN_DAEMON_PROTOCOL, COVEN_SESSION_POLICY_CONTRACT, COVEN_SESSION_POLICY_PROFILE, type CovenAutomationAttempt, type CovenAutomationCapabilities, type CovenAutomationCapabilityProfile, type CovenAutomationCommandCommitted, type CovenAutomationCommandContext, type CovenAutomationCommandName, type CovenAutomationCommandRejected, type CovenAutomationCommandReplayed, type CovenAutomationCommandRequest, type CovenAutomationCommandResult, type CovenAutomationDefinition, type CovenAutomationDefinitionCommand, type CovenAutomationDefinitionDigestResult, type CovenAutomationDefinitionDocument, type CovenAutomationDefinitionList, type CovenAutomationDefinitionReadRequest, type CovenAutomationDraftInput, type CovenAutomationEvent, type CovenAutomationEventIntegrity, type CovenAutomationEventPage, type CovenAutomationEventReduction, type CovenAutomationEventStream, type CovenAutomationEventsOptions, type CovenAutomationEventsRequest, type CovenAutomationHealth, type CovenAutomationHealthResult, type CovenAutomationHistoryCursor, type CovenAutomationLifecycleCommand, type CovenAutomationLifecycleOptions, type CovenAutomationListOptions, type CovenAutomationOccurrence, type CovenAutomationOccurrenceDetail, type CovenAutomationOccurrenceHistoryOptions, type CovenAutomationOccurrenceHistoryPage, type CovenAutomationOccurrenceResult, type CovenAutomationOccurrenceRun, type CovenAutomationOccurrenceView, type CovenAutomationOccurrencesOptions, type CovenAutomationOccurrencesResult, type CovenAutomationProjectionJson, type CovenAutomationReceipt, type CovenAutomationReceiptDigest, type CovenAutomationReceiptReadVerification, type CovenAutomationReceiptResult, type CovenAutomationReceiptTrustContext, type CovenAutomationReceiptVerification, type CovenAutomationReceiptVerificationCheck, type CovenAutomationReceiptVerificationReason, type CovenAutomationRevisionInput, type CovenAutomationRoutine, type CovenAutomationRun, type CovenAutomationRunCancellation, type CovenAutomationRunHistoryOptions, type CovenAutomationRunHistoryPage, type CovenAutomationRunResult, type CovenAutomationRunsOptions, type CovenAutomationRunsResult, type CovenAutomationVariant, CovenAutomationsClient, type CovenAutomationsClientOptions, type CovenAutomationsTransport, type CovenAutomationsUnixTransportOptions, type CovenAutomationsWindowsTransportOptions, CovenClient, CovenClientError, type CovenClientOptions, type CovenConnectedSocket, type CovenDaemonFailure, CovenDaemonResponseError, type CovenDiscoveredClientOptions, type CovenDiscoveredEndpoint, type CovenDiscoveredUnixClientOptions, type CovenDiscoveredUnixTransportOptions, type CovenDiscoveredWindowsClientOptions, type CovenDiscoveredWindowsTransportOptions, type CovenDiscoveryDependencies, type CovenDiscoveryFileIdentity, type CovenDiscoverySource, type CovenEndpointFreshness, type CovenEndpointOwner, type CovenExecFile, type CovenExecFileError, type CovenExecFileOptions, type CovenExecutableResolver, type CovenHealth, type CovenHealthResponse, type CovenHealthTransportLimits, type CovenIpcDiagnostics, CovenIpcError, type CovenIpcErrorCode, type CovenMetadataFileHandle, type CovenRestrictedLaunchRequest, CovenSessionPolicyClient, type CovenSessionPolicyClientOptions, type CovenSessionPolicyDelivery, type CovenSessionPolicyDiscovery, CovenSessionPolicyError, type CovenSessionPolicyErrorCode, type CovenSessionPolicyRefusal, type CovenSessionPolicyTransport, type CovenSessionPolicyTransportRequest, type CovenSessionPolicyTransportResponse, type CovenSessionPolicyUnixTransportOptions, type CovenSocket, type CovenSocketConnector, type CovenTransport, type CovenTransportSecurityProvider, type CovenUnixFileIdentity, type CovenUnixPeerIdentity, type CovenUnixPeerIdentityAdapter, type CovenUnixTransportDependencies, type CovenUnixTransportOptions, type CovenUnixTransportSecurityProvider, type CovenWindowsFileTrustValidator, type CovenWindowsPipeIdentity, type CovenWindowsPipeOwnershipAdapter, type CovenWindowsTransportDependencies, type CovenWindowsTransportOptions, type CovenWindowsTransportSecurityProvider, type DiscoverCovenEndpointOptions, computeDefinitionDigest, createCovenAutomationsClient, createCovenAutomationsUnixTransport, createCovenAutomationsWindowsTransport, createCovenClient, createCovenSessionPolicyClient, createCovenSessionPolicyUnixTransport, createCovenUnixTransport, createCovenWindowsTransport, createDiscoveredCovenClient, discoverCovenEndpoint, isCovenClientError, isCovenDaemonResponseError, isCovenIpcError, isCovenSessionPolicyError, normalizeCovenError, reduceAutomationEvents, verifyEventIntegrity, verifyReceipt };
+interface CovenMissionsClientOptions {
+    /** The same transport `CovenAutomationsClient` uses; the built-in ones reach only the owner-only socket or pipe. */
+    readonly transport: CovenAutomationsTransport;
+    /**
+     * Recorded as the origin of every mission command: 1–128 characters of
+     * `[A-Za-z0-9._:@-]`, starting alphanumeric. It is never an authority grant;
+     * the daemon takes the mission's principal from the transport.
+     */
+    readonly principalId: string;
+    readonly operation?: OperationDefaults;
+}
+interface CovenMissionCommandOptions extends OperationOptions {
+    /**
+     * Caller-owned idempotency key, 8–200 characters of `[A-Za-z0-9._:-]`
+     * starting alphanumeric. Generated with `crypto.randomUUID()` when absent and
+     * returned on the result. Store it: resending with the same key and input is
+     * how an unknown outcome is reconciled.
+     */
+    readonly adoptionKey?: string;
+    /** Optional 1–200 character correlation id, recorded with the command. */
+    readonly correlationId?: string;
+}
+interface CovenMissionSubmitResult {
+    /** `replayed`: the key had already committed, and nothing launched again. */
+    readonly outcome: 'committed' | 'replayed';
+    readonly adoptionKey: string;
+    readonly missionId: string;
+    readonly occurrenceId: string;
+    /** The state at the first commit. */
+    readonly mission: CovenMissionView;
+}
+interface CovenMissionCancelResult {
+    readonly outcome: 'committed' | 'replayed';
+    readonly adoptionKey: string;
+    /** `lost_to_completion` means the mission completed; the client never infers otherwise. */
+    readonly cancellation: CovenMissionCancellation;
+    readonly mission: CovenMissionView;
+}
+interface CovenMissionWatchOptions extends OperationOptions {
+    /** Yield only views with a higher revision. */
+    readonly afterRevision?: number;
+    /** Drop and report any view whose principal or familiar differs from this binding. */
+    readonly expect?: {
+        readonly principalId: string;
+        readonly familiar: CovenMissionFamiliarRef;
+    };
+    /** Wait between reads: 100–60 000 ms, default 1 000. */
+    readonly pollIntervalMs?: number;
+}
+/** The daemon refused a mission command. Nothing was committed by this request. */
+declare class CovenMissionError extends CovenClientError {
+    readonly conflictOutcome: 'committed' | 'rejected' | undefined;
+    readonly currentRevision: number | undefined;
+    /** For a mission's `REVISION_CONFLICT`: the familiar's current active revision. */
+    readonly currentRevisionId: string | undefined;
+    /** For `ILLEGAL_TRANSITION` on a settled mission: its terminal view. */
+    readonly mission: CovenMissionView | undefined;
+    constructor(refusal: CovenMissionRefusal, operation: string);
+}
+/**
+ * A submit reached the daemon, or may have, and no answer proved what
+ * happened. Show "checking", call `get(missionId)`, and resubmit with the same
+ * adoption key and input if it answers `NOT_FOUND`. Never show "nothing happened".
+ */
+declare class CovenMissionUncertain extends CovenClientError {
+    readonly adoptionKey: string;
+    readonly missionId: string;
+    constructor(adoptionKey: string, missionId: string, operation: string);
+}
+/** A view for another principal or familiar arrived; it was not shown. */
+declare class CovenMissionContextMismatch extends CovenClientError {
+    readonly missionId: string;
+    constructor(missionId: string, operation: string);
+}
+/**
+ * Submits, observes and cancels one familiar mission (OpenCoven/coven#1313).
+ * Every state it reports is the daemon's `MissionView`; it keeps no state of
+ * its own and stores nothing.
+ */
+declare class CovenMissionsClient {
+    #private;
+    constructor(options: CovenMissionsClientOptions);
+    /** The mission id the daemon assigns to a submit with this adoption key. Pure. */
+    static missionIdFor(adoptionKey: string): string;
+    submit(input: CovenMissionSubmitInput, options?: CovenMissionCommandOptions): Promise<CovenMissionSubmitResult>;
+    get(missionId: string, options?: OperationOptions): Promise<CovenMissionView>;
+    cancel(missionId: string, input?: {
+        readonly reason?: string;
+    }, options?: CovenMissionCommandOptions): Promise<CovenMissionCancelResult>;
+    /**
+     * Yields the mission's view each time its revision increases, and ends after
+     * the first terminal view. The view is the daemon's authority, so `watch`
+     * reads it every `pollIntervalMs` rather than inferring change from events.
+     * A restarted client resumes by passing the last `revision` it showed as
+     * `afterRevision`. `timeoutMs` bounds each read, not the watch; end it with
+     * `signal` or `return()`.
+     */
+    watch(missionId: string, options?: CovenMissionWatchOptions): AsyncIterableIterator<CovenMissionView>;
+}
+declare function createCovenMissionsClient(options: CovenMissionsClientOptions): CovenMissionsClient;
+
+export { COVEN_DAEMON_PROTOCOL, COVEN_SESSION_POLICY_CONTRACT, COVEN_SESSION_POLICY_PROFILE, type CovenAutomationAttempt, type CovenAutomationCapabilities, type CovenAutomationCapabilityProfile, type CovenAutomationCommandCommitted, type CovenAutomationCommandContext, type CovenAutomationCommandName, type CovenAutomationCommandRejected, type CovenAutomationCommandReplayed, type CovenAutomationCommandRequest, type CovenAutomationCommandResult, type CovenAutomationDefinition, type CovenAutomationDefinitionCommand, type CovenAutomationDefinitionDigestResult, type CovenAutomationDefinitionDocument, type CovenAutomationDefinitionList, type CovenAutomationDefinitionReadRequest, type CovenAutomationDraftInput, type CovenAutomationEvent, type CovenAutomationEventIntegrity, type CovenAutomationEventPage, type CovenAutomationEventReduction, type CovenAutomationEventStream, type CovenAutomationEventsOptions, type CovenAutomationEventsRequest, type CovenAutomationHealth, type CovenAutomationHealthResult, type CovenAutomationHistoryCursor, type CovenAutomationLifecycleCommand, type CovenAutomationLifecycleOptions, type CovenAutomationListOptions, type CovenAutomationOccurrence, type CovenAutomationOccurrenceDetail, type CovenAutomationOccurrenceHistoryOptions, type CovenAutomationOccurrenceHistoryPage, type CovenAutomationOccurrenceResult, type CovenAutomationOccurrenceRun, type CovenAutomationOccurrenceView, type CovenAutomationOccurrencesOptions, type CovenAutomationOccurrencesResult, type CovenAutomationProjectionJson, type CovenAutomationReceipt, type CovenAutomationReceiptDigest, type CovenAutomationReceiptReadVerification, type CovenAutomationReceiptResult, type CovenAutomationReceiptTrustContext, type CovenAutomationReceiptVerification, type CovenAutomationReceiptVerificationCheck, type CovenAutomationReceiptVerificationReason, type CovenAutomationRevisionInput, type CovenAutomationRoutine, type CovenAutomationRun, type CovenAutomationRunCancellation, type CovenAutomationRunHistoryOptions, type CovenAutomationRunHistoryPage, type CovenAutomationRunResult, type CovenAutomationRunsOptions, type CovenAutomationRunsResult, type CovenAutomationVariant, CovenAutomationsClient, type CovenAutomationsClientOptions, type CovenAutomationsTransport, type CovenAutomationsUnixTransportOptions, type CovenAutomationsWindowsTransportOptions, CovenClient, CovenClientError, type CovenClientOptions, type CovenConnectedSocket, type CovenDaemonFailure, CovenDaemonResponseError, type CovenDiscoveredClientOptions, type CovenDiscoveredEndpoint, type CovenDiscoveredUnixClientOptions, type CovenDiscoveredUnixTransportOptions, type CovenDiscoveredWindowsClientOptions, type CovenDiscoveredWindowsTransportOptions, type CovenDiscoveryDependencies, type CovenDiscoveryFileIdentity, type CovenDiscoverySource, type CovenEndpointFreshness, type CovenEndpointOwner, type CovenExecFile, type CovenExecFileError, type CovenExecFileOptions, type CovenExecutableResolver, type CovenHealth, type CovenHealthResponse, type CovenHealthTransportLimits, type CovenIpcDiagnostics, CovenIpcError, type CovenIpcErrorCode, type CovenMetadataFileHandle, type CovenMissionArtifact, type CovenMissionAttempt, type CovenMissionCancelResult, type CovenMissionCancellation, type CovenMissionCommandEnvelope, type CovenMissionCommandOptions, type CovenMissionCommandRequest, CovenMissionContextMismatch, type CovenMissionEnvelopeRef, CovenMissionError, type CovenMissionFamiliarRef, type CovenMissionGetRequest, type CovenMissionReason, type CovenMissionResult, type CovenMissionState, type CovenMissionSubmitInput, type CovenMissionSubmitResult, CovenMissionUncertain, type CovenMissionUsage, type CovenMissionView, type CovenMissionWatchOptions, CovenMissionsClient, type CovenMissionsClientOptions, type CovenRestrictedLaunchRequest, CovenSessionPolicyClient, type CovenSessionPolicyClientOptions, type CovenSessionPolicyDelivery, type CovenSessionPolicyDiscovery, CovenSessionPolicyError, type CovenSessionPolicyErrorCode, type CovenSessionPolicyRefusal, type CovenSessionPolicyTransport, type CovenSessionPolicyTransportRequest, type CovenSessionPolicyTransportResponse, type CovenSessionPolicyUnixTransportOptions, type CovenSocket, type CovenSocketConnector, type CovenTransport, type CovenTransportSecurityProvider, type CovenUnixFileIdentity, type CovenUnixPeerIdentity, type CovenUnixPeerIdentityAdapter, type CovenUnixTransportDependencies, type CovenUnixTransportOptions, type CovenUnixTransportSecurityProvider, type CovenWindowsFileTrustValidator, type CovenWindowsPipeIdentity, type CovenWindowsPipeOwnershipAdapter, type CovenWindowsTransportDependencies, type CovenWindowsTransportOptions, type CovenWindowsTransportSecurityProvider, type DiscoverCovenEndpointOptions, computeDefinitionDigest, createCovenAutomationsClient, createCovenAutomationsUnixTransport, createCovenAutomationsWindowsTransport, createCovenClient, createCovenMissionsClient, createCovenSessionPolicyClient, createCovenSessionPolicyUnixTransport, createCovenUnixTransport, createCovenWindowsTransport, createDiscoveredCovenClient, discoverCovenEndpoint, isCovenClientError, isCovenDaemonResponseError, isCovenIpcError, isCovenSessionPolicyError, normalizeCovenError, reduceAutomationEvents, verifyEventIntegrity, verifyReceipt };
