@@ -1,6 +1,6 @@
 {
   "repository": "OpenCoven/coven",
-  "commit": "49142cee3532633b00ef272d411e1a41e021f663",
+  "commit": "b2ad03b2318d90757097fe7a5ca751ac022f29a2",
   "issue": "OpenCoven/coven#1313",
   "files": {
     "command-envelope.schema.json": {

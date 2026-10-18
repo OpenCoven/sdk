@@ -32,7 +32,7 @@ type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 test('pins the exact producer schemas, declarations and Rust sources', () => {
   expect(provenance.repository).toBe('OpenCoven/coven');
-  expect(provenance.commit).toBe('49142cee3532633b00ef272d411e1a41e021f663');
+  expect(provenance.commit).toBe('b2ad03b2318d90757097fe7a5ca751ac022f29a2');
   expect(Object.keys(provenance.files).sort()).toEqual(['command-envelope.schema.json', 'common.schema.json', 'coven.automations.v1.d.ts']);
   for (const [file, source] of Object.entries(provenance.files)) {
     const bytes = readFileSync(new URL(`../packages/coven/fixtures/automations-missions-v1/${file}`, import.meta.url));
