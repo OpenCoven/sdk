@@ -731,8 +731,10 @@ and `statusCode`, and nothing was committed by the request. `CONCURRENCY_LIMIT`
 means another mission for this familiar is active in this project.
 `ADOPTION_REPLAY_MISMATCH` carries `conflictOutcome`, saying what the key
 actually committed. A familiar revision that is no longer current is
-`REVISION_CONFLICT`. An envelope the daemon does not enforce is
-`CAPABILITY_UNSUPPORTED`. Daemon messages are not copied.
+`REVISION_CONFLICT`, with the current one in `currentRevisionId`. An envelope
+the daemon does not enforce is `CAPABILITY_UNSUPPORTED`. A cancel of a mission
+that has already settled is `ILLEGAL_TRANSITION`, with its terminal view in
+`mission`. Daemon messages are not copied.
 
 **Get.** `get(missionId)` returns the current view. A mission that does not
 exist, or that belongs to another principal, is `CovenMissionError` with
@@ -741,14 +743,13 @@ a terminal view carries its result, a refused or failed one carries its reason,
 and the prompt is never echoed.
 
 **Watch.** `watch(missionId, options?)` yields a view each time its `revision`
-increases, and ends after the first terminal view. It reads the mission's
-occurrence event stream and re-reads the view when the stream moves. When
-neither changed, it waits `pollIntervalMs` (100 to 60 000 ms, default 1 000)
-before reading again. An expired event cursor (`CURSOR_EXPIRED`) re-reads the
-view once and resumes from it. `afterRevision` skips views you have already
-shown. With `expect: { principalId, familiar }`, a view for another principal
-or familiar is not yielded and the iterator throws
-`CovenMissionContextMismatch`.
+increases, and ends after the first terminal view. The view is the daemon's
+authority, so `watch` reads it every `pollIntervalMs` (100 to 60 000 ms,
+default 1 000) rather than inferring change from events. A client that
+restarts resumes by passing the last `revision` it showed as `afterRevision`.
+`timeoutMs` bounds each read, not the watch; end it with `signal` or `return()`.
+With `expect: { principalId, familiar }`, a view for another principal or
+familiar is not yielded and the iterator throws `CovenMissionContextMismatch`.
 
 **Cancel.** `cancel(missionId, { reason? }, options?)` carries its own adoption
 key; replaying it returns the same cancellation. The receipt's `outcome` is

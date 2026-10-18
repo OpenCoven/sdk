@@ -15,7 +15,6 @@ import {
 import type { OperationContext } from '@opencoven/sdk-core';
 import { expect, test, vi } from 'vitest';
 
-import vectors from '../packages/coven/fixtures/automations-events-v1/event-reducer-determinism.vectors.json' with { type: 'json' };
 
 const ENVELOPE = 'coven.automations.command.v1';
 const SUBMIT = 'coven.automations.mission.submit.v1';
@@ -25,8 +24,8 @@ const EVENTS = 'coven.automations.events.subscribe.v1';
 const KEY = 'adopt:mission:0001';
 /** sha256("adopt:mission:0001"), first 32 hex digits. */
 const MISSION_ID = 'mission-b22855c15769da95a4e6b688337a6fb2';
-const events = vectors.cases[0]!.events;
-const OCCURRENCE = events[0]!.stream.id;
+/** The daemon names a mission's occurrence `occ-<missionId>`. */
+const OCCURRENCE = `occ-${MISSION_ID}`;
 const OWNER = 'principal:coven-local-owner:0123456789abcdef';
 const digest = (value: string) => ({ algorithm: 'sha256', canonicalization: 'jcs-rfc8785', value: value.repeat(64) });
 
@@ -272,11 +271,40 @@ test('cancel returns the receipt and the view, and passes lost_to_completion thr
   });
 });
 
-test('M-09: a cancel after the mission is terminal is a typed ILLEGAL_TRANSITION', async () => {
+test('M-09: a cancel after the mission is terminal is ILLEGAL_TRANSITION, carrying the settled view', async () => {
   const { client, transport } = setup();
-  transport.sendCommand.mockResolvedValue(json(422, rejected('mission.cancel.v1', 'adopt:cancel:0002', 'ILLEGAL_TRANSITION', 422)));
-  await expect(client.cancel(MISSION_ID, {}, { adoptionKey: 'adopt:cancel:0002' }))
-    .rejects.toMatchObject({ code: 'ILLEGAL_TRANSITION', statusCode: 422 });
+  const settled = missionView({
+    revision: 2, state: 'unavailable', terminal: true, reason: 'authority_unavailable',
+    result: { outcome: 'unavailable', settledAt: '2026-10-18T12:00:00.000Z', artifacts: [], usage: null, observation: 'complete' },
+  });
+  transport.sendCommand.mockResolvedValueOnce(json(422, rejected('mission.cancel.v1', 'adopt:cancel:0002', 'ILLEGAL_TRANSITION', 422, {
+    details: { mission: settled },
+  })));
+  const failure = await client.cancel(MISSION_ID, {}, { adoptionKey: 'adopt:cancel:0002' }).catch((error: unknown) => error);
+  expect(failure).toBeInstanceOf(CovenMissionError);
+  expect(failure).toMatchObject({ code: 'ILLEGAL_TRANSITION', statusCode: 422, mission: settled });
+  expect(Object.isFrozen((failure as CovenMissionError).mission)).toBe(true);
+
+  // Another mission's view, or a view that is not settled, proves nothing.
+  for (const mission of [{ ...settled, missionId: `mission-${'1'.repeat(32)}` }, missionView({ revision: 2, state: 'running' })]) {
+    transport.sendCommand.mockResolvedValueOnce(json(422, rejected('mission.cancel.v1', 'adopt:cancel:0003', 'ILLEGAL_TRANSITION', 422, {
+      details: { mission },
+    })));
+    await expect(client.cancel(MISSION_ID, {}, { adoptionKey: 'adopt:cancel:0003' })).rejects.toMatchObject({ code: 'outcome_unknown' });
+  }
+});
+
+test('M-04: a stale familiar revision is REVISION_CONFLICT naming the current revision', async () => {
+  const { client, transport } = setup();
+  const current = `familiar-revision:${'a'.repeat(32)}:4`;
+  transport.sendCommand.mockResolvedValueOnce(json(409, rejected('mission.submit.v1', KEY, 'REVISION_CONFLICT', 409, {
+    details: { currentRevisionId: current },
+  })));
+  await expect(client.submit(input, { adoptionKey: KEY })).rejects.toMatchObject({ code: 'REVISION_CONFLICT', currentRevisionId: current });
+  transport.sendCommand.mockResolvedValueOnce(json(409, rejected('mission.submit.v1', KEY, 'REVISION_CONFLICT', 409, {
+    details: { currentRevisionId: 'revision 4' },
+  })));
+  await expect(client.submit(input, { adoptionKey: KEY })).rejects.toBeInstanceOf(CovenMissionUncertain);
 });
 
 test('get refuses a view that breaks the contract', async () => {
@@ -299,28 +327,13 @@ test('get refuses a view that breaks the contract', async () => {
   expect(await client.get(MISSION_ID)).toEqual(unavailable);
 });
 
-function eventPage(delivered: readonly unknown[], checkpoint: string) {
-  return json(200, {
-    ok: true, accepted: true, action: EVENTS, status: 'completed',
-    result: {
-      stream: { kind: 'occurrence', id: OCCURRENCE }, after: null, events: delivered,
-      nextAfter: delivered.length === 0 ? null : (delivered.at(-1) as { sequence: number }).sequence,
-      checkpoint, checkpointExpiresAt: '2026-10-19T00:00:00.000Z',
-    },
-  });
-}
-
-test('M-14: watch yields each new revision, resumes from a fresh view after CURSOR_EXPIRED, and ends at terminal', async () => {
+test('watch yields each new revision once and ends at the first terminal view', async () => {
   const { client, transport } = setup();
   const running = missionView({ revision: 2, state: 'running', attempts: [{ attemptId: 'attempt-1', attemptNumber: 1, state: 'started' }] });
   const reads: Answer[] = [
     json(200, read(missionView())),
-    eventPage(events, 'ecp00000000000000000000000000000001'),
+    json(200, read(missionView())),
     json(200, read(running)),
-    json(410, {
-      ok: false, accepted: false, action: EVENTS, status: 'rejected', reason: 'cursor expired',
-      error: { code: 'CURSOR_EXPIRED', httpStatus: 410, message: 'cursor expired', retryable: false, details: { expiredAt: '2026-10-18T12:02:00.000Z' } },
-    }),
     json(200, read(completed(3))),
   ];
   transport.readDefinitions.mockImplementation(() => Promise.resolve(reads.shift() ?? json(500, {})));
@@ -328,27 +341,38 @@ test('M-14: watch yields each new revision, resumes from a fresh view after CURS
   for await (const view of client.watch(MISSION_ID, { pollIntervalMs: 100 })) seen.push(`${view.revision}:${view.state}`);
   expect(seen).toEqual(['1:queued', '2:running', '3:completed']);
   expect(reads).toHaveLength(0);
-  const requests = transport.readDefinitions.mock.calls.map(([request]) => request as { action: string; checkpoint?: string });
-  expect(requests[1]).toEqual({ action: EVENTS, stream: { kind: 'occurrence', id: OCCURRENCE } });
-  expect(requests[3]).toEqual({ action: EVENTS, stream: { kind: 'occurrence', id: OCCURRENCE }, checkpoint: 'ecp00000000000000000000000000000001' });
+  expect(transport.readDefinitions.mock.calls.every(([request]) => (request as { action: string }).action === GET)).toBe(true);
 });
 
-test('watch waits between reads that saw no change, and afterRevision skips views already shown', async () => {
+test('M-14: a restarted watch resumes from the revision it last showed', async () => {
+  const { client, transport } = setup();
+  const reads: Answer[] = [
+    json(200, read(missionView({ revision: 2, state: 'running' }))),
+    json(200, read(completed(3))),
+  ];
+  transport.readDefinitions.mockImplementation(() => Promise.resolve(reads.shift() ?? json(500, {})));
+  const seen: number[] = [];
+  for await (const view of client.watch(MISSION_ID, { afterRevision: 2, pollIntervalMs: 100 })) seen.push(view.revision);
+  expect(seen).toEqual([3]);
+});
+
+test('watch waits pollIntervalMs between reads', async () => {
   vi.useFakeTimers();
   try {
     const { client, transport } = setup();
     const reads: Answer[] = [
       json(200, read(missionView({ revision: 2, state: 'running' }))),
-      eventPage([], 'ecp00000000000000000000000000000002'),
-      eventPage(events, 'ecp00000000000000000000000000000003'),
+      json(200, read(missionView({ revision: 2, state: 'running' }))),
       json(200, read(completed(3))),
     ];
     transport.readDefinitions.mockImplementation(() => Promise.resolve(reads.shift() ?? json(500, {})));
     const iterator = client.watch(MISSION_ID, { afterRevision: 2, pollIntervalMs: 5_000 });
     const next = iterator.next();
     await vi.advanceTimersByTimeAsync(4_999);
-    expect(transport.readDefinitions).toHaveBeenCalledTimes(2);
+    expect(transport.readDefinitions).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
+    expect(transport.readDefinitions).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(5_000);
     expect((await next).value).toMatchObject({ revision: 3, state: 'completed' });
     expect((await iterator.next()).done).toBe(true);
   } finally {
@@ -360,15 +384,14 @@ test('return() ends a watch that is waiting, without waiting out the interval', 
   vi.useFakeTimers();
   try {
     const { client, transport } = setup();
-    const reads: Answer[] = [json(200, read(missionView({ revision: 2, state: 'running' }))), eventPage([], 'ecp00000000000000000000000000000004')];
-    transport.readDefinitions.mockImplementation(() => Promise.resolve(reads.shift() ?? json(500, {})));
+    transport.readDefinitions.mockResolvedValue(json(200, read(missionView({ revision: 2, state: 'running' }))));
     const iterator = client.watch(MISSION_ID, { afterRevision: 2, pollIntervalMs: 60_000 });
     const next = iterator.next();
     await vi.advanceTimersByTimeAsync(10);
-    expect(transport.readDefinitions).toHaveBeenCalledTimes(2);
+    expect(transport.readDefinitions).toHaveBeenCalledTimes(1);
     await iterator.return!();
     expect(await next).toEqual({ done: true, value: undefined });
-    expect(transport.readDefinitions).toHaveBeenCalledTimes(2);
+    expect(transport.readDefinitions).toHaveBeenCalledTimes(1);
   } finally {
     vi.useRealTimers();
   }

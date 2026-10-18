@@ -140,14 +140,20 @@ producer contract is approved and released. The packages are still unpublished
 - **No new error codes.** The producer kept the frozen v1 vocabulary: a stale
   revision is `REVISION_CONFLICT`, an envelope it does not enforce is
   `CAPABILITY_UNSUPPORTED`, and a past `validUntil` is `VALIDATION_FAILED`.
+- **Refusals carry two details.** `currentRevisionId` on a mission's
+  `REVISION_CONFLICT`, and the settled view as `mission` on a cancel's
+  `ILLEGAL_TRANSITION` (M-09). Both are checked like the rest of the answer.
 - **The transports carry missions.** `sendCommand` and `readDefinitions` accept
   mission requests, and the built-in Unix and Windows transports rebuild each one
   from its own data fields before sending, as they do for lifecycle commands.
 
 ## Open questions, resolved
 
-1. **`watch` polls.** An `events.subscribe.v1` read returns one page and ends on
-   an empty one, so the subscription has no liveness of its own. `watch` re-reads
-   the view when the occurrence stream moves, and waits `pollIntervalMs` (default
-   1 000 ms) between reads that saw no change.
+1. **`watch` polls the view.** An `events.subscribe.v1` read returns one page and
+   ends on an empty one, so the subscription has no liveness of its own. The
+   producer also settled that mission events carry no projected state (coven
+   PR 2b, OpenCoven/coven#1347): clients read it with `mission.get`. `watch`
+   reads the view every `pollIntervalMs` (default 1 000 ms), and a restarted
+   client resumes with `afterRevision`, which covers M-14 without an event
+   cursor.
 2. **Three resends is fixed.** The caller bounds the total with its deadline.

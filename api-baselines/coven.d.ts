@@ -293,6 +293,10 @@ interface CovenMissionRefusal {
     readonly conflictOutcome?: 'committed' | 'rejected';
     /** For `REVISION_CONFLICT`, as the daemon reports it. */
     readonly currentRevision?: number;
+    /** For a mission's `REVISION_CONFLICT`: the familiar's current active revision. */
+    readonly currentRevisionId?: string;
+    /** For `ILLEGAL_TRANSITION` on a settled mission: its terminal view. */
+    readonly mission?: CovenMissionView;
 }
 
 declare const ACTION = "coven.automations.mission.get.v1";
@@ -1451,13 +1455,17 @@ interface CovenMissionWatchOptions extends OperationOptions {
         readonly principalId: string;
         readonly familiar: CovenMissionFamiliarRef;
     };
-    /** Wait between reads that saw no change: 100–60 000 ms, default 1 000. */
+    /** Wait between reads: 100–60 000 ms, default 1 000. */
     readonly pollIntervalMs?: number;
 }
 /** The daemon refused a mission command. Nothing was committed by this request. */
 declare class CovenMissionError extends CovenClientError {
     readonly conflictOutcome: 'committed' | 'rejected' | undefined;
     readonly currentRevision: number | undefined;
+    /** For a mission's `REVISION_CONFLICT`: the familiar's current active revision. */
+    readonly currentRevisionId: string | undefined;
+    /** For `ILLEGAL_TRANSITION` on a settled mission: its terminal view. */
+    readonly mission: CovenMissionView | undefined;
     constructor(refusal: CovenMissionRefusal, operation: string);
 }
 /**
@@ -1492,10 +1500,11 @@ declare class CovenMissionsClient {
     }, options?: CovenMissionCommandOptions): Promise<CovenMissionCancelResult>;
     /**
      * Yields the mission's view each time its revision increases, and ends after
-     * the first terminal view. It reads the mission's occurrence stream and the
-     * view; when neither changed it waits `pollIntervalMs` before reading again.
-     * An expired event cursor re-reads the view once and resumes from it.
-     * `timeoutMs` bounds each read, not the watch; end it with `signal` or `return()`.
+     * the first terminal view. The view is the daemon's authority, so `watch`
+     * reads it every `pollIntervalMs` rather than inferring change from events.
+     * A restarted client resumes by passing the last `revision` it showed as
+     * `afterRevision`. `timeoutMs` bounds each read, not the watch; end it with
+     * `signal` or `return()`.
      */
     watch(missionId: string, options?: CovenMissionWatchOptions): AsyncIterableIterator<CovenMissionView>;
 }

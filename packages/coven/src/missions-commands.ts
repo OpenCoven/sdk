@@ -58,6 +58,10 @@ export interface CovenMissionRefusal {
   readonly conflictOutcome?: 'committed' | 'rejected';
   /** For `REVISION_CONFLICT`, as the daemon reports it. */
   readonly currentRevision?: number;
+  /** For a mission's `REVISION_CONFLICT`: the familiar's current active revision. */
+  readonly currentRevisionId?: string;
+  /** For `ILLEGAL_TRANSITION` on a settled mission: its terminal view. */
+  readonly mission?: CovenMissionView;
 }
 
 export type CovenMissionCommandAnswer =
@@ -216,11 +220,28 @@ export function missionCommandBytes(request: unknown): Buffer {
   return Buffer.from(JSON.stringify(rebuilt));
 }
 
-function refusal(value: unknown, status: number, adoptionKey: string): CovenMissionRefusal | undefined {
+const REVISION_ID = /^familiar-revision:[0-9a-f]{32}:(?:0|[1-9][0-9]{0,8})$/u;
+
+function refusal(
+  value: unknown,
+  status: number,
+  adoptionKey: string,
+  missionId?: string,
+): CovenMissionRefusal | undefined {
   if (!object(value) || typeof value.code !== 'string' || !Object.hasOwn(ERROR_CODES, value.code) ||
     ERROR_CODES[value.code] !== status || value.httpStatus !== status || typeof value.retryable !== 'boolean') {
     return undefined;
   }
+  // Details the client exposes are checked like the rest of the answer; any
+  // other detail is ignored, not copied.
+  const details = object(value.details) ? value.details : {};
+  const settled = value.code === 'ILLEGAL_TRANSITION' && Object.hasOwn(details, 'mission') ? details.mission : undefined;
+  if (settled !== undefined && (!isMissionView(settled) || !settled.terminal ||
+    (missionId !== undefined && settled.missionId !== missionId))) return undefined;
+  const revisionId = value.code === 'REVISION_CONFLICT' && Object.hasOwn(details, 'currentRevisionId')
+    ? details.currentRevisionId
+    : undefined;
+  if (revisionId !== undefined && !patterned(revisionId, REVISION_ID, 52, 60)) return undefined;
   const adoption = value.adoption;
   if (Object.hasOwn(value, 'adoption') && (!only(adoption, ['key', 'conflictOutcome']) || adoption.key !== adoptionKey ||
     (Object.hasOwn(adoption, 'conflictOutcome') && adoption.conflictOutcome !== 'committed' &&
@@ -234,6 +255,8 @@ function refusal(value: unknown, status: number, adoptionKey: string): CovenMiss
       ? { conflictOutcome: adoption.conflictOutcome as 'committed' | 'rejected' }
       : {}),
     ...(Object.hasOwn(value, 'currentRevision') ? { currentRevision: value.currentRevision as number } : {}),
+    ...(revisionId === undefined ? {} : { currentRevisionId: revisionId }),
+    ...(settled === undefined ? {} : { mission: freezeMissionJson(settled) }),
   };
 }
 
@@ -259,18 +282,19 @@ export function decodeMissionCommand(
     return undefined;
   }
   const { command, adoptionKey } = request.envelope;
+  const missionId = request.envelope.command === 'mission.cancel.v1' ? request.envelope.payload.missionId : undefined;
   if (!object(value) || value.action !== ENVELOPE_ACTION) return undefined;
   const response = value.result;
   if (response === undefined || response === null) {
     // Refused before the envelope was read, for example by the owner-only
     // transport gate: a typed refusal, and nothing was adopted.
-    const error = refused(value) && status >= 400 ? refusal(value.error, status, adoptionKey) : undefined;
+    const error = refused(value) && status >= 400 ? refusal(value.error, status, adoptionKey, missionId) : undefined;
     return error === undefined ? undefined : { outcome: 'rejected', error };
   }
   if (!object(response) || response.schemaVersion !== 'coven.automations.v1' || response.command !== command ||
     response.adoptionKey !== adoptionKey) return undefined;
   if (response.outcome === 'rejected') {
-    const error = refused(value) ? refusal(response.error, status, adoptionKey) : undefined;
+    const error = refused(value) ? refusal(response.error, status, adoptionKey, missionId) : undefined;
     return error === undefined ? undefined : { outcome: 'rejected', error };
   }
   if ((response.outcome !== 'committed' && response.outcome !== 'replayed') || status !== 200 ||

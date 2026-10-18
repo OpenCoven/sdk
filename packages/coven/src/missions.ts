@@ -7,7 +7,6 @@ import { integer, object } from './automations-read-validation.js';
 import {
   CovenAutomationsClient, type CovenAutomationsTransport,
 } from './automations.js';
-import type { CovenAutomationEventsOptions } from './automations-events.js';
 import {
   cancelCommitted, decodeMissionCommand, missionCancelRequest, missionSubmitRequest, submitCommitted,
   type CovenMissionCommandRequest, type CovenMissionRefusal,
@@ -72,7 +71,7 @@ export interface CovenMissionWatchOptions extends OperationOptions {
   readonly afterRevision?: number;
   /** Drop and report any view whose principal or familiar differs from this binding. */
   readonly expect?: { readonly principalId: string; readonly familiar: CovenMissionFamiliarRef };
-  /** Wait between reads that saw no change: 100–60 000 ms, default 1 000. */
+  /** Wait between reads: 100–60 000 ms, default 1 000. */
   readonly pollIntervalMs?: number;
 }
 
@@ -80,12 +79,18 @@ export interface CovenMissionWatchOptions extends OperationOptions {
 export class CovenMissionError extends CovenClientError {
   readonly conflictOutcome: 'committed' | 'rejected' | undefined;
   readonly currentRevision: number | undefined;
+  /** For a mission's `REVISION_CONFLICT`: the familiar's current active revision. */
+  readonly currentRevisionId: string | undefined;
+  /** For `ILLEGAL_TRANSITION` on a settled mission: its terminal view. */
+  readonly mission: CovenMissionView | undefined;
 
   constructor(refusal: CovenMissionRefusal, operation: string) {
     super(normalizeCovenError({ code: refusal.code, retryable: refusal.retryable, statusCode: refusal.httpStatus }, operation));
     this.name = 'CovenMissionError';
     this.conflictOutcome = refusal.conflictOutcome;
     this.currentRevision = refusal.currentRevision;
+    this.currentRevisionId = refusal.currentRevisionId;
+    this.mission = refusal.mission;
   }
 }
 
@@ -244,10 +249,11 @@ export class CovenMissionsClient {
 
   /**
    * Yields the mission's view each time its revision increases, and ends after
-   * the first terminal view. It reads the mission's occurrence stream and the
-   * view; when neither changed it waits `pollIntervalMs` before reading again.
-   * An expired event cursor re-reads the view once and resumes from it.
-   * `timeoutMs` bounds each read, not the watch; end it with `signal` or `return()`.
+   * the first terminal view. The view is the daemon's authority, so `watch`
+   * reads it every `pollIntervalMs` rather than inferring change from events.
+   * A restarted client resumes by passing the last `revision` it showed as
+   * `afterRevision`. `timeoutMs` bounds each read, not the watch; end it with
+   * `signal` or `return()`.
    */
   watch(missionId: string, options: CovenMissionWatchOptions = {}): AsyncIterableIterator<CovenMissionView> {
     const operation = 'missions.watch';
@@ -269,11 +275,10 @@ export class CovenMissionsClient {
     const readOptions = Object.fromEntries([['signal', signal], ...['timeoutMs', 'observer']
       .filter((key) => owned[key] !== undefined).map((key) => [key, owned[key]])]) as OperationOptions;
     let revision = (owned.afterRevision) ?? 0;
-    let checkpoint: string | undefined;
     let occurrenceId: string | undefined;
     let done = false;
     let pending = false;
-    /** The first read needs no change to look for; every later one waits for the stream to move. */
+    /** The first read happens at once; every later one waits `pollIntervalMs`. */
     let primed = true;
 
     const view = async (): Promise<CovenMissionView> => {
@@ -286,26 +291,6 @@ export class CovenMissionsClient {
       occurrenceId = current.occurrenceId;
       return current;
     };
-    /** Whether the occurrence stream moved since the last read. */
-    const moved = async (): Promise<boolean> => {
-      const query = {
-        stream: { kind: 'occurrence', id: occurrenceId as string },
-        ...(checkpoint === undefined ? {} : { checkpoint }),
-      } as CovenAutomationEventsOptions;
-      try {
-        const page = await this.#automations.events(query, readOptions);
-        checkpoint = page.checkpoint;
-        return page.events.length > 0;
-      } catch (error) {
-        if (isCovenClientError(error) && error.code === 'CURSOR_EXPIRED') {
-          // Resume from a fresh view rather than replaying a lost window.
-          checkpoint = undefined;
-          return true;
-        }
-        throw error;
-      }
-    };
-
     const finished = (): IteratorResult<CovenMissionView> => ({ done: true, value: undefined });
     return {
       [Symbol.asyncIterator]() { return this; },
@@ -315,12 +300,7 @@ export class CovenMissionsClient {
         pending = true;
         try {
           for (;;) {
-            if (!primed) {
-              while (!(await moved())) {
-                if (done) return finished();
-                await delay(pollIntervalMs, signal);
-              }
-            }
+            if (!primed) await delay(pollIntervalMs, signal);
             primed = false;
             const current = await view();
             if (done) return finished();
