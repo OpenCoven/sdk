@@ -88,8 +88,7 @@ Discovery runs once. Health and Automations reuse that exact endpoint, security
 provider, and platform dependencies. Construction sends no health, capability,
 or action request. Each later request authenticates its own connection.
 The `unix`/`windows` health response-limit options still apply only to health;
-Automations keeps its fixed 16 KiB body limit, except for the event (1 MiB) and
-occurrence- and run-history (256 KiB) reads described below.
+Automations bounds definition inventories and compatibility run lists at 4 MiB, individual definition/run reads and event pages at 1 MiB, and paged occurrence/run histories at 256 KiB. Capabilities, health, receipts and other narrow responses retain their 16 KiB limit. Both injected-client decoding and authenticated Unix/Windows sockets enforce the same action-specific budgets. Oversized responses fail explicitly without partial results or fallback; accepted bytes still undergo the existing schema, duplicate-key, correlation and UTF-8 checks.
 
 `client.automations` is `CovenAutomationsClient | undefined`.
 `client.requireAutomations()` returns that same namespace or throws

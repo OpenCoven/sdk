@@ -475,6 +475,38 @@ function readSetup(value: unknown = definitionList(), action: string = listActio
   return { transport, client: createCovenAutomationsClient({ transport }) };
 }
 
+test('reads supported aggregate inventories and rich snapshots larger than 16 KiB', async () => {
+  const first = { ...routine(), prompt: 'x'.repeat(9_000) };
+  const second = { ...first, id: 'evening' };
+  const inventory = { routines: [first, second], revisionById: { morning: 2, evening: 1 }, tombstonedAtById: {} };
+  expect(await readSetup(inventory).client.list()).toEqual(inventory);
+  const snapshot = { routine: { ...first, prompt: 'x'.repeat(100_000) }, revision: 2, tombstonedAt: null };
+  const producer = { ...snapshot, definition: { action: { prompt: snapshot.routine.prompt } } };
+  expect(await readSetup(producer, getAction).client.get('morning')).toEqual(snapshot);
+});
+
+test('reads bounded run logs above the narrow control-response limit', async () => {
+  const run = { ...runSnapshot(), logJson: 'log'.repeat(9_000) };
+  expect(await readSetup({ runs: [run] }, runsAction).client.runs('morning')).toEqual({ runs: [run] });
+  const detail = { ...runDetail(), logJson: run.logJson };
+  expect(await readSetup({ run: detail }, runAction).client.getRun('run-1')).toEqual({ run: detail });
+});
+
+test.each([
+  { action: listAction, bytes: 4_194_304, payload: definitionList(), call: (client: ReturnType<typeof readSetup>['client']) => client.list() },
+  { action: getAction, bytes: 1_048_576, payload: definitionGet(), call: (client: ReturnType<typeof readSetup>['client']) => client.get('morning') },
+  { action: runsAction, bytes: 4_194_304, payload: { runs: [] }, call: (client: ReturnType<typeof readSetup>['client']) => client.runs('morning') },
+  { action: 'coven.automations.run.get.v1', bytes: 1_048_576, payload: { run: null }, call: (client: ReturnType<typeof readSetup>['client']) => client.getRun('run-1') },
+])('enforces the exact $bytes-byte response budget for $action', async ({ action, bytes, payload, call }) => {
+  const { client, transport } = readSetup(payload, action);
+  const encoded = Buffer.from(JSON.stringify(readEnvelope(action, payload)));
+  const exact = Buffer.concat([encoded, Buffer.alloc(bytes - encoded.length, 0x20)]);
+  transport.readDefinitions.mockResolvedValue({ status: 200, body: exact });
+  expect(await call(client)).toEqual(payload);
+  transport.readDefinitions.mockResolvedValue({ status: 200, body: Buffer.concat([exact, Buffer.from(' ')]) });
+  await expect(call(client)).rejects.toMatchObject({ code: 'invalid_response' });
+});
+
 test('lists compatibility routines with exact revision and tombstone maps, not rich definitions', async () => {
   const { client, transport } = readSetup();
   const result = await client.list();
@@ -919,7 +951,7 @@ test.skipIf(process.platform === 'win32').each([
 
 test.skipIf(process.platform === 'win32')('read transport rejects oversized response without exposing partial results', async () => {
   const { transport, socket } = unixSetup();
-  socket.response = Buffer.alloc(16_385);
+  socket.response = Buffer.alloc(4_194_305);
   await expect(transport.readDefinitions!({ action: listAction, includeTombstoned: false }, {
     signal: new AbortController().signal, deadline: undefined,
   })).rejects.toMatchObject({ code: 'body_limit' });

@@ -365,6 +365,23 @@ describe.each(['unix', 'windows'] as const)('%s Automations parity', (platform) 
     expect(sockets).toHaveLength(2);
   });
 
+  test.skipIf(platform === 'unix' && process.platform === 'win32').each([
+    { action: 'coven.automations.definition.list.v1', bytes: 4_194_304, payload: { routines: [], revisionById: {}, tombstonedAtById: {} }, call: (client: CovenAutomationsClient) => client.list() },
+    { action: 'coven.automations.definition.get.v1', bytes: 1_048_576, payload: { routine: null }, call: (client: CovenAutomationsClient) => client.get('morning') },
+    { action: 'coven.automations.runs', bytes: 4_194_304, payload: { runs: [] }, call: (client: CovenAutomationsClient) => client.runs('morning') },
+    { action: 'coven.automations.run.get.v1', bytes: 1_048_576, payload: { run: null }, call: (client: CovenAutomationsClient) => client.getRun('run-1') },
+  ])('keeps decoder and socket response budgets aligned for $action', async ({ action, bytes, payload, call }) => {
+    const { client, configure } = setup(platform);
+    const encoded = Buffer.from(JSON.stringify(envelope(action, payload)));
+    let body = Buffer.concat([encoded, Buffer.alloc(bytes - encoded.length, 0x20)]);
+    configure.mockImplementation((socket, index) => {
+      socket.response = index % 2 === 0 ? Buffer.from(JSON.stringify(advertisement([action] as never))) : body;
+    });
+    expect(await call(client)).toEqual(payload);
+    body = Buffer.concat([body, Buffer.from(' ')]);
+    await expect(call(client)).rejects.toMatchObject({ code: 'body_limit' });
+  });
+
   test.skipIf(platform === 'unix' && process.platform === 'win32').each(reads)(
     'authenticates and strictly decodes $request.action', async ({ request, payload, call }) => {
       const { client, configure, sockets, ownership } = setup(platform);
@@ -393,17 +410,19 @@ describe.each(['unix', 'windows'] as const)('%s Automations parity', (platform) 
       });
       await expect(call(client)).rejects.toMatchObject({ code: 'capability_unsupported' });
       expect(sockets).toHaveLength(3);
+      const responseLimit = request.action === 'coven.automations.definition.list.v1' || request.action === 'coven.automations.runs'
+        ? 4_194_304 : request.action === 'coven.automations.definition.get.v1' ? 1_048_576 : 16_384;
       for (const body of [
         Buffer.from('{"ok":true,"ok":true}'), Buffer.from([0xff]),
         Buffer.from(JSON.stringify(envelope('wrong.action', payload))),
         Buffer.from(JSON.stringify(envelope(request.action, {}))),
-        Buffer.alloc(16_385),
+        Buffer.alloc(responseLimit + 1),
       ]) {
         configure.mockImplementation((socket, index) => {
           socket.response = index % 2 === 1 ? Buffer.from(JSON.stringify(advertisement())) : body;
         });
         await expect(call(client)).rejects.toMatchObject({
-          code: body.length > 16_384 ? 'body_limit' : 'invalid_response',
+          code: body.length > responseLimit ? 'body_limit' : 'invalid_response',
         });
       }
       expect(sockets.every((socket) => socket.destroyed)).toBe(true);

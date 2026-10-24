@@ -115,6 +115,22 @@ export type CovenAutomationDefinitionReadRequest =
   | { readonly action: 'coven.automations.receipt.get.v1'; readonly id: string }
   | CovenAutomationEventsRequest;
 
+/** Finite response budgets for existing read actions. Definition-bearing reads
+ * must accommodate documents accepted by the command API and their projections.
+ * Capabilities, health and other narrow diagnostic reads retain their own cap. */
+export function definitionReadResponseLimit(action: string): number {
+  switch (action) {
+    case 'coven.automations.definition.list.v1':
+    case 'coven.automations.runs': return 4_194_304;
+    case 'coven.automations.definition.get.v1':
+    case 'coven.automations.run.get.v1': return 1_048_576;
+    case 'coven.automations.events.subscribe.v1': return AUTOMATION_EVENTS_MAX_BYTES;
+    case 'coven.automations.occurrence.history.v1':
+    case 'coven.automations.run.history.v1': return AUTOMATION_HISTORY_MAX_BYTES;
+    default: return 16_384;
+  }
+}
+
 export function definitionReadFailure(code: string, operation: string): never {
   throw new CovenClientError(normalizeCovenError({ code }, operation));
 }
@@ -227,9 +243,7 @@ export function decodeDefinitionRead(
   const invalid = (): never => definitionReadFailure('invalid_response', operation);
   let value: unknown;
   try {
-    value = parsePolicyJson(bytes, request.action === 'coven.automations.events.subscribe.v1' ? AUTOMATION_EVENTS_MAX_BYTES
-      : request.action === 'coven.automations.occurrence.history.v1' || request.action === 'coven.automations.run.history.v1'
-        ? AUTOMATION_HISTORY_MAX_BYTES : 16_384);
+    value = parsePolicyJson(bytes, definitionReadResponseLimit(request.action));
   } catch {
     return invalid();
   }
