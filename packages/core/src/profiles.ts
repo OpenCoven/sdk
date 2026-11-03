@@ -380,7 +380,7 @@ async function validateProfileParent(path: string): Promise<void> {
 }
 
 function fileIdentity(
-  metadata: Awaited<ReturnType<FileHandle['stat']>>,
+  metadata: NonNullable<Awaited<ReturnType<FileHandle['stat']>>>,
 ): ProfileFileIdentity {
   return {
     device: metadata.dev,
