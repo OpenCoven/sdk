@@ -42,7 +42,7 @@ const { validateChatProducerAuthorityBinding: validateHistoricalAuthority } =
   };
 afterAll(() => rmSync(historicalContractRoot, { recursive: true, force: true }));
 const sourceFixtureBytes = brotliDecompressSync(readFileSync(resolve(
-  workspaceRoot, 'tests/fixtures/chat-e48bfe5-cave-source.json.br',
+  workspaceRoot, 'tests/fixtures/chat-f34022a-cave-source.json.br',
 )));
 interface SourceFile {
   path: string;
@@ -236,9 +236,9 @@ describe('local producer ancestry inspection', () => {
 
 describe('reviewed Chat Cave build home isolation', () => {
   test('retains complete Git source bytes, governance files, and combined native deltas', () => {
-    expect(sourceFixtureBytes.length).toBe(21_989_385);
+    expect(sourceFixtureBytes.length).toBe(22_005_421);
     expect(digest(sourceFixtureBytes)).toBe(
-      '0015df0da80157c46d604c5cda5bd5ed0653add9bc7d7706d0001c9b6b753346',
+      '98180db217b24999a50cd4917b99773b179652592a9494b06f6800dda2fc0a4f',
     );
     for (const source of Object.values(sourceFixture.sources)) {
       const rawCommit = objectBytes(source.commit);
@@ -274,14 +274,14 @@ describe('reviewed Chat Cave build home isolation', () => {
 
   test('accepts the exact delivered merge and its reviewed source and binding ancestry', () => {
     const lock = currentLock();
-    expect(lock.evidenceProducer.commit).toBe('e48bfe53cfc3ea95b58b34b627c9f929c20d9016');
+    expect(lock.evidenceProducer.commit).toBe('f34022acc3dfeb55634d5c8132ed41a02181a534');
     expect(lock.sources.cave).toMatchObject({
       commit: 'ecdcdcf8a75b62bb912ec48215ae20ab0809a181',
       tree: '1634a8eb0a391419bf28af4be0020cfd8c4df472',
       releaseVersion: '0.4.2',
     });
     expect(sourceAuthority().sourceCommit.parents).toEqual([
-      { sha: '3aa2ed6a4fcdee9db4470c4466ed8ead910273d1' },
+      { sha: 'f8d4dd4263c28fa5943426f53ee72910ec0caeae' },
     ]);
     expect(() => validateChatProducerAuthorityBinding(lock, sourceAuthority())).not.toThrow();
     expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([]);
@@ -658,7 +658,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      'e48bfe53cfc3ea95b58b34b627c9f929c20d9016',
+      'f34022acc3dfeb55634d5c8132ed41a02181a534',
     );
     expect(workflowDocument).not.toContain(
       'f6eba8af1f71d4251583cf39d4e5fb5b4797d209',
@@ -673,10 +673,10 @@ describe('cross-repository conformance contract entrypoints', () => {
       '9f073f05241c2d3241b23ed9d73b26c6cd55ce7e',
     );
     expect(workflowDocument).toContain(
-      '6e55d3d218779fcdd1287725c5ab42eb881c54c3',
+      'ed735454c7e3acc2779f01cba2718a87fe8b9f19',
     );
     expect(workflowDocument).toContain(
-      '3aa2ed6a4fcdee9db4470c4466ed8ead910273d1',
+      'f8d4dd4263c28fa5943426f53ee72910ec0caeae',
     );
     expect(workflowDocument).toContain('validator_revision');
     expect(workflowDocument).toContain('20863036831');
