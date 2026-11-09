@@ -1926,9 +1926,10 @@ describe('unresolved SDK #38 conformance gaps', () => {
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '8d0e7beead10a3f4b74abbfb61c31663e0b2eb00',
-        sourceDigest: '8d0e7beead10a3f4b74abbfb61c31663e0b2eb00',
+        signerDigest: 'bcd6a302b46a24f082e21dfb3114df29dbedd873',
+        sourceDigest: 'bcd6a302b46a24f082e21dfb3114df29dbedd873',
         sourceDescent: [
+          'bcd6a302b46a24f082e21dfb3114df29dbedd873',
           '8d0e7beead10a3f4b74abbfb61c31663e0b2eb00',
           'e48bfe53cfc3ea95b58b34b627c9f929c20d9016',
         ],

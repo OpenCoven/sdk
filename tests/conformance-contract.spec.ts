@@ -58,7 +58,7 @@ interface SourceSnapshot {
   parents: string[];
   files: SourceFile[];
 }
-type SourceRole = 'producer' | 'reviewed' | 'harness' | 'consumer' | 'cave' | 'currentDispatch'
+type SourceRole = 'producer' | 'reviewed' | 'harness' | 'consumer' | 'cave' | `currentDispatch${number}`
   | 'currentAuthority0' | 'chainProducer' | 'chainReviewed' | 'chainHarness' | 'binding' | 'authority0' | 'authority1' | 'authority2' | 'authority3' | 'authority4' | 'authority5' | 'authority6' | 'authority7' | 'authority8' | 'authority9' | 'previousProducer' | 'previousReviewed' | 'previousHarness';
 const sourceFixture = JSON.parse(sourceFixtureBytes.toString('utf8')) as {
   sources: Record<SourceRole, SourceSnapshot>;
@@ -78,8 +78,11 @@ function sourceBytes(role: SourceRole, path: string): Buffer {
   return objectBytes(file.blob);
 }
 function sourceAuthority(previous = false, chain = false) {
+  const descent = previous || chain ? []
+    : assertEvidenceProducerCompatibility(currentLock()).workflow.sourceDescent;
   const commit = (role: SourceRole) => {
     const source = sourceFixture.sources[role];
+    if (source === undefined) throw new Error(`Missing source authority fixture ${role}`);
     return {
       sha: source.commit,
       tree: { sha: source.tree },
@@ -94,8 +97,10 @@ function sourceAuthority(previous = false, chain = false) {
     phase1LockText: sourceBytes(
       previous ? 'previousProducer' : chain ? 'chainProducer' : 'producer', 'phase1-conformance.lock.json',
     ).toString('utf8'),
-    ...(previous || chain ? {} : {
-      sourceDescentCommits: [commit('currentDispatch'), commit('producer')],
+    ...(descent.length === 0 ? {} : {
+      sourceDescentCommits: descent.map((_, index) => commit(
+        index === descent.length - 1 ? 'producer' : `currentDispatch${index}`,
+      )),
     }),
   };
 }
@@ -231,9 +236,9 @@ describe('local producer ancestry inspection', () => {
 
 describe('reviewed Chat Cave build home isolation', () => {
   test('retains complete Git source bytes, governance files, and combined native deltas', () => {
-    expect(sourceFixtureBytes.length).toBe(21_977_641);
+    expect(sourceFixtureBytes.length).toBe(21_989_385);
     expect(digest(sourceFixtureBytes)).toBe(
-      'd59484afcb771cb040eff49498910b35b5fefbdb286ddceabba27c155680af1f',
+      '0015df0da80157c46d604c5cda5bd5ed0653add9bc7d7706d0001c9b6b753346',
     );
     for (const source of Object.values(sourceFixture.sources)) {
       const rawCommit = objectBytes(source.commit);
