@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliDecompressSync } from 'node:zlib';
 
-import { describe, expect, test } from 'vitest';
+import { afterAll, describe, expect, test } from 'vitest';
 
 import {
   assertEvidenceProducerCompatibility,
@@ -22,8 +23,26 @@ import { inspectChatProducerAuthority } from '../scripts/aggregate-client-v1-con
 import { verifyProtectedWorkflow } from '../scripts/github-conformance-evidence.mjs';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// Historical macos-14 bindings retain their original validator, source bytes,
+// and ancestry checks. The current validator accepts only the migrated runner.
+const historicalContractBytes = brotliDecompressSync(readFileSync(resolve(
+  workspaceRoot, 'tests/fixtures/sdk-8968554-conformance-contract.mjs.br',
+)));
+if (createHash('sha256').update(historicalContractBytes).digest('hex') !==
+  'd59c416006f605e02eadacb456b42cfdf7a64ecf81812254e22580d9a1918f74') {
+  throw new Error('Historical SDK validator differs from its reviewed Git bytes');
+}
+mkdirSync(resolve(workspaceRoot, '.artifacts'), { recursive: true });
+const historicalContractRoot = mkdtempSync(resolve(workspaceRoot, '.artifacts/historical-sdk-'));
+const historicalContractPath = resolve(historicalContractRoot, 'conformance-contract.mjs');
+writeFileSync(historicalContractPath, historicalContractBytes);
+const { validateChatProducerAuthorityBinding: validateHistoricalAuthority } =
+  createRequire(import.meta.url)(historicalContractPath) as {
+    validateChatProducerAuthorityBinding: typeof validateChatProducerAuthorityBinding;
+  };
+afterAll(() => rmSync(historicalContractRoot, { recursive: true, force: true }));
 const sourceFixtureBytes = brotliDecompressSync(readFileSync(resolve(
-  workspaceRoot, 'tests/fixtures/chat280-cave5ee-source.json.br',
+  workspaceRoot, 'tests/fixtures/chat-e48bfe5-cave-source.json.br',
 )));
 interface SourceFile {
   path: string;
@@ -39,7 +58,7 @@ interface SourceSnapshot {
   parents: string[];
   files: SourceFile[];
 }
-type SourceRole = 'producer' | 'reviewed' | 'harness' | 'consumer' | 'cave'
+type SourceRole = 'producer' | 'reviewed' | 'harness' | 'consumer' | 'cave' | `currentDispatch${number}`
   | 'currentAuthority0' | 'chainProducer' | 'chainReviewed' | 'chainHarness' | 'binding' | 'authority0' | 'authority1' | 'authority2' | 'authority3' | 'authority4' | 'authority5' | 'authority6' | 'authority7' | 'authority8' | 'authority9' | 'previousProducer' | 'previousReviewed' | 'previousHarness';
 const sourceFixture = JSON.parse(sourceFixtureBytes.toString('utf8')) as {
   sources: Record<SourceRole, SourceSnapshot>;
@@ -59,8 +78,11 @@ function sourceBytes(role: SourceRole, path: string): Buffer {
   return objectBytes(file.blob);
 }
 function sourceAuthority(previous = false, chain = false) {
+  const descent = previous || chain ? []
+    : assertEvidenceProducerCompatibility(currentLock()).workflow.sourceDescent;
   const commit = (role: SourceRole) => {
     const source = sourceFixture.sources[role];
+    if (source === undefined) throw new Error(`Missing source authority fixture ${role}`);
     return {
       sha: source.commit,
       tree: { sha: source.tree },
@@ -75,11 +97,27 @@ function sourceAuthority(previous = false, chain = false) {
     phase1LockText: sourceBytes(
       previous ? 'previousProducer' : chain ? 'chainProducer' : 'producer', 'phase1-conformance.lock.json',
     ).toString('utf8'),
+    ...(descent.length === 0 ? {} : {
+      sourceDescentCommits: descent.map((_, index) => commit(
+        index === descent.length - 1 ? 'producer' : `currentDispatch${index}`,
+      )),
+    }),
   };
 }
 const currentLock = () => readFrozenConformanceLock(resolve(
   workspaceRoot, 'conformance/client-v1-cross-repository-lock.json',
 ));
+// Exercise the current ancestry validator too, using a synthetic runner profile.
+// This leaves authenticated historical fixtures intact and does not claim that
+// their old workflow bytes run under, or are accepted as, the migrated workflow.
+function currentRunnerForAncestry(lock: FrozenConformanceLock): FrozenConformanceLock {
+  const synthetic = structuredClone(lock);
+  if (synthetic.evidenceProducer.status !== 'compatible') {
+    throw new Error('Ancestry fixture must identify a compatible producer');
+  }
+  synthetic.evidenceProducer.workflow.runnerLabels['darwin-arm64'] = ['macos-15'];
+  return synthetic;
+}
 // The current lock with its descent removed, as a producer-tip dispatch binds it.
 const tipOnlyLock = () => {
   const lock = currentLock();
@@ -198,9 +236,9 @@ describe('local producer ancestry inspection', () => {
 
 describe('reviewed Chat Cave build home isolation', () => {
   test('retains complete Git source bytes, governance files, and combined native deltas', () => {
-    expect(sourceFixtureBytes.length).toBe(20_760_756);
+    expect(sourceFixtureBytes.length).toBe(21_989_385);
     expect(digest(sourceFixtureBytes)).toBe(
-      'da9fb17344ba2a8a4ba731ee27014f6b98375480e64fc9405fa4644982dde2aa',
+      '0015df0da80157c46d604c5cda5bd5ed0653add9bc7d7706d0001c9b6b753346',
     );
     for (const source of Object.values(sourceFixture.sources)) {
       const rawCommit = objectBytes(source.commit);
@@ -236,14 +274,14 @@ describe('reviewed Chat Cave build home isolation', () => {
 
   test('accepts the exact delivered merge and its reviewed source and binding ancestry', () => {
     const lock = currentLock();
-    expect(lock.evidenceProducer.commit).toBe('399e1f199417e74db6a1b9096500d0e953fdfa6b');
+    expect(lock.evidenceProducer.commit).toBe('e48bfe53cfc3ea95b58b34b627c9f929c20d9016');
     expect(lock.sources.cave).toMatchObject({
       commit: 'ecdcdcf8a75b62bb912ec48215ae20ab0809a181',
       tree: '1634a8eb0a391419bf28af4be0020cfd8c4df472',
       releaseVersion: '0.4.2',
     });
     expect(sourceAuthority().sourceCommit.parents).toEqual([
-      { sha: '2f72ecedd225759a11889ec4b7dd112b71361d56' },
+      { sha: '3aa2ed6a4fcdee9db4470c4466ed8ead910273d1' },
     ]);
     expect(() => validateChatProducerAuthorityBinding(lock, sourceAuthority())).not.toThrow();
     expect(assertEvidenceProducerCompatibility(lock).sourceAuthorityPath).toEqual([]);
@@ -262,15 +300,17 @@ describe('reviewed Chat Cave build home isolation', () => {
     if (field === 'identity') intermediate.sha = '0'.repeat(40);
     else if (field === 'tree') intermediate.tree.sha = '0'.repeat(40);
     else intermediate.parents = [{ sha: '0'.repeat(40) }];
-    expect(() => validateChatProducerAuthorityBinding(sourceFixture.chainLock, authority)).toThrow(/Git identities/);
+    expect(() => validateHistoricalAuthority(sourceFixture.chainLock, authority)).toThrow(/Git identities/);
+    expect(() => validateChatProducerAuthorityBinding(currentRunnerForAncestry(sourceFixture.chainLock), authority)).toThrow(/Git identities/);
   });
 
   test('rejects old and new producer authorities against the opposite binding', () => {
-    expect(() => validateChatProducerAuthorityBinding(sourceFixture.previousLock, sourceAuthority(true))).not.toThrow();
+    expect(() => validateHistoricalAuthority(sourceFixture.previousLock, sourceAuthority(true))).not.toThrow();
+    expect(() => validateChatProducerAuthorityBinding(currentRunnerForAncestry(sourceFixture.previousLock), sourceAuthority(true))).not.toThrow();
     expect(() => validateChatProducerAuthorityBinding(currentLock(), sourceAuthority(true))).toThrow(
       /Git identities/,
     );
-    expect(() => validateChatProducerAuthorityBinding(sourceFixture.previousLock, sourceAuthority())).toThrow(
+    expect(() => validateHistoricalAuthority(sourceFixture.previousLock, sourceAuthority())).toThrow(
       /Git identities/,
     );
     const authority = sourceAuthority();
@@ -291,19 +331,22 @@ describe('reviewed Chat Cave build home isolation', () => {
   });
 
   test('retains the verified historical multi-edge binding', () => {
-    expect(() => validateChatProducerAuthorityBinding(sourceFixture.chainLock, sourceAuthority(false, true))).not.toThrow();
+    expect(() => validateHistoricalAuthority(sourceFixture.chainLock, sourceAuthority(false, true))).not.toThrow();
+    expect(() => validateChatProducerAuthorityBinding(currentRunnerForAncestry(sourceFixture.chainLock), sourceAuthority(false, true))).not.toThrow();
   });
 
   test.each([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])('rejects a severed intermediate authority edge %i', (index) => {
     const authority = sourceAuthority(false, true);
     authority.sourceAuthorityCommits[index]!.parents = [];
-    expect(() => validateChatProducerAuthorityBinding(sourceFixture.chainLock, authority)).toThrow(/Git identities/);
+    expect(() => validateHistoricalAuthority(sourceFixture.chainLock, authority)).toThrow(/Git identities/);
+    expect(() => validateChatProducerAuthorityBinding(currentRunnerForAncestry(sourceFixture.chainLock), authority)).toThrow(/Git identities/);
   });
 
   test.each([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])('rejects a substituted intermediate authority tree %i', (index) => {
     const authority = sourceAuthority(false, true);
     authority.sourceAuthorityCommits[index]!.tree.sha = '0'.repeat(40);
-    expect(() => validateChatProducerAuthorityBinding(sourceFixture.chainLock, authority)).toThrow(/Git identities/);
+    expect(() => validateHistoricalAuthority(sourceFixture.chainLock, authority)).toThrow(/Git identities/);
+    expect(() => validateChatProducerAuthorityBinding(currentRunnerForAncestry(sourceFixture.chainLock), authority)).toThrow(/Git identities/);
   });
 
   test('rejects a reviewed tree that differs from the delivered producer', () => {
@@ -615,7 +658,7 @@ describe('cross-repository conformance contract entrypoints', () => {
       'utf8',
     );
     expect(workflowDocument).toContain(
-      '399e1f199417e74db6a1b9096500d0e953fdfa6b',
+      'e48bfe53cfc3ea95b58b34b627c9f929c20d9016',
     );
     expect(workflowDocument).not.toContain(
       'f6eba8af1f71d4251583cf39d4e5fb5b4797d209',
@@ -630,10 +673,10 @@ describe('cross-repository conformance contract entrypoints', () => {
       '9f073f05241c2d3241b23ed9d73b26c6cd55ce7e',
     );
     expect(workflowDocument).toContain(
-      'b7ceff48066a6649366fc27aa4ca41db064ad5ee',
+      '6e55d3d218779fcdd1287725c5ab42eb881c54c3',
     );
     expect(workflowDocument).toContain(
-      '2f72ecedd225759a11889ec4b7dd112b71361d56',
+      '3aa2ed6a4fcdee9db4470c4466ed8ead910273d1',
     );
     expect(workflowDocument).toContain('validator_revision');
     expect(workflowDocument).toContain('20863036831');
@@ -657,7 +700,11 @@ describe('attested source descent', () => {
   const middle = 'b'.repeat(40);
 
   test('accepts the attested source when it is the producer commit', () => {
-    expect(withWorkflow({})).not.toThrow();
+    expect(withWorkflow({
+      signerDigest: producerCommit(),
+      sourceDigest: producerCommit(),
+      sourceDescent: [],
+    })).not.toThrow();
   });
 
   test('refuses an attested source that is not the producer commit and claims no descent', () => {

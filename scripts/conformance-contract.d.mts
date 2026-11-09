@@ -99,7 +99,7 @@ export interface CompatibleConformanceWorkflow {
   validatorRevisionEnvironment: 'CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION';
   sourceRef: 'refs/heads/main';
   runnerLabels: {
-    'darwin-arm64': ['macos-14'];
+    'darwin-arm64': ['macos-15'];
     'linux-x64': ['ubuntu-24.04'];
     'win32-x64': ['windows-2025'];
   };
