@@ -57,11 +57,11 @@ const windowsBootstrapFixturePath = resolve(
 );
 const protectedWorkflowFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-4921141-client-v1-conformance.yml.br',
+  'tests/fixtures/chat-ead6fdc-client-v1-conformance.yml.br',
 );
 const unixSupervisorPreparationFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-8856ad-unix-supervisor-preparation.sh.br',
+  'tests/fixtures/chat-ead6fdc-unix-supervisor-preparation.sh.br',
 );
 const windowsSupervisorTestFixturePath = resolve(
   workspaceRoot,
@@ -285,7 +285,7 @@ const TEST_WINDOWS_SESSION_ZERO_QUARANTINE = [
   '                        continue;',
 ].join('\n');
 const TEST_UNIX_SUPERVISOR_SOURCE_BINDING =
-  "['scripts/unix-producer-supervisor.sh', [29424, 'b73036415744c80ed27d5667f255ceea149096ca517b47c93a154299802206ff']]";
+  "['scripts/unix-producer-supervisor.sh', [29728, 'a78b9b6b809fd8a094db2c41603fbfb594ab4598e7752f32290d71fa2c8c35b6']]";
 const TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND = brotliDecompressSync(
   readFileSync(unixSupervisorPreparationFixturePath),
 ).toString('utf8');
@@ -636,18 +636,18 @@ function createProducerWorkflow({
     '          OPENCOVEN_CHAT_REPOSITORY: ${{ github.repository }}',
     '          OPENCOVEN_CHAT_SHA: ${{ github.sha }}',
     "          OPENCOVEN_WINDOWS_IMAGE_OS: 'win25-vs2026'",
-    "          OPENCOVEN_WINDOWS_IMAGE_VERSION: '20260922.246.2'",
-    "          OPENCOVEN_WINDOWS_PREVIOUS_IMAGE_VERSION: '20260907.229.1'",
-    "          OPENCOVEN_WINDOWS_BUILD: '26100.33438'",
+    "          OPENCOVEN_WINDOWS_IMAGE_VERSION: '20261103.298.1'",
+    "          OPENCOVEN_WINDOWS_PREVIOUS_IMAGE_VERSION: '20260922.246.2'",
+    "          OPENCOVEN_WINDOWS_BUILD: '26100.33674'",
     "          OPENCOVEN_WINDOWS_KERNEL32_VERSION: '10.0.26100.33296'",
-    "          OPENCOVEN_WINDOWS_POWERSHELL_VERSION: '7.6.6'",
+    "          OPENCOVEN_WINDOWS_POWERSHELL_VERSION: '7.6.9'",
     "          OPENCOVEN_WINDOWS_POWERSHELL_PATH: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'",
-    "          OPENCOVEN_WINDOWS_DOTNET_VERSION: '10.0.12'",
-    "          OPENCOVEN_WINDOWS_VS_VERSION: '18.10.12210.168'",
-    "          OPENCOVEN_WINDOWS_PREVIOUS_VS_VERSION: '18.9.12120.119'",
-    "          OPENCOVEN_WINDOWS_PREVIOUS_BUILD: '26100.33296'",
-    "          OPENCOVEN_WINDOWS_PREVIOUS_POWERSHELL_VERSION: '7.6.5'",
-    "          OPENCOVEN_WINDOWS_PREVIOUS_DOTNET_VERSION: '10.0.11'",
+    "          OPENCOVEN_WINDOWS_DOTNET_VERSION: '10.0.14'",
+    "          OPENCOVEN_WINDOWS_VS_VERSION: '18.11.12328.437'",
+    "          OPENCOVEN_WINDOWS_PREVIOUS_VS_VERSION: '18.10.12210.168'",
+    "          OPENCOVEN_WINDOWS_PREVIOUS_BUILD: '26100.33438'",
+    "          OPENCOVEN_WINDOWS_PREVIOUS_POWERSHELL_VERSION: '7.6.6'",
+    "          OPENCOVEN_WINDOWS_PREVIOUS_DOTNET_VERSION: '10.0.12'",
     "          OPENCOVEN_WINDOWS_VS_PATH: 'C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise'",
     "          OPENCOVEN_WINDOWS_MSVC_VERSION: '14.44.35207'",
     "          OPENCOVEN_WINDOWS_MSVC_PATH: 'C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.44.35207'",
@@ -1868,9 +1868,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 183220,
+        size: 183221,
         sha256:
-          '56ca0b00264e465aea76b274fbec7c4366290ab0de03dbe6f1f1760d586d2978',
+          '65bfabe1685aa6f6efb9aa7d33e244735fc6230308ac62bc22e7b6f101d0afd4',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1897,7 +1897,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         linuxKeyringSetupScriptSha256:
           '7b1ff87ab5d2230950632560230899cc450458a800a630c2788b53be8b13d200',
         unixSupervisorPreparationScriptSha256:
-          'ebcd73d0d655289defb1030d383410a0e28f7d4edec0472077c3e64cbd473c9f',
+          '87728de4000e516724728bd70e630abdfb0cdfb2fabeb96a4c51e7e43bd0eb46',
         unixToolPathSource: {
           path: 'scripts/executable-resolution.mjs',
           size: 9_154,
@@ -4051,7 +4051,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
           yamlLiteralRun(TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND),
           yamlLiteralRun(
             TEST_UNIX_SUPERVISOR_PREPARATION_COMMAND.replace(
-              'b73036415744c80ed27d5667f255ceea149096ca517b47c93a154299802206ff',
+              'a78b9b6b809fd8a094db2c41603fbfb594ab4598e7752f32290d71fa2c8c35b6',
               '0'.repeat(64),
             ),
           ),
