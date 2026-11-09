@@ -53,11 +53,11 @@ const schemaPath = resolve(
 );
 const windowsBootstrapFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-8856ad-windows-bootstrap.ps1.br',
+  'tests/fixtures/chat-4921141-windows-bootstrap.ps1.br',
 );
 const protectedWorkflowFixturePath = resolve(
   workspaceRoot,
-  'tests/fixtures/chat-8856ad-client-v1-conformance.yml.br',
+  'tests/fixtures/chat-4921141-client-v1-conformance.yml.br',
 );
 const unixSupervisorPreparationFixturePath = resolve(
   workspaceRoot,
@@ -197,8 +197,8 @@ const supervisorBlocks = TEST_WINDOWS_BOOTSTRAP_COMMAND.match(
 if (supervisorBlocks?.length !== 1) throw new Error('Missing canonical supervisor block');
 const TEST_WINDOWS_SUPERVISOR_BLOCK = supervisorBlocks[0];
 const TEST_WINDOWS_SUPERVISOR_SOURCE = decodeWindowsSupervisorSource(TEST_WINDOWS_SUPERVISOR_BLOCK, {
-  size: 397084,
-  sha256: 'ec56ad9daf9cfd2e92de4420cfc5ce328e09a76b627a8253ef35f2e9ef151669',
+  size: 402329,
+  sha256: '1f6a6d210b3551688dcb530bc4513f9f18578b35e681720139afec26b372c823',
 }).toString('utf8');
 const TEST_WINDOWS_CHILD_BOOTSTRAP = requireTestWindowsChildBootstrap(
   TEST_WINDOWS_BOOTSTRAP_COMMAND,
@@ -275,12 +275,14 @@ const TEST_WINDOWS_SESSION_ZERO_QUARANTINE = [
   '                        {',
   '                            continue;',
   '                        }',
-  '                        throw new InvalidOperationException(String.Format(',
-  '                            CultureInfo.InvariantCulture,',
-  '                            "WTS process primary token SID query was ambiguous "',
-  '                                + "for process {0} in session {1}.",',
-  '                            information.ProcessId,',
-  '                            information.SessionId));',
+  '                        if (processes.ContainsKey(information.ProcessId) ||',
+  '                            unreadable.ContainsKey(information.ProcessId))',
+  '                        {',
+  '                            throw new InvalidOperationException(',
+  '                                "WTS process enumeration returned a duplicate PID.");',
+  '                        }',
+  '                        unreadable.Add(information.ProcessId, information.SessionId);',
+  '                        continue;',
 ].join('\n');
 const TEST_UNIX_SUPERVISOR_SOURCE_BINDING =
   "['scripts/unix-producer-supervisor.sh', [29424, 'b73036415744c80ed27d5667f255ceea149096ca517b47c93a154299802206ff']]";
@@ -610,7 +612,7 @@ function createProducerWorkflow({
     '      matrix:',
     '        include:',
     '          - platform: darwin-arm64',
-    '            runner: macos-14',
+    '            runner: macos-15',
     '          - platform: linux-x64',
     '            runner: ubuntu-24.04',
     '          - platform: win32-x64',
@@ -895,7 +897,7 @@ const TEST_COMPATIBLE_PRODUCER = {
       'CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION',
     sourceRef: 'refs/heads/main',
     runnerLabels: {
-      'darwin-arm64': ['macos-14'],
+      'darwin-arm64': ['macos-15'],
       'linux-x64': ['ubuntu-24.04'],
       'win32-x64': ['windows-2025'],
     },
@@ -971,7 +973,7 @@ function compileCompatibleWorkflowDeclaration(
     '.artifacts/client-v1-conformance-{platform}.json' =
       workflow.recordPathTemplate;
   const sourceRef: 'refs/heads/main' = workflow.sourceRef;
-  const darwinRunner: 'macos-14' =
+  const darwinRunner: 'macos-15' =
     workflow.runnerLabels['darwin-arm64'][0];
   const linuxRunner: 'ubuntu-24.04' =
     workflow.runnerLabels['linux-x64'][0];
@@ -1835,24 +1837,24 @@ describe('unresolved SDK #38 conformance gaps', () => {
     expect(lock.evidenceProducer).toEqual({
       status: 'compatible',
       repository: 'OpenCoven/chat',
-      commit: '399e1f199417e74db6a1b9096500d0e953fdfa6b',
-      tree: '76adbce55467a6bd276a040284d7004d88e452b8',
+      commit: 'e48bfe53cfc3ea95b58b34b627c9f929c20d9016',
+      tree: 'f5de441ea48fe224315c96dabaedb25911e862cf',
       source: {
         repository: 'OpenCoven/chat',
-        commit: 'b7ceff48066a6649366fc27aa4ca41db064ad5ee',
-        tree: '76adbce55467a6bd276a040284d7004d88e452b8',
+        commit: '6e55d3d218779fcdd1287725c5ab42eb881c54c3',
+        tree: 'f5de441ea48fe224315c96dabaedb25911e862cf',
       },
       sourceAuthorityPath: [],
       harnessAuthority: {
         repository: 'OpenCoven/chat',
-        commit: '2f72ecedd225759a11889ec4b7dd112b71361d56',
-        tree: '0a2e550bddbeaec405367d1dcb383c38fb10fb51',
+        commit: '3aa2ed6a4fcdee9db4470c4466ed8ead910273d1',
+        tree: '4f8135af87a8b6f723ddbc40007130e7dc19f935',
       },
       packageManifest: {
         path: 'package.json',
-        size: 4_003,
+        size: 4076,
         sha256:
-          '179f39106eea9de00717331e094f7c20d542fc898973a18ab7777a0e69768609',
+          'b2621aa9cd2164dbef2c7ac2dbb13432577e25a4cee89f564f9707532b09d652',
       },
       harness: {
         path: 'scripts/phase1-conformance.mjs',
@@ -1866,9 +1868,9 @@ describe('unresolved SDK #38 conformance gaps', () => {
       workflow: {
         name: 'client-v1 conformance',
         path: '.github/workflows/client-v1-conformance.yml',
-        size: 181_684,
+        size: 183220,
         sha256:
-          '93858b9056614e5bcfd0ffc02fdf38b4b4408364f7b1916491133c92050d5ab5',
+          '56ca0b00264e465aea76b274fbec7c4366290ab0de03dbe6f1f1760d586d2978',
         job: 'platform-conformance',
         jobNameTemplate: 'platform-conformance ({platform})',
         aggregationJob: 'aggregate-conformance',
@@ -1887,7 +1889,7 @@ describe('unresolved SDK #38 conformance gaps', () => {
         downloadArtifactAction: DOWNLOAD_ARTIFACT_ACTION,
         attestationAction: ATTEST_BUILD_PROVENANCE_ACTION,
         windowsBootstrapScriptSha256:
-          'ed4db32136cdd672252c4e34791db9725b9b87063d80773976d29d14a0ee0531',
+          'ccb5ec6ed8011cdd8bdd1432462583f17cf01db6fb7778c7fe28384ee184d826',
         validatorRevisionScriptSha256:
           '9abbfe73f19e47650321e6afb2c2a7db4facbf05a72db30241dfa94261cdcad9',
         phase1RevisionsScriptSha256:
@@ -1918,15 +1920,18 @@ describe('unresolved SDK #38 conformance gaps', () => {
           'CLIENT_V1_CONFORMANCE_VALIDATOR_REVISION',
         sourceRef: 'refs/heads/main',
         runnerLabels: {
-          'darwin-arm64': ['macos-14'],
+          'darwin-arm64': ['macos-15'],
           'linux-x64': ['ubuntu-24.04'],
           'win32-x64': ['windows-2025'],
         },
         signerWorkflow:
           'OpenCoven/chat/.github/workflows/client-v1-conformance.yml',
-        signerDigest: '399e1f199417e74db6a1b9096500d0e953fdfa6b',
-        sourceDigest: '399e1f199417e74db6a1b9096500d0e953fdfa6b',
-        sourceDescent: [],
+        signerDigest: '8d0e7beead10a3f4b74abbfb61c31663e0b2eb00',
+        sourceDigest: '8d0e7beead10a3f4b74abbfb61c31663e0b2eb00',
+        sourceDescent: [
+          '8d0e7beead10a3f4b74abbfb61c31663e0b2eb00',
+          'e48bfe53cfc3ea95b58b34b627c9f929c20d9016',
+        ],
         predicateType: 'https://slsa.dev/provenance/v1',
         denySelfHostedRunners: true,
       },
@@ -2017,6 +2022,24 @@ describe('unresolved SDK #38 conformance gaps', () => {
         TEST_WINDOWS_SESSION_ZERO_QUARANTINE,
       ),
     ).toHaveLength(2);
+    expect(TEST_WINDOWS_SUPERVISOR_SOURCE).toContain(
+      'private const int UnreadableProcessSidRechecks = 3;',
+    );
+    expect(TEST_WINDOWS_SUPERVISOR_SOURCE).toContain([
+      '                if (attempt == UnreadableProcessSidRechecks)',
+      '                {',
+      '                    // A row that stays unreadable fails closed, never skipped.',
+      '                    foreach (KeyValuePair<uint, uint> unreadable in rows.Item2)',
+      '                    {',
+      '                        throw new InvalidOperationException(String.Format(',
+      '                            CultureInfo.InvariantCulture,',
+      '                            "WTS process primary token SID query was ambiguous "',
+      '                                + "for process {0} in session {1}.",',
+      '                            unreadable.Key,',
+      '                            unreadable.Value));',
+      '                    }',
+      '                }',
+    ].join('\n'));
     expect(TEST_WINDOWS_SUPERVISOR_SOURCE).not.toContain(
       '"WTS process primary token SID query was ambiguous.");',
     );
@@ -2039,11 +2062,11 @@ describe('unresolved SDK #38 conformance gaps', () => {
         workflow.sourceRef = 'refs/heads/release';
       },
       (workflow) => {
-        workflow.aggregationRunnerLabels = ['macos-14'];
+        workflow.aggregationRunnerLabels = ['macos-15'];
       },
       (workflow) => {
         workflow.runnerLabels = {
-          'darwin-arm64': ['macos-14'],
+          'darwin-arm64': ['macos-15'],
           'linux-x64': ['self-hosted-linux'],
           'win32-x64': ['windows-2025'],
         };

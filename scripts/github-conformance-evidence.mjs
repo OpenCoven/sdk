@@ -30,8 +30,8 @@ import {
 import { decodeWindowsSupervisorSource } from './windows-supervisor-source.mjs';
 
 const REVIEWED_WINDOWS_SUPERVISOR_SOURCE = Object.freeze({
-  size: 397084,
-  sha256: 'ec56ad9daf9cfd2e92de4420cfc5ce328e09a76b627a8253ef35f2e9ef151669',
+  size: 402329,
+  sha256: '1f6a6d210b3551688dcb530bc4513f9f18578b35e681720139afec26b372c823',
 });
 
 const MAX_GITHUB_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -53,7 +53,7 @@ const WINDOWS_SUPERVISOR_ARTIFACT = 'phase1-process-supervisor-win32-x64';
 const WINDOWS_SUPERVISOR_JOB_NAME = 'build-windows-supervisor';
 const WINDOWS_SUPERVISOR_RUNNER_LABELS = ['macos-latest'];
 const REVIEWED_WINDOWS_BOOTSTRAP_SCRIPT_SHA256 =
-  'ed4db32136cdd672252c4e34791db9725b9b87063d80773976d29d14a0ee0531';
+  'ccb5ec6ed8011cdd8bdd1432462583f17cf01db6fb7778c7fe28384ee184d826';
 const REVIEWED_WINDOWS_CHILD_BOOTSTRAP_SHA256 =
   '202cfd4231dc7256749254978284df7816f622dbe58be9e5ff6a4cdebf28e01d';
 const REVIEWED_UNIX_SUPERVISOR_PREPARATION_SCRIPT_SHA256 =

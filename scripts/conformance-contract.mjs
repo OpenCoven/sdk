@@ -30,7 +30,7 @@ const CANONICAL_PLATFORMS = Object.freeze([
   'win32-x64',
 ]);
 const PROTECTED_WORKFLOW_RUNNER_LABELS = Object.freeze({
-  'darwin-arm64': Object.freeze(['macos-14']),
+  'darwin-arm64': Object.freeze(['macos-15']),
   'linux-x64': Object.freeze(['ubuntu-24.04']),
   'win32-x64': Object.freeze(['windows-2025']),
 });

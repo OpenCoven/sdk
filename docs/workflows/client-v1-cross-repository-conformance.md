@@ -24,32 +24,19 @@ verification on those hosts authenticates the root-owned, non-writable
 a required record platform, but Node does not expose the directory-relative
 publication primitives needed to support the aggregator safely on Windows.
 
-The first passing aggregate, committed at
-[`96804bc4….json`](../client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json)
-(2026-09-25), is for the previous candidate `96804bc4`, which #40 then blocked.
-It is historical. The current candidate's aggregate is
-[`cd10a3fa….json`](../client-v1-cross-repository-results/cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json)
-(2026-09-26), from protected run 36222464391, and `release.config.json` names
-it.
+The first passing aggregate, committed at [`96804bc4….json`](../client-v1-cross-repository-results/96804bc483a063e41e9a9738a4ace61970f6c0a4.json) (2026-09-25), is for the previous candidate `96804bc4`, which #40 then blocked. The package candidate's archived aggregate is [`cd10a3fa….json`](../client-v1-cross-repository-results/cd10a3fa1d9900e0dbcb04bbb2477140854fba1d.json) (2026-09-26), from protected run 36222464391, and `release.config.json` names it. Both records belong to historical producer bindings and do not authenticate the migrated producer below.
 The 0.0.1 SDK candidate is `cd10a3fa1d9900e0dbcb04bbb2477140854fba1d`, tree
 `6977092046b4cd5c3a3ce4a720141b1a97cfed39`, with normalized runtime SHA-256
 `05bc8cc66bf07f9d2eef2015fdcd4e297a0ecb719fc2c92bca010d21c9045167`.
 The frozen Chat consumer is `dabcdd47e7509880f26e9895ffb63d42d9070ca8`,
 tree `48e9387d2f3727e944a82376652fdc0c1dd02732`; its four committed vendor
 archives exactly match the candidate tarballs and raw release manifest.
-This binding selects the merged [Chat #390](https://github.com/OpenCoven/chat/pull/390)
-producer `399e1f199417e74db6a1b9096500d0e953fdfa6b`, tree `76adbce55467a6bd276a040284d7004d88e452b8`.
-Its reviewed head `b7ceff48066a6649366fc27aa4ca41db064ad5ee` has the same complete tree
-and has executable harness authority
-`2f72ecedd225759a11889ec4b7dd112b71361d56`, tree `0a2e550bddbeaec405367d1dcb383c38fb10fb51`
-([Chat #389](https://github.com/OpenCoven/chat/pull/389), which retries the
-Windows run-root rename through a transient access denial), as its sole
-parent. Its consumer is still `dabcdd4` from
-[Chat #383](https://github.com/OpenCoven/chat/pull/383).
-The merge parents are that harness authority and the reviewed head. The validator
-checks the merge-to-reviewed-source edge, the source-to-harness edge, and complete
-reviewed/delivery tree equality. The intermediate source-authority path is empty
-again: this repin landed as a single commit.
+
+This binding selects merged [Chat #563](https://github.com/OpenCoven/chat/pull/563) producer `e48bfe53cfc3ea95b58b34b627c9f929c20d9016`, tree `f5de441ea48fe224315c96dabaedb25911e862cf`. Its reviewed head `6e55d3d218779fcdd1287725c5ab42eb881c54c3` has the same complete tree and executable harness authority `3aa2ed6a4fcdee9db4470c4466ed8ead910273d1`, tree `4f8135af87a8b6f723ddbc40007130e7dc19f935` ([Chat #561](https://github.com/OpenCoven/chat/pull/561)), as its sole parent. Its original consumer remains `dabcdd4` from [Chat #383](https://github.com/OpenCoven/chat/pull/383). The merge parents are that harness authority and the reviewed head. The validator checks both parent edges and complete reviewed/delivery tree equality; this single-commit repin has an empty intermediate source-authority path.
+
+The preceding [Chat #390](https://github.com/OpenCoven/chat/pull/390) binding used producer `399e1f199417e74db6a1b9096500d0e953fdfa6b`, reviewed head `b7ceff48066a6649366fc27aa4ca41db064ad5ee`, and harness authority `2f72ecedd225759a11889ec4b7dd112b71361d56` from [Chat #389](https://github.com/OpenCoven/chat/pull/389). Those identities and the older authenticated fixtures remain historical.
+
+The Windows source rebind includes the already-merged residual-window diagnostics and three bounded rechecks for unreadable WTS process SIDs, followed by fail-closed rejection. Profile ownership, quarantine, resource limits, and the child bootstrap retain their existing boundaries. The new current-source fixtures bind exact reviewed Git bytes; a fresh protected matrix is still required before claiming execution of this binding.
 
 This producer retains Chat #311's build-time home isolation, the exact Chat #314
 producer-revision resolver, bounded Windows quota diagnostics, and Chat #327's
@@ -486,6 +473,8 @@ Runtime aggregation does not ask the engine to select IDs dynamically.
 
 ## Platform producer compatibility
 
+The protected Darwin producer uses the reviewed `macos-15` Apple silicon runner for Chat #558. Current conformance rejects `macos-14`, floating labels, Intel alternatives, and self-hosted substitutions. Historical locked fixtures and result indexes retain their original runner labels and validator identities; they do not establish execution of the migrated producer.
+
 The frozen producer uses Chat's existing schema-v1 authority journey as an
 internal source, but emits schema v2 only after receiving every frozen SDK and
 Chat assertion from an exact observed-result map. Missing, duplicate,
@@ -519,14 +508,7 @@ and GitHub verification inspect every actual parent edge. Runs, jobs,
 deployments, artifacts, and certificates must identify the dispatch revision;
 platform records must still identify the selected producer.
 
-Both revisions must contain the same reviewed workflow bytes. The current
-binding is tip-only: its empty descent selects producer `399e1f19` itself, so
-the protected run must dispatch while Chat `main` is still at that commit. An
-earlier binding dispatched from `f6e99b49` ([Chat #386](https://github.com/OpenCoven/chat/pull/386))
-by a one-link descent to producer `ce151728`. The binding before that dispatched from `f4fbb423` ([Chat #380](https://github.com/OpenCoven/chat/pull/380))
-through a five-link descent to producer `b1091054`. Any other dispatch revision
-needs its own reviewed descent binding before its evidence can be accepted. Historical
-locks and indexes that omit the field retain that same tip-only meaning.
+Both revisions must contain the same reviewed workflow bytes. The current binding dispatches from `8d0e7beead10a3f4b74abbfb61c31663e0b2eb00` ([Chat #541](https://github.com/OpenCoven/chat/pull/541)) and selects producer `e48bfe53cfc3ea95b58b34b627c9f929c20d9016` through their verified direct parent edge; that later merge changes design audit records and review-capture tooling outside the governed runtime files. An earlier binding dispatched from `f6e99b49` ([Chat #386](https://github.com/OpenCoven/chat/pull/386)) by a one-link descent to producer `ce151728`. The binding before that dispatched from `f4fbb423` ([Chat #380](https://github.com/OpenCoven/chat/pull/380)) through a five-link descent to producer `b1091054`. Any other dispatch revision needs its own reviewed descent binding before its evidence can be accepted. Historical locks and indexes that omit the field retain the producer-tip-only meaning.
 Supporting the resolver does not supply the missing three-platform evidence
 or change the release's BLOCK disposition.
 
