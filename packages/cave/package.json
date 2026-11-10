@@ -45,7 +45,7 @@
     "typecheck": "tsc --pretty false --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@hpke/core": "1.9.0",
+    "@hpke/core": "1.10.0",
     "@hpke/dhkem-x25519": "1.8.0",
     "@opencoven/sdk-core": "workspace:0.0.1",
     "canonicalize": "5.1.0"
