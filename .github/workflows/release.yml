@@ -418,7 +418,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ needs.publication-candidate.outputs.artifact-id }}
           path: ${{ runner.temp }}/opencoven-publication-candidate
@@ -708,7 +708,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ needs.approval-witness.outputs.artifact-id }}
           path: ${{ runner.temp }}/opencoven-pending-approval
@@ -759,7 +759,7 @@ jobs:
             echo "Approval evidence requires exact Node v24.18.1 on GitHub-hosted Linux X64." >&2
             exit 1
           fi
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: opencoven-sdk-pending-approval-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/opencoven-pending-approval
@@ -843,7 +843,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ needs.approval-evidence.outputs.artifact-id }}
           path: ${{ runner.temp }}/opencoven-protected-approval
@@ -894,12 +894,12 @@ jobs:
             echo "Publication requires exact Node v24.18.1 on GitHub-hosted Linux X64." >&2
             exit 1
           fi
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ needs.approval-witness.outputs.artifact-id }}
           path: ${{ runner.temp }}/opencoven-pending-approval
           digest-mismatch: error
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ needs.approval-evidence.outputs.artifact-id }}
           path: ${{ runner.temp }}/opencoven-protected-approval
@@ -920,7 +920,7 @@ jobs:
             OPENCOVEN_SECURITY_REVIEW_COMMENT_ID="$OPENCOVEN_SECURITY_REVIEW_COMMENT_ID" \
             "$node_path" ./scripts/github-release-authorization.mjs \
               --github-output "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ steps.authorization.outputs.artifact-id }}
           path: .artifacts/publication
@@ -928,7 +928,7 @@ jobs:
           repository: OpenCoven/sdk
           run-id: ${{ steps.authorization.outputs.run-id }}
           digest-mismatch: error
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ steps.authorization.outputs.attestation-bundle-artifact-id }}
           path: ${{ runner.temp }}/opencoven-publication-attestation
