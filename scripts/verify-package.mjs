@@ -132,7 +132,7 @@ function expectedPackedDependencies(workspaceDirectory, version) {
     case 'cave':
       return {
         '@hpke/core': '1.9.0',
-        '@hpke/dhkem-x25519': '1.8.0',
+        '@hpke/dhkem-x25519': '1.8.1',
         '@opencoven/sdk-core': version,
         canonicalize: '5.1.0',
       };

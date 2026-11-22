@@ -77,7 +77,7 @@ const EXPECTED_WORKSPACE_DEPENDENCIES = {
   core: {},
   cave: {
     '@hpke/core': '1.9.0',
-    '@hpke/dhkem-x25519': '1.8.0',
+    '@hpke/dhkem-x25519': '1.8.1',
     '@opencoven/sdk-core': 'workspace:0.0.1',
     canonicalize: '5.1.0',
   },

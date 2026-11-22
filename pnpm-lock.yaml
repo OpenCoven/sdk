@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@hpke/common': 1.10.0
+  '@hpke/common': 1.13.0
   esbuild: 0.28.2
   shell-quote: 1.11.0
   source-map-js: 1.2.2
@@ -442,8 +442,8 @@ packages:
     resolution: {integrity: sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
 
-  '@hpke/common@1.10.0':
-    resolution: {integrity: sha512-uVq9pTNERQ1GcFlHZzQx+a0ZMC81wQzkbNzJPEyR/l3AWM7fASd/qYN2Cnq6uL1NPEfwcD4lgOmfjjZfx2k2XA==}
+  '@hpke/common@1.13.0':
+    resolution: {integrity: sha512-PqaJR89RWJQmt/WOGuBLrcrtXtEMbWu91XIbxDjKDTDgKvqvhlxOzQ9BAf9a0Q+yqqbTtQ0pK6KUyVi2WMehbA==}
     engines: {node: '>=16.0.0'}
 
   '@hpke/core@1.9.0':
@@ -2019,15 +2019,15 @@ snapshots:
       '@eslint/core': 1.2.1
       levn: 0.4.1
 
-  '@hpke/common@1.10.0': {}
+  '@hpke/common@1.13.0': {}
 
   '@hpke/core@1.9.0':
     dependencies:
-      '@hpke/common': 1.10.0
+      '@hpke/common': 1.13.0
 
   '@hpke/dhkem-x25519@1.8.1':
     dependencies:
-      '@hpke/common': 1.10.0
+      '@hpke/common': 1.13.0
 
   '@humanfs/core@0.19.2':
     dependencies:
